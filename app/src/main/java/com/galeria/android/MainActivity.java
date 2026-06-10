@@ -99,7 +99,7 @@ public class MainActivity extends Activity {
         top.setBackground(Ui.rounded(Ui.search(this), 22, this));
         Ui.setPadding(top, 8, 1, 5, 1);
         LinearLayout.LayoutParams topParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 44));
-        topParams.setMargins(Ui.dp(this, 24), Ui.dp(this, 14), Ui.dp(this, 24), Ui.dp(this, 14));
+        topParams.setMargins(Ui.dp(this, 24), statusBarHeight() + Ui.dp(this, 14), Ui.dp(this, 24), Ui.dp(this, 14));
         root.addView(top, topParams);
 
         ImageButton searchIcon = iconButton(com.galeria.android.R.drawable.ic_search);
@@ -593,8 +593,7 @@ public class MainActivity extends Activity {
     private boolean hasReadPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             return checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
-                    || checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
-                    || checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED;
+                    && checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED;
         }
         return checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
     }
@@ -604,9 +603,6 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.READ_MEDIA_IMAGES);
             permissions.add(Manifest.permission.READ_MEDIA_VIDEO);
-            if (Build.VERSION.SDK_INT >= 34) {
-                permissions.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED);
-            }
         } else {
             permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE);
             if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
@@ -623,7 +619,15 @@ public class MainActivity extends Activity {
             loadAlbums();
         } else {
             emptyView.setVisibility(View.VISIBLE);
-            emptyView.setText("Permissao negada. Autorize o acesso a fotos e videos.");
+            emptyView.setText("Autorize acesso completo a fotos e videos para carregar a galeria.");
         }
+    }
+
+    private int statusBarHeight() {
+        int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (resourceId > 0) {
+            return getResources().getDimensionPixelSize(resourceId);
+        }
+        return Ui.dp(this, 24);
     }
 }
