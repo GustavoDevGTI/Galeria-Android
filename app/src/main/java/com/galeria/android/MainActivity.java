@@ -251,7 +251,24 @@ public class MainActivity extends Activity {
             }
         }
 
-        List<AlbumItem> albums = MediaStoreRepository.buildAlbums(filteredMedia);
+        List<AlbumItem> albums;
+        if (prefs.getBoolean("search_all_files", false)) {
+            albums = new ArrayList<>();
+            MediaItem cover = filteredMedia.isEmpty() ? null : filteredMedia.get(0);
+            long latest = 0;
+            long first = Long.MAX_VALUE;
+            long size = 0;
+            for (MediaItem item : filteredMedia) {
+                latest = Math.max(latest, item.dateAdded);
+                if (item.dateAdded > 0) {
+                    first = Math.min(first, item.dateAdded);
+                }
+                size += Math.max(0, item.size);
+            }
+            albums.add(new AlbumItem("all_media", "Todos os arquivos", filteredMedia.size(), cover, latest, first == Long.MAX_VALUE ? latest : first, size, ""));
+        } else {
+            albums = MediaStoreRepository.buildAlbums(filteredMedia);
+        }
         Set<String> hiddenKeys = prefs.getStringSet("hidden_folder_keys", new HashSet<String>());
         if (!showHiddenFolders && !hiddenKeys.isEmpty()) {
             ArrayList<AlbumItem> visibleAlbums = new ArrayList<>();

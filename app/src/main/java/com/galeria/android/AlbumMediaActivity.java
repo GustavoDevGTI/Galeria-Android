@@ -147,6 +147,10 @@ public class AlbumMediaActivity extends Activity {
     }
 
     private void confirmDelete(final MediaItem item) {
+        if (getSharedPreferences(Ui.PREFS, MODE_PRIVATE).getBoolean("skip_delete_confirmation", false)) {
+            MediaActions.requestDelete(this, item.uri, REQ_DELETE);
+            return;
+        }
         new AlertDialog.Builder(this)
                 .setTitle("Excluir item")
                 .setMessage("Este arquivo sera removido do dispositivo.")

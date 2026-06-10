@@ -74,7 +74,7 @@ final class AlbumGridAdapter extends BaseAdapter {
 
             SquareImageView cover = new SquareImageView(context);
             cover.setScaleType(SquareImageView.ScaleType.CENTER_CROP);
-            cover.setBackground(Ui.rounded(Ui.surface(context), 8, context));
+            cover.setBackground(Ui.rounded(Ui.surface(context), folderRadius(), context));
             cover.setClipToOutline(true);
             item.addView(cover, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -98,7 +98,7 @@ final class AlbumGridAdapter extends BaseAdapter {
         AlbumItem album = getItem(position);
         holder.name.setText(album.name + " (" + album.count + ")");
         holder.name.setTextColor(Ui.text(context));
-        holder.cover.setBackground(Ui.rounded(Ui.surface(context), 8, context));
+        holder.cover.setBackground(Ui.rounded(Ui.surface(context), folderRadius(), context));
         holder.cover.setImageBitmap(null);
         if (album.cover != null) {
             holder.cover.setTag(album.cover.uri);
@@ -139,6 +139,18 @@ final class AlbumGridAdapter extends BaseAdapter {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private int folderRadius() {
+        String style = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+                .getString("folder_thumb_style", "Cantos arredondados");
+        if ("Quadrado".equals(style)) {
+            return 0;
+        }
+        if ("Circular".equals(style)) {
+            return 40;
+        }
+        return 8;
     }
 
     private static final class Holder {

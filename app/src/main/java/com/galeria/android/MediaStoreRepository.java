@@ -51,6 +51,9 @@ final class MediaStoreRepository {
     }
 
     static List<MediaItem> loadMediaForAlbum(Context context, String albumKey) {
+        if ("all_media".equals(albumKey)) {
+            return loadMedia(context);
+        }
         ArrayList<MediaItem> filtered = new ArrayList<>();
         for (MediaItem item : loadMedia(context)) {
             if (item.albumKey.equals(albumKey)) {

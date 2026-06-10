@@ -29,10 +29,11 @@ final class MediaActions {
     static void requestDelete(Activity activity, Uri uri, int requestCode) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
-                PendingIntent pendingIntent = MediaStore.createDeleteRequest(
-                        activity.getContentResolver(),
-                        Collections.singletonList(uri)
-                );
+                boolean moveToTrash = activity.getSharedPreferences(Ui.PREFS, Activity.MODE_PRIVATE)
+                        .getBoolean("move_to_trash", false);
+                PendingIntent pendingIntent = moveToTrash
+                        ? MediaStore.createTrashRequest(activity.getContentResolver(), Collections.singletonList(uri), true)
+                        : MediaStore.createDeleteRequest(activity.getContentResolver(), Collections.singletonList(uri));
                 activity.startIntentSenderForResult(
                         pendingIntent.getIntentSender(),
                         requestCode,

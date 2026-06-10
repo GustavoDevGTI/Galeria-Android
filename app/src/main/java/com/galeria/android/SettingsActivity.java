@@ -63,8 +63,10 @@ public class SettingsActivity extends Activity {
 
     private void fillContent() {
         content.removeAllViews();
-        addSection("Geral");
+        addSection("Personalizacao de cores");
         addColorChoice();
+
+        addSection("Geral");
         addSwitch("Modo escuro", "Alterna entre claro e escuro.", "dark_mode", true, new Runnable() {
             @Override
             public void run() {
@@ -77,21 +79,107 @@ public class SettingsActivity extends Activity {
                 chooseLanguage();
             }
         });
+        addOption("Formato de data e hora", prefs.getString("date_time_format", "Padrao do sistema"), new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                chooseValue("Formato de data e hora", "date_time_format", new String[] { "Padrao do sistema", "Data curta", "Data e hora" });
+            }
+        });
+        addOption("Prioridade de carregamento", prefs.getString("loading_priority", "Velocidade"), new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                chooseValue("Prioridade de carregamento", "loading_priority", new String[] { "Velocidade", "Qualidade", "Equilibrado" });
+            }
+        });
+        addOption("Gerenciar pastas inclusas", "Abrir seletor de pastas.", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                startActivity(new android.content.Intent(SettingsActivity.this, FolderPickerActivity.class));
+            }
+        });
+        addOption("Gerenciar pastas ignoradas", "Use Exibir/ocultar pastas no menu principal.", null);
         addSwitch("Sempre exibir ocultos", "Mostra pastas ocultas na lista principal.", "always_show_hidden", false, null);
+        addSwitch("Procurar todos os arquivos", "Mostra todos os arquivos em vez de somente pastas na tela principal.", "search_all_files", false, null);
 
         addSection("Fotos");
         addOption("Filtro de fotos", "Use Filtrar midia no menu principal.", null);
 
         addSection("Videos");
         addSwitch("Reproduzir automaticamente", "Inicia videos ao abrir.", "autoplay_videos", true, null);
+        addSwitch("Lembrar ultima posicao", "Retoma videos de onde parou.", "remember_video_position", true, null);
+        addSwitch("Reproduzir videos em ciclo", "Repete o video continuamente.", "loop_videos", false, null);
+        addSwitch("Abrir videos em tela separada", "Mantem videos no visualizador dedicado.", "video_separate_screen", false, null);
+        addSwitch("Gestos verticais de volume/brilho", "Preferencia salva para o visualizador.", "video_vertical_gestures", true, null);
 
         addSection("Miniaturas");
+        addSwitch("Recortar miniaturas em quadrados", "Mantem capas com proporcao uniforme.", "crop_square_thumbnails", true, null);
+        addSwitch("Animar GIFs nas miniaturas", "Preferencia salva para suporte a GIF animado.", "animate_gif_thumbnails", true, null);
+        addOption("Estilo da miniatura de arquivo", prefs.getString("file_thumb_style", "Padrao"), new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                chooseValue("Estilo da miniatura de arquivo", "file_thumb_style", new String[] { "Padrao", "Quadrado", "Cantos arredondados" });
+            }
+        });
+        addOption("Estilo da miniatura de pasta", prefs.getString("folder_thumb_style", "Cantos arredondados"), new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                chooseValue("Estilo da miniatura de pasta", "folder_thumb_style", new String[] { "Quadrado", "Cantos arredondados", "Circular" });
+            }
+        });
         addOption("Limpar cache", cacheLabel(), new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 clearCache();
             }
         });
+
+        addSection("Rolagem");
+        addSwitch("Rolar miniaturas horizontalmente", "Preferencia salva para modos futuros de grade.", "horizontal_thumbnail_scroll", false, null);
+        addSwitch("Puxar para atualizar", "Preferencia salva para atualizar a galeria por gesto.", "pull_to_refresh", true, null);
+
+        addSection("Midia em tela cheia");
+        addSwitch("Maximizar brilho", "Preferencia salva para o visualizador.", "fullscreen_max_brightness", false, null);
+        addSwitch("Fundo preto em tela cheia", "Usa fundo preto ao abrir midia.", "fullscreen_black_bg", true, null);
+        addSwitch("Esconder interface do sistema", "Oculta barras do sistema no visualizador.", "fullscreen_hide_system_ui", false, null);
+        addSwitch("Trocar midia tocando nas laterais", "Preferencia salva para navegacao lateral.", "tap_sides_change_media", false, null);
+        addSwitch("Controle de brilho na vertical", "Preferencia salva para gestos no visualizador.", "vertical_brightness_gesture", false, null);
+        addSwitch("Fechar com gesto para baixo", "Arraste para baixo para sair do visualizador.", "swipe_down_to_close", true, null);
+        addSwitch("Exibir o notch", "Preferencia salva para aparelhos com recorte.", "show_display_cutout", true, null);
+        addOption("Rotacao de tela", prefs.getString("rotation_criterion", "Padrao do sistema"), new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                chooseValue("Rotacao de tela", "rotation_criterion", new String[] { "Padrao do sistema", "Retrato", "Paisagem", "Sensor" });
+            }
+        });
+
+        addSection("Zoom aprofundado para imagens");
+        addSwitch("Habilitar zoom aprofundado", "Preferencia salva para zoom avancado.", "deep_image_zoom", true, null);
+        addSwitch("Rotacao por gestos", "Preferencia salva para gestos de imagem.", "image_rotation_gestures", true, null);
+        addSwitch("Maior qualidade possivel", "Carrega imagens priorizando qualidade.", "best_image_quality", false, null);
+        addSwitch("Zoom 1:1 com dois toques duplos", "Preferencia salva para zoom rapido.", "double_double_tap_zoom", false, null);
+
+        addSection("Detalhes adicionais");
+        addSwitch("Exibir detalhes em tela cheia", "Mostra informacoes do arquivo no visualizador.", "show_fullscreen_details", false, null);
+
+        addSection("Seguranca");
+        addSwitch("Proteger com senha todo o app", "Preferencia salva para protecao futura.", "lock_entire_app", false, null);
+        addSwitch("Proteger visualizacao de ocultos", "Preferencia salva para itens ocultos.", "lock_hidden_items", false, null);
+        addSwitch("Proteger excluir e mover", "Preferencia salva para operacoes sensiveis.", "lock_file_operations", false, null);
+
+        addSection("Operacoes de arquivos");
+        addSwitch("Apagar pastas vazias", "Remove pastas vazias apos excluir conteudo.", "delete_empty_folders", false, null);
+        addSwitch("Manter data de modificacao", "Evita atualizar a data ao mover arquivos quando possivel.", "keep_modified_date", true, null);
+        addSwitch("Pular confirmacao de exclusao", "Pula a confirmacao interna do app.", "skip_delete_confirmation", false, null);
+
+        addSection("Barra inferior");
+        addSwitch("Exibir botoes de acao", "Preferencia salva para a barra inferior.", "show_bottom_actions", true, null);
+        addOption("Gerenciar botoes visiveis", "Excluir, mover, ocultar e restaurar.", null);
+
+        addSection("Lixeira");
+        addSwitch("Mover para a Lixeira", "Usa lixeira do Android quando disponivel.", "move_to_trash", false, null);
+
+        addSection("Migrando");
+        addOption("Exportar caminho dos favoritos", "Nenhum favorito criado ainda.", null);
     }
 
     private void addSection(String title) {
@@ -221,6 +309,26 @@ public class SettingsActivity extends Activity {
                 .setTitle("Idioma")
                 .setSingleChoiceItems(labels, checked, (dialog, which) -> {
                     prefs.edit().putString("language", values[which]).apply();
+                    dialog.dismiss();
+                    fillContent();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void chooseValue(String title, final String key, final String[] values) {
+        String current = prefs.getString(key, values[0]);
+        int checked = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(current)) {
+                checked = i;
+                break;
+            }
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setSingleChoiceItems(values, checked, (dialog, which) -> {
+                    prefs.edit().putString(key, values[which]).apply();
                     dialog.dismiss();
                     fillContent();
                 })
