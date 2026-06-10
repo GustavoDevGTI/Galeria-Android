@@ -11,11 +11,11 @@ import android.widget.Toast;
 
 final class Ui {
     static final int BG = Color.rgb(16, 18, 20);
-    static final int SURFACE = Color.rgb(26, 29, 33);
-    static final int SEARCH = Color.rgb(39, 72, 43);
+    static final int SURFACE = Color.rgb(26, 26, 26);
+    static final int SEARCH = Color.rgb(18, 18, 18);
     static final int TEXT = Color.rgb(245, 247, 250);
     static final int MUTED = Color.rgb(170, 178, 189);
-    static final int ACCENT = Color.rgb(75, 163, 255);
+    static final int ACCENT = Color.rgb(245, 247, 250);
 
     private Ui() {
     }
