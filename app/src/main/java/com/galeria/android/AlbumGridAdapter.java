@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
+import android.util.LruCache;
 import android.util.Size;
 import android.view.Gravity;
 import android.view.View;
@@ -21,6 +22,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class AlbumGridAdapter extends BaseAdapter {
+    private static final LruCache<String, Bitmap> COVER_CACHE = new LruCache<String, Bitmap>((int) (Runtime.getRuntime().maxMemory() / 16)) {
+        @Override
+        protected int sizeOf(String key, Bitmap value) {
+            return value == null ? 0 : value.getByteCount();
+        }
+    };
     private final Context context;
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
     private final ArrayList<AlbumItem> allAlbums = new ArrayList<>();
@@ -102,7 +109,12 @@ final class AlbumGridAdapter extends BaseAdapter {
         holder.cover.setImageBitmap(null);
         if (album.cover != null) {
             holder.cover.setTag(album.cover.uri);
-            loadThumbnail(album.cover.uri, holder.cover);
+            Bitmap cached = COVER_CACHE.get(album.cover.uri.toString());
+            if (cached != null) {
+                holder.cover.setImageBitmap(cached);
+            } else {
+                loadThumbnail(album.cover.uri, holder.cover);
+            }
         }
         return convertView;
     }
@@ -112,6 +124,9 @@ final class AlbumGridAdapter extends BaseAdapter {
             @Override
             public void run() {
                 final Bitmap bitmap = readThumbnail(uri);
+                if (bitmap != null) {
+                    COVER_CACHE.put(uri.toString(), bitmap);
+                }
                 target.post(new Runnable() {
                     @Override
                     public void run() {
@@ -133,6 +148,9 @@ final class AlbumGridAdapter extends BaseAdapter {
         }
 
         try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+            if (input == null) {
+                return null;
+            }
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inSampleSize = 8;
             return BitmapFactory.decodeStream(input, null, options);

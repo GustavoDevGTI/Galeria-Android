@@ -2,6 +2,7 @@ package com.galeria.android;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -14,9 +15,12 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.MediaController;
 import android.widget.TextView;
-import android.widget.VideoView;
+
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.Player;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.ui.PlayerView;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -24,8 +28,9 @@ import java.util.concurrent.Executors;
 public class DetailActivity extends Activity {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private SharedPreferences prefs;
-    private VideoView currentVideo;
+    private ExoPlayer currentPlayer;
     private String currentVideoKey;
+    private boolean videoPositionRestored;
     private float downY;
 
     @Override
@@ -98,8 +103,18 @@ public class DetailActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
-        if (currentVideo != null && currentVideoKey != null && prefs.getBoolean("remember_video_position", true)) {
-            prefs.edit().putInt(currentVideoKey, currentVideo.getCurrentPosition()).apply();
+        if (currentPlayer != null && currentVideoKey != null && prefs.getBoolean("remember_video_position", true)) {
+            prefs.edit().putLong(currentVideoKey, currentPlayer.getCurrentPosition()).apply();
+            currentPlayer.pause();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (currentPlayer != null) {
+            currentPlayer.release();
+            currentPlayer = null;
         }
     }
 
@@ -155,26 +170,44 @@ public class DetailActivity extends Activity {
     }
 
     private void showVideo(FrameLayout content, Uri uri) {
-        final VideoView video = new VideoView(this);
-        currentVideo = video;
+        final PlayerView playerView = new PlayerView(this);
+        playerView.setBackgroundColor(Color.BLACK);
+        playerView.setUseController(true);
+        playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);
+        playerView.setControllerAutoShow(true);
+        playerView.setControllerHideOnTouch(true);
+        playerView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
+
+        currentPlayer = new ExoPlayer.Builder(this).build();
         currentVideoKey = "video_pos_" + uri.toString().hashCode();
-        video.setVideoURI(uri);
-        MediaController controller = new MediaController(this);
-        controller.setAnchorView(video);
-        video.setMediaController(controller);
-        content.addView(video, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        video.requestFocus();
-        video.setOnPreparedListener(mp -> {
-            mp.setLooping(prefs.getBoolean("loop_videos", false));
-            if (prefs.getBoolean("remember_video_position", true)) {
-                int savedPosition = prefs.getInt(currentVideoKey, 0);
-                if (savedPosition > 0) {
-                    video.seekTo(savedPosition);
+        videoPositionRestored = false;
+        currentPlayer.setMediaItem(MediaItem.fromUri(uri));
+        currentPlayer.setRepeatMode(prefs.getBoolean("loop_videos", false) ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
+        playerView.setPlayer(currentPlayer);
+        content.addView(playerView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        currentPlayer.addListener(new Player.Listener() {
+            @Override
+            public void onPlaybackStateChanged(int playbackState) {
+                if (playbackState != Player.STATE_READY) {
+                    return;
+                }
+                if (!videoPositionRestored && prefs.getBoolean("remember_video_position", true)) {
+                    long savedPosition = prefs.getLong(currentVideoKey, 0L);
+                    if (savedPosition > 0L) {
+                        currentPlayer.seekTo(savedPosition);
+                    }
+                    videoPositionRestored = true;
                 }
             }
-            if (prefs.getBoolean("autoplay_videos", true)) {
-                video.start();
-            }
         });
+        currentPlayer.prepare();
+        if (prefs.getBoolean("remember_video_position", true)) {
+            long savedPosition = prefs.getLong(currentVideoKey, 0L);
+            if (savedPosition > 0L) {
+                currentPlayer.seekTo(savedPosition);
+            }
+        }
+        currentPlayer.setPlayWhenReady(prefs.getBoolean("autoplay_videos", true));
     }
 }

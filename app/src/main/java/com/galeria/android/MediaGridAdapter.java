@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Build;
+import android.util.LruCache;
 import android.util.Size;
 import android.view.Gravity;
 import android.view.View;
@@ -21,6 +22,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class MediaGridAdapter extends BaseAdapter {
+    private static final LruCache<String, Bitmap> THUMB_CACHE = new LruCache<String, Bitmap>((int) (Runtime.getRuntime().maxMemory() / 16)) {
+        @Override
+        protected int sizeOf(String key, Bitmap value) {
+            return value == null ? 0 : value.getByteCount();
+        }
+    };
     private final Context context;
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
     private final ArrayList<MediaItem> items = new ArrayList<>();
@@ -87,7 +94,12 @@ final class MediaGridAdapter extends BaseAdapter {
         holder.badge.setVisibility(item.isVideo() ? View.VISIBLE : View.GONE);
         holder.image.setImageBitmap(null);
         holder.image.setTag(item.uri);
-        loadThumbnail(item, holder.image);
+        Bitmap cached = THUMB_CACHE.get(item.uri.toString());
+        if (cached != null) {
+            holder.image.setImageBitmap(cached);
+        } else {
+            loadThumbnail(item, holder.image);
+        }
         return convertView;
     }
 
@@ -96,6 +108,9 @@ final class MediaGridAdapter extends BaseAdapter {
             @Override
             public void run() {
                 final Bitmap bitmap = readThumbnail(item.uri);
+                if (bitmap != null) {
+                    THUMB_CACHE.put(item.uri.toString(), bitmap);
+                }
                 target.post(new Runnable() {
                     @Override
                     public void run() {
@@ -118,6 +133,9 @@ final class MediaGridAdapter extends BaseAdapter {
         }
 
         try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+            if (input == null) {
+                return null;
+            }
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inSampleSize = 8;
             return BitmapFactory.decodeStream(input, null, options);

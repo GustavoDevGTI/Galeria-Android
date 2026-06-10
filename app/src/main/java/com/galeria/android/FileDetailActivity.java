@@ -3,6 +3,7 @@ package com.galeria.android;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -13,9 +14,11 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.MediaController;
 import android.widget.TextView;
-import android.widget.VideoView;
+
+import androidx.media3.common.MediaItem;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.ui.PlayerView;
 
 import java.io.File;
 import java.util.Locale;
@@ -23,6 +26,7 @@ import java.util.Locale;
 public class FileDetailActivity extends Activity {
     private File file;
     private String mimeType;
+    private ExoPlayer player;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,16 +60,19 @@ public class FileDetailActivity extends Activity {
         root.addView(bar);
 
         FrameLayout content = new FrameLayout(this);
-        content.setBackgroundColor(android.graphics.Color.BLACK);
+        content.setBackgroundColor(Color.BLACK);
         if (mimeType.startsWith("video/")) {
-            VideoView video = new VideoView(this);
-            video.setVideoURI(Uri.fromFile(file));
-            MediaController controller = new MediaController(this);
-            controller.setAnchorView(video);
-            video.setMediaController(controller);
-            content.addView(video, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            video.requestFocus();
-            video.start();
+            PlayerView playerView = new PlayerView(this);
+            playerView.setBackgroundColor(Color.BLACK);
+            playerView.setUseController(true);
+            playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);
+            playerView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
+            player = new ExoPlayer.Builder(this).build();
+            player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)));
+            playerView.setPlayer(player);
+            content.addView(playerView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            player.prepare();
+            player.setPlayWhenReady(getSharedPreferences(Ui.PREFS, MODE_PRIVATE).getBoolean("autoplay_videos", true));
         } else {
             ImageView image = new ImageView(this);
             image.setScaleType(ImageView.ScaleType.FIT_CENTER);
@@ -100,6 +107,23 @@ public class FileDetailActivity extends Activity {
         root.addView(actions);
 
         setContentView(root);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (player != null) {
+            player.pause();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (player != null) {
+            player.release();
+            player = null;
+        }
     }
 
     private void restoreFile() {

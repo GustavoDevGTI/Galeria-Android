@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.ThumbnailUtils;
 import android.os.Build;
+import android.util.LruCache;
 import android.util.Size;
 import android.view.Gravity;
 import android.view.View;
@@ -23,6 +24,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class HiddenFileAdapter extends BaseAdapter {
+    private static final LruCache<String, Bitmap> THUMB_CACHE = new LruCache<String, Bitmap>((int) (Runtime.getRuntime().maxMemory() / 24)) {
+        @Override
+        protected int sizeOf(String key, Bitmap value) {
+            return value == null ? 0 : value.getByteCount();
+        }
+    };
+
     private final Context context;
     private final ExecutorService executor = Executors.newFixedThreadPool(2);
     private final ArrayList<File> files = new ArrayList<>();
@@ -94,17 +102,26 @@ final class HiddenFileAdapter extends BaseAdapter {
         }
 
         final File file = getItem(position);
+        final String key = file.getAbsolutePath() + ":" + file.lastModified();
         holder.name.setText(file.getName());
+        holder.image.setTag(key);
+        Bitmap cached = THUMB_CACHE.get(key);
+        if (cached != null) {
+            holder.image.setImageBitmap(cached);
+            return convertView;
+        }
         holder.image.setImageBitmap(null);
-        holder.image.setTag(file.getAbsolutePath());
         executor.execute(new Runnable() {
             @Override
             public void run() {
                 final Bitmap bitmap = thumbnail(file);
+                if (bitmap != null) {
+                    THUMB_CACHE.put(key, bitmap);
+                }
                 holder.image.post(new Runnable() {
                     @Override
                     public void run() {
-                        if (file.getAbsolutePath().equals(holder.image.getTag())) {
+                        if (key.equals(holder.image.getTag())) {
                             holder.image.setImageBitmap(bitmap);
                         }
                     }

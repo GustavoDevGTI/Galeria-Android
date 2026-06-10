@@ -21,8 +21,7 @@ final class MediaStoreRepository {
 
     static List<MediaItem> loadMedia(Context context) {
         ArrayList<MediaItem> items = new ArrayList<>();
-        loadFromCollection(context, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, items);
-        loadFromCollection(context, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, items);
+        loadFromFilesCollection(context, items);
         Collections.sort(items, new Comparator<MediaItem>() {
             @Override
             public int compare(MediaItem first, MediaItem second) {
@@ -74,7 +73,8 @@ final class MediaStoreRepository {
         return albums;
     }
 
-    private static void loadFromCollection(Context context, Uri collection, List<MediaItem> output) {
+    private static void loadFromFilesCollection(Context context, List<MediaItem> output) {
+        Uri collection = MediaStore.Files.getContentUri("external");
         String[] projection;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             projection = new String[] {
@@ -85,7 +85,8 @@ final class MediaStoreRepository {
                     MediaStore.MediaColumns.SIZE,
                     MediaStore.MediaColumns.RELATIVE_PATH,
                     MediaStore.MediaColumns.BUCKET_ID,
-                    MediaStore.MediaColumns.BUCKET_DISPLAY_NAME
+                    MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
+                    MediaStore.Files.FileColumns.MEDIA_TYPE
             };
         } else {
             projection = new String[] {
@@ -95,12 +96,25 @@ final class MediaStoreRepository {
                     MediaStore.MediaColumns.DATE_ADDED,
                     MediaStore.MediaColumns.SIZE,
                     MediaStore.MediaColumns.BUCKET_ID,
-                    MediaStore.MediaColumns.BUCKET_DISPLAY_NAME
+                    MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
+                    MediaStore.MediaColumns.DATA,
+                    MediaStore.Files.FileColumns.MEDIA_TYPE
             };
         }
 
         ContentResolver resolver = context.getContentResolver();
-        try (Cursor cursor = resolver.query(collection, projection, null, null, MediaStore.MediaColumns.DATE_ADDED + " DESC")) {
+        String selection = "("
+                + MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?,?)"
+                + " OR " + MediaStore.MediaColumns.MIME_TYPE + " LIKE ?"
+                + " OR " + MediaStore.MediaColumns.MIME_TYPE + " LIKE ?"
+                + ") AND " + MediaStore.MediaColumns.SIZE + " > 0";
+        String[] args = new String[] {
+                String.valueOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE),
+                String.valueOf(MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO),
+                "image/%",
+                "video/%"
+        };
+        try (Cursor cursor = resolver.query(collection, projection, selection, args, MediaStore.MediaColumns.DATE_ADDED + " DESC")) {
             if (cursor == null) {
                 return;
             }
@@ -115,11 +129,14 @@ final class MediaStoreRepository {
                     : -1;
             int bucketIdIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.BUCKET_ID);
             int bucketNameIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME);
+            int dataIndex = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                    ? cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                    : -1;
 
             while (cursor.moveToNext()) {
                 long id = cursor.getLong(idIndex);
                 Uri itemUri = ContentUris.withAppendedId(collection, id);
-                String relativePath = pathIndex >= 0 ? cursor.getString(pathIndex) : "";
+                String relativePath = pathIndex >= 0 ? cursor.getString(pathIndex) : pathFromData(dataIndex >= 0 ? cursor.getString(dataIndex) : null);
                 String bucketId = cursor.getString(bucketIdIndex);
                 String bucketName = cursor.getString(bucketNameIndex);
                 String albumKey = relativePath == null || relativePath.isEmpty() ? bucketId : relativePath;
@@ -139,6 +156,19 @@ final class MediaStoreRepository {
         } catch (SecurityException ignored) {
             // The user may grant only photos or only videos on recent Android versions.
         }
+    }
+
+    private static String pathFromData(String data) {
+        if (data == null || data.isEmpty()) {
+            return "";
+        }
+        int slash = data.lastIndexOf('/');
+        if (slash <= 0) {
+            return "";
+        }
+        String parent = data.substring(0, slash);
+        int parentSlash = parent.lastIndexOf('/');
+        return parentSlash >= 0 ? parent.substring(parentSlash + 1) + "/" : parent + "/";
     }
 
     private static String cleanAlbumName(String relativePath, String fallback) {
