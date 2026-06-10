@@ -32,6 +32,24 @@ final class MediaStoreRepository {
         return items;
     }
 
+    static List<AlbumItem> buildAlbums(List<MediaItem> mediaItems) {
+        LinkedHashMap<String, AlbumBuilder> builders = new LinkedHashMap<>();
+        for (MediaItem item : mediaItems) {
+            AlbumBuilder builder = builders.get(item.albumKey);
+            if (builder == null) {
+                builder = new AlbumBuilder(item.albumKey, item.albumName, item.relativePath);
+                builders.put(item.albumKey, builder);
+            }
+            builder.add(item);
+        }
+
+        ArrayList<AlbumItem> albums = new ArrayList<>();
+        for (Map.Entry<String, AlbumBuilder> entry : builders.entrySet()) {
+            albums.add(entry.getValue().build());
+        }
+        return albums;
+    }
+
     static List<MediaItem> loadMediaForAlbum(Context context, String albumKey) {
         ArrayList<MediaItem> filtered = new ArrayList<>();
         for (MediaItem item : loadMedia(context)) {
@@ -43,20 +61,7 @@ final class MediaStoreRepository {
     }
 
     static List<AlbumItem> loadAlbums(Context context) {
-        LinkedHashMap<String, AlbumBuilder> builders = new LinkedHashMap<>();
-        for (MediaItem item : loadMedia(context)) {
-            AlbumBuilder builder = builders.get(item.albumKey);
-            if (builder == null) {
-                builder = new AlbumBuilder(item.albumKey, item.albumName);
-                builders.put(item.albumKey, builder);
-            }
-            builder.add(item);
-        }
-
-        ArrayList<AlbumItem> albums = new ArrayList<>();
-        for (Map.Entry<String, AlbumBuilder> entry : builders.entrySet()) {
-            albums.add(entry.getValue().build());
-        }
+        List<AlbumItem> albums = buildAlbums(loadMedia(context));
         Collections.sort(albums, new Comparator<AlbumItem>() {
             @Override
             public int compare(AlbumItem first, AlbumItem second) {
@@ -153,25 +158,34 @@ final class MediaStoreRepository {
     private static final class AlbumBuilder {
         final String key;
         final String name;
+        final String path;
         int count;
         MediaItem cover;
         long latestDate;
+        long firstDate = Long.MAX_VALUE;
+        long totalSize;
 
-        AlbumBuilder(String key, String name) {
+        AlbumBuilder(String key, String name, String path) {
             this.key = key;
             this.name = name;
+            this.path = path;
         }
 
         void add(MediaItem item) {
             count++;
+            totalSize += Math.max(0, item.size);
             if (cover == null || item.dateAdded > latestDate) {
                 cover = item;
                 latestDate = item.dateAdded;
             }
+            if (item.dateAdded > 0 && item.dateAdded < firstDate) {
+                firstDate = item.dateAdded;
+            }
         }
 
         AlbumItem build() {
-            return new AlbumItem(key, name, count, cover, latestDate);
+            long created = firstDate == Long.MAX_VALUE ? latestDate : firstDate;
+            return new AlbumItem(key, name, count, cover, latestDate, created, totalSize, path);
         }
     }
 }
