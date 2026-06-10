@@ -57,7 +57,7 @@ public class AlbumMediaActivity extends Activity {
 
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        Ui.setPadding(bar, 10, 16, 14, 10);
+        bar.setPadding(Ui.dp(this, 10), statusBarHeight() + Ui.dp(this, 12), Ui.dp(this, 14), Ui.dp(this, 10));
 
         ImageButton back = new ImageButton(this);
         back.setImageResource(com.galeria.android.R.drawable.ic_back);
@@ -95,7 +95,7 @@ public class AlbumMediaActivity extends Activity {
         grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                openDetail(adapter.getItem(position));
+                openDetail(adapter.getItem(position), position);
             }
         });
         grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
@@ -121,12 +121,14 @@ public class AlbumMediaActivity extends Activity {
         emptyView.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
     }
 
-    private void openDetail(MediaItem item) {
+    private void openDetail(MediaItem item, int position) {
         Intent intent = new Intent(this, DetailActivity.class);
         intent.putExtra("uri", item.uri.toString());
         intent.putExtra("name", item.name);
         intent.putExtra("mime", item.mimeType);
         intent.putExtra("path", item.relativePath);
+        intent.putExtra("album_key", albumKey);
+        intent.putExtra("position", position);
         startActivity(intent);
     }
 
@@ -248,5 +250,13 @@ public class AlbumMediaActivity extends Activity {
             pendingMoveFolder = null;
             loadMedia();
         }
+    }
+
+    private int statusBarHeight() {
+        int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (resourceId > 0) {
+            return getResources().getDimensionPixelSize(resourceId);
+        }
+        return Ui.dp(this, 24);
     }
 }

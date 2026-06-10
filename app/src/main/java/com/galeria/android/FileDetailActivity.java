@@ -64,8 +64,7 @@ public class FileDetailActivity extends Activity {
         if (mimeType.startsWith("video/")) {
             PlayerView playerView = new PlayerView(this);
             playerView.setBackgroundColor(Color.BLACK);
-            playerView.setUseController(true);
-            playerView.setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING);
+            playerView.setUseController(false);
             playerView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
             player = new ExoPlayer.Builder(this).build();
             player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)));
