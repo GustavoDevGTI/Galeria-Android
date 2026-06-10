@@ -15,6 +15,7 @@
         <activity android:name=".FileDetailActivity" />
         <activity android:name=".HiddenActivity" />
         <activity android:name=".DetailActivity" />
+        <activity android:name=".AlbumMediaActivity" />
         <activity
             android:name=".MainActivity"
             android:exported="true">

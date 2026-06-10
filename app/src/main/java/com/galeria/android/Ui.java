@@ -3,6 +3,7 @@ package com.galeria.android;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
@@ -11,6 +12,7 @@ import android.widget.Toast;
 final class Ui {
     static final int BG = Color.rgb(16, 18, 20);
     static final int SURFACE = Color.rgb(26, 29, 33);
+    static final int SEARCH = Color.rgb(39, 72, 43);
     static final int TEXT = Color.rgb(245, 247, 250);
     static final int MUTED = Color.rgb(170, 178, 189);
     static final int ACCENT = Color.rgb(75, 163, 255);
@@ -49,6 +51,13 @@ final class Ui {
         button.setBackgroundColor(SURFACE);
         button.setMinHeight(dp(context, 42));
         return button;
+    }
+
+    static GradientDrawable rounded(int color, int radiusDp, Context context) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(dp(context, radiusDp));
+        return drawable;
     }
 
     static void toast(Context context, String message) {

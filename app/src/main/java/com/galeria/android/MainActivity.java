@@ -2,44 +2,42 @@ package com.galeria.android;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
+import android.content.Context;
 import android.widget.AdapterView;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.GridView;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends Activity {
     private static final int REQ_READ = 10;
-    private static final int REQ_DELETE = 11;
-    private static final int REQ_HIDE_DELETE = 12;
-    private static final int REQ_MOVE_WRITE = 13;
 
-    private MediaGridAdapter adapter;
+    private AlbumGridAdapter adapter;
     private TextView emptyView;
-    private File pendingHiddenCopy;
-    private MediaItem pendingMoveItem;
-    private String pendingMoveFolder;
+    private EditText searchInput;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         buildLayout();
         if (hasReadPermission()) {
-            loadMedia();
+            loadAlbums();
         } else {
             requestReadPermission();
         }
@@ -49,7 +47,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (hasReadPermission()) {
-            loadMedia();
+            loadAlbums();
         }
     }
 
@@ -58,179 +56,147 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Ui.BG);
 
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-        Ui.setPadding(bar, 14, 10, 14, 8);
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setBackground(Ui.rounded(Ui.SEARCH, 34, this));
+        Ui.setPadding(top, 16, 5, 10, 5);
+        LinearLayout.LayoutParams topParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 70));
+        topParams.setMargins(Ui.dp(this, 16), Ui.dp(this, 24), Ui.dp(this, 16), Ui.dp(this, 14));
+        root.addView(top, topParams);
 
-        TextView title = Ui.title(this, "Galeria", 24);
-        bar.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-
-        Button hidden = Ui.button(this, "Ocultos");
-        hidden.setOnClickListener(new View.OnClickListener() {
+        ImageButton searchIcon = iconButton(com.galeria.android.R.drawable.ic_search);
+        searchIcon.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                startActivity(new Intent(MainActivity.this, HiddenActivity.class));
+                searchInput.requestFocus();
+                ((InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE)).showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT);
             }
         });
-        bar.addView(hidden, new LinearLayout.LayoutParams(Ui.dp(this, 104), Ui.dp(this, 44)));
+        top.addView(searchIcon, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 52)));
 
-        Button refresh = Ui.button(this, "Atualizar");
+        searchInput = new EditText(this);
+        searchInput.setHint("Pesquisar pastas");
+        searchInput.setHintTextColor(0x99F5F7FA);
+        searchInput.setTextColor(Ui.TEXT);
+        searchInput.setTextSize(20);
+        searchInput.setSingleLine(true);
+        searchInput.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        searchInput.setPadding(Ui.dp(this, 8), 0, Ui.dp(this, 8), 0);
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                adapter.applyFilter(s.toString());
+                updateEmptyText();
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
+        });
+        top.addView(searchInput, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
+        ImageButton camera = iconButton(com.galeria.android.R.drawable.ic_camera);
+        camera.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Ui.toast(MainActivity.this, "Camera sera adicionada na proxima etapa.");
+            }
+        });
+        top.addView(camera, new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 52)));
+
+        ImageButton refresh = iconButton(com.galeria.android.R.drawable.ic_image);
         refresh.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                loadMedia();
+                loadAlbums();
             }
         });
-        LinearLayout.LayoutParams refreshParams = new LinearLayout.LayoutParams(Ui.dp(this, 112), Ui.dp(this, 44));
-        refreshParams.leftMargin = Ui.dp(this, 8);
-        bar.addView(refresh, refreshParams);
+        top.addView(refresh, new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 52)));
 
-        root.addView(bar);
+        ImageButton more = iconButton(com.galeria.android.R.drawable.ic_more_vertical);
+        more.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showMenu(view);
+            }
+        });
+        top.addView(more, new LinearLayout.LayoutParams(Ui.dp(this, 42), Ui.dp(this, 52)));
 
         FrameLayout content = new FrameLayout(this);
         GridView grid = new GridView(this);
-        grid.setNumColumns(GridView.AUTO_FIT);
-        grid.setColumnWidth(Ui.dp(this, 118));
+        grid.setNumColumns(3);
         grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
-        grid.setHorizontalSpacing(Ui.dp(this, 2));
-        grid.setVerticalSpacing(Ui.dp(this, 2));
+        grid.setHorizontalSpacing(Ui.dp(this, 10));
+        grid.setVerticalSpacing(Ui.dp(this, 16));
         grid.setClipToPadding(false);
-        grid.setPadding(Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 16));
+        grid.setPadding(Ui.dp(this, 6), Ui.dp(this, 4), Ui.dp(this, 6), Ui.dp(this, 20));
         grid.setBackgroundColor(Ui.BG);
-        adapter = new MediaGridAdapter(this);
+        adapter = new AlbumGridAdapter(this);
         grid.setAdapter(adapter);
         grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                openDetail(adapter.getItem(position));
-            }
-        });
-        grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
-            @Override
-            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
-                showActions(adapter.getItem(position));
-                return true;
+                AlbumItem album = adapter.getItem(position);
+                Intent intent = new Intent(MainActivity.this, AlbumMediaActivity.class);
+                intent.putExtra("album_key", album.key);
+                intent.putExtra("album_name", album.name);
+                startActivity(intent);
             }
         });
         content.addView(grid);
 
-        emptyView = Ui.label(this, "Nenhuma foto ou video encontrado.");
+        emptyView = Ui.label(this, "Nenhuma pasta encontrada.");
         emptyView.setVisibility(View.GONE);
-        content.addView(emptyView, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-        ));
+        content.addView(emptyView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        root.addView(content, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1
-        ));
+        root.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(root);
     }
 
-    private void loadMedia() {
-        List<MediaItem> items = MediaStoreRepository.loadMedia(this);
-        adapter.submit(items);
-        emptyView.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
+    private ImageButton iconButton(int icon) {
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(icon);
+        button.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        button.setColorFilter(Ui.TEXT);
+        button.setScaleType(ImageButton.ScaleType.CENTER);
+        button.setPadding(Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8));
+        return button;
     }
 
-    private void openDetail(MediaItem item) {
-        Intent intent = new Intent(this, DetailActivity.class);
-        intent.putExtra("uri", item.uri.toString());
-        intent.putExtra("name", item.name);
-        intent.putExtra("mime", item.mimeType);
-        intent.putExtra("path", item.relativePath);
-        startActivity(intent);
+    private void showMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add("Ocultos");
+        menu.getMenu().add("Atualizar");
+        menu.setOnMenuItemClickListener(item -> {
+            if ("Ocultos".contentEquals(item.getTitle())) {
+                startActivity(new Intent(this, HiddenActivity.class));
+            } else {
+                loadAlbums();
+            }
+            return true;
+        });
+        menu.show();
     }
 
-    private void showActions(final MediaItem item) {
-        String[] actions = new String[] { "Excluir", "Ocultar", "Mover para pasta" };
-        new AlertDialog.Builder(this)
-                .setTitle(item.name)
-                .setItems(actions, (dialog, which) -> {
-                    if (which == 0) {
-                        confirmDelete(item);
-                    } else if (which == 1) {
-                        confirmHide(item);
-                    } else {
-                        askMoveFolder(item);
-                    }
-                })
-                .show();
+    private void loadAlbums() {
+        List<AlbumItem> albums = MediaStoreRepository.loadAlbums(this);
+        adapter.submit(albums);
+        if (searchInput != null) {
+            adapter.applyFilter(searchInput.getText().toString());
+        }
+        updateEmptyText();
     }
 
-    private void confirmDelete(final MediaItem item) {
-        new AlertDialog.Builder(this)
-                .setTitle("Excluir item")
-                .setMessage("Este arquivo sera removido do dispositivo.")
-                .setPositiveButton("Excluir", (dialog, which) -> MediaActions.requestDelete(this, item.uri, REQ_DELETE))
-                .setNegativeButton("Cancelar", null)
-                .show();
-    }
-
-    private void confirmHide(final MediaItem item) {
-        new AlertDialog.Builder(this)
-                .setTitle("Ocultar item")
-                .setMessage("O arquivo sera copiado para a area oculta do app e removido da galeria publica.")
-                .setPositiveButton("Ocultar", (dialog, which) -> hideItem(item))
-                .setNegativeButton("Cancelar", null)
-                .show();
-    }
-
-    private void hideItem(MediaItem item) {
-        pendingHiddenCopy = MediaActions.copyToHidden(this, item);
-        if (pendingHiddenCopy == null) {
-            Ui.toast(this, "Nao foi possivel copiar para ocultos.");
+    private void updateEmptyText() {
+        if (adapter == null || emptyView == null) {
             return;
         }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            MediaActions.requestDelete(this, item.uri, REQ_HIDE_DELETE);
-        } else {
-            int deleted = getContentResolver().delete(item.uri, null, null);
-            if (deleted > 0) {
-                Ui.toast(this, "Item ocultado.");
-            } else {
-                pendingHiddenCopy.delete();
-                Ui.toast(this, "Nao foi possivel remover o original.");
-            }
-            pendingHiddenCopy = null;
-            loadMedia();
-        }
-    }
-
-    private void askMoveFolder(final MediaItem item) {
-        final EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setHint("Ex.: Viagens");
-        input.setTextColor(Ui.TEXT);
-        input.setHintTextColor(Ui.MUTED);
-
-        new AlertDialog.Builder(this)
-                .setTitle("Mover para pasta")
-                .setMessage("Digite o nome da pasta dentro de Fotos ou Videos.")
-                .setView(input)
-                .setPositiveButton("Mover", (dialog, which) -> moveItem(item, input.getText().toString()))
-                .setNegativeButton("Cancelar", null)
-                .show();
-    }
-
-    private void moveItem(MediaItem item, String folder) {
-        pendingMoveItem = item;
-        pendingMoveFolder = folder;
-        int result = MediaActions.moveToFolder(this, item, folder);
-        if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, "Item movido.");
-            pendingMoveItem = null;
-            pendingMoveFolder = null;
-            loadMedia();
-        } else if (result == MediaActions.RESULT_NEEDS_PERMISSION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            MediaActions.requestWrite(this, item.uri, REQ_MOVE_WRITE);
-        } else {
-            Ui.toast(this, "Nao foi possivel mover.");
-        }
+        emptyView.setVisibility(adapter.getCount() == 0 ? View.VISIBLE : View.GONE);
     }
 
     private boolean hasReadPermission() {
@@ -263,38 +229,10 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_READ && hasReadPermission()) {
-            loadMedia();
+            loadAlbums();
         } else {
             emptyView.setVisibility(View.VISIBLE);
             emptyView.setText("Permissao negada. Autorize o acesso a fotos e videos.");
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_HIDE_DELETE) {
-            if (resultCode == RESULT_OK) {
-                Ui.toast(this, "Item ocultado.");
-            } else if (pendingHiddenCopy != null) {
-                pendingHiddenCopy.delete();
-                Ui.toast(this, "Ocultacao cancelada.");
-            }
-            pendingHiddenCopy = null;
-            loadMedia();
-        } else if (requestCode == REQ_DELETE) {
-            if (resultCode == RESULT_OK) {
-                Ui.toast(this, "Item excluido.");
-            }
-            loadMedia();
-        } else if (requestCode == REQ_MOVE_WRITE && pendingMoveItem != null) {
-            if (resultCode == RESULT_OK) {
-                int result = MediaActions.moveToFolder(this, pendingMoveItem, pendingMoveFolder);
-                Ui.toast(this, result == MediaActions.RESULT_DONE ? "Item movido." : "Nao foi possivel mover.");
-            }
-            pendingMoveItem = null;
-            pendingMoveFolder = null;
-            loadMedia();
         }
     }
 }
