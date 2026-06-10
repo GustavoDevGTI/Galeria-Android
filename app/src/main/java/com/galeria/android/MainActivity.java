@@ -59,10 +59,10 @@ public class MainActivity extends Activity {
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setBackground(Ui.rounded(Ui.SEARCH, 34, this));
-        Ui.setPadding(top, 16, 5, 10, 5);
-        LinearLayout.LayoutParams topParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 70));
-        topParams.setMargins(Ui.dp(this, 16), Ui.dp(this, 24), Ui.dp(this, 16), Ui.dp(this, 14));
+        top.setBackground(Ui.rounded(Ui.SEARCH, 22, this));
+        Ui.setPadding(top, 8, 1, 5, 1);
+        LinearLayout.LayoutParams topParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 44));
+        topParams.setMargins(Ui.dp(this, 24), Ui.dp(this, 14), Ui.dp(this, 24), Ui.dp(this, 14));
         root.addView(top, topParams);
 
         ImageButton searchIcon = iconButton(com.galeria.android.R.drawable.ic_search);
@@ -73,13 +73,13 @@ public class MainActivity extends Activity {
                 ((InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE)).showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT);
             }
         });
-        top.addView(searchIcon, new LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 52)));
+        top.addView(searchIcon, new LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 38)));
 
         searchInput = new EditText(this);
         searchInput.setHint("Pesquisar pastas");
         searchInput.setHintTextColor(0x99F5F7FA);
         searchInput.setTextColor(Ui.TEXT);
-        searchInput.setTextSize(20);
+        searchInput.setTextSize(14);
         searchInput.setSingleLine(true);
         searchInput.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         searchInput.setPadding(Ui.dp(this, 8), 0, Ui.dp(this, 8), 0);
@@ -100,24 +100,6 @@ public class MainActivity extends Activity {
         });
         top.addView(searchInput, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
 
-        ImageButton camera = iconButton(com.galeria.android.R.drawable.ic_camera);
-        camera.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Ui.toast(MainActivity.this, "Camera sera adicionada na proxima etapa.");
-            }
-        });
-        top.addView(camera, new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 52)));
-
-        ImageButton refresh = iconButton(com.galeria.android.R.drawable.ic_image);
-        refresh.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                loadAlbums();
-            }
-        });
-        top.addView(refresh, new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 52)));
-
         ImageButton more = iconButton(com.galeria.android.R.drawable.ic_more_vertical);
         more.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -125,7 +107,7 @@ public class MainActivity extends Activity {
                 showMenu(view);
             }
         });
-        top.addView(more, new LinearLayout.LayoutParams(Ui.dp(this, 42), Ui.dp(this, 52)));
+        top.addView(more, new LinearLayout.LayoutParams(Ui.dp(this, 30), Ui.dp(this, 38)));
 
         FrameLayout content = new FrameLayout(this);
         GridView grid = new GridView(this);
@@ -164,7 +146,7 @@ public class MainActivity extends Activity {
         button.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         button.setColorFilter(Ui.TEXT);
         button.setScaleType(ImageButton.ScaleType.CENTER);
-        button.setPadding(Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8));
+        button.setPadding(Ui.dp(this, 9), Ui.dp(this, 9), Ui.dp(this, 9), Ui.dp(this, 9));
         return button;
     }
 
