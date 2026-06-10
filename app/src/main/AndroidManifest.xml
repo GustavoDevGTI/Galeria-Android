@@ -12,6 +12,8 @@
         android:roundIcon="@drawable/ic_launcher_foreground"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+        <activity android:name=".SettingsActivity" />
+        <activity android:name=".FolderPickerActivity" />
         <activity android:name=".FileDetailActivity" />
         <activity android:name=".HiddenActivity" />
         <activity android:name=".DetailActivity" />

@@ -74,12 +74,12 @@ final class AlbumGridAdapter extends BaseAdapter {
 
             SquareImageView cover = new SquareImageView(context);
             cover.setScaleType(SquareImageView.ScaleType.CENTER_CROP);
-            cover.setBackground(Ui.rounded(Ui.SURFACE, 8, context));
+            cover.setBackground(Ui.rounded(Ui.surface(context), 8, context));
             cover.setClipToOutline(true);
             item.addView(cover, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
             TextView name = new TextView(context);
-            name.setTextColor(Ui.TEXT);
+            name.setTextColor(Ui.text(context));
             name.setTextSize(14);
             name.setGravity(Gravity.LEFT);
             name.setMaxLines(2);
@@ -97,6 +97,8 @@ final class AlbumGridAdapter extends BaseAdapter {
 
         AlbumItem album = getItem(position);
         holder.name.setText(album.name + " (" + album.count + ")");
+        holder.name.setTextColor(Ui.text(context));
+        holder.cover.setBackground(Ui.rounded(Ui.surface(context), 8, context));
         holder.cover.setImageBitmap(null);
         if (album.cover != null) {
             holder.cover.setTag(album.cover.uri);

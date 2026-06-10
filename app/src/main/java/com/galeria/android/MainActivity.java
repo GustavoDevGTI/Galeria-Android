@@ -50,6 +50,8 @@ public class MainActivity extends Activity {
     private TextView emptyView;
     private EditText searchInput;
     private GridView grid;
+    private LinearLayout root;
+    private LinearLayout top;
     private SharedPreferences prefs;
     private ScaleGestureDetector scaleDetector;
     private String sortMode;
@@ -79,20 +81,22 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        loadSettings();
+        applyThemeColors();
         if (hasReadPermission()) {
             loadAlbums();
         }
     }
 
     private void buildLayout() {
-        LinearLayout root = new LinearLayout(this);
+        root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Ui.BG);
+        root.setBackgroundColor(Ui.bg(this));
 
-        LinearLayout top = new LinearLayout(this);
+        top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setBackground(Ui.rounded(Ui.SEARCH, 22, this));
+        top.setBackground(Ui.rounded(Ui.search(this), 22, this));
         Ui.setPadding(top, 8, 1, 5, 1);
         LinearLayout.LayoutParams topParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 44));
         topParams.setMargins(Ui.dp(this, 24), Ui.dp(this, 14), Ui.dp(this, 24), Ui.dp(this, 14));
@@ -111,7 +115,7 @@ public class MainActivity extends Activity {
         searchInput = new EditText(this);
         searchInput.setHint("Pesquisar pastas");
         searchInput.setHintTextColor(0x99F5F7FA);
-        searchInput.setTextColor(Ui.TEXT);
+        searchInput.setTextColor(Ui.text(this));
         searchInput.setTextSize(14);
         searchInput.setSingleLine(true);
         searchInput.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -150,7 +154,7 @@ public class MainActivity extends Activity {
         grid.setVerticalSpacing(Ui.dp(this, 16));
         grid.setClipToPadding(false);
         grid.setPadding(Ui.dp(this, 6), Ui.dp(this, 4), Ui.dp(this, 6), Ui.dp(this, 20));
-        grid.setBackgroundColor(Ui.BG);
+        grid.setBackgroundColor(Ui.bg(this));
         adapter = new AlbumGridAdapter(this);
         grid.setAdapter(adapter);
         grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -198,7 +202,7 @@ public class MainActivity extends Activity {
         ImageButton button = new ImageButton(this);
         button.setImageResource(icon);
         button.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-        button.setColorFilter(Ui.TEXT);
+        button.setColorFilter(Ui.accent(this));
         button.setScaleType(ImageButton.ScaleType.CENTER);
         button.setPadding(Ui.dp(this, 9), Ui.dp(this, 9), Ui.dp(this, 9), Ui.dp(this, 9));
         return button;
@@ -210,6 +214,8 @@ public class MainActivity extends Activity {
         menu.getMenu().add("Filtrar midia");
         menu.getMenu().add("Organizacao de pastas");
         menu.getMenu().add("Exibir/ocultar pastas");
+        menu.getMenu().add("Criar nova pasta");
+        menu.getMenu().add("Configuracoes");
         menu.getMenu().add("Ocultos");
         menu.getMenu().add("Atualizar");
         menu.setOnMenuItemClickListener(item -> {
@@ -222,6 +228,10 @@ public class MainActivity extends Activity {
                 showFolderOrganizationDialog();
             } else if ("Exibir/ocultar pastas".equals(title)) {
                 showFolderVisibilityDialog();
+            } else if ("Criar nova pasta".equals(title)) {
+                startActivity(new Intent(this, FolderPickerActivity.class));
+            } else if ("Configuracoes".equals(title)) {
+                startActivity(new Intent(this, SettingsActivity.class));
             } else if ("Ocultos".equals(title)) {
                 startActivity(new Intent(this, HiddenActivity.class));
             } else {
@@ -269,10 +279,30 @@ public class MainActivity extends Activity {
         showRaw = prefs.getBoolean("filter_raw", true);
         showSvgs = prefs.getBoolean("filter_svgs", true);
         showPortraits = prefs.getBoolean("filter_portraits", false);
-        showHiddenFolders = prefs.getBoolean("show_hidden_folders", false);
+        showHiddenFolders = prefs.getBoolean("show_hidden_folders", false)
+                || prefs.getBoolean("always_show_hidden", false);
         columnCount = prefs.getInt("column_count", 3);
         if (columnCount < 2 || columnCount > 6) {
             columnCount = 3;
+        }
+    }
+
+    private void applyThemeColors() {
+        if (root != null) {
+            root.setBackgroundColor(Ui.bg(this));
+        }
+        if (top != null) {
+            top.setBackground(Ui.rounded(Ui.search(this), 22, this));
+        }
+        if (searchInput != null) {
+            searchInput.setTextColor(Ui.text(this));
+            searchInput.setHintTextColor(Ui.muted(this));
+        }
+        if (grid != null) {
+            grid.setBackgroundColor(Ui.bg(this));
+        }
+        if (adapter != null) {
+            adapter.notifyDataSetChanged();
         }
     }
 

@@ -111,6 +111,8 @@ public class DetailActivity extends Activity {
         video.setMediaController(controller);
         content.addView(video, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         video.requestFocus();
-        video.start();
+        if (getSharedPreferences(Ui.PREFS, MODE_PRIVATE).getBoolean("autoplay_videos", true)) {
+            video.start();
+        }
     }
 }

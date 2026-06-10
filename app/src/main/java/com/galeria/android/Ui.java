@@ -1,6 +1,7 @@
 package com.galeria.android;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -10,6 +11,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 final class Ui {
+    static final String PREFS = "gallery_albums";
     static final int BG = Color.rgb(16, 18, 20);
     static final int SURFACE = Color.rgb(26, 26, 26);
     static final int SEARCH = Color.rgb(18, 18, 18);
@@ -20,6 +22,35 @@ final class Ui {
     private Ui() {
     }
 
+    static boolean darkMode(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("dark_mode", true);
+    }
+
+    static int bg(Context context) {
+        return darkMode(context) ? BG : Color.rgb(248, 248, 248);
+    }
+
+    static int surface(Context context) {
+        return darkMode(context) ? SURFACE : Color.rgb(238, 238, 238);
+    }
+
+    static int search(Context context) {
+        return darkMode(context) ? SEARCH : Color.rgb(232, 232, 232);
+    }
+
+    static int text(Context context) {
+        return darkMode(context) ? TEXT : Color.rgb(18, 18, 18);
+    }
+
+    static int muted(Context context) {
+        return darkMode(context) ? MUTED : Color.rgb(92, 92, 92);
+    }
+
+    static int accent(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        return prefs.getInt("theme_color", darkMode(context) ? TEXT : Color.rgb(18, 18, 18));
+    }
+
     static int dp(Context context, int value) {
         return (int) (value * context.getResources().getDisplayMetrics().density + 0.5f);
     }
@@ -27,7 +58,7 @@ final class Ui {
     static TextView title(Context context, String text, int sp) {
         TextView view = new TextView(context);
         view.setText(text);
-        view.setTextColor(TEXT);
+        view.setTextColor(text(context));
         view.setTextSize(sp);
         view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         view.setSingleLine(true);
@@ -37,7 +68,7 @@ final class Ui {
     static TextView label(Context context, String text) {
         TextView view = new TextView(context);
         view.setText(text);
-        view.setTextColor(MUTED);
+        view.setTextColor(muted(context));
         view.setTextSize(14);
         view.setGravity(android.view.Gravity.CENTER);
         return view;
@@ -46,9 +77,9 @@ final class Ui {
     static Button button(Context context, String text) {
         Button button = new Button(context);
         button.setText(text);
-        button.setTextColor(TEXT);
+        button.setTextColor(text(context));
         button.setAllCaps(false);
-        button.setBackgroundColor(SURFACE);
+        button.setBackgroundColor(surface(context));
         button.setMinHeight(dp(context, 42));
         return button;
     }
