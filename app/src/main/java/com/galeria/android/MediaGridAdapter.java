@@ -13,11 +13,13 @@ import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -30,68 +32,116 @@ final class MediaGridAdapter extends BaseAdapter {
     };
     private final Context context;
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
-    private final ArrayList<MediaItem> items = new ArrayList<>();
+    private final ArrayList<MediaItem> allItems = new ArrayList<>();
+    private final ArrayList<MediaItem> visibleItems = new ArrayList<>();
+    private String filter = "";
 
     MediaGridAdapter(Context context) {
         this.context = context;
     }
 
     void submit(List<MediaItem> nextItems) {
-        items.clear();
-        items.addAll(nextItems);
+        allItems.clear();
+        allItems.addAll(nextItems);
+        applyFilter(filter);
+    }
+
+    void applyFilter(String query) {
+        filter = query == null ? "" : query.trim().toLowerCase(Locale.US);
+        visibleItems.clear();
+        for (MediaItem item : allItems) {
+            if (filter.isEmpty()
+                    || item.name.toLowerCase(Locale.US).contains(filter)
+                    || item.relativePath.toLowerCase(Locale.US).contains(filter)) {
+                visibleItems.add(item);
+            }
+        }
         notifyDataSetChanged();
+    }
+
+    boolean moveVisible(int fromPosition, int toPosition) {
+        if (fromPosition < 0 || toPosition < 0 || fromPosition >= visibleItems.size() || toPosition >= visibleItems.size() || fromPosition == toPosition) {
+            return false;
+        }
+        MediaItem moved = visibleItems.remove(fromPosition);
+        visibleItems.add(toPosition, moved);
+        ArrayList<MediaItem> hidden = new ArrayList<>();
+        for (MediaItem item : allItems) {
+            if (!visibleItems.contains(item)) {
+                hidden.add(item);
+            }
+        }
+        allItems.clear();
+        allItems.addAll(visibleItems);
+        allItems.addAll(hidden);
+        notifyDataSetChanged();
+        return true;
+    }
+
+    List<MediaItem> currentOrder() {
+        return new ArrayList<>(allItems);
     }
 
     @Override
     public int getCount() {
-        return items.size();
+        return visibleItems.size();
     }
 
     @Override
     public MediaItem getItem(int position) {
-        return items.get(position);
+        return visibleItems.get(position);
     }
 
     @Override
     public long getItemId(int position) {
-        return items.get(position).id;
+        return visibleItems.get(position).id;
     }
 
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
         final Holder holder;
         if (convertView == null) {
-            FrameLayout frame = new FrameLayout(context);
-            frame.setBackgroundColor(Ui.BG);
-            frame.setPadding(Ui.dp(context, 2), Ui.dp(context, 2), Ui.dp(context, 2), Ui.dp(context, 2));
+            LinearLayout item = new LinearLayout(context);
+            item.setOrientation(LinearLayout.VERTICAL);
+            item.setPadding(Ui.dp(context, 2), Ui.dp(context, 2), Ui.dp(context, 2), Ui.dp(context, 4));
+            item.setBackgroundColor(Ui.bg(context));
 
-            ImageView image = new ImageView(context);
+            FrameLayout thumb = new FrameLayout(context);
+            thumb.setBackgroundColor(Ui.surface(context));
+            SquareImageView image = new SquareImageView(context);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            image.setBackgroundColor(Ui.SURFACE);
-            frame.addView(image, new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-            ));
+            image.setBackgroundColor(Ui.surface(context));
+            thumb.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
             TextView badge = new TextView(context);
             badge.setText("VIDEO");
             badge.setTextColor(Ui.TEXT);
-            badge.setTextSize(11);
+            badge.setTextSize(10);
             badge.setGravity(Gravity.CENTER);
-            badge.setBackgroundColor(0xAA000000);
-            FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(Ui.dp(context, 54), Ui.dp(context, 24));
+            badge.setBackgroundColor(0x99000000);
+            FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 22));
             badgeParams.gravity = Gravity.BOTTOM | Gravity.RIGHT;
-            frame.addView(badge, badgeParams);
+            thumb.addView(badge, badgeParams);
+            item.addView(thumb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-            holder = new Holder(image, badge);
-            frame.setTag(holder);
-            convertView = frame;
+            TextView name = new TextView(context);
+            name.setTextColor(Ui.muted(context));
+            name.setTextSize(11);
+            name.setSingleLine(true);
+            name.setGravity(Gravity.LEFT);
+            name.setPadding(Ui.dp(context, 2), Ui.dp(context, 4), Ui.dp(context, 2), 0);
+            item.addView(name, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(context, 24)));
+
+            holder = new Holder(image, badge, name);
+            item.setTag(holder);
+            convertView = item;
         } else {
             holder = (Holder) convertView.getTag();
         }
 
         MediaItem item = getItem(position);
         holder.badge.setVisibility(item.isVideo() ? View.VISIBLE : View.GONE);
+        holder.name.setText(item.name);
         holder.image.setImageBitmap(null);
         holder.image.setTag(item.uri);
         Bitmap cached = THUMB_CACHE.get(item.uri.toString());
@@ -147,10 +197,12 @@ final class MediaGridAdapter extends BaseAdapter {
     private static final class Holder {
         final ImageView image;
         final TextView badge;
+        final TextView name;
 
-        Holder(ImageView image, TextView badge) {
+        Holder(ImageView image, TextView badge, TextView name) {
             this.image = image;
             this.badge = badge;
+            this.name = name;
         }
     }
 }

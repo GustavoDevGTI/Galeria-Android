@@ -3,9 +3,15 @@ package com.galeria.android;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
@@ -17,6 +23,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 
 public class AlbumMediaActivity extends Activity {
@@ -25,29 +34,38 @@ public class AlbumMediaActivity extends Activity {
     private static final int REQ_MOVE_WRITE = 13;
 
     private MediaGridAdapter adapter;
+    private GridView grid;
+    private EditText searchInput;
     private TextView emptyView;
     private File pendingHiddenCopy;
     private MediaItem pendingMoveItem;
     private String pendingMoveFolder;
     private String albumKey;
     private String albumName;
+    private SharedPreferences prefs;
+    private boolean dragging;
+    private int dragPosition = -1;
+    private int savedFirstVisible;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE);
         albumKey = getIntent().getStringExtra("album_key");
         albumName = getIntent().getStringExtra("album_name");
         if (albumName == null || albumName.isEmpty()) {
             albumName = "Album";
         }
         buildLayout();
-        loadMedia();
+        loadMedia(false);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        loadMedia();
+        if (adapter != null) {
+            loadMedia(true);
+        }
     }
 
     private void buildLayout() {
@@ -57,7 +75,7 @@ public class AlbumMediaActivity extends Activity {
 
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(Ui.dp(this, 10), statusBarHeight() + Ui.dp(this, 12), Ui.dp(this, 14), Ui.dp(this, 10));
+        bar.setPadding(Ui.dp(this, 10), statusBarHeight() + Ui.dp(this, 12), Ui.dp(this, 14), Ui.dp(this, 6));
 
         ImageButton back = new ImageButton(this);
         back.setImageResource(com.galeria.android.R.drawable.ic_back);
@@ -72,7 +90,7 @@ public class AlbumMediaActivity extends Activity {
         });
         bar.addView(back, new LinearLayout.LayoutParams(Ui.dp(this, 50), Ui.dp(this, 50)));
 
-        TextView title = Ui.title(this, albumName, 22);
+        TextView title = Ui.title(this, albumName, 21);
         title.setSingleLine(false);
         title.setMaxLines(2);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
@@ -80,34 +98,92 @@ public class AlbumMediaActivity extends Activity {
         bar.addView(title, titleParams);
         root.addView(bar);
 
+        LinearLayout searchBox = new LinearLayout(this);
+        searchBox.setGravity(Gravity.CENTER_VERTICAL);
+        searchBox.setBackground(Ui.rounded(Ui.search(this), 18, this));
+        searchBox.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 12), 0);
+        searchInput = new EditText(this);
+        searchInput.setHint("Pesquisar nesta pasta");
+        searchInput.setHintTextColor(Ui.muted(this));
+        searchInput.setTextColor(Ui.text(this));
+        searchInput.setTextSize(14);
+        searchInput.setSingleLine(true);
+        searchInput.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                adapter.applyFilter(s.toString());
+                updateEmptyState();
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+            }
+        });
+        searchBox.addView(searchInput, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42));
+        searchParams.setMargins(Ui.dp(this, 14), 0, Ui.dp(this, 14), Ui.dp(this, 8));
+        root.addView(searchBox, searchParams);
+
         FrameLayout content = new FrameLayout(this);
-        GridView grid = new GridView(this);
+        grid = new GridView(this);
         grid.setNumColumns(GridView.AUTO_FIT);
         grid.setColumnWidth(Ui.dp(this, 118));
         grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
-        grid.setHorizontalSpacing(Ui.dp(this, 2));
-        grid.setVerticalSpacing(Ui.dp(this, 2));
+        grid.setHorizontalSpacing(Ui.dp(this, 4));
+        grid.setVerticalSpacing(Ui.dp(this, 8));
         grid.setClipToPadding(false);
         grid.setPadding(Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 16));
+        grid.setSelector(new ColorDrawable(Color.TRANSPARENT));
         grid.setBackgroundColor(Ui.BG);
         adapter = new MediaGridAdapter(this);
         grid.setAdapter(adapter);
         grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                openDetail(adapter.getItem(position), position);
+                if (!dragging) {
+                    openDetail(adapter.getItem(position), position);
+                }
             }
         });
         grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
             @Override
             public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
-                showActions(adapter.getItem(position));
+                dragging = true;
+                dragPosition = position;
+                view.setAlpha(0.55f);
+                return true;
+            }
+        });
+        grid.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View view, MotionEvent event) {
+                if (!dragging) {
+                    return false;
+                }
+                if (event.getAction() == MotionEvent.ACTION_MOVE) {
+                    int target = grid.pointToPosition((int) event.getX(), (int) event.getY());
+                    if (target >= 0 && target != dragPosition && adapter.moveVisible(dragPosition, target)) {
+                        dragPosition = target;
+                    }
+                    return true;
+                }
+                if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
+                    dragging = false;
+                    dragPosition = -1;
+                    saveCustomOrder();
+                    return true;
+                }
                 return true;
             }
         });
         content.addView(grid);
 
-        emptyView = Ui.label(this, "Nenhuma foto ou video neste album.");
+        emptyView = Ui.label(this, "Nenhuma foto ou video nesta pasta.");
         emptyView.setVisibility(View.GONE);
         content.addView(emptyView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -115,13 +191,67 @@ public class AlbumMediaActivity extends Activity {
         setContentView(root);
     }
 
-    private void loadMedia() {
-        List<MediaItem> items = MediaStoreRepository.loadMediaForAlbum(this, albumKey);
+    private void loadMedia(boolean preserveScroll) {
+        int targetPosition = preserveScroll && grid != null ? grid.getFirstVisiblePosition() : savedFirstVisible;
+        List<MediaItem> items = applyCustomOrder(MediaStoreRepository.loadMediaForAlbum(this, albumKey));
         adapter.submit(items);
-        emptyView.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
+        if (searchInput != null) {
+            adapter.applyFilter(searchInput.getText().toString());
+        }
+        updateEmptyState();
+        if (grid != null && targetPosition > 0) {
+            grid.setSelection(targetPosition);
+        }
+    }
+
+    private List<MediaItem> applyCustomOrder(List<MediaItem> items) {
+        String saved = prefs.getString(orderKey(), "");
+        if (saved.isEmpty()) {
+            return items;
+        }
+        HashMap<String, MediaItem> byUri = new HashMap<>();
+        for (MediaItem item : items) {
+            byUri.put(item.uri.toString(), item);
+        }
+        ArrayList<MediaItem> ordered = new ArrayList<>();
+        HashSet<String> used = new HashSet<>();
+        String[] lines = saved.split("\\n");
+        for (String line : lines) {
+            MediaItem item = byUri.get(line);
+            if (item != null) {
+                ordered.add(item);
+                used.add(line);
+            }
+        }
+        for (MediaItem item : items) {
+            if (!used.contains(item.uri.toString())) {
+                ordered.add(item);
+            }
+        }
+        return ordered;
+    }
+
+    private void saveCustomOrder() {
+        StringBuilder builder = new StringBuilder();
+        for (MediaItem item : adapter.currentOrder()) {
+            builder.append(item.uri.toString()).append('\n');
+        }
+        prefs.edit().putString(orderKey(), builder.toString()).apply();
+        Ui.toast(this, "Ordem personalizada salva.");
+    }
+
+    private String orderKey() {
+        return "custom_order_" + (albumKey == null ? "all" : albumKey);
+    }
+
+    private void updateEmptyState() {
+        if (emptyView != null && adapter != null) {
+            emptyView.setVisibility(adapter.getCount() == 0 ? View.VISIBLE : View.GONE);
+        }
     }
 
     private void openDetail(MediaItem item, int position) {
+        savedFirstVisible = grid == null ? 0 : grid.getFirstVisiblePosition();
         Intent intent = new Intent(this, DetailActivity.class);
         intent.putExtra("uri", item.uri.toString());
         intent.putExtra("name", item.name);
@@ -149,13 +279,9 @@ public class AlbumMediaActivity extends Activity {
     }
 
     private void confirmDelete(final MediaItem item) {
-        if (getSharedPreferences(Ui.PREFS, MODE_PRIVATE).getBoolean("skip_delete_confirmation", false)) {
-            MediaActions.requestDelete(this, item.uri, REQ_DELETE);
-            return;
-        }
         new AlertDialog.Builder(this)
                 .setTitle("Excluir item")
-                .setMessage("Este arquivo sera removido do dispositivo.")
+                .setMessage("Tem certeza que deseja excluir este arquivo?")
                 .setPositiveButton("Excluir", (dialog, which) -> MediaActions.requestDelete(this, item.uri, REQ_DELETE))
                 .setNegativeButton("Cancelar", null)
                 .show();
@@ -188,7 +314,7 @@ public class AlbumMediaActivity extends Activity {
                 Ui.toast(this, "Nao foi possivel remover o original.");
             }
             pendingHiddenCopy = null;
-            loadMedia();
+            loadMedia(true);
         }
     }
 
@@ -216,7 +342,7 @@ public class AlbumMediaActivity extends Activity {
             Ui.toast(this, "Item movido.");
             pendingMoveItem = null;
             pendingMoveFolder = null;
-            loadMedia();
+            loadMedia(true);
         } else if (result == MediaActions.RESULT_NEEDS_PERMISSION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             MediaActions.requestWrite(this, item.uri, REQ_MOVE_WRITE);
         } else {
@@ -235,12 +361,12 @@ public class AlbumMediaActivity extends Activity {
                 Ui.toast(this, "Ocultacao cancelada.");
             }
             pendingHiddenCopy = null;
-            loadMedia();
+            loadMedia(true);
         } else if (requestCode == REQ_DELETE) {
             if (resultCode == RESULT_OK) {
                 Ui.toast(this, "Item excluido.");
             }
-            loadMedia();
+            loadMedia(true);
         } else if (requestCode == REQ_MOVE_WRITE && pendingMoveItem != null) {
             if (resultCode == RESULT_OK) {
                 int result = MediaActions.moveToFolder(this, pendingMoveItem, pendingMoveFolder);
@@ -248,7 +374,7 @@ public class AlbumMediaActivity extends Activity {
             }
             pendingMoveItem = null;
             pendingMoveFolder = null;
-            loadMedia();
+            loadMedia(true);
         }
     }
 
