@@ -58,6 +58,7 @@ public class DetailActivity extends Activity {
     private SeekBar seekBar;
     private PopupWindow speedPopup;
     private String currentVideoKey;
+    private Uri pendingDeleteUri;
     private boolean videoPositionRestored;
     private boolean userSeeking;
     private int currentIndex;
@@ -307,8 +308,13 @@ public class DetailActivity extends Activity {
         }
         float deltaY = event.getY() - downY;
         float deltaX = event.getX() - downX;
-        if (Math.abs(deltaY) > Ui.dp(this, 80) && Math.abs(deltaY) > Math.abs(deltaX)) {
-            switchItem(deltaY < 0 ? 1 : -1);
+        int threshold = Ui.dp(this, 72);
+        if (Math.abs(deltaY) > threshold && Math.abs(deltaY) > Math.abs(deltaX)) {
+            switchItem(deltaY < 0 ? 1 : -1, false);
+            return true;
+        }
+        if (Math.abs(deltaX) > threshold && Math.abs(deltaX) > Math.abs(deltaY)) {
+            switchItem(deltaX > 0 ? 1 : -1, true);
             return true;
         }
         if (currentItem().isVideo()) {
@@ -317,7 +323,7 @@ public class DetailActivity extends Activity {
         return true;
     }
 
-    private void switchItem(final int direction) {
+    private void switchItem(final int direction, final boolean horizontal) {
         if (mediaQueue.size() < 2) {
             return;
         }
@@ -329,20 +335,25 @@ public class DetailActivity extends Activity {
             next = 0;
         }
         currentIndex = next;
-        final int height = content.getHeight() == 0 ? getResources().getDisplayMetrics().heightPixels : content.getHeight();
+        final int offset = horizontal
+                ? (content.getWidth() == 0 ? getResources().getDisplayMetrics().widthPixels : content.getWidth())
+                : (content.getHeight() == 0 ? getResources().getDisplayMetrics().heightPixels : content.getHeight());
         content.animate()
-                .translationY(direction > 0 ? -height : height)
+                .translationX(horizontal ? (direction > 0 ? offset : -offset) : 0)
+                .translationY(horizontal ? 0 : (direction > 0 ? -offset : offset))
                 .alpha(0.35f)
-                .setDuration(110)
+                .setDuration(105)
                 .withEndAction(new Runnable() {
                     @Override
                     public void run() {
-                        content.setTranslationY(direction > 0 ? height : -height);
+                        content.setTranslationX(horizontal ? (direction > 0 ? -offset : offset) : 0);
+                        content.setTranslationY(horizontal ? 0 : (direction > 0 ? offset : -offset));
                         loadCurrentItem(direction);
                         content.animate()
+                                .translationX(0)
                                 .translationY(0)
                                 .alpha(1f)
-                                .setDuration(130)
+                                .setDuration(125)
                                 .start();
                     }
                 })
@@ -352,6 +363,9 @@ public class DetailActivity extends Activity {
     private void loadCurrentItem(int direction) {
         releasePlayer();
         handler.removeCallbacks(progressUpdater);
+        if (speedPopup != null) {
+            speedPopup.dismiss();
+        }
         content.removeAllViews();
         MediaItem item = currentItem();
         title.setText(item.name);
@@ -573,9 +587,14 @@ public class DetailActivity extends Activity {
 
     private void deleteCurrent() {
         MediaItem item = currentItem();
-        MediaActions.requestDelete(this, item.uri, REQ_DELETE);
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        pendingDeleteUri = item.uri;
+        int result = MediaActions.requestPermanentDelete(this, item.uri, REQ_DELETE);
+        if (result == MediaActions.RESULT_DONE) {
+            Ui.toast(this, "Item excluido.");
             removeDeletedItem();
+        } else if (result == MediaActions.RESULT_FAILED) {
+            pendingDeleteUri = null;
+            Ui.toast(this, "Nao foi possivel excluir.");
         }
     }
 
@@ -598,9 +617,15 @@ public class DetailActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_DELETE && resultCode == RESULT_OK) {
-            Ui.toast(this, "Item excluido.");
-            removeDeletedItem();
+        if (requestCode == REQ_DELETE) {
+            boolean deleted = resultCode == RESULT_OK || (pendingDeleteUri != null && !MediaActions.mediaExists(this, pendingDeleteUri));
+            pendingDeleteUri = null;
+            if (deleted) {
+                Ui.toast(this, "Item excluido.");
+                removeDeletedItem();
+            } else {
+                Ui.toast(this, "Exclusao cancelada.");
+            }
         }
     }
 
@@ -666,6 +691,7 @@ public class DetailActivity extends Activity {
     private void resetSpeedAndFinish() {
         playbackSpeed = 1f;
         finish();
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
     }
 
     private int statusBarHeight() {

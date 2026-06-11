@@ -14,6 +14,9 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.GridLayoutAnimationController;
 import android.widget.AdapterView;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -50,6 +53,7 @@ public class AlbumMediaActivity extends Activity {
     private boolean dragging;
     private int dragPosition = -1;
     private int savedFirstVisible;
+    private View draggedView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -152,6 +156,10 @@ public class AlbumMediaActivity extends Activity {
         grid.setColumnWidth(Ui.dp(this, 126));
         grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
         applyGridSpacing();
+        AlphaAnimation itemFade = new AlphaAnimation(0f, 1f);
+        itemFade.setDuration(120);
+        itemFade.setInterpolator(new DecelerateInterpolator());
+        grid.setLayoutAnimation(new GridLayoutAnimationController(itemFade, 0.035f, 0.035f));
         grid.setClipToPadding(false);
         grid.setSelector(new ColorDrawable(Color.TRANSPARENT));
         grid.setBackgroundColor(Ui.BG);
@@ -171,7 +179,9 @@ public class AlbumMediaActivity extends Activity {
             public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
                 dragging = true;
                 dragPosition = position;
+                draggedView = view;
                 view.setAlpha(0.55f);
+                view.animate().scaleX(0.97f).scaleY(0.97f).setDuration(90).start();
                 return true;
             }
         });
@@ -185,12 +195,12 @@ public class AlbumMediaActivity extends Activity {
                     int target = grid.pointToPosition((int) event.getX(), (int) event.getY());
                     if (target >= 0 && target != dragPosition && adapter.moveVisible(dragPosition, target)) {
                         dragPosition = target;
+                        animateGridMove();
                     }
                     return true;
                 }
                 if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
-                    dragging = false;
-                    dragPosition = -1;
+                    finishDrag();
                     saveCustomOrder();
                     return true;
                 }
@@ -275,6 +285,9 @@ public class AlbumMediaActivity extends Activity {
             adapter.applyFilter(searchInput.getText().toString());
         }
         updateEmptyState();
+        if (grid != null) {
+            grid.scheduleLayoutAnimation();
+        }
         if (grid != null && targetPosition > 0) {
             grid.setSelection(targetPosition);
         }
@@ -324,6 +337,35 @@ public class AlbumMediaActivity extends Activity {
         return "grid_spacing_" + (albumKey == null ? "all" : albumKey);
     }
 
+    private void finishDrag() {
+        dragging = false;
+        dragPosition = -1;
+        if (draggedView != null) {
+            draggedView.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(110).start();
+            draggedView = null;
+        }
+        if (grid != null) {
+            grid.invalidateViews();
+        }
+    }
+
+    private void animateGridMove() {
+        if (grid == null) {
+            return;
+        }
+        grid.animate()
+                .scaleX(0.996f)
+                .scaleY(0.996f)
+                .setDuration(55)
+                .withEndAction(new Runnable() {
+                    @Override
+                    public void run() {
+                        grid.animate().scaleX(1f).scaleY(1f).setDuration(75).start();
+                    }
+                })
+                .start();
+    }
+
     private void updateEmptyState() {
         if (emptyView != null && adapter != null) {
             emptyView.setVisibility(adapter.getCount() == 0 ? View.VISIBLE : View.GONE);
@@ -340,6 +382,7 @@ public class AlbumMediaActivity extends Activity {
         intent.putExtra("album_key", albumKey);
         intent.putExtra("position", position);
         startActivity(intent);
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
     }
 
     private void showActions(final MediaItem item) {

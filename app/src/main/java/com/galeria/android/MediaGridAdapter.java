@@ -144,6 +144,9 @@ final class MediaGridAdapter extends BaseAdapter {
         }
 
         convertView.setPadding(0, 0, 0, 0);
+        convertView.setAlpha(1f);
+        convertView.setScaleX(1f);
+        convertView.setScaleY(1f);
         MediaItem item = getItem(position);
         holder.badge.setVisibility(item.isVideo() ? View.VISIBLE : View.GONE);
         holder.name.setText(item.name);

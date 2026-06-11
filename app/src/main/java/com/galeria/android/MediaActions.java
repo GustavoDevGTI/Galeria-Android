@@ -26,7 +26,7 @@ final class MediaActions {
     private MediaActions() {
     }
 
-    static void requestDelete(Activity activity, Uri uri, int requestCode) {
+    static int requestDelete(Activity activity, Uri uri, int requestCode) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 boolean moveToTrash = activity.getSharedPreferences(Ui.PREFS, Activity.MODE_PRIVATE)
@@ -42,14 +42,62 @@ final class MediaActions {
                         0,
                         0
                 );
+                return RESULT_NEEDS_PERMISSION;
             } catch (IntentSender.SendIntentException exception) {
                 Ui.toast(activity, "Nao foi possivel pedir permissao para excluir.");
+                return RESULT_FAILED;
             }
-            return;
         }
 
-        int deleted = activity.getContentResolver().delete(uri, null, null);
+        int deleted = deleteDirect(activity, uri) ? 1 : 0;
         Ui.toast(activity, deleted > 0 ? "Item excluido." : "Nao foi possivel excluir.");
+        return deleted > 0 ? RESULT_DONE : RESULT_FAILED;
+    }
+
+    static int requestPermanentDelete(Activity activity, Uri uri, int requestCode) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                PendingIntent pendingIntent = MediaStore.createDeleteRequest(
+                        activity.getContentResolver(),
+                        Collections.singletonList(uri)
+                );
+                activity.startIntentSenderForResult(
+                        pendingIntent.getIntentSender(),
+                        requestCode,
+                        null,
+                        0,
+                        0,
+                        0
+                );
+                return RESULT_NEEDS_PERMISSION;
+            } catch (IntentSender.SendIntentException exception) {
+                Ui.toast(activity, "Nao foi possivel pedir permissao para excluir.");
+                return RESULT_FAILED;
+            }
+        }
+        return deleteDirect(activity, uri) ? RESULT_DONE : RESULT_FAILED;
+    }
+
+    static boolean deleteDirect(Activity activity, Uri uri) {
+        try {
+            return activity.getContentResolver().delete(uri, null, null) > 0;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    static boolean mediaExists(Activity activity, Uri uri) {
+        try (Cursor cursor = activity.getContentResolver().query(
+                uri,
+                new String[] { MediaStore.MediaColumns._ID },
+                null,
+                null,
+                null
+        )) {
+            return cursor != null && cursor.moveToFirst();
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     static void requestWrite(Activity activity, Uri uri, int requestCode) {
