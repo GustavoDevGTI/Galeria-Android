@@ -16,6 +16,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -47,6 +48,7 @@ public class DetailActivity extends Activity {
     private SharedPreferences prefs;
     private ExoPlayer currentPlayer;
     private FrameLayout content;
+    private FrameLayout activePage;
     private TextView title;
     private TextView currentTime;
     private TextView durationTime;
@@ -61,6 +63,7 @@ public class DetailActivity extends Activity {
     private Uri pendingDeleteUri;
     private boolean videoPositionRestored;
     private boolean userSeeking;
+    private boolean switchingItem;
     private int currentIndex;
     private float downY;
     private float downX;
@@ -298,6 +301,9 @@ public class DetailActivity extends Activity {
     }
 
     private boolean handleSwipeOrTap(MotionEvent event) {
+        if (switchingItem) {
+            return true;
+        }
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             downY = event.getY();
             downX = event.getX();
@@ -327,7 +333,16 @@ public class DetailActivity extends Activity {
         if (mediaQueue.size() < 2) {
             return;
         }
+        switchingItem = true;
         saveCurrentPosition();
+        handler.removeCallbacks(progressUpdater);
+        if (speedPopup != null) {
+            speedPopup.dismiss();
+        }
+        final ExoPlayer outgoingPlayer = currentPlayer;
+        currentPlayer = null;
+        currentVideoKey = null;
+        final FrameLayout outgoingPage = activePage;
         int next = currentIndex + direction;
         if (next < 0) {
             next = mediaQueue.size() - 1;
@@ -338,23 +353,39 @@ public class DetailActivity extends Activity {
         final int offset = horizontal
                 ? (content.getWidth() == 0 ? getResources().getDisplayMetrics().widthPixels : content.getWidth())
                 : (content.getHeight() == 0 ? getResources().getDisplayMetrics().heightPixels : content.getHeight());
-        content.animate()
+        final FrameLayout incomingPage = createCurrentPage();
+        incomingPage.setTranslationX(horizontal ? (direction > 0 ? -offset : offset) : 0);
+        incomingPage.setTranslationY(horizontal ? 0 : (direction > 0 ? offset : -offset));
+        incomingPage.setAlpha(0.98f);
+        content.addView(incomingPage, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        activePage = incomingPage;
+
+        DecelerateInterpolator interpolator = new DecelerateInterpolator(1.4f);
+        if (outgoingPage != null) {
+            outgoingPage.animate()
                 .translationX(horizontal ? (direction > 0 ? offset : -offset) : 0)
                 .translationY(horizontal ? 0 : (direction > 0 ? -offset : offset))
-                .alpha(0.35f)
-                .setDuration(105)
+                    .alpha(0.92f)
+                    .setInterpolator(interpolator)
+                    .setDuration(245)
+                    .start();
+        }
+        incomingPage.animate()
+                .translationX(0)
+                .translationY(0)
+                .alpha(1f)
+                .setInterpolator(interpolator)
+                .setDuration(245)
                 .withEndAction(new Runnable() {
                     @Override
                     public void run() {
-                        content.setTranslationX(horizontal ? (direction > 0 ? -offset : offset) : 0);
-                        content.setTranslationY(horizontal ? 0 : (direction > 0 ? offset : -offset));
-                        loadCurrentItem(direction);
-                        content.animate()
-                                .translationX(0)
-                                .translationY(0)
-                                .alpha(1f)
-                                .setDuration(125)
-                                .start();
+                        if (outgoingPage != null) {
+                            content.removeView(outgoingPage);
+                        }
+                        if (outgoingPlayer != null && outgoingPlayer != currentPlayer) {
+                            outgoingPlayer.release();
+                        }
+                        switchingItem = false;
                     }
                 })
                 .start();
@@ -367,24 +398,32 @@ public class DetailActivity extends Activity {
             speedPopup.dismiss();
         }
         content.removeAllViews();
+        activePage = createCurrentPage();
+        content.addView(activePage, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private FrameLayout createCurrentPage() {
+        FrameLayout page = new FrameLayout(this);
+        page.setBackgroundColor(Color.BLACK);
         MediaItem item = currentItem();
         title.setText(item.name);
         updateFavoriteButton();
         if (item.isVideo()) {
-            showVideo(item);
+            showVideo(item, page);
         } else {
-            showImage(item);
+            showImage(item, page);
         }
+        return page;
     }
 
-    private void showVideo(MediaItem item) {
+    private void showVideo(MediaItem item, FrameLayout page) {
         videoControls.setVisibility(View.VISIBLE);
         timelineRow.setVisibility(View.VISIBLE);
         PlayerView playerView = new PlayerView(this);
         playerView.setBackgroundColor(Color.BLACK);
         playerView.setUseController(false);
         playerView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
-        content.addView(playerView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        page.addView(playerView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         currentPlayer = new ExoPlayer.Builder(this).build();
         currentVideoKey = "video_pos_" + item.uri.toString().hashCode();
@@ -416,13 +455,13 @@ public class DetailActivity extends Activity {
         handler.post(progressUpdater);
     }
 
-    private void showImage(final MediaItem item) {
+    private void showImage(final MediaItem item, FrameLayout page) {
         videoControls.setVisibility(View.GONE);
         timelineRow.setVisibility(View.GONE);
         final ImageView image = new ImageView(this);
         image.setScaleType(ImageView.ScaleType.FIT_CENTER);
         image.setBackgroundColor(Color.BLACK);
-        content.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        page.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         executor.execute(new Runnable() {
             @Override
             public void run() {
