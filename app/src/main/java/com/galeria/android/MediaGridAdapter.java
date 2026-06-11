@@ -35,6 +35,7 @@ final class MediaGridAdapter extends BaseAdapter {
     private final ArrayList<MediaItem> allItems = new ArrayList<>();
     private final ArrayList<MediaItem> visibleItems = new ArrayList<>();
     private String filter = "";
+    private int spacingDp = 4;
 
     MediaGridAdapter(Context context) {
         this.context = context;
@@ -44,6 +45,11 @@ final class MediaGridAdapter extends BaseAdapter {
         allItems.clear();
         allItems.addAll(nextItems);
         applyFilter(filter);
+    }
+
+    void setSpacingDp(int spacingDp) {
+        this.spacingDp = Math.max(0, Math.min(14, spacingDp));
+        notifyDataSetChanged();
     }
 
     void applyFilter(String query) {
@@ -103,7 +109,6 @@ final class MediaGridAdapter extends BaseAdapter {
         if (convertView == null) {
             LinearLayout item = new LinearLayout(context);
             item.setOrientation(LinearLayout.VERTICAL);
-            item.setPadding(Ui.dp(context, 2), Ui.dp(context, 2), Ui.dp(context, 2), Ui.dp(context, 4));
             item.setBackgroundColor(Ui.bg(context));
 
             FrameLayout thumb = new FrameLayout(context);
@@ -139,6 +144,7 @@ final class MediaGridAdapter extends BaseAdapter {
             holder = (Holder) convertView.getTag();
         }
 
+        convertView.setPadding(Ui.dp(context, spacingDp / 2), Ui.dp(context, spacingDp / 2), Ui.dp(context, spacingDp / 2), Ui.dp(context, Math.max(1, spacingDp / 2)));
         MediaItem item = getItem(position);
         holder.badge.setVisibility(item.isVideo() ? View.VISIBLE : View.GONE);
         holder.name.setText(item.name);

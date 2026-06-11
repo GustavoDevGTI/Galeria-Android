@@ -444,6 +444,9 @@ public class DetailActivity extends Activity {
         if (currentPlayer.isPlaying()) {
             currentPlayer.pause();
         } else {
+            if (currentPlayer.getPlaybackState() == Player.STATE_ENDED) {
+                currentPlayer.seekTo(0);
+            }
             currentPlayer.play();
         }
         updatePlayPauseButton();

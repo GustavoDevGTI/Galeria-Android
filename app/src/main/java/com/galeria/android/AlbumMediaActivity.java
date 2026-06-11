@@ -20,6 +20,8 @@ import android.widget.FrameLayout;
 import android.widget.GridView;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import java.io.File;
@@ -43,6 +45,7 @@ public class AlbumMediaActivity extends Activity {
     private String albumKey;
     private String albumName;
     private SharedPreferences prefs;
+    private int gridSpacingDp;
     private boolean dragging;
     private int dragPosition = -1;
     private int savedFirstVisible;
@@ -98,10 +101,11 @@ public class AlbumMediaActivity extends Activity {
         bar.addView(title, titleParams);
         root.addView(bar);
 
+        gridSpacingDp = prefs.getInt(spacingKey(), 4);
         LinearLayout searchBox = new LinearLayout(this);
         searchBox.setGravity(Gravity.CENTER_VERTICAL);
         searchBox.setBackground(Ui.rounded(Ui.search(this), 18, this));
-        searchBox.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 12), 0);
+        searchBox.setPadding(Ui.dp(this, 12), 0, Ui.dp(this, 4), 0);
         searchInput = new EditText(this);
         searchInput.setHint("Pesquisar nesta pasta");
         searchInput.setHintTextColor(Ui.muted(this));
@@ -124,7 +128,19 @@ public class AlbumMediaActivity extends Activity {
             public void afterTextChanged(Editable s) {
             }
         });
-        searchBox.addView(searchInput, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        searchBox.addView(searchInput, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        ImageButton more = new ImageButton(this);
+        more.setImageResource(com.galeria.android.R.drawable.ic_more_vertical);
+        more.setBackgroundColor(Color.TRANSPARENT);
+        more.setColorFilter(Ui.text(this));
+        more.setPadding(Ui.dp(this, 9), Ui.dp(this, 9), Ui.dp(this, 9), Ui.dp(this, 9));
+        more.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showFolderMenu(view);
+            }
+        });
+        searchBox.addView(more, new LinearLayout.LayoutParams(Ui.dp(this, 42), Ui.dp(this, 42)));
         LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42));
         searchParams.setMargins(Ui.dp(this, 14), 0, Ui.dp(this, 14), Ui.dp(this, 8));
         root.addView(searchBox, searchParams);
@@ -132,15 +148,14 @@ public class AlbumMediaActivity extends Activity {
         FrameLayout content = new FrameLayout(this);
         grid = new GridView(this);
         grid.setNumColumns(GridView.AUTO_FIT);
-        grid.setColumnWidth(Ui.dp(this, 118));
+        grid.setColumnWidth(Ui.dp(this, 126));
         grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
-        grid.setHorizontalSpacing(Ui.dp(this, 4));
-        grid.setVerticalSpacing(Ui.dp(this, 8));
+        applyGridSpacing();
         grid.setClipToPadding(false);
-        grid.setPadding(Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 16));
         grid.setSelector(new ColorDrawable(Color.TRANSPARENT));
         grid.setBackgroundColor(Ui.BG);
         adapter = new MediaGridAdapter(this);
+        adapter.setSpacingDp(gridSpacingDp);
         grid.setAdapter(adapter);
         grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
@@ -189,6 +204,66 @@ public class AlbumMediaActivity extends Activity {
 
         root.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(root);
+    }
+
+    private void showFolderMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add("Espacamento da grade");
+        menu.setOnMenuItemClickListener(item -> {
+            showSpacingDialog();
+            return true;
+        });
+        menu.show();
+    }
+
+    private void showSpacingDialog() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(Ui.dp(this, 22), Ui.dp(this, 12), Ui.dp(this, 22), Ui.dp(this, 4));
+
+        TextView hint = Ui.label(this, "Esquerda: borda maior   Direita: sem borda");
+        hint.setTextSize(12);
+        panel.addView(hint, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final SeekBar seekBar = new SeekBar(this);
+        seekBar.setMax(14);
+        seekBar.setProgress(14 - gridSpacingDp);
+        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                gridSpacingDp = 14 - progress;
+                applyGridSpacing();
+                prefs.edit().putInt(spacingKey(), gridSpacingDp).apply();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar bar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar bar) {
+            }
+        });
+        panel.addView(seekBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48)));
+
+        new AlertDialog.Builder(this)
+                .setTitle("Espacamento da grade")
+                .setView(panel)
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private void applyGridSpacing() {
+        if (grid == null) {
+            return;
+        }
+        int gap = Ui.dp(this, gridSpacingDp);
+        grid.setHorizontalSpacing(gap);
+        grid.setVerticalSpacing(gap);
+        grid.setPadding(gap, gap, gap, Ui.dp(this, 16));
+        if (adapter != null) {
+            adapter.setSpacingDp(gridSpacingDp);
+        }
     }
 
     private void loadMedia(boolean preserveScroll) {
@@ -242,6 +317,10 @@ public class AlbumMediaActivity extends Activity {
 
     private String orderKey() {
         return "custom_order_" + (albumKey == null ? "all" : albumKey);
+    }
+
+    private String spacingKey() {
+        return "grid_spacing_" + (albumKey == null ? "all" : albumKey);
     }
 
     private void updateEmptyState() {
