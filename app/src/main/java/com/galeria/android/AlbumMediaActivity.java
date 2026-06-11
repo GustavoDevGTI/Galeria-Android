@@ -34,6 +34,7 @@ public class AlbumMediaActivity extends Activity {
     private static final int REQ_DELETE = 11;
     private static final int REQ_HIDE_DELETE = 12;
     private static final int REQ_MOVE_WRITE = 13;
+    private static final int MAX_GRID_SPACING_DP = 8;
 
     private MediaGridAdapter adapter;
     private GridView grid;
@@ -101,7 +102,7 @@ public class AlbumMediaActivity extends Activity {
         bar.addView(title, titleParams);
         root.addView(bar);
 
-        gridSpacingDp = prefs.getInt(spacingKey(), 4);
+        gridSpacingDp = Math.max(0, Math.min(MAX_GRID_SPACING_DP, prefs.getInt(spacingKey(), 3)));
         LinearLayout searchBox = new LinearLayout(this);
         searchBox.setGravity(Gravity.CENTER_VERTICAL);
         searchBox.setBackground(Ui.rounded(Ui.search(this), 18, this));
@@ -221,17 +222,17 @@ public class AlbumMediaActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(Ui.dp(this, 22), Ui.dp(this, 12), Ui.dp(this, 22), Ui.dp(this, 4));
 
-        TextView hint = Ui.label(this, "Esquerda: borda maior   Direita: sem borda");
+        TextView hint = Ui.label(this, "Esquerda: mais espaco   Direita: sem espaco");
         hint.setTextSize(12);
         panel.addView(hint, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         final SeekBar seekBar = new SeekBar(this);
-        seekBar.setMax(14);
-        seekBar.setProgress(14 - gridSpacingDp);
+        seekBar.setMax(MAX_GRID_SPACING_DP);
+        seekBar.setProgress(MAX_GRID_SPACING_DP - gridSpacingDp);
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                gridSpacingDp = 14 - progress;
+                gridSpacingDp = MAX_GRID_SPACING_DP - progress;
                 applyGridSpacing();
                 prefs.edit().putInt(spacingKey(), gridSpacingDp).apply();
             }

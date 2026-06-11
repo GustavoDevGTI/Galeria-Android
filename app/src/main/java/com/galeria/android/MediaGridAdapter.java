@@ -1,6 +1,7 @@
 package com.galeria.android;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
@@ -35,7 +36,6 @@ final class MediaGridAdapter extends BaseAdapter {
     private final ArrayList<MediaItem> allItems = new ArrayList<>();
     private final ArrayList<MediaItem> visibleItems = new ArrayList<>();
     private String filter = "";
-    private int spacingDp = 4;
 
     MediaGridAdapter(Context context) {
         this.context = context;
@@ -48,8 +48,7 @@ final class MediaGridAdapter extends BaseAdapter {
     }
 
     void setSpacingDp(int spacingDp) {
-        this.spacingDp = Math.max(0, Math.min(14, spacingDp));
-        notifyDataSetChanged();
+        // Spacing is owned by GridView. Items never receive internal padding/borders.
     }
 
     void applyFilter(String query) {
@@ -109,13 +108,13 @@ final class MediaGridAdapter extends BaseAdapter {
         if (convertView == null) {
             LinearLayout item = new LinearLayout(context);
             item.setOrientation(LinearLayout.VERTICAL);
-            item.setBackgroundColor(Ui.bg(context));
+            item.setBackgroundColor(Color.TRANSPARENT);
 
             FrameLayout thumb = new FrameLayout(context);
-            thumb.setBackgroundColor(Ui.surface(context));
+            thumb.setBackgroundColor(Color.TRANSPARENT);
             SquareImageView image = new SquareImageView(context);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            image.setBackgroundColor(Ui.surface(context));
+            image.setBackgroundColor(Color.TRANSPARENT);
             thumb.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
             TextView badge = new TextView(context);
@@ -144,7 +143,7 @@ final class MediaGridAdapter extends BaseAdapter {
             holder = (Holder) convertView.getTag();
         }
 
-        convertView.setPadding(Ui.dp(context, spacingDp / 2), Ui.dp(context, spacingDp / 2), Ui.dp(context, spacingDp / 2), Ui.dp(context, Math.max(1, spacingDp / 2)));
+        convertView.setPadding(0, 0, 0, 0);
         MediaItem item = getItem(position);
         holder.badge.setVisibility(item.isVideo() ? View.VISIBLE : View.GONE);
         holder.name.setText(item.name);
