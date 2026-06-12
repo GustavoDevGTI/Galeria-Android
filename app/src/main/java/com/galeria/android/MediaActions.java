@@ -122,11 +122,16 @@ final class MediaActions {
                 } catch (Exception ignored) {
                 }
                 MediaScannerConnection.scanFile(activity, new String[] { path }, null, null);
+                MediaStoreRepository.invalidateCache();
                 return true;
             }
         }
         try {
-            return activity.getContentResolver().delete(uri, null, null) > 0;
+            boolean deleted = activity.getContentResolver().delete(uri, null, null) > 0;
+            if (deleted) {
+                MediaStoreRepository.invalidateCache();
+            }
+            return deleted;
         } catch (Exception ignored) {
             return false;
         }
@@ -183,6 +188,9 @@ final class MediaActions {
             values.put(MediaStore.MediaColumns.RELATIVE_PATH, baseDir + "/" + cleanName + "/");
             try {
                 int updated = activity.getContentResolver().update(item.uri, values, null, null);
+                if (updated > 0) {
+                    MediaStoreRepository.invalidateCache();
+                }
                 return updated > 0 ? RESULT_DONE : RESULT_FAILED;
             } catch (SecurityException exception) {
                 return RESULT_NEEDS_PERMISSION;
@@ -204,6 +212,7 @@ final class MediaActions {
         boolean moved = currentFile.renameTo(targetFile);
         if (moved) {
             MediaScannerConnection.scanFile(activity, new String[] { targetFile.getAbsolutePath(), currentFile.getAbsolutePath() }, null, null);
+            MediaStoreRepository.invalidateCache();
             return RESULT_DONE;
         }
         return RESULT_FAILED;
@@ -242,6 +251,7 @@ final class MediaActions {
             ContentValues done = new ContentValues();
             done.put(MediaStore.MediaColumns.IS_PENDING, 0);
             resolver.update(targetUri, done, null, null);
+            MediaStoreRepository.invalidateCache();
             return RESULT_DONE;
         }
 
@@ -265,6 +275,7 @@ final class MediaActions {
                 output.write(buffer, 0, read);
             }
             MediaScannerConnection.scanFile(activity, new String[] { targetFile.getAbsolutePath() }, null, null);
+            MediaStoreRepository.invalidateCache();
             return RESULT_DONE;
         } catch (Exception exception) {
             targetFile.delete();
@@ -348,7 +359,11 @@ final class MediaActions {
             resolver.update(targetUri, done, null, null);
         }
 
-        return file.delete();
+        boolean restored = file.delete();
+        if (restored) {
+            MediaStoreRepository.invalidateCache();
+        }
+        return restored;
     }
 
     private static boolean copyUri(Activity activity, Uri sourceUri, Uri targetUri) {
@@ -376,7 +391,11 @@ final class MediaActions {
         if (target.exists()) {
             return target.isDirectory();
         }
-        return target.mkdirs();
+        boolean created = target.mkdirs();
+        if (created) {
+            MediaStoreRepository.invalidateCache();
+        }
+        return created;
     }
 
     static String cleanFolderName(String value) {
@@ -441,6 +460,7 @@ final class MediaActions {
             } catch (Exception ignored) {
             }
             MediaScannerConnection.scanFile(activity, new String[] { targetFile.getAbsolutePath(), currentFile.getAbsolutePath() }, null, null);
+            MediaStoreRepository.invalidateCache();
             return RESULT_DONE;
         }
         targetFile.delete();
@@ -468,6 +488,7 @@ final class MediaActions {
                 output.write(buffer, 0, read);
             }
             MediaScannerConnection.scanFile(activity, new String[] { targetFile.getAbsolutePath() }, null, null);
+            MediaStoreRepository.invalidateCache();
             return RESULT_DONE;
         } catch (Exception exception) {
             targetFile.delete();

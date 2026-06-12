@@ -38,6 +38,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class AlbumMediaActivity extends Activity {
     private static final int REQ_DELETE = 11;
@@ -76,6 +78,8 @@ public class AlbumMediaActivity extends Activity {
     private boolean showSvgs;
     private boolean listMode;
     private String groupMode;
+    private final ExecutorService mediaLoader = Executors.newSingleThreadExecutor();
+    private int loadGeneration;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,6 +101,12 @@ public class AlbumMediaActivity extends Activity {
         if (adapter != null) {
             loadMedia(true);
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mediaLoader.shutdownNow();
     }
 
     private void buildLayout() {
@@ -645,20 +655,39 @@ public class AlbumMediaActivity extends Activity {
     }
 
     private void loadMedia(boolean preserveScroll) {
-        int targetPosition = preserveScroll && grid != null ? grid.getFirstVisiblePosition() : savedFirstVisible;
-        List<MediaItem> items = prepareAlbumMedia(MediaStoreRepository.loadMediaForAlbum(this, albumKey));
-        adapter.submit(items);
-        if (searchInput != null) {
-            adapter.applyFilter(searchInput.getText().toString());
+        final int request = ++loadGeneration;
+        final int targetPosition = preserveScroll && grid != null ? grid.getFirstVisiblePosition() : savedFirstVisible;
+        final String query = searchInput == null ? "" : searchInput.getText().toString();
+        if (adapter != null && adapter.getCount() == 0 && emptyView != null) {
+            emptyView.setText("Carregando mídia...");
+            emptyView.setVisibility(View.VISIBLE);
         }
-        updateEmptyState();
-        updateSelectionUi();
-        if (grid != null) {
-            grid.scheduleLayoutAnimation();
-        }
-        if (grid != null && targetPosition > 0) {
-            grid.setSelection(targetPosition);
-        }
+        mediaLoader.execute(new Runnable() {
+            @Override
+            public void run() {
+                final List<MediaItem> items = prepareAlbumMedia(MediaStoreRepository.loadMediaForAlbum(getApplicationContext(), albumKey));
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (request != loadGeneration || isFinishing()) {
+                            return;
+                        }
+                        adapter.submit(items);
+                        if (searchInput != null) {
+                            adapter.applyFilter(query);
+                        }
+                        updateEmptyState();
+                        updateSelectionUi();
+                        if (grid != null && items.size() <= 300) {
+                            grid.scheduleLayoutAnimation();
+                        }
+                        if (grid != null && targetPosition > 0) {
+                            grid.setSelection(targetPosition);
+                        }
+                    }
+                });
+            }
+        });
     }
 
     private List<MediaItem> applyCustomOrder(List<MediaItem> items) {

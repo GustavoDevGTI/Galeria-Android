@@ -21,20 +21,48 @@ import java.util.Map;
 import java.util.Set;
 
 final class MediaStoreRepository {
+    private static final Object CACHE_LOCK = new Object();
+    private static final long CACHE_TTL_MS = 20_000L;
+    private static ArrayList<MediaItem> cachedMedia;
+    private static long cachedAtMs;
+    private static boolean cachedWithAllFilesAccess;
+
     private MediaStoreRepository() {
     }
 
     static List<MediaItem> loadMedia(Context context) {
+        boolean allFilesAccess = MediaActions.hasAllFilesAccess(context);
+        long now = System.currentTimeMillis();
+        synchronized (CACHE_LOCK) {
+            if (cachedMedia != null
+                    && cachedWithAllFilesAccess == allFilesAccess
+                    && now - cachedAtMs < CACHE_TTL_MS) {
+                return new ArrayList<>(cachedMedia);
+            }
+        }
+
         ArrayList<MediaItem> items = new ArrayList<>();
         loadFromFilesCollection(context, items);
-        loadFromHiddenFilesystem(context, items);
+        loadFromHiddenFilesystem(items, allFilesAccess);
         Collections.sort(items, new Comparator<MediaItem>() {
             @Override
             public int compare(MediaItem first, MediaItem second) {
                 return Long.compare(second.dateAdded, first.dateAdded);
             }
         });
+        synchronized (CACHE_LOCK) {
+            cachedMedia = new ArrayList<>(items);
+            cachedAtMs = now;
+            cachedWithAllFilesAccess = allFilesAccess;
+        }
         return items;
+    }
+
+    static void invalidateCache() {
+        synchronized (CACHE_LOCK) {
+            cachedMedia = null;
+            cachedAtMs = 0L;
+        }
     }
 
     static List<AlbumItem> buildAlbums(List<MediaItem> mediaItems) {
@@ -164,8 +192,8 @@ final class MediaStoreRepository {
         }
     }
 
-    private static void loadFromHiddenFilesystem(Context context, List<MediaItem> output) {
-        if (!MediaActions.hasAllFilesAccess(context)) {
+    private static void loadFromHiddenFilesystem(List<MediaItem> output, boolean allFilesAccess) {
+        if (!allFilesAccess) {
             return;
         }
         File root = Environment.getExternalStorageDirectory();
@@ -176,13 +204,17 @@ final class MediaStoreRepository {
         for (MediaItem item : output) {
             known.add(dedupeKey(item.relativePath, item.name, item.size));
         }
-        scanDirectory(context, root, root, output, known, 0);
+        scanDirectory(root, root, output, known, 0, false);
     }
 
-    private static void scanDirectory(Context context, File root, File dir, List<MediaItem> output, Set<String> known, int depth) {
+    private static void scanDirectory(File root, File dir, List<MediaItem> output, Set<String> known, int depth, boolean insideHiddenArea) {
         if (dir == null || depth > 24) {
             return;
         }
+        if (shouldSkipDirectory(root, dir)) {
+            return;
+        }
+        boolean hiddenArea = insideHiddenArea || isHiddenMediaDirectory(dir);
         File[] files = dir.listFiles();
         if (files == null) {
             return;
@@ -192,8 +224,8 @@ final class MediaStoreRepository {
                 continue;
             }
             if (file.isDirectory()) {
-                scanDirectory(context, root, file, output, known, depth + 1);
-            } else if (file.isFile() && file.length() > 0 && isSupportedMediaFile(file)) {
+                scanDirectory(root, file, output, known, depth + 1, hiddenArea);
+            } else if (hiddenArea && file.isFile() && file.length() > 0 && isSupportedMediaFile(file)) {
                 String relativePath = relativeFolder(root, file);
                 String key = dedupeKey(relativePath, file.getName(), file.length());
                 if (known.contains(key)) {
@@ -214,6 +246,26 @@ final class MediaStoreRepository {
                 ));
             }
         }
+    }
+
+    private static boolean shouldSkipDirectory(File root, File dir) {
+        if (dir.equals(root)) {
+            return false;
+        }
+        String name = dir.getName();
+        if ("Android".equals(name)) {
+            return false;
+        }
+        File parent = dir.getParentFile();
+        if (parent != null && "Android".equals(parent.getName())) {
+            return "data".equals(name) || "obb".equals(name);
+        }
+        return false;
+    }
+
+    private static boolean isHiddenMediaDirectory(File dir) {
+        String name = dir.getName();
+        return name.startsWith(".") || new File(dir, ".nomedia").exists();
     }
 
     private static String dedupeKey(String relativePath, String name, long size) {

@@ -30,8 +30,9 @@ final class AlbumGridAdapter extends BaseAdapter {
             return value == null ? 0 : value.getByteCount();
         }
     };
+    private static final java.util.Set<String> LOADING_KEYS = java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
     private final Context context;
-    private final ExecutorService executor = Executors.newFixedThreadPool(4);
+    private final ExecutorService executor = Executors.newFixedThreadPool(2);
     private final ArrayList<AlbumItem> allAlbums = new ArrayList<>();
     private final ArrayList<AlbumItem> visibleAlbums = new ArrayList<>();
     private String filter = "";
@@ -122,21 +123,29 @@ final class AlbumGridAdapter extends BaseAdapter {
     }
 
     private void loadThumbnail(final Uri uri, final SquareImageView target) {
+        final String key = uri.toString();
+        if (!LOADING_KEYS.add(key)) {
+            return;
+        }
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                final Bitmap bitmap = readThumbnail(uri);
-                if (bitmap != null) {
-                    COVER_CACHE.put(uri.toString(), bitmap);
-                }
-                target.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (uri.equals(target.getTag())) {
-                            target.setImageBitmap(bitmap);
-                        }
+                try {
+                    final Bitmap bitmap = readThumbnail(uri);
+                    if (bitmap != null) {
+                        COVER_CACHE.put(key, bitmap);
                     }
-                });
+                    target.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (uri.equals(target.getTag())) {
+                                target.setImageBitmap(bitmap);
+                            }
+                        }
+                    });
+                } finally {
+                    LOADING_KEYS.remove(key);
+                }
             }
         });
     }

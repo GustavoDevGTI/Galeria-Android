@@ -35,6 +35,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final int REQ_READ = 10;
@@ -66,6 +68,8 @@ public class MainActivity extends Activity {
     private boolean showHiddenFolders;
     private int columnCount;
     private long lastColumnGestureMs;
+    private final ExecutorService mediaLoader = Executors.newSingleThreadExecutor();
+    private int loadGeneration;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -89,6 +93,12 @@ public class MainActivity extends Activity {
         if (hasReadPermission()) {
             loadAlbums();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mediaLoader.shutdownNow();
     }
 
     private void buildLayout() {
@@ -252,48 +262,70 @@ public class MainActivity extends Activity {
     }
 
     private void loadAlbums() {
-        List<MediaItem> media = MediaStoreRepository.loadMedia(this);
-        ArrayList<MediaItem> filteredMedia = new ArrayList<>();
-        for (MediaItem item : media) {
-            if (matchesMediaFilter(item)) {
-                filteredMedia.add(item);
-            }
+        final int request = ++loadGeneration;
+        final boolean searchAllFiles = prefs.getBoolean("search_all_files", false);
+        final boolean includeHidden = showHiddenFolders;
+        final Set<String> hiddenKeys = new HashSet<>(prefs.getStringSet("hidden_folder_keys", new HashSet<String>()));
+        final String query = searchInput == null ? "" : searchInput.getText().toString();
+        if (adapter != null && adapter.getCount() == 0 && emptyView != null) {
+            emptyView.setText("Carregando mídia...");
+            emptyView.setVisibility(View.VISIBLE);
         }
+        mediaLoader.execute(new Runnable() {
+            @Override
+            public void run() {
+                List<MediaItem> media = MediaStoreRepository.loadMedia(getApplicationContext());
+                ArrayList<MediaItem> filteredMedia = new ArrayList<>();
+                for (MediaItem item : media) {
+                    if (matchesMediaFilter(item)) {
+                        filteredMedia.add(item);
+                    }
+                }
 
-        List<AlbumItem> albums;
-        if (prefs.getBoolean("search_all_files", false)) {
-            albums = new ArrayList<>();
-            MediaItem cover = filteredMedia.isEmpty() ? null : filteredMedia.get(0);
-            long latest = 0;
-            long first = Long.MAX_VALUE;
-            long size = 0;
-            for (MediaItem item : filteredMedia) {
-                latest = Math.max(latest, item.dateAdded);
-                if (item.dateAdded > 0) {
-                    first = Math.min(first, item.dateAdded);
+                List<AlbumItem> albums;
+                if (searchAllFiles) {
+                    albums = new ArrayList<>();
+                    MediaItem cover = filteredMedia.isEmpty() ? null : filteredMedia.get(0);
+                    long latest = 0;
+                    long first = Long.MAX_VALUE;
+                    long size = 0;
+                    for (MediaItem item : filteredMedia) {
+                        latest = Math.max(latest, item.dateAdded);
+                        if (item.dateAdded > 0) {
+                            first = Math.min(first, item.dateAdded);
+                        }
+                        size += Math.max(0, item.size);
+                    }
+                    albums.add(new AlbumItem("all_media", "Todos os arquivos", filteredMedia.size(), cover, latest, first == Long.MAX_VALUE ? latest : first, size, ""));
+                } else {
+                    albums = MediaStoreRepository.buildAlbums(filteredMedia);
                 }
-                size += Math.max(0, item.size);
-            }
-            albums.add(new AlbumItem("all_media", "Todos os arquivos", filteredMedia.size(), cover, latest, first == Long.MAX_VALUE ? latest : first, size, ""));
-        } else {
-            albums = MediaStoreRepository.buildAlbums(filteredMedia);
-        }
-        Set<String> hiddenKeys = prefs.getStringSet("hidden_folder_keys", new HashSet<String>());
-        if (!showHiddenFolders && !hiddenKeys.isEmpty()) {
-            ArrayList<AlbumItem> visibleAlbums = new ArrayList<>();
-            for (AlbumItem album : albums) {
-                if (!hiddenKeys.contains(album.key)) {
-                    visibleAlbums.add(album);
+                if (!includeHidden && !hiddenKeys.isEmpty()) {
+                    ArrayList<AlbumItem> visibleAlbums = new ArrayList<>();
+                    for (AlbumItem album : albums) {
+                        if (!hiddenKeys.contains(album.key)) {
+                            visibleAlbums.add(album);
+                        }
+                    }
+                    albums = visibleAlbums;
                 }
+                sortAlbums(albums);
+                final List<AlbumItem> result = albums;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (request != loadGeneration || isFinishing()) {
+                            return;
+                        }
+                        adapter.submit(result);
+                        if (searchInput != null) {
+                            adapter.applyFilter(query);
+                        }
+                        updateEmptyText();
+                    }
+                });
             }
-            albums = visibleAlbums;
-        }
-        sortAlbums(albums);
-        adapter.submit(albums);
-        if (searchInput != null) {
-            adapter.applyFilter(searchInput.getText().toString());
-        }
-        updateEmptyText();
+        });
     }
 
     private void loadSettings() {

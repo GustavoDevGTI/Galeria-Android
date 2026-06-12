@@ -35,8 +35,9 @@ final class MediaGridAdapter extends BaseAdapter {
             return value == null ? 0 : value.getByteCount();
         }
     };
+    private static final Set<String> LOADING_KEYS = java.util.Collections.synchronizedSet(new HashSet<String>());
     private final Context context;
-    private final ExecutorService executor = Executors.newFixedThreadPool(4);
+    private final ExecutorService executor = Executors.newFixedThreadPool(2);
     private final ArrayList<MediaItem> allItems = new ArrayList<>();
     private final ArrayList<MediaItem> visibleItems = new ArrayList<>();
     private final HashSet<String> selectedUris = new HashSet<>();
@@ -311,22 +312,30 @@ final class MediaGridAdapter extends BaseAdapter {
     }
 
     private void loadThumbnail(final MediaItem item, final ImageView target) {
+        final String key = item.uri.toString();
+        if (!LOADING_KEYS.add(key)) {
+            return;
+        }
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                final Bitmap bitmap = readThumbnail(item.uri);
-                if (bitmap != null) {
-                    THUMB_CACHE.put(item.uri.toString(), bitmap);
-                }
-                target.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        Object tag = target.getTag();
-                        if (item.uri.equals(tag)) {
-                            target.setImageBitmap(bitmap);
-                        }
+                try {
+                    final Bitmap bitmap = readThumbnail(item.uri);
+                    if (bitmap != null) {
+                        THUMB_CACHE.put(key, bitmap);
                     }
-                });
+                    target.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            Object tag = target.getTag();
+                            if (item.uri.equals(tag)) {
+                                target.setImageBitmap(bitmap);
+                            }
+                        }
+                    });
+                } finally {
+                    LOADING_KEYS.remove(key);
+                }
             }
         });
     }
