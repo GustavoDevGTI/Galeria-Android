@@ -39,6 +39,7 @@ import java.util.Set;
 public class MainActivity extends Activity {
     private static final int REQ_READ = 10;
     private static final String PREFS = "gallery_albums";
+    private static final String PREF_ALL_FILES_PROMPTED = "all_files_prompted";
     private static final String SORT_NAME = "name";
     private static final String SORT_PATH = "path";
     private static final String SORT_SIZE = "size";
@@ -72,6 +73,7 @@ public class MainActivity extends Activity {
         loadSettings();
         buildLayout();
         if (hasReadPermission()) {
+            ensureFileManagementAccess(false);
             loadAlbums();
         } else {
             requestReadPermission();
@@ -616,11 +618,30 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQ_READ && hasReadPermission()) {
+            ensureFileManagementAccess(false);
             loadAlbums();
         } else {
             emptyView.setVisibility(View.VISIBLE);
             emptyView.setText("Autorize acesso completo a fotos e vídeos para carregar a galeria.");
         }
+    }
+
+    private void ensureFileManagementAccess(boolean force) {
+        if (MediaActions.hasAllFilesAccess(this)) {
+            return;
+        }
+        if (!force && prefs.getBoolean(PREF_ALL_FILES_PROMPTED, false)) {
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Permitir gerenciamento de arquivos")
+                .setMessage("Para excluir, mover, copiar e criar pastas no celular, ative o acesso total a arquivos para a Galeria.")
+                .setPositiveButton("Permitir", (dialog, which) -> {
+                    prefs.edit().putBoolean(PREF_ALL_FILES_PROMPTED, true).apply();
+                    MediaActions.requestAllFilesAccess(this);
+                })
+                .setNegativeButton("Agora não", (dialog, which) -> prefs.edit().putBoolean(PREF_ALL_FILES_PROMPTED, true).apply())
+                .show();
     }
 
     private int statusBarHeight() {

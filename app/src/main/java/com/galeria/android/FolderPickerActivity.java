@@ -2,6 +2,7 @@ package com.galeria.android;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.Gravity;
@@ -164,11 +165,20 @@ public class FolderPickerActivity extends Activity {
             return;
         }
         File target = new File(currentDir, clean);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Permitir gerenciamento de arquivos")
+                    .setMessage("Para criar pastas no celular, ative o acesso total a arquivos para a Galeria.")
+                    .setPositiveButton("Permitir", (dialog, which) -> MediaActions.requestAllFilesAccess(this))
+                    .setNegativeButton("Cancelar", null)
+                    .show();
+            return;
+        }
         if (target.exists()) {
             Ui.toast(this, "A pasta já existe.");
             return;
         }
-        if (target.mkdirs()) {
+        if (MediaActions.createFolder(this, target)) {
             Ui.toast(this, "Pasta criada.");
             currentDir = target;
             loadFolders();

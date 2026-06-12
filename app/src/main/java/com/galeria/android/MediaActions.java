@@ -5,12 +5,14 @@ import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
+import android.content.Intent;
 import android.database.Cursor;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.provider.Settings;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -26,7 +28,28 @@ final class MediaActions {
     private MediaActions() {
     }
 
+    static boolean hasAllFilesAccess(Activity activity) {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager());
+    }
+
+    static void requestAllFilesAccess(Activity activity) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()) {
+            return;
+        }
+        try {
+            Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+            intent.setData(Uri.parse("package:" + activity.getPackageName()));
+            activity.startActivity(intent);
+        } catch (Exception exception) {
+            activity.startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+        }
+    }
+
     static int requestDelete(Activity activity, Uri uri, int requestCode) {
+        if (hasAllFilesAccess(activity)) {
+            return deleteDirect(activity, uri) ? RESULT_DONE : RESULT_FAILED;
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 boolean moveToTrash = activity.getSharedPreferences(Ui.PREFS, Activity.MODE_PRIVATE)
@@ -58,6 +81,9 @@ final class MediaActions {
     }
 
     static int requestPermanentDelete(Activity activity, Uri uri, int requestCode) {
+        if (hasAllFilesAccess(activity)) {
+            return deleteDirect(activity, uri) ? RESULT_DONE : RESULT_FAILED;
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 PendingIntent pendingIntent = MediaStore.createDeleteRequest(
@@ -85,6 +111,19 @@ final class MediaActions {
     }
 
     static boolean deleteDirect(Activity activity, Uri uri) {
+        File file = fileFromMediaStore(activity, uri);
+        if (hasAllFilesAccess(activity) && file != null && file.exists()) {
+            String path = file.getAbsolutePath();
+            boolean deleted = file.delete();
+            if (deleted) {
+                try {
+                    activity.getContentResolver().delete(uri, null, null);
+                } catch (Exception ignored) {
+                }
+                MediaScannerConnection.scanFile(activity, new String[] { path }, null, null);
+                return true;
+            }
+        }
         try {
             return activity.getContentResolver().delete(uri, null, null) > 0;
         } catch (Exception ignored) {
@@ -133,6 +172,10 @@ final class MediaActions {
             return RESULT_FAILED;
         }
 
+        if (hasAllFilesAccess(activity)) {
+            return moveToFolderDirect(activity, item, cleanName);
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ContentValues values = new ContentValues();
             String baseDir = item.isVideo() ? Environment.DIRECTORY_MOVIES : Environment.DIRECTORY_PICTURES;
@@ -173,6 +216,10 @@ final class MediaActions {
 
         boolean isVideo = item.isVideo();
         String baseDir = isVideo ? Environment.DIRECTORY_MOVIES : Environment.DIRECTORY_PICTURES;
+        if (hasAllFilesAccess(activity)) {
+            return copyToFolderDirect(activity, item, cleanName, baseDir);
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             Uri collection = isVideo ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
             ContentValues values = new ContentValues();
@@ -324,6 +371,13 @@ final class MediaActions {
         return new File(activity.getExternalFilesDir(null), "Hidden");
     }
 
+    static boolean createFolder(Activity activity, File target) {
+        if (target.exists()) {
+            return target.isDirectory();
+        }
+        return target.mkdirs();
+    }
+
     static String cleanFolderName(String value) {
         if (value == null) {
             return "";
@@ -343,6 +397,78 @@ final class MediaActions {
         } catch (Exception ignored) {
         }
         return null;
+    }
+
+    private static int moveToFolderDirect(Activity activity, MediaItem item, String cleanName) {
+        File currentFile = fileFromMediaStore(activity, item.uri);
+        if (currentFile == null || !currentFile.exists()) {
+            return RESULT_FAILED;
+        }
+
+        String baseDir = item.isVideo() ? Environment.DIRECTORY_MOVIES : Environment.DIRECTORY_PICTURES;
+        File targetDir = new File(Environment.getExternalStoragePublicDirectory(baseDir), cleanName);
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            return RESULT_FAILED;
+        }
+
+        File targetFile = uniqueFile(targetDir, currentFile.getName());
+        boolean moved = currentFile.renameTo(targetFile);
+        if (!moved) {
+            try (InputStream input = activity.getContentResolver().openInputStream(item.uri);
+                 FileOutputStream output = new FileOutputStream(targetFile)) {
+                if (input == null) {
+                    return RESULT_FAILED;
+                }
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    output.write(buffer, 0, read);
+                }
+                moved = currentFile.delete();
+            } catch (Exception exception) {
+                targetFile.delete();
+                return RESULT_FAILED;
+            }
+        }
+
+        if (moved) {
+            try {
+                activity.getContentResolver().delete(item.uri, null, null);
+            } catch (Exception ignored) {
+            }
+            MediaScannerConnection.scanFile(activity, new String[] { targetFile.getAbsolutePath(), currentFile.getAbsolutePath() }, null, null);
+            return RESULT_DONE;
+        }
+        targetFile.delete();
+        return RESULT_FAILED;
+    }
+
+    private static int copyToFolderDirect(Activity activity, MediaItem item, String cleanName, String baseDir) {
+        File currentFile = fileFromMediaStore(activity, item.uri);
+        if (currentFile == null || !currentFile.exists()) {
+            return RESULT_FAILED;
+        }
+        File targetDir = new File(Environment.getExternalStoragePublicDirectory(baseDir), cleanName);
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            return RESULT_FAILED;
+        }
+        File targetFile = uniqueFile(targetDir, currentFile.getName());
+        try (InputStream input = activity.getContentResolver().openInputStream(item.uri);
+             FileOutputStream output = new FileOutputStream(targetFile)) {
+            if (input == null) {
+                return RESULT_FAILED;
+            }
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+            MediaScannerConnection.scanFile(activity, new String[] { targetFile.getAbsolutePath() }, null, null);
+            return RESULT_DONE;
+        } catch (Exception exception) {
+            targetFile.delete();
+            return RESULT_FAILED;
+        }
     }
 
     private static File uniqueFile(File dir, String originalName) {

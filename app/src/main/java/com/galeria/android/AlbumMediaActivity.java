@@ -656,15 +656,28 @@ public class AlbumMediaActivity extends Activity {
                 ? Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
                 : new File(Environment.getExternalStorageDirectory(), relative);
         File target = new File(base, cleanName);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
+            requestFileManagementAccess();
+            return;
+        }
         if (target.exists()) {
             Ui.toast(this, "A pasta já existe.");
             return;
         }
-        if (target.mkdirs()) {
+        if (MediaActions.createFolder(this, target)) {
             Ui.toast(this, "Pasta criada.");
         } else {
             Ui.toast(this, "Não foi possível criar a pasta.");
         }
+    }
+
+    private void requestFileManagementAccess() {
+        new AlertDialog.Builder(this)
+                .setTitle("Permitir gerenciamento de arquivos")
+                .setMessage("Para criar pastas, mover e excluir arquivos no celular, ative o acesso total a arquivos para a Galeria.")
+                .setPositiveButton("Permitir", (dialog, which) -> MediaActions.requestAllFilesAccess(this))
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     private void openDetail(MediaItem item, int position) {
@@ -705,9 +718,19 @@ public class AlbumMediaActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("Excluir item")
                 .setMessage("Tem certeza que deseja excluir este arquivo?")
-                .setPositiveButton("Excluir", (dialog, which) -> MediaActions.requestDelete(this, item.uri, REQ_DELETE))
+                .setPositiveButton("Excluir", (dialog, which) -> deleteItem(item))
                 .setNegativeButton("Cancelar", null)
                 .show();
+    }
+
+    private void deleteItem(MediaItem item) {
+        int result = MediaActions.requestDelete(this, item.uri, REQ_DELETE);
+        if (result == MediaActions.RESULT_DONE) {
+            Ui.toast(this, "Item excluído.");
+            loadMedia(true);
+        } else if (result == MediaActions.RESULT_FAILED) {
+            requestFileManagementAccess();
+        }
     }
 
     private void confirmHide(final MediaItem item) {
@@ -727,7 +750,16 @@ public class AlbumMediaActivity extends Activity {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            MediaActions.requestDelete(this, item.uri, REQ_HIDE_DELETE);
+            int result = MediaActions.requestDelete(this, item.uri, REQ_HIDE_DELETE);
+            if (result == MediaActions.RESULT_DONE) {
+                Ui.toast(this, "Item ocultado.");
+                pendingHiddenCopy = null;
+                loadMedia(true);
+            } else if (result == MediaActions.RESULT_FAILED) {
+                pendingHiddenCopy.delete();
+                pendingHiddenCopy = null;
+                requestFileManagementAccess();
+            }
         } else {
             int deleted = getContentResolver().delete(item.uri, null, null);
             if (deleted > 0) {
@@ -769,7 +801,7 @@ public class AlbumMediaActivity extends Activity {
         } else if (result == MediaActions.RESULT_NEEDS_PERMISSION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             MediaActions.requestWrite(this, item.uri, REQ_MOVE_WRITE);
         } else {
-            Ui.toast(this, "Não foi possível mover.");
+            requestFileManagementAccess();
         }
     }
 

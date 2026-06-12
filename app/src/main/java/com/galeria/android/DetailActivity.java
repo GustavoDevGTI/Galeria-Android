@@ -790,7 +790,7 @@ public class DetailActivity extends Activity {
             pendingDeleteUri = null;
             pendingHiddenCopy.delete();
             pendingHiddenCopy = null;
-            Ui.toast(this, "Não foi possível remover o original.");
+            requestFileManagementAccess();
         }
     }
 
@@ -826,7 +826,11 @@ public class DetailActivity extends Activity {
 
     private void copyCurrentToFolder(MediaItem item, String folder) {
         int result = MediaActions.copyToFolder(this, item, folder);
-        Ui.toast(this, result == MediaActions.RESULT_DONE ? "Item copiado." : "Não foi possível copiar.");
+        if (result == MediaActions.RESULT_DONE) {
+            Ui.toast(this, "Item copiado.");
+        } else {
+            requestFileManagementAccess();
+        }
     }
 
     private void moveCurrentToFolder(MediaItem item, String folder) {
@@ -841,7 +845,7 @@ public class DetailActivity extends Activity {
         } else {
             pendingMoveItem = null;
             pendingMoveFolder = null;
-            Ui.toast(this, "Não foi possível mover.");
+            requestFileManagementAccess();
         }
     }
 
@@ -989,7 +993,20 @@ public class DetailActivity extends Activity {
             removeDeletedItem();
         } else if (result == MediaActions.RESULT_FAILED) {
             pendingDeleteUri = null;
-            Ui.toast(this, "Não foi possível excluir.");
+            requestFileManagementAccess();
+        }
+    }
+
+    private void requestFileManagementAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Permitir gerenciamento de arquivos")
+                    .setMessage("Para excluir, mover, copiar e criar arquivos no celular, ative o acesso total a arquivos para a Galeria.")
+                    .setPositiveButton("Permitir", (dialog, which) -> MediaActions.requestAllFilesAccess(this))
+                    .setNegativeButton("Cancelar", null)
+                    .show();
+        } else {
+            Ui.toast(this, "Não foi possível concluir a operação.");
         }
     }
 
