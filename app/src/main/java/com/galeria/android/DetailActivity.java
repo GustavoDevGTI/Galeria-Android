@@ -414,11 +414,11 @@ public class DetailActivity extends Activity {
         float deltaX = event.getX() - downX;
         int threshold = Ui.dp(this, 72);
         if (Math.abs(deltaY) > threshold && Math.abs(deltaY) > Math.abs(deltaX)) {
-            switchItem(deltaY > 0 ? 1 : -1, false);
+            switchItem(deltaY > 0 ? -1 : 1, false);
             return true;
         }
         if (Math.abs(deltaX) > threshold && Math.abs(deltaX) > Math.abs(deltaY)) {
-            switchItem(deltaX > 0 ? 1 : -1, true);
+            switchItem(deltaX > 0 ? -1 : 1, true);
             return true;
         }
         if (currentItem().isVideo()) {
