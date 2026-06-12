@@ -127,7 +127,7 @@ final class MediaGridAdapter extends BaseAdapter {
             thumb.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
             TextView badge = new TextView(context);
-            badge.setText("VIDEO");
+            badge.setText("VÍDEO");
             badge.setTextColor(Ui.TEXT);
             badge.setTextSize(10);
             badge.setGravity(Gravity.CENTER);

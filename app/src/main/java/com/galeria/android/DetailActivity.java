@@ -541,7 +541,7 @@ public class DetailActivity extends Activity {
                     image.post(new Runnable() {
                         @Override
                         public void run() {
-                            Ui.toast(DetailActivity.this, "Nao foi possivel abrir a imagem.");
+                            Ui.toast(DetailActivity.this, "Não foi possível abrir a imagem.");
                         }
                     });
                 }
@@ -688,11 +688,11 @@ public class DetailActivity extends Activity {
         pendingDeleteUri = item.uri;
         int result = MediaActions.requestPermanentDelete(this, item.uri, REQ_DELETE);
         if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, "Item excluido.");
+            Ui.toast(this, "Item excluído.");
             removeDeletedItem();
         } else if (result == MediaActions.RESULT_FAILED) {
             pendingDeleteUri = null;
-            Ui.toast(this, "Nao foi possivel excluir.");
+            Ui.toast(this, "Não foi possível excluir.");
         }
     }
 
@@ -719,7 +719,7 @@ public class DetailActivity extends Activity {
             boolean deleted = resultCode == RESULT_OK || (pendingDeleteUri != null && !MediaActions.mediaExists(this, pendingDeleteUri));
             pendingDeleteUri = null;
             if (deleted) {
-                Ui.toast(this, "Item excluido.");
+                Ui.toast(this, "Item excluído.");
                 removeDeletedItem();
             } else {
                 Ui.toast(this, "Exclusao cancelada.");

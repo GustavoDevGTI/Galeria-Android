@@ -46,7 +46,7 @@ public class SettingsActivity extends Activity {
         });
         bar.addView(back, new LinearLayout.LayoutParams(Ui.dp(this, 76), Ui.dp(this, 44)));
 
-        TextView title = Ui.title(this, "Configuracoes", 22);
+        TextView title = Ui.title(this, "Configurações", 22);
         bar.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         root.addView(bar);
 
@@ -63,7 +63,7 @@ public class SettingsActivity extends Activity {
 
     private void fillContent() {
         content.removeAllViews();
-        addSection("Personalizacao de cores");
+        addSection("Personalização de cores");
         addColorChoice();
 
         addSection("Geral");
@@ -79,10 +79,10 @@ public class SettingsActivity extends Activity {
                 chooseLanguage();
             }
         });
-        addOption("Formato de data e hora", prefs.getString("date_time_format", "Padrao do sistema"), new View.OnClickListener() {
+        addOption("Formato de data e hora", normalizeDisplayValue(prefs.getString("date_time_format", "Padrão do sistema")), new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                chooseValue("Formato de data e hora", "date_time_format", new String[] { "Padrao do sistema", "Data curta", "Data e hora" });
+                chooseValue("Formato de data e hora", "date_time_format", new String[] { "Padrão do sistema", "Data curta", "Data e hora" });
             }
         });
         addOption("Prioridade de carregamento", prefs.getString("loading_priority", "Velocidade"), new View.OnClickListener() {
@@ -102,22 +102,22 @@ public class SettingsActivity extends Activity {
         addSwitch("Procurar todos os arquivos", "Mostra todos os arquivos em vez de somente pastas na tela principal.", "search_all_files", false, null);
 
         addSection("Fotos");
-        addOption("Filtro de fotos", "Use Filtrar midia no menu principal.", null);
+        addOption("Filtro de fotos", "Use Filtrar mídia no menu principal.", null);
 
-        addSection("Videos");
-        addSwitch("Reproduzir automaticamente", "Inicia videos ao abrir.", "autoplay_videos", true, null);
-        addSwitch("Lembrar ultima posicao", "Retoma videos de onde parou.", "remember_video_position", true, null);
-        addSwitch("Reproduzir videos em ciclo", "Repete o video continuamente.", "loop_videos", false, null);
-        addSwitch("Abrir videos em tela separada", "Mantem videos no visualizador dedicado.", "video_separate_screen", false, null);
-        addSwitch("Gestos verticais de volume/brilho", "Preferencia salva para o visualizador.", "video_vertical_gestures", true, null);
+        addSection("Vídeos");
+        addSwitch("Reproduzir automaticamente", "Inicia vídeos ao abrir.", "autoplay_videos", true, null);
+        addSwitch("Lembrar última posição", "Retoma vídeos de onde parou.", "remember_video_position", true, null);
+        addSwitch("Reproduzir vídeos em ciclo", "Repete o vídeo continuamente.", "loop_videos", false, null);
+        addSwitch("Abrir vídeos em tela separada", "Mantém vídeos no visualizador dedicado.", "video_separate_screen", false, null);
+        addSwitch("Gestos verticais de volume/brilho", "Preferência salva para o visualizador.", "video_vertical_gestures", true, null);
 
         addSection("Miniaturas");
-        addSwitch("Recortar miniaturas em quadrados", "Mantem capas com proporcao uniforme.", "crop_square_thumbnails", true, null);
-        addSwitch("Animar GIFs nas miniaturas", "Preferencia salva para suporte a GIF animado.", "animate_gif_thumbnails", true, null);
-        addOption("Estilo da miniatura de arquivo", prefs.getString("file_thumb_style", "Padrao"), new View.OnClickListener() {
+        addSwitch("Recortar miniaturas em quadrados", "Mantém capas com proporção uniforme.", "crop_square_thumbnails", true, null);
+        addSwitch("Animar GIFs nas miniaturas", "Preferência salva para suporte a GIF animado.", "animate_gif_thumbnails", true, null);
+        addOption("Estilo da miniatura de arquivo", normalizeDisplayValue(prefs.getString("file_thumb_style", "Padrão")), new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                chooseValue("Estilo da miniatura de arquivo", "file_thumb_style", new String[] { "Padrao", "Quadrado", "Cantos arredondados" });
+                chooseValue("Estilo da miniatura de arquivo", "file_thumb_style", new String[] { "Padrão", "Quadrado", "Cantos arredondados" });
             }
         });
         addOption("Estilo da miniatura de pasta", prefs.getString("folder_thumb_style", "Cantos arredondados"), new View.OnClickListener() {
@@ -134,49 +134,49 @@ public class SettingsActivity extends Activity {
         });
 
         addSection("Rolagem");
-        addSwitch("Rolar miniaturas horizontalmente", "Preferencia salva para modos futuros de grade.", "horizontal_thumbnail_scroll", false, null);
-        addSwitch("Puxar para atualizar", "Preferencia salva para atualizar a galeria por gesto.", "pull_to_refresh", true, null);
+        addSwitch("Rolar miniaturas horizontalmente", "Preferência salva para modos futuros de grade.", "horizontal_thumbnail_scroll", false, null);
+        addSwitch("Puxar para atualizar", "Preferência salva para atualizar a galeria por gesto.", "pull_to_refresh", true, null);
 
-        addSection("Midia em tela cheia");
-        addSwitch("Maximizar brilho", "Preferencia salva para o visualizador.", "fullscreen_max_brightness", false, null);
-        addSwitch("Fundo preto em tela cheia", "Usa fundo preto ao abrir midia.", "fullscreen_black_bg", true, null);
+        addSection("Mídia em tela cheia");
+        addSwitch("Maximizar brilho", "Preferência salva para o visualizador.", "fullscreen_max_brightness", false, null);
+        addSwitch("Fundo preto em tela cheia", "Usa fundo preto ao abrir mídia.", "fullscreen_black_bg", true, null);
         addSwitch("Esconder interface do sistema", "Oculta barras do sistema no visualizador.", "fullscreen_hide_system_ui", false, null);
-        addSwitch("Trocar midia tocando nas laterais", "Preferencia salva para navegacao lateral.", "tap_sides_change_media", false, null);
-        addSwitch("Controle de brilho na vertical", "Preferencia salva para gestos no visualizador.", "vertical_brightness_gesture", false, null);
+        addSwitch("Trocar mídia tocando nas laterais", "Preferência salva para navegação lateral.", "tap_sides_change_media", false, null);
+        addSwitch("Controle de brilho na vertical", "Preferência salva para gestos no visualizador.", "vertical_brightness_gesture", false, null);
         addSwitch("Fechar com gesto para baixo", "Arraste para baixo para sair do visualizador.", "swipe_down_to_close", true, null);
-        addSwitch("Exibir o notch", "Preferencia salva para aparelhos com recorte.", "show_display_cutout", true, null);
-        addOption("Rotacao de tela", prefs.getString("rotation_criterion", "Padrao do sistema"), new View.OnClickListener() {
+        addSwitch("Exibir o notch", "Preferência salva para aparelhos com recorte.", "show_display_cutout", true, null);
+        addOption("Rotação de tela", normalizeDisplayValue(prefs.getString("rotation_criterion", "Padrão do sistema")), new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                chooseValue("Rotacao de tela", "rotation_criterion", new String[] { "Padrao do sistema", "Retrato", "Paisagem", "Sensor" });
+                chooseValue("Rotação de tela", "rotation_criterion", new String[] { "Padrão do sistema", "Retrato", "Paisagem", "Sensor" });
             }
         });
 
         addSection("Zoom aprofundado para imagens");
-        addSwitch("Habilitar zoom aprofundado", "Preferencia salva para zoom avancado.", "deep_image_zoom", true, null);
-        addSwitch("Rotacao por gestos", "Preferencia salva para gestos de imagem.", "image_rotation_gestures", true, null);
-        addSwitch("Maior qualidade possivel", "Carrega imagens priorizando qualidade.", "best_image_quality", false, null);
-        addSwitch("Zoom 1:1 com dois toques duplos", "Preferencia salva para zoom rapido.", "double_double_tap_zoom", false, null);
+        addSwitch("Habilitar zoom aprofundado", "Preferência salva para zoom avançado.", "deep_image_zoom", true, null);
+        addSwitch("Rotação por gestos", "Preferência salva para gestos de imagem.", "image_rotation_gestures", true, null);
+        addSwitch("Maior qualidade possível", "Carrega imagens priorizando qualidade.", "best_image_quality", false, null);
+        addSwitch("Zoom 1:1 com dois toques duplos", "Preferência salva para zoom rápido.", "double_double_tap_zoom", false, null);
 
         addSection("Detalhes adicionais");
-        addSwitch("Exibir detalhes em tela cheia", "Mostra informacoes do arquivo no visualizador.", "show_fullscreen_details", false, null);
+        addSwitch("Exibir detalhes em tela cheia", "Mostra informações do arquivo no visualizador.", "show_fullscreen_details", false, null);
 
-        addSection("Seguranca");
-        addSwitch("Proteger com senha todo o app", "Preferencia salva para protecao futura.", "lock_entire_app", false, null);
-        addSwitch("Proteger visualizacao de ocultos", "Preferencia salva para itens ocultos.", "lock_hidden_items", false, null);
-        addSwitch("Proteger excluir e mover", "Preferencia salva para operacoes sensiveis.", "lock_file_operations", false, null);
+        addSection("Segurança");
+        addSwitch("Proteger com senha todo o app", "Preferência salva para proteção futura.", "lock_entire_app", false, null);
+        addSwitch("Proteger visualização de ocultos", "Preferência salva para itens ocultos.", "lock_hidden_items", false, null);
+        addSwitch("Proteger exclusão e movimentação", "Preferência salva para operações sensíveis.", "lock_file_operations", false, null);
 
-        addSection("Operacoes de arquivos");
-        addSwitch("Apagar pastas vazias", "Remove pastas vazias apos excluir conteudo.", "delete_empty_folders", false, null);
-        addSwitch("Manter data de modificacao", "Evita atualizar a data ao mover arquivos quando possivel.", "keep_modified_date", true, null);
-        addSwitch("Pular confirmacao de exclusao", "Pula a confirmacao interna do app.", "skip_delete_confirmation", false, null);
+        addSection("Operações de arquivos");
+        addSwitch("Apagar pastas vazias", "Remove pastas vazias após excluir conteúdo.", "delete_empty_folders", false, null);
+        addSwitch("Manter data de modificação", "Evita atualizar a data ao mover arquivos quando possível.", "keep_modified_date", true, null);
+        addSwitch("Pular confirmação de exclusão", "Pula a confirmação interna do app.", "skip_delete_confirmation", false, null);
 
         addSection("Barra inferior");
-        addSwitch("Exibir botoes de acao", "Preferencia salva para a barra inferior.", "show_bottom_actions", true, null);
-        addOption("Gerenciar botoes visiveis", "Excluir, mover, ocultar e restaurar.", null);
+        addSwitch("Exibir botões de ação", "Preferência salva para a barra inferior.", "show_bottom_actions", true, null);
+        addOption("Gerenciar botões visíveis", "Excluir, mover, ocultar e restaurar.", null);
 
         addSection("Lixeira");
-        addSwitch("Mover para a Lixeira", "Usa lixeira do Android quando disponivel.", "move_to_trash", false, null);
+        addSwitch("Mover para a Lixeira", "Usa a lixeira do Android quando disponível.", "move_to_trash", false, null);
 
         addSection("Migrando");
         addOption("Exportar caminho dos favoritos", "Nenhum favorito criado ainda.", null);
@@ -289,13 +289,29 @@ public class SettingsActivity extends Activity {
             return "English";
         }
         if ("es".equals(lang)) {
-            return "Espanol";
+            return "Español";
         }
-        return "Portugues";
+        return "Português";
+    }
+
+    private String normalizeDisplayValue(String value) {
+        if ("Padrao do sistema".equals(value)) {
+            return "Padrão do sistema";
+        }
+        if ("Padrao".equals(value)) {
+            return "Padrão";
+        }
+        if ("Portugues".equals(value)) {
+            return "Português";
+        }
+        if ("Espanol".equals(value)) {
+            return "Español";
+        }
+        return value;
     }
 
     private void chooseLanguage() {
-        final String[] labels = new String[] { "Portugues", "English", "Espanol" };
+        final String[] labels = new String[] { "Português", "English", "Español" };
         final String[] values = new String[] { "pt", "en", "es" };
         String current = prefs.getString("language", "pt");
         int checked = 0;

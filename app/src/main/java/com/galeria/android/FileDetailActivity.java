@@ -127,7 +127,7 @@ public class FileDetailActivity extends Activity {
 
     private void restoreFile() {
         boolean restored = MediaActions.restoreHiddenFile(this, file, mimeType);
-        Ui.toast(this, restored ? "Item restaurado." : "Nao foi possivel restaurar.");
+        Ui.toast(this, restored ? "Item restaurado." : "Não foi possível restaurar.");
         if (restored) {
             finish();
         }
@@ -136,10 +136,10 @@ public class FileDetailActivity extends Activity {
     private void confirmDelete() {
         new AlertDialog.Builder(this)
                 .setTitle("Excluir oculto")
-                .setMessage("Este arquivo oculto sera apagado definitivamente.")
+                .setMessage("Este arquivo oculto será apagado definitivamente.")
                 .setPositiveButton("Excluir", (dialog, which) -> {
                     boolean deleted = file.delete();
-                    Ui.toast(this, deleted ? "Item excluido." : "Nao foi possivel excluir.");
+                    Ui.toast(this, deleted ? "Item excluído." : "Não foi possível excluir.");
                     if (deleted) {
                         finish();
                     }

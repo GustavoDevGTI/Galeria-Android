@@ -44,13 +44,13 @@ final class MediaActions {
                 );
                 return RESULT_NEEDS_PERMISSION;
             } catch (IntentSender.SendIntentException exception) {
-                Ui.toast(activity, "Nao foi possivel pedir permissao para excluir.");
+                Ui.toast(activity, "Não foi possível pedir permissão para excluir.");
                 return RESULT_FAILED;
             }
         }
 
         int deleted = deleteDirect(activity, uri) ? 1 : 0;
-        Ui.toast(activity, deleted > 0 ? "Item excluido." : "Nao foi possivel excluir.");
+        Ui.toast(activity, deleted > 0 ? "Item excluído." : "Não foi possível excluir.");
         return deleted > 0 ? RESULT_DONE : RESULT_FAILED;
     }
 
@@ -71,7 +71,7 @@ final class MediaActions {
                 );
                 return RESULT_NEEDS_PERMISSION;
             } catch (IntentSender.SendIntentException exception) {
-                Ui.toast(activity, "Nao foi possivel pedir permissao para excluir.");
+                Ui.toast(activity, "Não foi possível pedir permissão para excluir.");
                 return RESULT_FAILED;
             }
         }
@@ -116,7 +116,7 @@ final class MediaActions {
                         0
                 );
             } catch (IntentSender.SendIntentException exception) {
-                Ui.toast(activity, "Nao foi possivel pedir permissao para mover.");
+                Ui.toast(activity, "Não foi possível pedir permissão para mover.");
             }
         }
     }

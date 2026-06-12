@@ -229,7 +229,7 @@ public class AlbumMediaActivity extends Activity {
         });
         content.addView(grid);
 
-        emptyView = Ui.label(this, "Nenhuma foto ou video nesta pasta.");
+        emptyView = Ui.label(this, "Nenhuma foto ou vídeo nesta pasta.");
         emptyView.setVisibility(View.GONE);
         content.addView(emptyView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -239,23 +239,23 @@ public class AlbumMediaActivity extends Activity {
 
     private void showFolderMenu(View anchor) {
         PopupMenu menu = new PopupMenu(this, anchor);
-        menu.getMenu().add("Filtrar midia");
+        menu.getMenu().add("Filtrar mídia");
         menu.getMenu().add("Agrupar por");
-        menu.getMenu().add("Modo de visualizacao");
+        menu.getMenu().add("Modo de visualização");
         menu.getMenu().add("Criar nova pasta");
-        menu.getMenu().add("Aleatorio");
-        menu.getMenu().add("Espacamento da grade");
+        menu.getMenu().add("Aleatório");
+        menu.getMenu().add("Espaçamento da grade");
         menu.setOnMenuItemClickListener(item -> {
             CharSequence title = item.getTitle();
-            if ("Filtrar midia".contentEquals(title)) {
+            if ("Filtrar mídia".contentEquals(title)) {
                 showMediaFilterDialog();
             } else if ("Agrupar por".contentEquals(title)) {
                 showGroupDialog();
-            } else if ("Modo de visualizacao".contentEquals(title)) {
+            } else if ("Modo de visualização".contentEquals(title)) {
                 showViewModeDialog();
             } else if ("Criar nova pasta".contentEquals(title)) {
                 showCreateFolderDialog();
-            } else if ("Aleatorio".contentEquals(title)) {
+            } else if ("Aleatório".contentEquals(title)) {
                 startRandomPlayback();
             } else {
                 showSpacingDialog();
@@ -276,10 +276,10 @@ public class AlbumMediaActivity extends Activity {
     }
 
     private void showMediaFilterDialog() {
-        final String[] labels = new String[] { "Imagens", "Videos", "Gifs", "Imagens RAW", "SVGs" };
+        final String[] labels = new String[] { "Imagens", "Vídeos", "GIFs", "Imagens RAW", "SVGs" };
         final boolean[] checked = new boolean[] { showImages, showVideos, showGifs, showRaw, showSvgs };
         new AlertDialog.Builder(this)
-                .setTitle("Filtrar midia")
+                .setTitle("Filtrar mídia")
                 .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("OK", (dialog, which) -> {
@@ -302,11 +302,11 @@ public class AlbumMediaActivity extends Activity {
 
     private void showGroupDialog() {
         final String[] labels = new String[] {
-                "Nao agrupar arquivos",
+                "Não agrupar arquivos",
                 "Tipo de arquivo",
-                "Extensao",
+                "Extensão",
                 "Data da foto (por dia)",
-                "Data da foto (por mes)"
+                "Data da foto (por mês)"
         };
         final String[] values = new String[] { GROUP_NONE, GROUP_TYPE, GROUP_EXTENSION, GROUP_DAY, GROUP_MONTH };
         int selected = 0;
@@ -333,7 +333,7 @@ public class AlbumMediaActivity extends Activity {
         final String[] labels = new String[] { "Grade", "Lista" };
         final int[] choice = new int[] { listMode ? 1 : 0 };
         new AlertDialog.Builder(this)
-                .setTitle("Modo de visualizacao")
+                .setTitle("Modo de visualização")
                 .setSingleChoiceItems(labels, choice[0], (dialog, which) -> choice[0] = which)
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("OK", (dialog, which) -> {
@@ -356,7 +356,7 @@ public class AlbumMediaActivity extends Activity {
 
         final EditText input = new EditText(this);
         input.setSingleLine(true);
-        input.setHint("Titulo");
+        input.setHint("Título");
         input.setTextColor(Ui.text(this));
         input.setHintTextColor(Ui.muted(this));
         panel.addView(input, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)));
@@ -374,7 +374,7 @@ public class AlbumMediaActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(Ui.dp(this, 22), Ui.dp(this, 12), Ui.dp(this, 22), Ui.dp(this, 4));
 
-        TextView hint = Ui.label(this, "Esquerda: mais espaco   Direita: sem espaco");
+        TextView hint = Ui.label(this, "Esquerda: mais espaço   Direita: sem espaço");
         hint.setTextSize(12);
         panel.addView(hint, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -400,7 +400,7 @@ public class AlbumMediaActivity extends Activity {
         panel.addView(seekBar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48)));
 
         new AlertDialog.Builder(this)
-                .setTitle("Espacamento da grade")
+                .setTitle("Espaçamento da grade")
                 .setView(panel)
                 .setPositiveButton("OK", null)
                 .show();
@@ -602,7 +602,7 @@ public class AlbumMediaActivity extends Activity {
 
     private void startRandomPlayback() {
         if (adapter == null || adapter.getCount() == 0) {
-            Ui.toast(this, "Nenhuma midia para reproduzir.");
+            Ui.toast(this, "Nenhuma mídia para reproduzir.");
             return;
         }
         int position = new Random().nextInt(adapter.getCount());
@@ -657,13 +657,13 @@ public class AlbumMediaActivity extends Activity {
                 : new File(Environment.getExternalStorageDirectory(), relative);
         File target = new File(base, cleanName);
         if (target.exists()) {
-            Ui.toast(this, "Pasta ja existe.");
+            Ui.toast(this, "A pasta já existe.");
             return;
         }
         if (target.mkdirs()) {
             Ui.toast(this, "Pasta criada.");
         } else {
-            Ui.toast(this, "Nao foi possivel criar a pasta.");
+            Ui.toast(this, "Não foi possível criar a pasta.");
         }
     }
 
@@ -713,7 +713,7 @@ public class AlbumMediaActivity extends Activity {
     private void confirmHide(final MediaItem item) {
         new AlertDialog.Builder(this)
                 .setTitle("Ocultar item")
-                .setMessage("O arquivo sera copiado para a area oculta do app e removido da galeria publica.")
+                .setMessage("O arquivo será copiado para a área oculta do app e removido da galeria pública.")
                 .setPositiveButton("Ocultar", (dialog, which) -> hideItem(item))
                 .setNegativeButton("Cancelar", null)
                 .show();
@@ -722,7 +722,7 @@ public class AlbumMediaActivity extends Activity {
     private void hideItem(MediaItem item) {
         pendingHiddenCopy = MediaActions.copyToHidden(this, item);
         if (pendingHiddenCopy == null) {
-            Ui.toast(this, "Nao foi possivel copiar para ocultos.");
+            Ui.toast(this, "Não foi possível copiar para ocultos.");
             return;
         }
 
@@ -734,7 +734,7 @@ public class AlbumMediaActivity extends Activity {
                 Ui.toast(this, "Item ocultado.");
             } else {
                 pendingHiddenCopy.delete();
-                Ui.toast(this, "Nao foi possivel remover o original.");
+                Ui.toast(this, "Não foi possível remover o original.");
             }
             pendingHiddenCopy = null;
             loadMedia(true);
@@ -750,7 +750,7 @@ public class AlbumMediaActivity extends Activity {
 
         new AlertDialog.Builder(this)
                 .setTitle("Mover para pasta")
-                .setMessage("Digite o nome da pasta dentro de Fotos ou Videos.")
+                .setMessage("Digite o nome da pasta dentro de Fotos ou Vídeos.")
                 .setView(input)
                 .setPositiveButton("Mover", (dialog, which) -> moveItem(item, input.getText().toString()))
                 .setNegativeButton("Cancelar", null)
@@ -769,7 +769,7 @@ public class AlbumMediaActivity extends Activity {
         } else if (result == MediaActions.RESULT_NEEDS_PERMISSION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             MediaActions.requestWrite(this, item.uri, REQ_MOVE_WRITE);
         } else {
-            Ui.toast(this, "Nao foi possivel mover.");
+            Ui.toast(this, "Não foi possível mover.");
         }
     }
 
@@ -781,19 +781,19 @@ public class AlbumMediaActivity extends Activity {
                 Ui.toast(this, "Item ocultado.");
             } else if (pendingHiddenCopy != null) {
                 pendingHiddenCopy.delete();
-                Ui.toast(this, "Ocultacao cancelada.");
+                Ui.toast(this, "Ocultação cancelada.");
             }
             pendingHiddenCopy = null;
             loadMedia(true);
         } else if (requestCode == REQ_DELETE) {
             if (resultCode == RESULT_OK) {
-                Ui.toast(this, "Item excluido.");
+                Ui.toast(this, "Item excluído.");
             }
             loadMedia(true);
         } else if (requestCode == REQ_MOVE_WRITE && pendingMoveItem != null) {
             if (resultCode == RESULT_OK) {
                 int result = MediaActions.moveToFolder(this, pendingMoveItem, pendingMoveFolder);
-                Ui.toast(this, result == MediaActions.RESULT_DONE ? "Item movido." : "Nao foi possivel mover.");
+                Ui.toast(this, result == MediaActions.RESULT_DONE ? "Item movido." : "Não foi possível mover.");
             }
             pendingMoveItem = null;
             pendingMoveFolder = null;

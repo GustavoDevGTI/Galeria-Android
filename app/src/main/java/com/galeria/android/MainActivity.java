@@ -211,26 +211,26 @@ public class MainActivity extends Activity {
     private void showMenu(View anchor) {
         PopupMenu menu = new PopupMenu(this, anchor);
         menu.getMenu().add("Ordenar por");
-        menu.getMenu().add("Filtrar midia");
-        menu.getMenu().add("Organizacao de pastas");
+        menu.getMenu().add("Filtrar mídia");
+        menu.getMenu().add("Organização de pastas");
         menu.getMenu().add("Exibir/ocultar pastas");
         menu.getMenu().add("Criar nova pasta");
-        menu.getMenu().add("Configuracoes");
+        menu.getMenu().add("Configurações");
         menu.getMenu().add("Ocultos");
         menu.getMenu().add("Atualizar");
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
             if ("Ordenar por".equals(title)) {
                 showSortDialog();
-            } else if ("Filtrar midia".equals(title)) {
+            } else if ("Filtrar mídia".equals(title)) {
                 showMediaFilterDialog();
-            } else if ("Organizacao de pastas".equals(title)) {
+            } else if ("Organização de pastas".equals(title)) {
                 showFolderOrganizationDialog();
             } else if ("Exibir/ocultar pastas".equals(title)) {
                 showFolderVisibilityDialog();
             } else if ("Criar nova pasta".equals(title)) {
                 startActivity(new Intent(this, FolderPickerActivity.class));
-            } else if ("Configuracoes".equals(title)) {
+            } else if ("Configurações".equals(title)) {
                 startActivity(new Intent(this, SettingsActivity.class));
             } else if ("Ocultos".equals(title)) {
                 startActivity(new Intent(this, HiddenActivity.class));
@@ -328,9 +328,9 @@ public class MainActivity extends Activity {
                 "Nome",
                 "Caminho",
                 "Tamanho",
-                "Data de modificacao",
-                "Data de criacao",
-                "Aleatorio"
+                "Data de modificação",
+                "Data de criação",
+                "Aleatório"
         };
         final String[] modes = new String[] {
                 SORT_NAME,
@@ -385,8 +385,8 @@ public class MainActivity extends Activity {
     private void showMediaFilterDialog() {
         final String[] labels = new String[] {
                 "Imagens",
-                "Videos",
-                "Gifs",
+                "Vídeos",
+                "GIFs",
                 "Imagens RAW",
                 "SVGs",
                 "Retratos"
@@ -401,7 +401,7 @@ public class MainActivity extends Activity {
         };
 
         new AlertDialog.Builder(this)
-                .setTitle("Filtrar midia")
+                .setTitle("Filtrar mídia")
                 .setMultiChoiceItems(labels, checked, new DialogInterface.OnMultiChoiceClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which, boolean isChecked) {
@@ -436,7 +436,7 @@ public class MainActivity extends Activity {
         final String[] labels = new String[] { "2 colunas", "3 colunas", "4 colunas", "5 colunas", "6 colunas" };
         int checked = Math.max(0, Math.min(4, columnCount - 2));
         new AlertDialog.Builder(this)
-                .setTitle("Organizacao de pastas")
+                .setTitle("Organização de pastas")
                 .setSingleChoiceItems(labels, checked, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
@@ -619,7 +619,7 @@ public class MainActivity extends Activity {
             loadAlbums();
         } else {
             emptyView.setVisibility(View.VISIBLE);
-            emptyView.setText("Autorize acesso completo a fotos e videos para carregar a galeria.");
+            emptyView.setText("Autorize acesso completo a fotos e vídeos para carregar a galeria.");
         }
     }
 

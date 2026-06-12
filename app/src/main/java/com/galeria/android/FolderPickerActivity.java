@@ -160,12 +160,12 @@ public class FolderPickerActivity extends Activity {
     private void createFolder(String name) {
         String clean = MediaActions.cleanFolderName(name);
         if (clean.isEmpty()) {
-            Ui.toast(this, "Digite um nome valido.");
+            Ui.toast(this, "Digite um nome válido.");
             return;
         }
         File target = new File(currentDir, clean);
         if (target.exists()) {
-            Ui.toast(this, "A pasta ja existe.");
+            Ui.toast(this, "A pasta já existe.");
             return;
         }
         if (target.mkdirs()) {
@@ -173,7 +173,7 @@ public class FolderPickerActivity extends Activity {
             currentDir = target;
             loadFolders();
         } else {
-            Ui.toast(this, "Nao foi possivel criar a pasta aqui.");
+            Ui.toast(this, "Não foi possível criar a pasta aqui.");
         }
     }
 
