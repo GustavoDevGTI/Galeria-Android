@@ -5,7 +5,6 @@ import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
-import android.content.IntentSender;
 import android.database.Cursor;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
@@ -44,9 +43,12 @@ final class MediaActions {
                         0
                 );
                 return RESULT_NEEDS_PERMISSION;
-            } catch (IntentSender.SendIntentException exception) {
-                Ui.toast(activity, "Não foi possível pedir permissão para excluir.");
-                return RESULT_FAILED;
+            } catch (Exception exception) {
+                boolean deleted = deleteDirect(activity, uri);
+                if (!deleted) {
+                    Ui.toast(activity, "Não foi possível pedir permissão para excluir.");
+                }
+                return deleted ? RESULT_DONE : RESULT_FAILED;
             }
         }
 
@@ -71,9 +73,12 @@ final class MediaActions {
                         0
                 );
                 return RESULT_NEEDS_PERMISSION;
-            } catch (IntentSender.SendIntentException exception) {
-                Ui.toast(activity, "Não foi possível pedir permissão para excluir.");
-                return RESULT_FAILED;
+            } catch (Exception exception) {
+                boolean deleted = deleteDirect(activity, uri);
+                if (!deleted) {
+                    Ui.toast(activity, "Não foi possível pedir permissão para excluir.");
+                }
+                return deleted ? RESULT_DONE : RESULT_FAILED;
             }
         }
         return deleteDirect(activity, uri) ? RESULT_DONE : RESULT_FAILED;
@@ -116,7 +121,7 @@ final class MediaActions {
                         0,
                         0
                 );
-            } catch (IntentSender.SendIntentException exception) {
+            } catch (Exception exception) {
                 Ui.toast(activity, "Não foi possível pedir permissão para mover.");
             }
         }
