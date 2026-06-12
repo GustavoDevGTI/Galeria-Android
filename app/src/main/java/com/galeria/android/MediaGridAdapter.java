@@ -36,6 +36,7 @@ final class MediaGridAdapter extends BaseAdapter {
     private final ArrayList<MediaItem> allItems = new ArrayList<>();
     private final ArrayList<MediaItem> visibleItems = new ArrayList<>();
     private String filter = "";
+    private boolean listMode;
 
     MediaGridAdapter(Context context) {
         this.context = context;
@@ -49,6 +50,13 @@ final class MediaGridAdapter extends BaseAdapter {
 
     void setSpacingDp(int spacingDp) {
         // Spacing is owned by GridView. Items never receive internal padding/borders.
+    }
+
+    void setListMode(boolean listMode) {
+        if (this.listMode != listMode) {
+            this.listMode = listMode;
+            notifyDataSetChanged();
+        }
     }
 
     void applyFilter(String query) {
@@ -105,14 +113,15 @@ final class MediaGridAdapter extends BaseAdapter {
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
         final Holder holder;
-        if (convertView == null) {
+        if (convertView == null || !(((Holder) convertView.getTag()).listMode == listMode)) {
             LinearLayout item = new LinearLayout(context);
-            item.setOrientation(LinearLayout.VERTICAL);
+            item.setOrientation(listMode ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+            item.setGravity(listMode ? Gravity.CENTER_VERTICAL : Gravity.LEFT);
             item.setBackgroundColor(Color.TRANSPARENT);
 
             FrameLayout thumb = new FrameLayout(context);
             thumb.setBackgroundColor(Color.TRANSPARENT);
-            SquareImageView image = new SquareImageView(context);
+            ImageView image = listMode ? new ImageView(context) : new SquareImageView(context);
             image.setScaleType(ImageView.ScaleType.CENTER_CROP);
             image.setBackgroundColor(Color.TRANSPARENT);
             thumb.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -126,17 +135,24 @@ final class MediaGridAdapter extends BaseAdapter {
             FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 22));
             badgeParams.gravity = Gravity.BOTTOM | Gravity.RIGHT;
             thumb.addView(badge, badgeParams);
-            item.addView(thumb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            LinearLayout.LayoutParams thumbParams = listMode
+                    ? new LinearLayout.LayoutParams(Ui.dp(context, 82), Ui.dp(context, 82))
+                    : new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            item.addView(thumb, thumbParams);
 
             TextView name = new TextView(context);
             name.setTextColor(Ui.muted(context));
-            name.setTextSize(11);
-            name.setSingleLine(true);
+            name.setTextSize(listMode ? 14 : 11);
+            name.setSingleLine(!listMode);
+            name.setMaxLines(listMode ? 2 : 1);
             name.setGravity(Gravity.LEFT);
-            name.setPadding(Ui.dp(context, 2), Ui.dp(context, 4), Ui.dp(context, 2), 0);
-            item.addView(name, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(context, 24)));
+            name.setPadding(Ui.dp(context, listMode ? 12 : 2), Ui.dp(context, listMode ? 0 : 4), Ui.dp(context, 2), 0);
+            LinearLayout.LayoutParams nameParams = listMode
+                    ? new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1)
+                    : new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(context, 24));
+            item.addView(name, nameParams);
 
-            holder = new Holder(image, badge, name);
+            holder = new Holder(image, badge, name, listMode);
             item.setTag(holder);
             convertView = item;
         } else {
@@ -206,11 +222,13 @@ final class MediaGridAdapter extends BaseAdapter {
         final ImageView image;
         final TextView badge;
         final TextView name;
+        final boolean listMode;
 
-        Holder(ImageView image, TextView badge, TextView name) {
+        Holder(ImageView image, TextView badge, TextView name, boolean listMode) {
             this.image = image;
             this.badge = badge;
             this.name = name;
+            this.listMode = listMode;
         }
     }
 }

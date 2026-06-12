@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -29,9 +30,13 @@ import android.widget.TextView;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 
 public class AlbumMediaActivity extends Activity {
@@ -39,6 +44,11 @@ public class AlbumMediaActivity extends Activity {
     private static final int REQ_HIDE_DELETE = 12;
     private static final int REQ_MOVE_WRITE = 13;
     private static final int MAX_GRID_SPACING_DP = 8;
+    private static final String GROUP_NONE = "none";
+    private static final String GROUP_TYPE = "type";
+    private static final String GROUP_EXTENSION = "extension";
+    private static final String GROUP_DAY = "day";
+    private static final String GROUP_MONTH = "month";
 
     private MediaGridAdapter adapter;
     private GridView grid;
@@ -55,6 +65,13 @@ public class AlbumMediaActivity extends Activity {
     private int dragPosition = -1;
     private int savedFirstVisible;
     private View draggedView;
+    private boolean showImages;
+    private boolean showVideos;
+    private boolean showGifs;
+    private boolean showRaw;
+    private boolean showSvgs;
+    private boolean listMode;
+    private String groupMode;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -62,6 +79,7 @@ public class AlbumMediaActivity extends Activity {
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE);
         albumKey = getIntent().getStringExtra("album_key");
         albumName = getIntent().getStringExtra("album_name");
+        readAlbumOptions();
         if (albumName == null || albumName.isEmpty()) {
             albumName = "Album";
         }
@@ -166,6 +184,7 @@ public class AlbumMediaActivity extends Activity {
         grid.setBackgroundColor(Ui.BG);
         adapter = new MediaGridAdapter(this);
         adapter.setSpacingDp(gridSpacingDp);
+        applyViewMode();
         grid.setAdapter(adapter);
         grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
@@ -220,10 +239,23 @@ public class AlbumMediaActivity extends Activity {
 
     private void showFolderMenu(View anchor) {
         PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add("Filtrar midia");
+        menu.getMenu().add("Agrupar por");
+        menu.getMenu().add("Modo de visualizacao");
+        menu.getMenu().add("Criar nova pasta");
         menu.getMenu().add("Aleatorio");
         menu.getMenu().add("Espacamento da grade");
         menu.setOnMenuItemClickListener(item -> {
-            if ("Aleatorio".contentEquals(item.getTitle())) {
+            CharSequence title = item.getTitle();
+            if ("Filtrar midia".contentEquals(title)) {
+                showMediaFilterDialog();
+            } else if ("Agrupar por".contentEquals(title)) {
+                showGroupDialog();
+            } else if ("Modo de visualizacao".contentEquals(title)) {
+                showViewModeDialog();
+            } else if ("Criar nova pasta".contentEquals(title)) {
+                showCreateFolderDialog();
+            } else if ("Aleatorio".contentEquals(title)) {
                 startRandomPlayback();
             } else {
                 showSpacingDialog();
@@ -231,6 +263,110 @@ public class AlbumMediaActivity extends Activity {
             return true;
         });
         menu.show();
+    }
+
+    private void readAlbumOptions() {
+        showImages = prefs.getBoolean(optionKey("filter_images"), true);
+        showVideos = prefs.getBoolean(optionKey("filter_videos"), true);
+        showGifs = prefs.getBoolean(optionKey("filter_gifs"), true);
+        showRaw = prefs.getBoolean(optionKey("filter_raw"), true);
+        showSvgs = prefs.getBoolean(optionKey("filter_svg"), true);
+        listMode = prefs.getBoolean(optionKey("list_mode"), false);
+        groupMode = prefs.getString(optionKey("group_mode"), GROUP_NONE);
+    }
+
+    private void showMediaFilterDialog() {
+        final String[] labels = new String[] { "Imagens", "Videos", "Gifs", "Imagens RAW", "SVGs" };
+        final boolean[] checked = new boolean[] { showImages, showVideos, showGifs, showRaw, showSvgs };
+        new AlertDialog.Builder(this)
+                .setTitle("Filtrar midia")
+                .setMultiChoiceItems(labels, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("OK", (dialog, which) -> {
+                    showImages = checked[0];
+                    showVideos = checked[1];
+                    showGifs = checked[2];
+                    showRaw = checked[3];
+                    showSvgs = checked[4];
+                    prefs.edit()
+                            .putBoolean(optionKey("filter_images"), showImages)
+                            .putBoolean(optionKey("filter_videos"), showVideos)
+                            .putBoolean(optionKey("filter_gifs"), showGifs)
+                            .putBoolean(optionKey("filter_raw"), showRaw)
+                            .putBoolean(optionKey("filter_svg"), showSvgs)
+                            .apply();
+                    loadMedia(true);
+                })
+                .show();
+    }
+
+    private void showGroupDialog() {
+        final String[] labels = new String[] {
+                "Nao agrupar arquivos",
+                "Tipo de arquivo",
+                "Extensao",
+                "Data da foto (por dia)",
+                "Data da foto (por mes)"
+        };
+        final String[] values = new String[] { GROUP_NONE, GROUP_TYPE, GROUP_EXTENSION, GROUP_DAY, GROUP_MONTH };
+        int selected = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (values[i].equals(groupMode)) {
+                selected = i;
+                break;
+            }
+        }
+        final int[] choice = new int[] { selected };
+        new AlertDialog.Builder(this)
+                .setTitle("Agrupar por")
+                .setSingleChoiceItems(labels, selected, (dialog, which) -> choice[0] = which)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("OK", (dialog, which) -> {
+                    groupMode = values[choice[0]];
+                    prefs.edit().putString(optionKey("group_mode"), groupMode).apply();
+                    loadMedia(true);
+                })
+                .show();
+    }
+
+    private void showViewModeDialog() {
+        final String[] labels = new String[] { "Grade", "Lista" };
+        final int[] choice = new int[] { listMode ? 1 : 0 };
+        new AlertDialog.Builder(this)
+                .setTitle("Modo de visualizacao")
+                .setSingleChoiceItems(labels, choice[0], (dialog, which) -> choice[0] = which)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("OK", (dialog, which) -> {
+                    listMode = choice[0] == 1;
+                    prefs.edit().putBoolean(optionKey("list_mode"), listMode).apply();
+                    applyViewMode();
+                })
+                .show();
+    }
+
+    private void showCreateFolderDialog() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(Ui.dp(this, 18), Ui.dp(this, 8), Ui.dp(this, 18), 0);
+
+        TextView path = Ui.label(this, folderDisplayPath());
+        path.setGravity(Gravity.LEFT);
+        path.setTextSize(13);
+        panel.addView(path, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("Titulo");
+        input.setTextColor(Ui.text(this));
+        input.setHintTextColor(Ui.muted(this));
+        panel.addView(input, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)));
+
+        new AlertDialog.Builder(this)
+                .setTitle("Criar nova pasta")
+                .setView(panel)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("OK", (dialog, which) -> createFolder(input.getText().toString()))
+                .show();
     }
 
     private void showSpacingDialog() {
@@ -285,7 +421,7 @@ public class AlbumMediaActivity extends Activity {
 
     private void loadMedia(boolean preserveScroll) {
         int targetPosition = preserveScroll && grid != null ? grid.getFirstVisiblePosition() : savedFirstVisible;
-        List<MediaItem> items = applyCustomOrder(MediaStoreRepository.loadMediaForAlbum(this, albumKey));
+        List<MediaItem> items = prepareAlbumMedia(MediaStoreRepository.loadMediaForAlbum(this, albumKey));
         adapter.submit(items);
         if (searchInput != null) {
             adapter.applyFilter(searchInput.getText().toString());
@@ -324,6 +460,92 @@ public class AlbumMediaActivity extends Activity {
             }
         }
         return ordered;
+    }
+
+    private List<MediaItem> prepareAlbumMedia(List<MediaItem> source) {
+        ArrayList<MediaItem> filtered = new ArrayList<>();
+        for (MediaItem item : applyCustomOrder(source)) {
+            if (matchesMediaFilter(item)) {
+                filtered.add(item);
+            }
+        }
+        applyGrouping(filtered);
+        return filtered;
+    }
+
+    private boolean matchesMediaFilter(MediaItem item) {
+        if (item.isVideo()) {
+            return showVideos;
+        }
+        String name = item.name.toLowerCase(Locale.US);
+        String mime = item.mimeType.toLowerCase(Locale.US);
+        if (mime.equals("image/gif") || name.endsWith(".gif")) {
+            return showGifs;
+        }
+        if (mime.equals("image/svg+xml") || name.endsWith(".svg")) {
+            return showSvgs;
+        }
+        if (isRawImage(name, mime)) {
+            return showRaw;
+        }
+        return item.isImage() && showImages;
+    }
+
+    private boolean isRawImage(String name, String mime) {
+        return mime.contains("raw")
+                || name.endsWith(".dng")
+                || name.endsWith(".raw")
+                || name.endsWith(".cr2")
+                || name.endsWith(".nef")
+                || name.endsWith(".arw")
+                || name.endsWith(".orf")
+                || name.endsWith(".rw2");
+    }
+
+    private void applyGrouping(List<MediaItem> items) {
+        if (GROUP_NONE.equals(groupMode)) {
+            return;
+        }
+        Collections.sort(items, new Comparator<MediaItem>() {
+            @Override
+            public int compare(MediaItem first, MediaItem second) {
+                int group = groupValue(first).compareTo(groupValue(second));
+                if (group != 0) {
+                    return group;
+                }
+                return Long.compare(second.dateAdded, first.dateAdded);
+            }
+        });
+    }
+
+    private String groupValue(MediaItem item) {
+        if (GROUP_TYPE.equals(groupMode)) {
+            return item.isVideo() ? "2_video" : "1_image";
+        }
+        if (GROUP_EXTENSION.equals(groupMode)) {
+            return fileExtension(item.name);
+        }
+        if (GROUP_DAY.equals(groupMode)) {
+            return dateGroup(item.dateAdded, true);
+        }
+        if (GROUP_MONTH.equals(groupMode)) {
+            return dateGroup(item.dateAdded, false);
+        }
+        return "";
+    }
+
+    private String fileExtension(String name) {
+        int dot = name == null ? -1 : name.lastIndexOf('.');
+        return dot >= 0 && dot + 1 < name.length() ? name.substring(dot + 1).toLowerCase(Locale.US) : "";
+    }
+
+    private String dateGroup(long seconds, boolean includeDay) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(Math.max(0L, seconds) * 1000L);
+        int year = calendar.get(Calendar.YEAR);
+        int month = calendar.get(Calendar.MONTH) + 1;
+        int day = includeDay ? calendar.get(Calendar.DAY_OF_MONTH) : 0;
+        return String.format(Locale.US, "%04d-%02d-%02d", year, month, day);
     }
 
     private void saveCustomOrder() {
@@ -385,6 +607,64 @@ public class AlbumMediaActivity extends Activity {
         }
         int position = new Random().nextInt(adapter.getCount());
         openDetail(adapter.getItem(position), position, true);
+    }
+
+    private void applyViewMode() {
+        if (grid == null || adapter == null) {
+            return;
+        }
+        if (listMode) {
+            grid.setNumColumns(1);
+            grid.setColumnWidth(getResources().getDisplayMetrics().widthPixels);
+            grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
+        } else {
+            grid.setNumColumns(GridView.AUTO_FIT);
+            grid.setColumnWidth(Ui.dp(this, 126));
+            grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
+        }
+        adapter.setListMode(listMode);
+        applyGridSpacing();
+    }
+
+    private String optionKey(String suffix) {
+        return "album_" + suffix + "_" + (albumKey == null ? "all" : albumKey.hashCode());
+    }
+
+    private String folderDisplayPath() {
+        String path = currentRelativeFolder();
+        return path.isEmpty() ? "Armazenamento interno" : "Armazenamento interno/" + path;
+    }
+
+    private String currentRelativeFolder() {
+        if (albumKey != null && !"all_media".equals(albumKey) && albumKey.endsWith("/")) {
+            return albumKey;
+        }
+        if (adapter != null && adapter.getCount() > 0) {
+            return adapter.getItem(0).relativePath;
+        }
+        return "";
+    }
+
+    private void createFolder(String rawName) {
+        String cleanName = MediaActions.cleanFolderName(rawName);
+        if (cleanName.isEmpty()) {
+            Ui.toast(this, "Digite um nome para a pasta.");
+            return;
+        }
+        String relative = currentRelativeFolder();
+        File base = relative.isEmpty()
+                ? Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                : new File(Environment.getExternalStorageDirectory(), relative);
+        File target = new File(base, cleanName);
+        if (target.exists()) {
+            Ui.toast(this, "Pasta ja existe.");
+            return;
+        }
+        if (target.mkdirs()) {
+            Ui.toast(this, "Pasta criada.");
+        } else {
+            Ui.toast(this, "Nao foi possivel criar a pasta.");
+        }
     }
 
     private void openDetail(MediaItem item, int position) {
