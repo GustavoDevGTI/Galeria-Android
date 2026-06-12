@@ -322,7 +322,7 @@ public class MainActivity extends Activity {
         menu.getMenu().add("Exibir/ocultar pastas");
         menu.getMenu().add("Criar nova pasta");
         menu.getMenu().add("Configurações");
-        menu.getMenu().add("Ocultos");
+        menu.getMenu().add(showHiddenFolders ? "Ocultar ocultos" : "Exibir ocultos");
         menu.getMenu().add("Atualizar");
         menu.setOnMenuItemClickListener(item -> {
             String title = item.getTitle().toString();
@@ -338,8 +338,17 @@ public class MainActivity extends Activity {
                 startActivity(new Intent(this, FolderPickerActivity.class));
             } else if ("Configurações".equals(title)) {
                 startActivity(new Intent(this, SettingsActivity.class));
-            } else if ("Ocultos".equals(title)) {
-                startActivity(new Intent(this, HiddenActivity.class));
+            } else if ("Exibir ocultos".equals(title)) {
+                showHiddenFolders = true;
+                prefs.edit().putBoolean("show_hidden_folders", true).apply();
+                loadAlbums();
+            } else if ("Ocultar ocultos".equals(title)) {
+                showHiddenFolders = false;
+                prefs.edit()
+                        .putBoolean("show_hidden_folders", false)
+                        .putBoolean("always_show_hidden", false)
+                        .apply();
+                loadAlbums();
             } else {
                 loadAlbums();
             }
@@ -592,10 +601,10 @@ public class MainActivity extends Activity {
                 } else {
                     albums = MediaStoreRepository.buildAlbums(filteredMedia);
                 }
-                if (!includeHidden && !hiddenKeys.isEmpty()) {
+                if (!includeHidden) {
                     ArrayList<AlbumItem> visibleAlbums = new ArrayList<>();
                     for (AlbumItem album : albums) {
-                        if (!hiddenKeys.contains(album.key)) {
+                        if (!hiddenKeys.contains(album.key) && !isHiddenAlbum(album)) {
                             visibleAlbums.add(album);
                         }
                     }
@@ -901,6 +910,20 @@ public class MainActivity extends Activity {
                 return sortDesc ? -result : result;
             }
         });
+    }
+
+    private boolean isHiddenAlbum(AlbumItem album) {
+        String path = (album.path == null || album.path.isEmpty() ? album.key : album.path).replace('\\', '/');
+        if (path.isEmpty()) {
+            return false;
+        }
+        String[] parts = path.split("/");
+        for (String part : parts) {
+            if (part.startsWith(".") || "Private".equalsIgnoreCase(part) || "Hidden".equalsIgnoreCase(part)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean matchesMediaFilter(MediaItem item) {
