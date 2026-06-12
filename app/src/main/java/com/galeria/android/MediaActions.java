@@ -5,6 +5,7 @@ import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.media.MediaScannerConnection;
@@ -28,7 +29,7 @@ final class MediaActions {
     private MediaActions() {
     }
 
-    static boolean hasAllFilesAccess(Activity activity) {
+    static boolean hasAllFilesAccess(Context context) {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
                 || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager());
     }
@@ -388,6 +389,9 @@ final class MediaActions {
     }
 
     private static File fileFromMediaStore(Activity activity, Uri uri) {
+        if ("file".equals(uri.getScheme())) {
+            return new File(uri.getPath());
+        }
         String[] projection = new String[] { MediaStore.MediaColumns.DATA };
         try (Cursor cursor = activity.getContentResolver().query(uri, projection, null, null, null)) {
             if (cursor != null && cursor.moveToFirst()) {

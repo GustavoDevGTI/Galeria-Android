@@ -65,6 +65,7 @@ public class MainActivity extends Activity {
     private boolean showPortraits;
     private boolean showHiddenFolders;
     private int columnCount;
+    private long lastColumnGestureMs;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -172,11 +173,17 @@ public class MainActivity extends Activity {
         scaleDetector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
             @Override
             public boolean onScale(ScaleGestureDetector detector) {
+                long now = System.currentTimeMillis();
+                if (now - lastColumnGestureMs < 180L) {
+                    return false;
+                }
                 if (detector.getScaleFactor() < 0.92f) {
+                    lastColumnGestureMs = now;
                     setColumnCount(columnCount + 1);
                     return true;
                 }
                 if (detector.getScaleFactor() > 1.08f) {
+                    lastColumnGestureMs = now;
                     setColumnCount(columnCount - 1);
                     return true;
                 }
@@ -513,7 +520,20 @@ public class MainActivity extends Activity {
         columnCount = bounded;
         prefs.edit().putInt("column_count", columnCount).apply();
         if (grid != null) {
-            grid.setNumColumns(columnCount);
+            grid.animate()
+                    .alpha(0.82f)
+                    .scaleX(0.985f)
+                    .scaleY(0.985f)
+                    .setDuration(85)
+                    .withEndAction(new Runnable() {
+                        @Override
+                        public void run() {
+                            grid.setNumColumns(columnCount);
+                            grid.scheduleLayoutAnimation();
+                            grid.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(130).start();
+                        }
+                    })
+                    .start();
         }
     }
 

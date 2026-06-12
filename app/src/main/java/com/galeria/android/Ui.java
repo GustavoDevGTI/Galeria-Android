@@ -23,19 +23,22 @@ final class Ui {
     }
 
     static boolean darkMode(Context context) {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("dark_mode", true);
+        return luminance(themeSeed(context)) < 0.56;
     }
 
     static int bg(Context context) {
-        return darkMode(context) ? BG : Color.rgb(248, 248, 248);
+        int seed = themeSeed(context);
+        return darkMode(context) ? blend(seed, Color.BLACK, 0.72f) : blend(seed, Color.WHITE, 0.82f);
     }
 
     static int surface(Context context) {
-        return darkMode(context) ? SURFACE : Color.rgb(238, 238, 238);
+        int seed = themeSeed(context);
+        return darkMode(context) ? blend(seed, Color.BLACK, 0.52f) : blend(seed, Color.WHITE, 0.66f);
     }
 
     static int search(Context context) {
-        return darkMode(context) ? SEARCH : Color.rgb(232, 232, 232);
+        int seed = themeSeed(context);
+        return darkMode(context) ? blend(seed, Color.BLACK, 0.62f) : blend(seed, Color.WHITE, 0.74f);
     }
 
     static int text(Context context) {
@@ -43,12 +46,38 @@ final class Ui {
     }
 
     static int muted(Context context) {
-        return darkMode(context) ? MUTED : Color.rgb(92, 92, 92);
+        int base = text(context);
+        return darkMode(context) ? blend(base, bg(context), 0.36f) : blend(base, bg(context), 0.46f);
     }
 
     static int accent(Context context) {
+        int seed = themeSeed(context);
+        if (darkMode(context) && luminance(seed) < 0.35) {
+            return blend(seed, Color.WHITE, 0.45f);
+        }
+        if (!darkMode(context) && luminance(seed) > 0.72) {
+            return blend(seed, Color.BLACK, 0.25f);
+        }
+        return seed;
+    }
+
+    static int themeSeed(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        return prefs.getInt("theme_color", darkMode(context) ? TEXT : Color.rgb(18, 18, 18));
+        return prefs.getInt("theme_color", Color.rgb(18, 18, 18));
+    }
+
+    static int blend(int first, int second, float secondAmount) {
+        float amount = Math.max(0f, Math.min(1f, secondAmount));
+        float inverse = 1f - amount;
+        return Color.rgb(
+                Math.round(Color.red(first) * inverse + Color.red(second) * amount),
+                Math.round(Color.green(first) * inverse + Color.green(second) * amount),
+                Math.round(Color.blue(first) * inverse + Color.blue(second) * amount)
+        );
+    }
+
+    static double luminance(int color) {
+        return (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color)) / 255.0;
     }
 
     static int dp(Context context, int value) {

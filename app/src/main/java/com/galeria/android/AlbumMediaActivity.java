@@ -65,6 +65,10 @@ public class AlbumMediaActivity extends Activity {
     private int dragPosition = -1;
     private int savedFirstVisible;
     private View draggedView;
+    private LinearLayout selectionBar;
+    private LinearLayout selectionActions;
+    private TextView selectAllText;
+    private boolean dragMoved;
     private boolean showImages;
     private boolean showVideos;
     private boolean showGifs;
@@ -98,7 +102,7 @@ public class AlbumMediaActivity extends Activity {
     private void buildLayout() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Ui.BG);
+        root.setBackgroundColor(Ui.bg(this));
 
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
@@ -107,7 +111,7 @@ public class AlbumMediaActivity extends Activity {
         ImageButton back = new ImageButton(this);
         back.setImageResource(com.galeria.android.R.drawable.ic_back);
         back.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-        back.setColorFilter(Ui.TEXT);
+        back.setColorFilter(Ui.text(this));
         back.setPadding(Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8));
         back.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -169,6 +173,32 @@ public class AlbumMediaActivity extends Activity {
         searchParams.setMargins(Ui.dp(this, 14), 0, Ui.dp(this, 14), Ui.dp(this, 8));
         root.addView(searchBox, searchParams);
 
+        selectionBar = new LinearLayout(this);
+        selectionBar.setGravity(Gravity.CENTER_VERTICAL);
+        selectionBar.setBackground(Ui.rounded(Ui.surface(this), 8, this));
+        Ui.setPadding(selectionBar, 14, 8, 14, 8);
+        selectAllText = Ui.title(this, "[ ] Selecionar tudo", 15);
+        selectAllText.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                toggleSelectAll();
+            }
+        });
+        selectionBar.addView(selectAllText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView cancelSelection = Ui.title(this, "Cancelar", 15);
+        cancelSelection.setGravity(Gravity.RIGHT);
+        cancelSelection.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                exitSelectionMode();
+            }
+        });
+        selectionBar.addView(cancelSelection, new LinearLayout.LayoutParams(Ui.dp(this, 96), Ui.dp(this, 38)));
+        selectionBar.setVisibility(View.GONE);
+        LinearLayout.LayoutParams selectionParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        selectionParams.setMargins(Ui.dp(this, 14), 0, Ui.dp(this, 14), Ui.dp(this, 8));
+        root.addView(selectionBar, selectionParams);
+
         FrameLayout content = new FrameLayout(this);
         grid = new GridView(this);
         grid.setNumColumns(GridView.AUTO_FIT);
@@ -181,7 +211,7 @@ public class AlbumMediaActivity extends Activity {
         grid.setLayoutAnimation(new GridLayoutAnimationController(itemFade, 0.035f, 0.035f));
         grid.setClipToPadding(false);
         grid.setSelector(new ColorDrawable(Color.TRANSPARENT));
-        grid.setBackgroundColor(Ui.BG);
+        grid.setBackgroundColor(Ui.bg(this));
         adapter = new MediaGridAdapter(this);
         adapter.setSpacingDp(gridSpacingDp);
         applyViewMode();
@@ -190,15 +220,26 @@ public class AlbumMediaActivity extends Activity {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
                 if (!dragging) {
-                    openDetail(adapter.getItem(position), position);
+                    if (adapter.isSelectionMode()) {
+                        adapter.toggleSelection(position);
+                        updateSelectionUi();
+                    } else {
+                        openDetail(adapter.getItem(position), position);
+                    }
                 }
             }
         });
         grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
             @Override
             public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
+                if (!adapter.isSelectionMode()) {
+                    enterSelectionMode();
+                }
+                adapter.selectPosition(position);
+                updateSelectionUi();
                 dragging = true;
                 dragPosition = position;
+                dragMoved = false;
                 draggedView = view;
                 view.setAlpha(0.55f);
                 view.animate().scaleX(0.97f).scaleY(0.97f).setDuration(90).start();
@@ -213,15 +254,25 @@ public class AlbumMediaActivity extends Activity {
                 }
                 if (event.getAction() == MotionEvent.ACTION_MOVE) {
                     int target = grid.pointToPosition((int) event.getX(), (int) event.getY());
-                    if (target >= 0 && target != dragPosition && adapter.moveVisible(dragPosition, target)) {
+                    if (adapter.isSelectionMode() && target >= 0 && target != dragPosition && adapter.moveSelectedBlock(target)) {
                         dragPosition = target;
+                        dragMoved = true;
+                        animateGridMove();
+                    } else if (!adapter.isSelectionMode() && target >= 0 && target != dragPosition && adapter.moveVisible(dragPosition, target)) {
+                        dragPosition = target;
+                        dragMoved = true;
                         animateGridMove();
                     }
                     return true;
                 }
                 if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
                     finishDrag();
-                    saveCustomOrder();
+                    if (dragMoved) {
+                        saveCustomOrder();
+                        if (adapter.isSelectionMode()) {
+                            exitSelectionMode();
+                        }
+                    }
                     return true;
                 }
                 return true;
@@ -234,7 +285,49 @@ public class AlbumMediaActivity extends Activity {
         content.addView(emptyView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         root.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+
+        selectionActions = new LinearLayout(this);
+        selectionActions.setGravity(Gravity.CENTER);
+        selectionActions.setBackgroundColor(Ui.bg(this));
+        Ui.setPadding(selectionActions, 10, 8, 10, 12);
+        addSelectionAction("Compartilhar", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                shareSelected();
+            }
+        });
+        addSelectionAction("Favoritar", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                favoriteSelected();
+            }
+        });
+        addSelectionAction("Excluir", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                confirmDeleteSelected();
+            }
+        });
+        addSelectionAction("Mover", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                askMoveSelected();
+            }
+        });
+        selectionActions.setVisibility(View.GONE);
+        root.addView(selectionActions, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(root);
+    }
+
+    private void addSelectionAction(String label, View.OnClickListener listener) {
+        TextView button = Ui.title(this, label, 14);
+        button.setTextColor(Ui.accent(this));
+        button.setGravity(Gravity.CENTER);
+        button.setBackground(Ui.rounded(Ui.surface(this), 8, this));
+        button.setOnClickListener(listener);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, Ui.dp(this, 42), 1);
+        params.setMargins(Ui.dp(this, 4), 0, Ui.dp(this, 4), 0);
+        selectionActions.addView(button, params);
     }
 
     private void showFolderMenu(View anchor) {
@@ -374,7 +467,7 @@ public class AlbumMediaActivity extends Activity {
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(Ui.dp(this, 22), Ui.dp(this, 12), Ui.dp(this, 22), Ui.dp(this, 4));
 
-        TextView hint = Ui.label(this, "Esquerda: mais espaço   Direita: sem espaço");
+        TextView hint = Ui.label(this, "Vale para todas as pastas. Esquerda: mais espaço   Direita: sem espaço");
         hint.setTextSize(12);
         panel.addView(hint, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -419,6 +512,138 @@ public class AlbumMediaActivity extends Activity {
         }
     }
 
+    private void enterSelectionMode() {
+        adapter.setSelectionMode(true);
+        updateSelectionUi();
+    }
+
+    private void exitSelectionMode() {
+        adapter.clearSelection();
+        updateSelectionUi();
+    }
+
+    private void updateSelectionUi() {
+        boolean active = adapter != null && adapter.isSelectionMode() && adapter.selectedCount() > 0;
+        if (selectionBar != null) {
+            selectionBar.setVisibility(active ? View.VISIBLE : View.GONE);
+        }
+        if (selectionActions != null) {
+            selectionActions.setVisibility(active ? View.VISIBLE : View.GONE);
+        }
+        if (selectAllText != null && adapter != null) {
+            selectAllText.setText((adapter.allVisibleSelected() ? "[x] " : "[ ] ") + "Selecionar tudo");
+        }
+        if (adapter != null && adapter.isSelectionMode() && adapter.selectedCount() == 0) {
+            adapter.setSelectionMode(false);
+        }
+    }
+
+    private void toggleSelectAll() {
+        if (adapter == null) {
+            return;
+        }
+        if (adapter.allVisibleSelected()) {
+            exitSelectionMode();
+        } else {
+            adapter.selectAllVisible();
+            updateSelectionUi();
+        }
+    }
+
+    private void shareSelected() {
+        List<MediaItem> selected = adapter.selectedItems();
+        if (selected.isEmpty()) {
+            return;
+        }
+        ArrayList<android.net.Uri> uris = new ArrayList<>();
+        for (MediaItem item : selected) {
+            uris.add(item.uri);
+        }
+        Intent share = new Intent(Intent.ACTION_SEND_MULTIPLE);
+        share.setType("*/*");
+        share.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+        share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(Intent.createChooser(share, "Compartilhar"));
+    }
+
+    private void favoriteSelected() {
+        List<MediaItem> selected = adapter.selectedItems();
+        if (selected.isEmpty()) {
+            return;
+        }
+        HashSet<String> favorites = new HashSet<>(prefs.getStringSet("favorites", new HashSet<String>()));
+        for (MediaItem item : selected) {
+            favorites.add(item.uri.toString());
+        }
+        prefs.edit().putStringSet("favorites", favorites).apply();
+        Ui.toast(this, selected.size() + " item(ns) adicionados aos favoritos.");
+        exitSelectionMode();
+    }
+
+    private void confirmDeleteSelected() {
+        final List<MediaItem> selected = adapter.selectedItems();
+        if (selected.isEmpty()) {
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Excluir selecionados")
+                .setMessage("Tem certeza que deseja excluir " + selected.size() + " arquivo(s)?")
+                .setPositiveButton("Excluir", (dialog, which) -> deleteSelected(selected))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void deleteSelected(List<MediaItem> selected) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
+            requestFileManagementAccess();
+            return;
+        }
+        int deleted = 0;
+        for (MediaItem item : selected) {
+            if (MediaActions.requestPermanentDelete(this, item.uri, REQ_DELETE) == MediaActions.RESULT_DONE) {
+                deleted++;
+            }
+        }
+        Ui.toast(this, deleted + " item(ns) excluídos.");
+        exitSelectionMode();
+        loadMedia(true);
+    }
+
+    private void askMoveSelected() {
+        final List<MediaItem> selected = adapter.selectedItems();
+        if (selected.isEmpty()) {
+            return;
+        }
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("Ex.: Viagens");
+        input.setTextColor(Ui.text(this));
+        input.setHintTextColor(Ui.muted(this));
+        new AlertDialog.Builder(this)
+                .setTitle("Mover selecionados")
+                .setMessage("Digite o nome da pasta de destino.")
+                .setView(input)
+                .setPositiveButton("Mover", (dialog, which) -> moveSelected(selected, input.getText().toString()))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void moveSelected(List<MediaItem> selected, String folder) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
+            requestFileManagementAccess();
+            return;
+        }
+        int moved = 0;
+        for (MediaItem item : selected) {
+            if (MediaActions.moveToFolder(this, item, folder) == MediaActions.RESULT_DONE) {
+                moved++;
+            }
+        }
+        Ui.toast(this, moved + " item(ns) movidos.");
+        exitSelectionMode();
+        loadMedia(true);
+    }
+
     private void loadMedia(boolean preserveScroll) {
         int targetPosition = preserveScroll && grid != null ? grid.getFirstVisiblePosition() : savedFirstVisible;
         List<MediaItem> items = prepareAlbumMedia(MediaStoreRepository.loadMediaForAlbum(this, albumKey));
@@ -427,6 +652,7 @@ public class AlbumMediaActivity extends Activity {
             adapter.applyFilter(searchInput.getText().toString());
         }
         updateEmptyState();
+        updateSelectionUi();
         if (grid != null) {
             grid.scheduleLayoutAnimation();
         }
@@ -562,7 +788,7 @@ public class AlbumMediaActivity extends Activity {
     }
 
     private String spacingKey() {
-        return "grid_spacing_" + (albumKey == null ? "all" : albumKey);
+        return "grid_spacing_global";
     }
 
     private void finishDrag() {
@@ -777,8 +1003,8 @@ public class AlbumMediaActivity extends Activity {
         final EditText input = new EditText(this);
         input.setSingleLine(true);
         input.setHint("Ex.: Viagens");
-        input.setTextColor(Ui.TEXT);
-        input.setHintTextColor(Ui.MUTED);
+        input.setTextColor(Ui.text(this));
+        input.setHintTextColor(Ui.muted(this));
 
         new AlertDialog.Builder(this)
                 .setTitle("Mover para pasta")

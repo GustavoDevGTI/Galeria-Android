@@ -3,6 +3,7 @@ package com.galeria.android;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.media.ThumbnailUtils;
 import android.net.Uri;
 import android.os.Build;
 import android.util.LruCache;
@@ -14,6 +15,7 @@ import android.widget.BaseAdapter;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
@@ -140,6 +142,15 @@ final class AlbumGridAdapter extends BaseAdapter {
     }
 
     private Bitmap readThumbnail(Uri uri) {
+        if ("file".equals(uri.getScheme()) && isVideoFile(uri.getPath())) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    return ThumbnailUtils.createVideoThumbnail(new File(uri.getPath()), new Size(420, 420), null);
+                }
+                return ThumbnailUtils.createVideoThumbnail(uri.getPath(), android.provider.MediaStore.Video.Thumbnails.MINI_KIND);
+            } catch (Exception ignored) {
+            }
+        }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 return context.getContentResolver().loadThumbnail(uri, new Size(420, 420), null);
@@ -157,6 +168,21 @@ final class AlbumGridAdapter extends BaseAdapter {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private boolean isVideoFile(String path) {
+        if (path == null) {
+            return false;
+        }
+        String name = path.toLowerCase(Locale.US);
+        return name.endsWith(".mp4")
+                || name.endsWith(".mkv")
+                || name.endsWith(".webm")
+                || name.endsWith(".mov")
+                || name.endsWith(".avi")
+                || name.endsWith(".3gp")
+                || name.endsWith(".m4v")
+                || name.endsWith(".ts");
     }
 
     private int folderRadius() {

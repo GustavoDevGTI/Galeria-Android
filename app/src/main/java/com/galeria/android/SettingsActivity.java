@@ -67,12 +67,6 @@ public class SettingsActivity extends Activity {
         addColorChoice();
 
         addSection("Geral");
-        addSwitch("Modo escuro", "Alterna entre claro e escuro.", "dark_mode", true, new Runnable() {
-            @Override
-            public void run() {
-                buildLayout();
-            }
-        });
         addOption("Idioma", languageLabel(), new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -241,35 +235,74 @@ public class SettingsActivity extends Activity {
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
         TextView titleView = Ui.title(this, "Cor do tema", 16);
-        TextView subtitleView = Ui.label(this, "Escolha um destaque discreto.");
+        TextView subtitleView = Ui.label(this, "Define o visual padrão da galeria.");
         subtitleView.setGravity(Gravity.LEFT);
         texts.addView(titleView);
         texts.addView(subtitleView);
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-        LinearLayout swatches = new LinearLayout(this);
-        int[] colors = new int[] {
-                Ui.text(this),
-                Color.rgb(96, 165, 250),
-                Color.rgb(168, 85, 247),
-                Color.rgb(244, 114, 182)
-        };
-        for (final int color : colors) {
-            TextView swatch = new TextView(this);
-            swatch.setBackground(Ui.rounded(color, 14, this));
-            swatch.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View view) {
-                    prefs.edit().putInt("theme_color", color).apply();
-                    Ui.toast(SettingsActivity.this, "Cor aplicada.");
-                }
-            });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(Ui.dp(this, 28), Ui.dp(this, 28));
-            params.leftMargin = Ui.dp(this, 8);
-            swatches.addView(swatch, params);
-        }
-        row.addView(swatches);
+        TextView preview = new TextView(this);
+        preview.setBackground(Ui.rounded(Ui.themeSeed(this), 6, this));
+        row.addView(preview, new LinearLayout.LayoutParams(Ui.dp(this, 42), Ui.dp(this, 42)));
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showThemeColorDialog();
+            }
+        });
         content.addView(row);
+    }
+
+    private void showThemeColorDialog() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        Ui.setPadding(panel, 16, 12, 16, 8);
+        int[] colors = themeColors();
+        int index = 0;
+        final AlertDialog[] dialogRef = new AlertDialog[1];
+        for (int rowIndex = 0; rowIndex < 4; rowIndex++) {
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER);
+            for (int column = 0; column < 8; column++) {
+                final int color = colors[index++];
+                TextView swatch = new TextView(this);
+                swatch.setBackground(Ui.rounded(color, 4, this));
+                swatch.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View view) {
+                        prefs.edit().putInt("theme_color", color).apply();
+                        Ui.toast(SettingsActivity.this, "Cor aplicada.");
+                        if (dialogRef[0] != null) {
+                            dialogRef[0].dismiss();
+                        }
+                        buildLayout();
+                    }
+                });
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(Ui.dp(this, 34), Ui.dp(this, 42));
+                params.setMargins(Ui.dp(this, 4), Ui.dp(this, 4), Ui.dp(this, 4), Ui.dp(this, 4));
+                row.addView(swatch, params);
+            }
+            panel.addView(row);
+        }
+        dialogRef[0] = new AlertDialog.Builder(this)
+                .setTitle("Escolher cor tema")
+                .setView(panel)
+                .setNegativeButton("Cancelar", null)
+                .create();
+        dialogRef[0].show();
+    }
+
+    private int[] themeColors() {
+        return new int[] {
+                Color.rgb(18, 18, 18), Color.rgb(45, 45, 45), Color.rgb(244, 244, 245), Color.rgb(214, 211, 209),
+                Color.rgb(239, 68, 68), Color.rgb(220, 38, 38), Color.rgb(249, 115, 22), Color.rgb(245, 158, 11),
+                Color.rgb(234, 179, 8), Color.rgb(132, 204, 22), Color.rgb(34, 197, 94), Color.rgb(16, 185, 129),
+                Color.rgb(20, 184, 166), Color.rgb(6, 182, 212), Color.rgb(14, 165, 233), Color.rgb(59, 130, 246),
+                Color.rgb(37, 99, 235), Color.rgb(99, 102, 241), Color.rgb(124, 58, 237), Color.rgb(147, 51, 234),
+                Color.rgb(168, 85, 247), Color.rgb(217, 70, 239), Color.rgb(236, 72, 153), Color.rgb(244, 114, 182),
+                Color.rgb(190, 18, 60), Color.rgb(127, 29, 29), Color.rgb(120, 53, 15), Color.rgb(63, 98, 18),
+                Color.rgb(21, 94, 117), Color.rgb(30, 64, 175), Color.rgb(88, 28, 135), Color.rgb(80, 7, 36)
+        };
     }
 
     private LinearLayout rowBase() {

@@ -6,14 +6,19 @@ import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
 import android.provider.MediaStore;
+import android.webkit.MimeTypeMap;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 final class MediaStoreRepository {
     private MediaStoreRepository() {
@@ -22,6 +27,7 @@ final class MediaStoreRepository {
     static List<MediaItem> loadMedia(Context context) {
         ArrayList<MediaItem> items = new ArrayList<>();
         loadFromFilesCollection(context, items);
+        loadFromHiddenFilesystem(context, items);
         Collections.sort(items, new Comparator<MediaItem>() {
             @Override
             public int compare(MediaItem first, MediaItem second) {
@@ -156,6 +162,142 @@ final class MediaStoreRepository {
         } catch (SecurityException ignored) {
             // The user may grant only photos or only videos on recent Android versions.
         }
+    }
+
+    private static void loadFromHiddenFilesystem(Context context, List<MediaItem> output) {
+        if (!MediaActions.hasAllFilesAccess(context)) {
+            return;
+        }
+        File root = Environment.getExternalStorageDirectory();
+        if (root == null || !root.exists()) {
+            return;
+        }
+        HashSet<String> known = new HashSet<>();
+        for (MediaItem item : output) {
+            known.add(dedupeKey(item.relativePath, item.name, item.size));
+        }
+        scanDirectory(context, root, root, output, known, 0);
+    }
+
+    private static void scanDirectory(Context context, File root, File dir, List<MediaItem> output, Set<String> known, int depth) {
+        if (dir == null || depth > 24) {
+            return;
+        }
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            if (file == null) {
+                continue;
+            }
+            if (file.isDirectory()) {
+                scanDirectory(context, root, file, output, known, depth + 1);
+            } else if (file.isFile() && file.length() > 0 && isSupportedMediaFile(file)) {
+                String relativePath = relativeFolder(root, file);
+                String key = dedupeKey(relativePath, file.getName(), file.length());
+                if (known.contains(key)) {
+                    continue;
+                }
+                known.add(key);
+                String albumName = cleanAlbumName(relativePath, file.getParentFile() == null ? "Galeria" : file.getParentFile().getName());
+                output.add(new MediaItem(
+                        -Math.abs(file.getAbsolutePath().hashCode()),
+                        Uri.fromFile(file),
+                        file.getName(),
+                        mimeFor(file),
+                        Math.max(1L, file.lastModified() / 1000L),
+                        file.length(),
+                        relativePath,
+                        relativePath == null || relativePath.isEmpty() ? file.getParent() : relativePath,
+                        albumName
+                ));
+            }
+        }
+    }
+
+    private static String dedupeKey(String relativePath, String name, long size) {
+        return (relativePath == null ? "" : relativePath).toLowerCase()
+                + "|"
+                + (name == null ? "" : name).toLowerCase()
+                + "|"
+                + size;
+    }
+
+    private static String relativeFolder(File root, File file) {
+        File parent = file.getParentFile();
+        if (parent == null) {
+            return "";
+        }
+        String rootPath = root.getAbsolutePath();
+        String parentPath = parent.getAbsolutePath();
+        if (parentPath.startsWith(rootPath)) {
+            String relative = parentPath.substring(rootPath.length()).replace('\\', '/');
+            while (relative.startsWith("/")) {
+                relative = relative.substring(1);
+            }
+            return relative.isEmpty() ? "" : relative + "/";
+        }
+        return parent.getName() + "/";
+    }
+
+    private static boolean isSupportedMediaFile(File file) {
+        String name = file.getName().toLowerCase();
+        return name.endsWith(".jpg")
+                || name.endsWith(".jpeg")
+                || name.endsWith(".png")
+                || name.endsWith(".webp")
+                || name.endsWith(".gif")
+                || name.endsWith(".heic")
+                || name.endsWith(".heif")
+                || name.endsWith(".bmp")
+                || name.endsWith(".svg")
+                || name.endsWith(".dng")
+                || name.endsWith(".raw")
+                || name.endsWith(".cr2")
+                || name.endsWith(".nef")
+                || name.endsWith(".arw")
+                || name.endsWith(".orf")
+                || name.endsWith(".rw2")
+                || name.endsWith(".mp4")
+                || name.endsWith(".mkv")
+                || name.endsWith(".webm")
+                || name.endsWith(".mov")
+                || name.endsWith(".avi")
+                || name.endsWith(".3gp")
+                || name.endsWith(".m4v")
+                || name.endsWith(".ts");
+    }
+
+    private static String mimeFor(File file) {
+        String name = file.getName();
+        int dot = name.lastIndexOf('.');
+        String ext = dot >= 0 && dot + 1 < name.length() ? name.substring(dot + 1).toLowerCase() : "";
+        String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+        if (mime != null && !mime.isEmpty()) {
+            return mime;
+        }
+        if ("mkv".equals(ext)) {
+            return "video/x-matroska";
+        }
+        if ("ts".equals(ext)) {
+            return "video/mp2t";
+        }
+        if ("svg".equals(ext)) {
+            return "image/svg+xml";
+        }
+        return isVideoExtension(ext) ? "video/*" : "image/*";
+    }
+
+    private static boolean isVideoExtension(String ext) {
+        return "mp4".equals(ext)
+                || "mkv".equals(ext)
+                || "webm".equals(ext)
+                || "mov".equals(ext)
+                || "avi".equals(ext)
+                || "3gp".equals(ext)
+                || "m4v".equals(ext)
+                || "ts".equals(ext);
     }
 
     private static String pathFromData(String data) {
