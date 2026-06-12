@@ -169,6 +169,12 @@ final class MediaGridAdapter extends BaseAdapter {
         }
     }
 
+    boolean isSelected(int position) {
+        return position >= 0
+                && position < visibleItems.size()
+                && selectedUris.contains(visibleItems.get(position).uri.toString());
+    }
+
     void selectAllVisible() {
         for (MediaItem item : visibleItems) {
             selectedUris.add(item.uri.toString());

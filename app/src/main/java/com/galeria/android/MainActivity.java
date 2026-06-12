@@ -359,7 +359,6 @@ public class MainActivity extends Activity {
 
     private void enterSelectionMode() {
         adapter.setSelectionMode(true);
-        updateSelectionUi();
     }
 
     private void exitSelectionMode() {

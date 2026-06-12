@@ -244,9 +244,17 @@ public class AlbumMediaActivity extends Activity {
             public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
                 if (!adapter.isSelectionMode()) {
                     enterSelectionMode();
+                    adapter.selectPosition(position);
+                    updateSelectionUi();
+                    view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start();
+                    return true;
                 }
-                adapter.selectPosition(position);
-                updateSelectionUi();
+                if (!adapter.isSelected(position)) {
+                    adapter.selectPosition(position);
+                    updateSelectionUi();
+                    view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start();
+                    return true;
+                }
                 dragging = true;
                 dragPosition = position;
                 dragMoved = false;
@@ -524,7 +532,6 @@ public class AlbumMediaActivity extends Activity {
 
     private void enterSelectionMode() {
         adapter.setSelectionMode(true);
-        updateSelectionUi();
     }
 
     private void exitSelectionMode() {
