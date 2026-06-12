@@ -31,16 +31,19 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.PlayerView;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class DetailActivity extends Activity {
     private static final int REQ_DELETE = 31;
+    private static final long SHUFFLE_PHOTO_DELAY_MS = 4200L;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ArrayList<MediaItem> mediaQueue = new ArrayList<>();
@@ -64,6 +67,7 @@ public class DetailActivity extends Activity {
     private boolean videoPositionRestored;
     private boolean userSeeking;
     private boolean switchingItem;
+    private boolean shuffleMode;
     private int currentIndex;
     private float downY;
     private float downX;
@@ -77,6 +81,15 @@ public class DetailActivity extends Activity {
         }
     };
 
+    private final Runnable autoAdvanceRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (shuffleMode && !switchingItem && mediaQueue.size() > 1) {
+                switchItem(1, false);
+            }
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -85,6 +98,7 @@ public class DetailActivity extends Activity {
         String name = getIntent().getStringExtra("name");
         String mime = getIntent().getStringExtra("mime");
         String path = getIntent().getStringExtra("path");
+        shuffleMode = getIntent().getBooleanExtra("shuffle_mode", false);
         prepareMediaQueue(uri, name, mime, path);
         buildLayout();
         loadCurrentItem(0);
@@ -98,6 +112,10 @@ public class DetailActivity extends Activity {
         if (mediaQueue.isEmpty()) {
             mediaQueue.add(new MediaItem(0, currentUri, name, mime, 0, 0, path, "media", "Media"));
         }
+        if (shuffleMode) {
+            shuffleQueueFrom(currentUri);
+            return;
+        }
         currentIndex = 0;
         for (int i = 0; i < mediaQueue.size(); i++) {
             if (mediaQueue.get(i).uri.toString().equals(currentUri.toString())) {
@@ -105,6 +123,25 @@ public class DetailActivity extends Activity {
                 break;
             }
         }
+    }
+
+    private void shuffleQueueFrom(Uri currentUri) {
+        ArrayList<MediaItem> remaining = new ArrayList<>();
+        MediaItem first = null;
+        for (MediaItem item : mediaQueue) {
+            if (first == null && item.uri.toString().equals(currentUri.toString())) {
+                first = item;
+            } else {
+                remaining.add(item);
+            }
+        }
+        Collections.shuffle(remaining, new Random(System.nanoTime()));
+        mediaQueue.clear();
+        if (first != null) {
+            mediaQueue.add(first);
+        }
+        mediaQueue.addAll(remaining);
+        currentIndex = 0;
     }
 
     private List<MediaItem> applyCustomOrder(List<MediaItem> items, String albumKey) {
@@ -336,6 +373,7 @@ public class DetailActivity extends Activity {
         switchingItem = true;
         saveCurrentPosition();
         handler.removeCallbacks(progressUpdater);
+        handler.removeCallbacks(autoAdvanceRunnable);
         if (speedPopup != null) {
             speedPopup.dismiss();
         }
@@ -386,6 +424,7 @@ public class DetailActivity extends Activity {
                             outgoingPlayer.release();
                         }
                         switchingItem = false;
+                        scheduleShuffleAdvance();
                     }
                 })
                 .start();
@@ -394,6 +433,7 @@ public class DetailActivity extends Activity {
     private void loadCurrentItem(int direction) {
         releasePlayer();
         handler.removeCallbacks(progressUpdater);
+        handler.removeCallbacks(autoAdvanceRunnable);
         if (speedPopup != null) {
             speedPopup.dismiss();
         }
@@ -413,6 +453,7 @@ public class DetailActivity extends Activity {
         } else {
             showImage(item, page);
         }
+        scheduleShuffleAdvance();
         return page;
     }
 
@@ -429,15 +470,20 @@ public class DetailActivity extends Activity {
         currentVideoKey = "video_pos_" + item.uri.toString().hashCode();
         videoPositionRestored = false;
         currentPlayer.setMediaItem(androidx.media3.common.MediaItem.fromUri(item.uri));
-        currentPlayer.setRepeatMode(prefs.getBoolean("loop_videos", false) ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
+        currentPlayer.setRepeatMode(!shuffleMode && prefs.getBoolean("loop_videos", false) ? Player.REPEAT_MODE_ONE : Player.REPEAT_MODE_OFF);
         currentPlayer.setPlaybackParameters(new PlaybackParameters(playbackSpeed));
         playerView.setPlayer(currentPlayer);
+        final ExoPlayer playerForPage = currentPlayer;
         currentPlayer.addListener(new Player.Listener() {
             @Override
             public void onPlaybackStateChanged(int playbackState) {
-                if (playbackState == Player.STATE_READY && !videoPositionRestored) {
+                if (!shuffleMode && playbackState == Player.STATE_READY && !videoPositionRestored) {
                     restoreCurrentPosition();
                     videoPositionRestored = true;
+                }
+                if (shuffleMode && playerForPage == currentPlayer && playbackState == Player.STATE_ENDED) {
+                    handler.removeCallbacks(autoAdvanceRunnable);
+                    handler.postDelayed(autoAdvanceRunnable, 250L);
                 }
                 updatePlayPauseButton();
                 updateTimeline();
@@ -449,10 +495,20 @@ public class DetailActivity extends Activity {
             }
         });
         currentPlayer.prepare();
-        currentPlayer.setPlayWhenReady(prefs.getBoolean("autoplay_videos", true));
+        currentPlayer.setPlayWhenReady(shuffleMode || prefs.getBoolean("autoplay_videos", true));
         updateSpeedButton();
         updatePlayPauseButton();
         handler.post(progressUpdater);
+    }
+
+    private void scheduleShuffleAdvance() {
+        handler.removeCallbacks(autoAdvanceRunnable);
+        if (!shuffleMode || switchingItem || mediaQueue.size() < 2) {
+            return;
+        }
+        if (!currentItem().isVideo()) {
+            handler.postDelayed(autoAdvanceRunnable, SHUFFLE_PHOTO_DELAY_MS);
+        }
     }
 
     private void showImage(final MediaItem item, FrameLayout page) {
@@ -684,7 +740,7 @@ public class DetailActivity extends Activity {
     }
 
     private void saveCurrentPosition() {
-        if (currentPlayer != null && currentVideoKey != null && prefs.getBoolean("remember_video_position", true)) {
+        if (!shuffleMode && currentPlayer != null && currentVideoKey != null && prefs.getBoolean("remember_video_position", true)) {
             prefs.edit().putLong(currentVideoKey, currentPlayer.getCurrentPosition()).apply();
         }
     }
@@ -710,6 +766,7 @@ public class DetailActivity extends Activity {
         super.onPause();
         saveCurrentPosition();
         handler.removeCallbacks(progressUpdater);
+        handler.removeCallbacks(autoAdvanceRunnable);
         if (currentPlayer != null) {
             currentPlayer.pause();
         }
@@ -719,6 +776,7 @@ public class DetailActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         handler.removeCallbacks(progressUpdater);
+        handler.removeCallbacks(autoAdvanceRunnable);
         releasePlayer();
     }
 

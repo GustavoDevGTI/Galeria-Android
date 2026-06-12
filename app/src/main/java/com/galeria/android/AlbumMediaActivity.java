@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
 
 public class AlbumMediaActivity extends Activity {
     private static final int REQ_DELETE = 11;
@@ -219,9 +220,14 @@ public class AlbumMediaActivity extends Activity {
 
     private void showFolderMenu(View anchor) {
         PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add("Aleatorio");
         menu.getMenu().add("Espacamento da grade");
         menu.setOnMenuItemClickListener(item -> {
-            showSpacingDialog();
+            if ("Aleatorio".contentEquals(item.getTitle())) {
+                startRandomPlayback();
+            } else {
+                showSpacingDialog();
+            }
             return true;
         });
         menu.show();
@@ -372,7 +378,20 @@ public class AlbumMediaActivity extends Activity {
         }
     }
 
+    private void startRandomPlayback() {
+        if (adapter == null || adapter.getCount() == 0) {
+            Ui.toast(this, "Nenhuma midia para reproduzir.");
+            return;
+        }
+        int position = new Random().nextInt(adapter.getCount());
+        openDetail(adapter.getItem(position), position, true);
+    }
+
     private void openDetail(MediaItem item, int position) {
+        openDetail(item, position, false);
+    }
+
+    private void openDetail(MediaItem item, int position, boolean shuffleMode) {
         savedFirstVisible = grid == null ? 0 : grid.getFirstVisiblePosition();
         Intent intent = new Intent(this, DetailActivity.class);
         intent.putExtra("uri", item.uri.toString());
@@ -381,6 +400,7 @@ public class AlbumMediaActivity extends Activity {
         intent.putExtra("path", item.relativePath);
         intent.putExtra("album_key", albumKey);
         intent.putExtra("position", position);
+        intent.putExtra("shuffle_mode", shuffleMode);
         startActivity(intent);
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out);
     }
