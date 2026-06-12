@@ -3,6 +3,7 @@ package com.galeria.android;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.media.ThumbnailUtils;
 import android.net.Uri;
 import android.os.Build;
@@ -12,14 +13,17 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -35,7 +39,9 @@ final class AlbumGridAdapter extends BaseAdapter {
     private final ExecutorService executor = Executors.newFixedThreadPool(2);
     private final ArrayList<AlbumItem> allAlbums = new ArrayList<>();
     private final ArrayList<AlbumItem> visibleAlbums = new ArrayList<>();
+    private final HashSet<String> selectedKeys = new HashSet<>();
     private String filter = "";
+    private boolean selectionMode;
 
     AlbumGridAdapter(Context context) {
         this.context = context;
@@ -44,6 +50,7 @@ final class AlbumGridAdapter extends BaseAdapter {
     void submit(List<AlbumItem> albums) {
         allAlbums.clear();
         allAlbums.addAll(albums);
+        selectedKeys.retainAll(albumKeySet(albums));
         applyFilter(filter);
     }
 
@@ -56,6 +63,77 @@ final class AlbumGridAdapter extends BaseAdapter {
             }
         }
         notifyDataSetChanged();
+    }
+
+    void setSelectionMode(boolean selectionMode) {
+        this.selectionMode = selectionMode;
+        if (!selectionMode) {
+            selectedKeys.clear();
+        }
+        notifyDataSetChanged();
+    }
+
+    boolean isSelectionMode() {
+        return selectionMode;
+    }
+
+    void toggleSelection(int position) {
+        if (position < 0 || position >= visibleAlbums.size()) {
+            return;
+        }
+        String key = visibleAlbums.get(position).key;
+        if (selectedKeys.contains(key)) {
+            selectedKeys.remove(key);
+        } else {
+            selectedKeys.add(key);
+        }
+        notifyDataSetChanged();
+    }
+
+    void selectPosition(int position) {
+        if (position >= 0 && position < visibleAlbums.size()) {
+            selectedKeys.add(visibleAlbums.get(position).key);
+            notifyDataSetChanged();
+        }
+    }
+
+    void selectAllVisible() {
+        for (AlbumItem album : visibleAlbums) {
+            selectedKeys.add(album.key);
+        }
+        notifyDataSetChanged();
+    }
+
+    void clearSelection() {
+        selectedKeys.clear();
+        selectionMode = false;
+        notifyDataSetChanged();
+    }
+
+    boolean allVisibleSelected() {
+        return !visibleAlbums.isEmpty() && selectedKeys.size() >= visibleAlbums.size();
+    }
+
+    int selectedCount() {
+        return selectedKeys.size();
+    }
+
+    List<AlbumItem> selectedAlbums() {
+        ArrayList<AlbumItem> albums = new ArrayList<>();
+        for (AlbumItem album : visibleAlbums) {
+            if (selectedKeys.contains(album.key)) {
+                albums.add(album);
+            }
+        }
+        return albums;
+    }
+
+    private Set<String> albumKeySet(List<AlbumItem> albums) {
+        HashSet<String> keys = new HashSet<>();
+        for (AlbumItem album : albums) {
+            keys.add(album.key);
+        }
+        return keys;
     }
 
     @Override
@@ -82,11 +160,25 @@ final class AlbumGridAdapter extends BaseAdapter {
             item.setGravity(Gravity.TOP);
             item.setPadding(Ui.dp(context, 8), Ui.dp(context, 10), Ui.dp(context, 8), Ui.dp(context, 12));
 
+            FrameLayout thumb = new FrameLayout(context);
             SquareImageView cover = new SquareImageView(context);
             cover.setScaleType(SquareImageView.ScaleType.CENTER_CROP);
             cover.setBackground(Ui.rounded(Ui.surface(context), folderRadius(), context));
             cover.setClipToOutline(true);
-            item.addView(cover, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            thumb.addView(cover, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            TextView check = new TextView(context);
+            check.setTextColor(Color.WHITE);
+            check.setTextSize(15);
+            check.setGravity(Gravity.CENTER);
+            check.setBackground(Ui.rounded(0x99000000, 4, context));
+            FrameLayout.LayoutParams checkParams = new FrameLayout.LayoutParams(Ui.dp(context, 24), Ui.dp(context, 24));
+            checkParams.gravity = Gravity.TOP | Gravity.LEFT;
+            checkParams.leftMargin = Ui.dp(context, 6);
+            checkParams.topMargin = Ui.dp(context, 6);
+            thumb.addView(check, checkParams);
+
+            item.addView(thumb, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
             TextView name = new TextView(context);
             name.setTextColor(Ui.text(context));
@@ -98,7 +190,7 @@ final class AlbumGridAdapter extends BaseAdapter {
             nameParams.topMargin = Ui.dp(context, 8);
             item.addView(name, nameParams);
 
-            holder = new Holder(cover, name);
+            holder = new Holder(cover, name, check);
             item.setTag(holder);
             convertView = item;
         } else {
@@ -106,6 +198,15 @@ final class AlbumGridAdapter extends BaseAdapter {
         }
 
         AlbumItem album = getItem(position);
+        boolean selected = selectedKeys.contains(album.key);
+        convertView.setAlpha(selected ? 0.78f : 1f);
+        convertView.setScaleX(selected ? 0.94f : 1f);
+        convertView.setScaleY(selected ? 0.94f : 1f);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            convertView.setTranslationZ(selected ? -Ui.dp(context, 2) : 0f);
+        }
+        holder.check.setVisibility(selectionMode || selected ? View.VISIBLE : View.GONE);
+        holder.check.setText(selected ? "\u2713" : "");
         holder.name.setText(album.name + " (" + album.count + ")");
         holder.name.setTextColor(Ui.text(context));
         holder.cover.setBackground(Ui.rounded(Ui.surface(context), folderRadius(), context));
@@ -209,10 +310,12 @@ final class AlbumGridAdapter extends BaseAdapter {
     private static final class Holder {
         final SquareImageView cover;
         final TextView name;
+        final TextView check;
 
-        Holder(SquareImageView cover, TextView name) {
+        Holder(SquareImageView cover, TextView name, TextView check) {
             this.cover = cover;
             this.name = name;
+            this.check = check;
         }
     }
 }

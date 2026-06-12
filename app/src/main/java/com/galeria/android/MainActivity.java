@@ -8,6 +8,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
@@ -55,6 +56,9 @@ public class MainActivity extends Activity {
     private GridView grid;
     private LinearLayout root;
     private LinearLayout top;
+    private LinearLayout selectionBar;
+    private LinearLayout selectionActions;
+    private TextView selectAllText;
     private SharedPreferences prefs;
     private ScaleGestureDetector scaleDetector;
     private String sortMode;
@@ -159,6 +163,32 @@ public class MainActivity extends Activity {
         });
         top.addView(more, new LinearLayout.LayoutParams(Ui.dp(this, 30), Ui.dp(this, 38)));
 
+        selectionBar = new LinearLayout(this);
+        selectionBar.setGravity(Gravity.CENTER_VERTICAL);
+        selectionBar.setBackground(Ui.rounded(Ui.surface(this), 8, this));
+        Ui.setPadding(selectionBar, 14, 8, 14, 8);
+        selectAllText = Ui.title(this, "[ ] Selecionar tudo", 15);
+        selectAllText.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                toggleSelectAll();
+            }
+        });
+        selectionBar.addView(selectAllText, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView cancelSelection = Ui.title(this, "Cancelar", 15);
+        cancelSelection.setGravity(Gravity.RIGHT);
+        cancelSelection.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                exitSelectionMode();
+            }
+        });
+        selectionBar.addView(cancelSelection, new LinearLayout.LayoutParams(Ui.dp(this, 96), Ui.dp(this, 38)));
+        selectionBar.setVisibility(View.GONE);
+        LinearLayout.LayoutParams selectionParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        selectionParams.setMargins(Ui.dp(this, 14), 0, Ui.dp(this, 14), Ui.dp(this, 8));
+        root.addView(selectionBar, selectionParams);
+
         FrameLayout content = new FrameLayout(this);
         grid = new GridView(this);
         grid.setNumColumns(columnCount);
@@ -173,11 +203,26 @@ public class MainActivity extends Activity {
         grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                if (adapter.isSelectionMode()) {
+                    adapter.toggleSelection(position);
+                    updateSelectionUi();
+                    return;
+                }
                 AlbumItem album = adapter.getItem(position);
                 Intent intent = new Intent(MainActivity.this, AlbumMediaActivity.class);
                 intent.putExtra("album_key", album.key);
                 intent.putExtra("album_name", album.name);
                 startActivity(intent);
+            }
+        });
+        grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
+            @Override
+            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
+                enterSelectionMode();
+                adapter.selectPosition(position);
+                updateSelectionUi();
+                view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start();
+                return true;
             }
         });
         scaleDetector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -214,7 +259,49 @@ public class MainActivity extends Activity {
         content.addView(emptyView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         root.addView(content, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+
+        selectionActions = new LinearLayout(this);
+        selectionActions.setGravity(Gravity.CENTER);
+        selectionActions.setBackgroundColor(Ui.bg(this));
+        Ui.setPadding(selectionActions, 10, 8, 10, 12);
+        addSelectionAction("Compartilhar", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                shareSelectedAlbums();
+            }
+        });
+        addSelectionAction("Favoritar", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                favoriteSelectedAlbums();
+            }
+        });
+        addSelectionAction("Excluir", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                confirmDeleteSelectedAlbums();
+            }
+        });
+        addSelectionAction("Mover", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                askMoveSelectedAlbums();
+            }
+        });
+        selectionActions.setVisibility(View.GONE);
+        root.addView(selectionActions, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         setContentView(root);
+    }
+
+    private void addSelectionAction(String label, View.OnClickListener listener) {
+        TextView button = Ui.title(this, label, 14);
+        button.setTextColor(Ui.accent(this));
+        button.setGravity(Gravity.CENTER);
+        button.setBackground(Ui.rounded(Ui.surface(this), 8, this));
+        button.setOnClickListener(listener);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, Ui.dp(this, 42), 1);
+        params.setMargins(Ui.dp(this, 4), 0, Ui.dp(this, 4), 0);
+        selectionActions.addView(button, params);
     }
 
     private ImageButton iconButton(int icon) {
@@ -259,6 +346,211 @@ public class MainActivity extends Activity {
             return true;
         });
         menu.show();
+    }
+
+    private void enterSelectionMode() {
+        adapter.setSelectionMode(true);
+        updateSelectionUi();
+    }
+
+    private void exitSelectionMode() {
+        adapter.clearSelection();
+        updateSelectionUi();
+    }
+
+    private void updateSelectionUi() {
+        boolean active = adapter != null && adapter.isSelectionMode();
+        if (selectionBar != null) {
+            selectionBar.setVisibility(active ? View.VISIBLE : View.GONE);
+        }
+        if (selectionActions != null) {
+            selectionActions.setVisibility(active ? View.VISIBLE : View.GONE);
+        }
+        if (selectAllText != null && adapter != null) {
+            selectAllText.setText((adapter.allVisibleSelected() ? "[x] " : "[ ] ")
+                    + "Selecionar tudo"
+                    + (adapter.selectedCount() > 0 ? " (" + adapter.selectedCount() + ")" : ""));
+        }
+        if (active && adapter != null && adapter.selectedCount() == 0) {
+            exitSelectionMode();
+        }
+    }
+
+    private void toggleSelectAll() {
+        if (adapter == null) {
+            return;
+        }
+        if (adapter.allVisibleSelected()) {
+            adapter.clearSelection();
+        } else {
+            adapter.selectAllVisible();
+        }
+        updateSelectionUi();
+    }
+
+    private void shareSelectedAlbums() {
+        final List<AlbumItem> albums = adapter.selectedAlbums();
+        if (albums.isEmpty()) {
+            return;
+        }
+        mediaLoader.execute(new Runnable() {
+            @Override
+            public void run() {
+                final ArrayList<Uri> uris = new ArrayList<>();
+                for (MediaItem item : mediaForAlbums(albums)) {
+                    uris.add(item.uri);
+                }
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (uris.isEmpty()) {
+                            Ui.toast(MainActivity.this, "Nenhuma mídia para compartilhar.");
+                            return;
+                        }
+                        Intent share = new Intent(Intent.ACTION_SEND_MULTIPLE);
+                        share.setType("*/*");
+                        share.putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris);
+                        share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(Intent.createChooser(share, "Compartilhar"));
+                    }
+                });
+            }
+        });
+    }
+
+    private void favoriteSelectedAlbums() {
+        final List<AlbumItem> albums = adapter.selectedAlbums();
+        if (albums.isEmpty()) {
+            return;
+        }
+        mediaLoader.execute(new Runnable() {
+            @Override
+            public void run() {
+                List<MediaItem> items = mediaForAlbums(albums);
+                final int count = items.size();
+                HashSet<String> favorites = new HashSet<>(prefs.getStringSet("favorites", new HashSet<String>()));
+                for (MediaItem item : items) {
+                    favorites.add(item.uri.toString());
+                }
+                prefs.edit().putStringSet("favorites", favorites).apply();
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Ui.toast(MainActivity.this, count + " item(ns) adicionados aos favoritos.");
+                        exitSelectionMode();
+                    }
+                });
+            }
+        });
+    }
+
+    private void confirmDeleteSelectedAlbums() {
+        final List<AlbumItem> albums = adapter.selectedAlbums();
+        if (albums.isEmpty()) {
+            return;
+        }
+        int visibleCount = 0;
+        for (AlbumItem album : albums) {
+            visibleCount += album.count;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Excluir álbuns")
+                .setMessage("Tem certeza que deseja excluir as mídias de " + albums.size()
+                        + " álbum(ns)? Cerca de " + visibleCount + " item(ns) serão removidos.")
+                .setPositiveButton("Excluir", (dialog, which) -> deleteSelectedAlbums(albums))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void deleteSelectedAlbums(final List<AlbumItem> albums) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
+            ensureFileManagementAccess(true);
+            return;
+        }
+        mediaLoader.execute(new Runnable() {
+            @Override
+            public void run() {
+                int deleted = 0;
+                for (MediaItem item : mediaForAlbums(albums)) {
+                    if (MediaActions.requestPermanentDelete(MainActivity.this, item.uri, REQ_READ) == MediaActions.RESULT_DONE) {
+                        deleted++;
+                    }
+                }
+                final int deletedCount = deleted;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Ui.toast(MainActivity.this, deletedCount + " item(ns) excluídos.");
+                        exitSelectionMode();
+                        loadAlbums();
+                    }
+                });
+            }
+        });
+    }
+
+    private void askMoveSelectedAlbums() {
+        final List<AlbumItem> albums = adapter.selectedAlbums();
+        if (albums.isEmpty()) {
+            return;
+        }
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("Ex.: Viagens");
+        input.setTextColor(Ui.text(this));
+        input.setHintTextColor(Ui.muted(this));
+        new AlertDialog.Builder(this)
+                .setTitle("Mover álbuns")
+                .setMessage("Digite o nome da pasta de destino.")
+                .setView(input)
+                .setPositiveButton("Mover", (dialog, which) -> moveSelectedAlbums(albums, input.getText().toString()))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void moveSelectedAlbums(final List<AlbumItem> albums, final String folder) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
+            ensureFileManagementAccess(true);
+            return;
+        }
+        mediaLoader.execute(new Runnable() {
+            @Override
+            public void run() {
+                int moved = 0;
+                for (MediaItem item : mediaForAlbums(albums)) {
+                    if (MediaActions.moveToFolder(MainActivity.this, item, folder) == MediaActions.RESULT_DONE) {
+                        moved++;
+                    }
+                }
+                final int movedCount = moved;
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Ui.toast(MainActivity.this, movedCount + " item(ns) movidos.");
+                        exitSelectionMode();
+                        loadAlbums();
+                    }
+                });
+            }
+        });
+    }
+
+    private List<MediaItem> mediaForAlbums(List<AlbumItem> albums) {
+        HashSet<String> keys = new HashSet<>();
+        boolean allMedia = false;
+        for (AlbumItem album : albums) {
+            if ("all_media".equals(album.key)) {
+                allMedia = true;
+            }
+            keys.add(album.key);
+        }
+        ArrayList<MediaItem> items = new ArrayList<>();
+        for (MediaItem item : MediaStoreRepository.loadMedia(getApplicationContext())) {
+            if ((allMedia || keys.contains(item.albumKey)) && matchesMediaFilter(item)) {
+                items.add(item);
+            }
+        }
+        return items;
     }
 
     private void loadAlbums() {
@@ -358,6 +650,19 @@ public class MainActivity extends Activity {
         }
         if (grid != null) {
             grid.setBackgroundColor(Ui.bg(this));
+        }
+        if (selectionBar != null) {
+            selectionBar.setBackground(Ui.rounded(Ui.surface(this), 8, this));
+        }
+        if (selectionActions != null) {
+            selectionActions.setBackgroundColor(Ui.bg(this));
+            for (int i = 0; i < selectionActions.getChildCount(); i++) {
+                View child = selectionActions.getChildAt(i);
+                child.setBackground(Ui.rounded(Ui.surface(this), 8, this));
+                if (child instanceof TextView) {
+                    ((TextView) child).setTextColor(Ui.accent(this));
+                }
+            }
         }
         if (adapter != null) {
             adapter.notifyDataSetChanged();
@@ -641,6 +946,7 @@ public class MainActivity extends Activity {
         if (adapter == null || emptyView == null) {
             return;
         }
+        emptyView.setText("Nenhuma pasta encontrada.");
         emptyView.setVisibility(adapter.getCount() == 0 ? View.VISIBLE : View.GONE);
     }
 
