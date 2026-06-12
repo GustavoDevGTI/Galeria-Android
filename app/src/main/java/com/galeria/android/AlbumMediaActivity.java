@@ -308,25 +308,25 @@ public class AlbumMediaActivity extends Activity {
         selectionActions.setGravity(Gravity.CENTER);
         selectionActions.setBackgroundColor(Ui.bg(this));
         Ui.setPadding(selectionActions, 10, 8, 10, 12);
-        addSelectionAction("Compartilhar", new View.OnClickListener() {
+        addSelectionAction(com.galeria.android.R.drawable.ic_share, "Compartilhar", new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 shareSelected();
             }
         });
-        addSelectionAction("Favoritar", new View.OnClickListener() {
+        addSelectionAction(com.galeria.android.R.drawable.ic_star, "Favoritar", new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 favoriteSelected();
             }
         });
-        addSelectionAction("Excluir", new View.OnClickListener() {
+        addSelectionAction(com.galeria.android.R.drawable.ic_trash, "Excluir", new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 confirmDeleteSelected();
             }
         });
-        addSelectionAction("Mover", new View.OnClickListener() {
+        addSelectionAction(com.galeria.android.R.drawable.ic_arrow_right, "Mover", new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 askMoveSelected();
@@ -337,14 +337,17 @@ public class AlbumMediaActivity extends Activity {
         setContentView(root);
     }
 
-    private void addSelectionAction(String label, View.OnClickListener listener) {
-        TextView button = Ui.title(this, label, 14);
-        button.setTextColor(Ui.accent(this));
-        button.setGravity(Gravity.CENTER);
+    private void addSelectionAction(int icon, String label, View.OnClickListener listener) {
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(icon);
+        button.setColorFilter(Ui.accent(this));
+        button.setContentDescription(label);
+        button.setScaleType(ImageButton.ScaleType.CENTER);
+        button.setPadding(Ui.dp(this, 10), Ui.dp(this, 10), Ui.dp(this, 10), Ui.dp(this, 10));
         button.setBackground(Ui.rounded(Ui.surface(this), 8, this));
         button.setOnClickListener(listener);
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, Ui.dp(this, 42), 1);
-        params.setMargins(Ui.dp(this, 4), 0, Ui.dp(this, 4), 0);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1);
+        params.setMargins(Ui.dp(this, 6), 0, Ui.dp(this, 6), 0);
         selectionActions.addView(button, params);
     }
 
