@@ -2,9 +2,16 @@ package com.galeria.android;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.WallpaperManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.pdf.PdfDocument;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,9 +25,11 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.PopupWindow;
 import android.widget.SeekBar;
 import android.widget.TextView;
@@ -38,11 +47,18 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Random;
 import java.util.Set;
+import java.io.File;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class DetailActivity extends Activity {
     private static final int REQ_DELETE = 31;
+    private static final int REQ_HIDE_DELETE = 32;
+    private static final int REQ_MOVE_WRITE = 33;
+    private static final int REQ_ROTATE_WRITE = 34;
+    private static final int REQ_CREATE_PDF = 35;
     private static final long SHUFFLE_PHOTO_DELAY_MS = 4200L;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -64,6 +80,11 @@ public class DetailActivity extends Activity {
     private PopupWindow speedPopup;
     private String currentVideoKey;
     private Uri pendingDeleteUri;
+    private File pendingHiddenCopy;
+    private MediaItem pendingMoveItem;
+    private String pendingMoveFolder;
+    private MediaItem pendingRotateItem;
+    private MediaItem pendingPdfItem;
     private boolean videoPositionRestored;
     private boolean userSeeking;
     private boolean switchingItem;
@@ -197,6 +218,15 @@ public class DetailActivity extends Activity {
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
         titleParams.leftMargin = Ui.dp(this, 4);
         bar.addView(title, titleParams);
+
+        ImageButton more = iconButton(com.galeria.android.R.drawable.ic_more_vertical, Ui.dp(this, 48));
+        more.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showMediaMenu(view);
+            }
+        });
+        bar.addView(more, new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 44)));
         root.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         content = new FrameLayout(this);
@@ -335,6 +365,37 @@ public class DetailActivity extends Activity {
         params.leftMargin = Ui.dp(this, 16);
         params.rightMargin = Ui.dp(this, 16);
         return params;
+    }
+
+    private void showMediaMenu(View anchor) {
+        PopupMenu menu = new PopupMenu(this, anchor);
+        menu.getMenu().add("Ocultar");
+        menu.getMenu().add("Copiar");
+        menu.getMenu().add("Mover");
+        menu.getMenu().add("Definir como");
+        menu.getMenu().add("Alterar orientação");
+        menu.getMenu().add("Imprimir");
+        menu.getMenu().add("Redimensionar");
+        menu.setOnMenuItemClickListener(item -> {
+            String title = item.getTitle().toString();
+            if ("Ocultar".equals(title)) {
+                confirmHideCurrent();
+            } else if ("Copiar".equals(title)) {
+                askFolderForCopyOrMove(true);
+            } else if ("Mover".equals(title)) {
+                askFolderForCopyOrMove(false);
+            } else if ("Definir como".equals(title)) {
+                setCurrentAsWallpaper();
+            } else if ("Alterar orientação".equals(title)) {
+                rotateCurrentImage();
+            } else if ("Imprimir".equals(title)) {
+                createPdfFromCurrentImage();
+            } else if ("Redimensionar".equals(title)) {
+                openImageEditor();
+            }
+            return true;
+        });
+        menu.show();
     }
 
     private boolean handleSwipeOrTap(MotionEvent event) {
@@ -591,6 +652,36 @@ public class DetailActivity extends Activity {
         return String.format(Locale.US, "%02d:%02d", minutes, seconds);
     }
 
+    private Bitmap decodeBitmap(Uri uri, int maxSide) throws Exception {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            BitmapFactory.decodeStream(input, null, bounds);
+        }
+        int sample = 1;
+        while ((bounds.outWidth / sample) > maxSide || (bounds.outHeight / sample) > maxSide) {
+            sample *= 2;
+        }
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = Math.max(1, sample);
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            return BitmapFactory.decodeStream(input, null, options);
+        }
+    }
+
+    private Bitmap.CompressFormat compressFormat(MediaItem item) {
+        String mime = item.mimeType == null ? "" : item.mimeType.toLowerCase(Locale.US);
+        String name = item.name == null ? "" : item.name.toLowerCase(Locale.US);
+        if (mime.contains("png") || name.endsWith(".png")) {
+            return Bitmap.CompressFormat.PNG;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && (mime.contains("webp") || name.endsWith(".webp"))) {
+            return Bitmap.CompressFormat.WEBP_LOSSY;
+        }
+        return Bitmap.CompressFormat.JPEG;
+    }
+
     private void showSpeedPopup() {
         if (speedPopup != null && speedPopup.isShowing()) {
             speedPopup.dismiss();
@@ -674,6 +765,212 @@ public class DetailActivity extends Activity {
         startActivity(Intent.createChooser(share, "Compartilhar"));
     }
 
+    private void confirmHideCurrent() {
+        new AlertDialog.Builder(this)
+                .setTitle("Ocultar arquivo")
+                .setMessage("O arquivo será copiado para a área oculta do app e removido da galeria pública.")
+                .setPositiveButton("Ocultar", (dialog, which) -> hideCurrent())
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void hideCurrent() {
+        MediaItem item = currentItem();
+        pendingHiddenCopy = MediaActions.copyToHidden(this, item);
+        if (pendingHiddenCopy == null) {
+            Ui.toast(this, "Não foi possível copiar para ocultos.");
+            return;
+        }
+        pendingDeleteUri = item.uri;
+        int result = MediaActions.requestPermanentDelete(this, item.uri, REQ_HIDE_DELETE);
+        if (result == MediaActions.RESULT_DONE) {
+            Ui.toast(this, "Item ocultado.");
+            removeDeletedItem();
+        } else if (result == MediaActions.RESULT_FAILED) {
+            pendingDeleteUri = null;
+            pendingHiddenCopy.delete();
+            pendingHiddenCopy = null;
+            Ui.toast(this, "Não foi possível remover o original.");
+        }
+    }
+
+    private void askFolderForCopyOrMove(final boolean copy) {
+        final MediaItem item = currentItem();
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(Ui.dp(this, 18), Ui.dp(this, 8), Ui.dp(this, 18), 0);
+        TextView hint = Ui.label(this, "Digite o nome do álbum de destino.");
+        hint.setGravity(Gravity.LEFT);
+        panel.addView(hint, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint(item.isVideo() ? "Vídeos" : "Fotos");
+        input.setTextColor(Ui.text(this));
+        input.setHintTextColor(Ui.muted(this));
+        panel.addView(input, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)));
+
+        new AlertDialog.Builder(this)
+                .setTitle(copy ? "Copiar para" : "Mover para")
+                .setView(panel)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton(copy ? "Copiar" : "Mover", (dialog, which) -> {
+                    if (copy) {
+                        copyCurrentToFolder(item, input.getText().toString());
+                    } else {
+                        moveCurrentToFolder(item, input.getText().toString());
+                    }
+                })
+                .show();
+    }
+
+    private void copyCurrentToFolder(MediaItem item, String folder) {
+        int result = MediaActions.copyToFolder(this, item, folder);
+        Ui.toast(this, result == MediaActions.RESULT_DONE ? "Item copiado." : "Não foi possível copiar.");
+    }
+
+    private void moveCurrentToFolder(MediaItem item, String folder) {
+        pendingMoveItem = item;
+        pendingMoveFolder = folder;
+        int result = MediaActions.moveToFolder(this, item, folder);
+        if (result == MediaActions.RESULT_DONE) {
+            Ui.toast(this, "Item movido.");
+            removeDeletedItem();
+        } else if (result == MediaActions.RESULT_NEEDS_PERMISSION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            MediaActions.requestWrite(this, item.uri, REQ_MOVE_WRITE);
+        } else {
+            pendingMoveItem = null;
+            pendingMoveFolder = null;
+            Ui.toast(this, "Não foi possível mover.");
+        }
+    }
+
+    private void setCurrentAsWallpaper() {
+        if (currentItem().isVideo()) {
+            Ui.toast(this, "Disponível apenas para imagens.");
+            return;
+        }
+        final MediaItem item = currentItem();
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Bitmap bitmap = decodeBitmap(item.uri, 2600);
+                    if (bitmap == null) {
+                        throw new IllegalStateException("bitmap");
+                    }
+                    WallpaperManager.getInstance(DetailActivity.this).setBitmap(bitmap);
+                    runOnUiThread(() -> Ui.toast(DetailActivity.this, "Papel de parede atualizado."));
+                } catch (Exception exception) {
+                    runOnUiThread(() -> Ui.toast(DetailActivity.this, "Não foi possível definir como papel de parede."));
+                }
+            }
+        });
+    }
+
+    private void rotateCurrentImage() {
+        if (currentItem().isVideo()) {
+            Ui.toast(this, "Disponível apenas para imagens.");
+            return;
+        }
+        pendingRotateItem = currentItem();
+        rotateImage(pendingRotateItem);
+    }
+
+    private void rotateImage(final MediaItem item) {
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Bitmap original = decodeBitmap(item.uri, 2600);
+                    if (original == null) {
+                        throw new IllegalStateException("bitmap");
+                    }
+                    Matrix matrix = new Matrix();
+                    matrix.postRotate(90f);
+                    Bitmap rotated = Bitmap.createBitmap(original, 0, 0, original.getWidth(), original.getHeight(), matrix, true);
+                    try (OutputStream output = getContentResolver().openOutputStream(item.uri, "w")) {
+                        if (output == null) {
+                            throw new IllegalStateException("output");
+                        }
+                        rotated.compress(compressFormat(item), 94, output);
+                    }
+                    runOnUiThread(() -> {
+                        Ui.toast(DetailActivity.this, "Orientação alterada.");
+                        loadCurrentItem(0);
+                    });
+                } catch (SecurityException exception) {
+                    runOnUiThread(() -> MediaActions.requestWrite(DetailActivity.this, item.uri, REQ_ROTATE_WRITE));
+                } catch (Exception exception) {
+                    runOnUiThread(() -> Ui.toast(DetailActivity.this, "Não foi possível alterar a orientação."));
+                }
+            }
+        });
+    }
+
+    private void createPdfFromCurrentImage() {
+        if (currentItem().isVideo()) {
+            Ui.toast(this, "Disponível apenas para imagens.");
+            return;
+        }
+        pendingPdfItem = currentItem();
+        String name = pendingPdfItem.name;
+        int dot = name.lastIndexOf('.');
+        if (dot > 0) {
+            name = name.substring(0, dot);
+        }
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/pdf");
+        intent.putExtra(Intent.EXTRA_TITLE, name + ".pdf");
+        startActivityForResult(intent, REQ_CREATE_PDF);
+    }
+
+    private void writePdf(final Uri outputUri, final MediaItem item) {
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                PdfDocument document = new PdfDocument();
+                try {
+                    Bitmap bitmap = decodeBitmap(item.uri, 2400);
+                    if (bitmap == null) {
+                        throw new IllegalStateException("bitmap");
+                    }
+                    PdfDocument.PageInfo pageInfo = new PdfDocument.PageInfo.Builder(bitmap.getWidth(), bitmap.getHeight(), 1).create();
+                    PdfDocument.Page page = document.startPage(pageInfo);
+                    Canvas canvas = page.getCanvas();
+                    Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+                    canvas.drawBitmap(bitmap, 0, 0, paint);
+                    document.finishPage(page);
+                    try (OutputStream output = getContentResolver().openOutputStream(outputUri)) {
+                        if (output == null) {
+                            throw new IllegalStateException("output");
+                        }
+                        document.writeTo(output);
+                    }
+                    runOnUiThread(() -> Ui.toast(DetailActivity.this, "PDF criado."));
+                } catch (Exception exception) {
+                    runOnUiThread(() -> Ui.toast(DetailActivity.this, "Não foi possível criar o PDF."));
+                } finally {
+                    document.close();
+                }
+            }
+        });
+    }
+
+    private void openImageEditor() {
+        if (currentItem().isVideo()) {
+            Ui.toast(this, "Disponível apenas para imagens.");
+            return;
+        }
+        MediaItem item = currentItem();
+        Intent intent = new Intent(this, ImageEditActivity.class);
+        intent.putExtra("uri", item.uri.toString());
+        intent.putExtra("name", item.name);
+        intent.putExtra("mime", item.mimeType);
+        startActivity(intent);
+    }
+
     private void confirmDeleteCurrent() {
         new AlertDialog.Builder(this)
                 .setTitle("Excluir arquivo")
@@ -722,8 +1019,43 @@ public class DetailActivity extends Activity {
                 Ui.toast(this, "Item excluído.");
                 removeDeletedItem();
             } else {
-                Ui.toast(this, "Exclusao cancelada.");
+                Ui.toast(this, "Exclusão cancelada.");
             }
+        } else if (requestCode == REQ_HIDE_DELETE) {
+            boolean deleted = resultCode == RESULT_OK || (pendingDeleteUri != null && !MediaActions.mediaExists(this, pendingDeleteUri));
+            pendingDeleteUri = null;
+            if (deleted) {
+                pendingHiddenCopy = null;
+                Ui.toast(this, "Item ocultado.");
+                removeDeletedItem();
+            } else {
+                if (pendingHiddenCopy != null) {
+                    pendingHiddenCopy.delete();
+                    pendingHiddenCopy = null;
+                }
+                Ui.toast(this, "Ocultação cancelada.");
+            }
+        } else if (requestCode == REQ_MOVE_WRITE) {
+            if (resultCode == RESULT_OK && pendingMoveItem != null && pendingMoveFolder != null) {
+                int result = MediaActions.moveToFolder(this, pendingMoveItem, pendingMoveFolder);
+                Ui.toast(this, result == MediaActions.RESULT_DONE ? "Item movido." : "Não foi possível mover.");
+                if (result == MediaActions.RESULT_DONE) {
+                    removeDeletedItem();
+                }
+            }
+            pendingMoveItem = null;
+            pendingMoveFolder = null;
+        } else if (requestCode == REQ_ROTATE_WRITE) {
+            if (resultCode == RESULT_OK && pendingRotateItem != null) {
+                rotateImage(pendingRotateItem);
+            } else {
+                Ui.toast(this, "Rotação cancelada.");
+            }
+        } else if (requestCode == REQ_CREATE_PDF) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null && pendingPdfItem != null) {
+                writePdf(data.getData(), pendingPdfItem);
+            }
+            pendingPdfItem = null;
         }
     }
 

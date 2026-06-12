@@ -16,6 +16,7 @@ import android.provider.MediaStore;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Collections;
 
 final class MediaActions {
@@ -159,6 +160,65 @@ final class MediaActions {
         return RESULT_FAILED;
     }
 
+    static int copyToFolder(Activity activity, MediaItem item, String folderName) {
+        String cleanName = cleanFolderName(folderName);
+        if (cleanName.isEmpty()) {
+            return RESULT_FAILED;
+        }
+
+        boolean isVideo = item.isVideo();
+        String baseDir = isVideo ? Environment.DIRECTORY_MOVIES : Environment.DIRECTORY_PICTURES;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Uri collection = isVideo ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI : MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.MediaColumns.DISPLAY_NAME, item.name);
+            values.put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType);
+            values.put(MediaStore.MediaColumns.RELATIVE_PATH, baseDir + "/" + cleanName + "/");
+            values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+
+            ContentResolver resolver = activity.getContentResolver();
+            Uri targetUri = resolver.insert(collection, values);
+            if (targetUri == null) {
+                return RESULT_FAILED;
+            }
+            boolean copied = copyUri(activity, item.uri, targetUri);
+            if (!copied) {
+                resolver.delete(targetUri, null, null);
+                return RESULT_FAILED;
+            }
+            ContentValues done = new ContentValues();
+            done.put(MediaStore.MediaColumns.IS_PENDING, 0);
+            resolver.update(targetUri, done, null, null);
+            return RESULT_DONE;
+        }
+
+        File currentFile = fileFromMediaStore(activity, item.uri);
+        if (currentFile == null || !currentFile.exists()) {
+            return RESULT_FAILED;
+        }
+        File targetDir = new File(Environment.getExternalStoragePublicDirectory(baseDir), cleanName);
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            return RESULT_FAILED;
+        }
+        File targetFile = uniqueFile(targetDir, currentFile.getName());
+        try (InputStream input = activity.getContentResolver().openInputStream(item.uri);
+             FileOutputStream output = new FileOutputStream(targetFile)) {
+            if (input == null) {
+                return RESULT_FAILED;
+            }
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+            MediaScannerConnection.scanFile(activity, new String[] { targetFile.getAbsolutePath() }, null, null);
+            return RESULT_DONE;
+        } catch (Exception exception) {
+            targetFile.delete();
+            return RESULT_FAILED;
+        }
+    }
+
     static File copyToHidden(Activity activity, MediaItem item) {
         File hiddenDir = hiddenDir(activity);
         if (!hiddenDir.exists() && !hiddenDir.mkdirs()) {
@@ -236,6 +296,23 @@ final class MediaActions {
         }
 
         return file.delete();
+    }
+
+    private static boolean copyUri(Activity activity, Uri sourceUri, Uri targetUri) {
+        try (InputStream input = activity.getContentResolver().openInputStream(sourceUri);
+             OutputStream output = activity.getContentResolver().openOutputStream(targetUri)) {
+            if (input == null || output == null) {
+                return false;
+            }
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                output.write(buffer, 0, read);
+            }
+            return true;
+        } catch (Exception exception) {
+            return false;
+        }
     }
 
     static File hiddenDir(Activity activity) {
