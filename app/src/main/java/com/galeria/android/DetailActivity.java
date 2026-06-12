@@ -485,6 +485,9 @@ public class DetailActivity extends Activity {
                     handler.removeCallbacks(autoAdvanceRunnable);
                     handler.postDelayed(autoAdvanceRunnable, 250L);
                 }
+                if (!shuffleMode && playerForPage == currentPlayer && playbackState == Player.STATE_ENDED) {
+                    saveCurrentPosition();
+                }
                 updatePlayPauseButton();
                 updateTimeline();
             }
@@ -741,8 +744,20 @@ public class DetailActivity extends Activity {
 
     private void saveCurrentPosition() {
         if (!shuffleMode && currentPlayer != null && currentVideoKey != null && prefs.getBoolean("remember_video_position", true)) {
-            prefs.edit().putLong(currentVideoKey, currentPlayer.getCurrentPosition()).apply();
+            prefs.edit().putLong(currentVideoKey, rememberedVideoPosition()).apply();
         }
+    }
+
+    private long rememberedVideoPosition() {
+        if (currentPlayer == null || currentPlayer.getPlaybackState() == Player.STATE_ENDED) {
+            return 0L;
+        }
+        long position = Math.max(0L, currentPlayer.getCurrentPosition());
+        long duration = currentPlayer.getDuration();
+        if (duration > 0L && position >= duration - 750L) {
+            return 0L;
+        }
+        return position;
     }
 
     private void restoreCurrentPosition() {
