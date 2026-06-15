@@ -10,12 +10,13 @@ android {
         applicationId "com.galeria.android"
         minSdk 23
         targetSdk 36
-        versionCode 6
-        versionName "0.6"
+        versionCode 7
+        versionName "0.7"
     }
 }
 
 dependencies {
+    implementation "androidx.recyclerview:recyclerview:1.3.0"
     implementation "androidx.media3:media3-exoplayer:1.10.1"
     implementation "androidx.media3:media3-ui:1.10.1"
 }

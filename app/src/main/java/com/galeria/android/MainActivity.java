@@ -19,14 +19,15 @@ import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.AdapterView;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.GridView;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.TextView;
+
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -50,10 +51,11 @@ public class MainActivity extends Activity {
     private static final String SORT_CREATED = "created";
     private static final String SORT_RANDOM = "random";
 
-    private AlbumGridAdapter adapter;
+    private AlbumRecyclerAdapter adapter;
     private TextView emptyView;
     private EditText searchInput;
-    private GridView grid;
+    private RecyclerView grid;
+    private GridLayoutManager layoutManager;
     private LinearLayout root;
     private LinearLayout top;
     private LinearLayout selectionBar;
@@ -190,19 +192,18 @@ public class MainActivity extends Activity {
         root.addView(selectionBar, selectionParams);
 
         FrameLayout content = new FrameLayout(this);
-        grid = new GridView(this);
-        grid.setNumColumns(columnCount);
-        grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
-        grid.setHorizontalSpacing(Ui.dp(this, 10));
-        grid.setVerticalSpacing(Ui.dp(this, 16));
+        grid = new RecyclerView(this);
+        layoutManager = new GridLayoutManager(this, columnCount);
+        grid.setLayoutManager(layoutManager);
         grid.setClipToPadding(false);
         grid.setPadding(Ui.dp(this, 6), Ui.dp(this, 4), Ui.dp(this, 6), Ui.dp(this, 20));
         grid.setBackgroundColor(Ui.bg(this));
-        adapter = new AlbumGridAdapter(this);
-        grid.setAdapter(adapter);
-        grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        adapter = new AlbumRecyclerAdapter(this, new AlbumRecyclerAdapter.Callbacks() {
             @Override
-            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+            public void onAlbumClick(int position) {
+                if (position < 0 || position >= adapter.getCount()) {
+                    return;
+                }
                 if (adapter.isSelectionMode()) {
                     adapter.toggleSelection(position);
                     updateSelectionUi();
@@ -214,10 +215,12 @@ public class MainActivity extends Activity {
                 intent.putExtra("album_name", album.name);
                 startActivity(intent);
             }
-        });
-        grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
+
             @Override
-            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
+            public boolean onAlbumLongClick(View view, int position) {
+                if (position < 0 || position >= adapter.getCount()) {
+                    return true;
+                }
                 enterSelectionMode();
                 adapter.selectPosition(position);
                 updateSelectionUi();
@@ -225,6 +228,7 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
+        grid.setAdapter(adapter);
         scaleDetector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
             @Override
             public boolean onScale(ScaleGestureDetector detector) {
@@ -568,8 +572,15 @@ public class MainActivity extends Activity {
         final Set<String> hiddenKeys = new HashSet<>(prefs.getStringSet("hidden_folder_keys", new HashSet<String>()));
         final String query = searchInput == null ? "" : searchInput.getText().toString();
         if (adapter != null && adapter.getCount() == 0 && emptyView != null) {
-            emptyView.setText("Carregando mídia...");
-            emptyView.setVisibility(View.VISIBLE);
+            List<AlbumItem> cachedAlbums = MediaCatalogCache.readAlbums(this);
+            if (!cachedAlbums.isEmpty()) {
+                adapter.submit(cachedAlbums);
+                adapter.applyFilter(query);
+                updateEmptyText();
+            } else {
+                emptyView.setText("Carregando mídia...");
+                emptyView.setVisibility(View.VISIBLE);
+            }
         }
         mediaLoader.execute(new Runnable() {
             @Override
@@ -611,21 +622,38 @@ public class MainActivity extends Activity {
                 }
                 sortAlbums(albums);
                 final List<AlbumItem> result = albums;
+                MediaCatalogCache.writeAlbums(getApplicationContext(), result);
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         if (request != loadGeneration || isFinishing()) {
                             return;
                         }
-                        adapter.submit(result);
-                        if (searchInput != null) {
-                            adapter.applyFilter(query);
-                        }
-                        updateEmptyText();
+                        showAlbumsProgressively(result, query);
                     }
                 });
             }
         });
+    }
+
+    private void showAlbumsProgressively(final List<AlbumItem> albums, final String query) {
+        if (albums.size() <= 60 || grid == null) {
+            adapter.submit(albums);
+            adapter.applyFilter(query);
+            updateEmptyText();
+            return;
+        }
+        adapter.submit(new ArrayList<>(albums.subList(0, 60)));
+        adapter.applyFilter(query);
+        updateEmptyText();
+        grid.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                adapter.submit(albums);
+                adapter.applyFilter(query);
+                updateEmptyText();
+            }
+        }, 120);
     }
 
     private void loadSettings() {
@@ -873,8 +901,7 @@ public class MainActivity extends Activity {
                     .withEndAction(new Runnable() {
                         @Override
                         public void run() {
-                            grid.setNumColumns(columnCount);
-                            grid.scheduleLayoutAnimation();
+                            layoutManager.setSpanCount(columnCount);
                             grid.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(130).start();
                         }
                     })

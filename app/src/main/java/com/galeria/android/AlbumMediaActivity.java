@@ -5,7 +5,6 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
-import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -15,18 +14,17 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.animation.AlphaAnimation;
 import android.view.animation.DecelerateInterpolator;
-import android.view.animation.GridLayoutAnimationController;
-import android.widget.AdapterView;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.GridView;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.SeekBar;
 import android.widget.TextView;
+
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -52,8 +50,9 @@ public class AlbumMediaActivity extends Activity {
     private static final String GROUP_DAY = "day";
     private static final String GROUP_MONTH = "month";
 
-    private MediaGridAdapter adapter;
-    private GridView grid;
+    private MediaRecyclerAdapter adapter;
+    private RecyclerView grid;
+    private GridLayoutManager layoutManager;
     private EditText searchInput;
     private TextView emptyView;
     private File pendingHiddenCopy;
@@ -210,25 +209,18 @@ public class AlbumMediaActivity extends Activity {
         root.addView(selectionBar, selectionParams);
 
         FrameLayout content = new FrameLayout(this);
-        grid = new GridView(this);
-        grid.setNumColumns(GridView.AUTO_FIT);
-        grid.setColumnWidth(Ui.dp(this, 126));
-        grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
+        grid = new RecyclerView(this);
+        layoutManager = new GridLayoutManager(this, mediaSpanCount());
+        grid.setLayoutManager(layoutManager);
         applyGridSpacing();
-        AlphaAnimation itemFade = new AlphaAnimation(0f, 1f);
-        itemFade.setDuration(120);
-        itemFade.setInterpolator(new DecelerateInterpolator());
-        grid.setLayoutAnimation(new GridLayoutAnimationController(itemFade, 0.035f, 0.035f));
         grid.setClipToPadding(false);
-        grid.setSelector(new ColorDrawable(Color.TRANSPARENT));
         grid.setBackgroundColor(Ui.bg(this));
-        adapter = new MediaGridAdapter(this);
-        adapter.setSpacingDp(gridSpacingDp);
-        applyViewMode();
-        grid.setAdapter(adapter);
-        grid.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        adapter = new MediaRecyclerAdapter(this, new MediaRecyclerAdapter.Callbacks() {
             @Override
-            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+            public void onMediaClick(int position) {
+                if (position < 0 || position >= adapter.getCount()) {
+                    return;
+                }
                 if (!dragging) {
                     if (adapter.isSelectionMode()) {
                         adapter.toggleSelection(position);
@@ -238,10 +230,12 @@ public class AlbumMediaActivity extends Activity {
                     }
                 }
             }
-        });
-        grid.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
+
             @Override
-            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
+            public boolean onMediaLongClick(View view, int position) {
+                if (position < 0 || position >= adapter.getCount()) {
+                    return true;
+                }
                 if (!adapter.isSelectionMode()) {
                     enterSelectionMode();
                     adapter.selectPosition(position);
@@ -264,6 +258,9 @@ public class AlbumMediaActivity extends Activity {
                 return true;
             }
         });
+        adapter.setSpacingDp(gridSpacingDp);
+        applyViewMode();
+        grid.setAdapter(adapter);
         grid.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent event) {
@@ -271,7 +268,8 @@ public class AlbumMediaActivity extends Activity {
                     return false;
                 }
                 if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                    int target = grid.pointToPosition((int) event.getX(), (int) event.getY());
+                    View targetView = grid.findChildViewUnder(event.getX(), event.getY());
+                    int target = targetView == null ? RecyclerView.NO_POSITION : grid.getChildAdapterPosition(targetView);
                     if (adapter.isSelectionMode() && target >= 0 && target != dragPosition && adapter.moveSelectedBlock(target)) {
                         dragPosition = target;
                         dragMoved = true;
@@ -525,8 +523,6 @@ public class AlbumMediaActivity extends Activity {
             return;
         }
         int gap = Ui.dp(this, gridSpacingDp);
-        grid.setHorizontalSpacing(gap);
-        grid.setVerticalSpacing(gap);
         grid.setPadding(gap, gap, gap, Ui.dp(this, 16));
         if (adapter != null) {
             adapter.setSpacingDp(gridSpacingDp);
@@ -666,7 +662,7 @@ public class AlbumMediaActivity extends Activity {
 
     private void loadMedia(boolean preserveScroll) {
         final int request = ++loadGeneration;
-        final int targetPosition = preserveScroll && grid != null ? grid.getFirstVisiblePosition() : savedFirstVisible;
+        final int targetPosition = preserveScroll && layoutManager != null ? layoutManager.findFirstVisibleItemPosition() : savedFirstVisible;
         final String query = searchInput == null ? "" : searchInput.getText().toString();
         if (adapter != null && adapter.getCount() == 0 && emptyView != null) {
             emptyView.setText("Carregando mídia...");
@@ -688,11 +684,8 @@ public class AlbumMediaActivity extends Activity {
                         }
                         updateEmptyState();
                         updateSelectionUi();
-                        if (grid != null && items.size() <= 300) {
-                            grid.scheduleLayoutAnimation();
-                        }
                         if (grid != null && targetPosition > 0) {
-                            grid.setSelection(targetPosition);
+                            grid.scrollToPosition(targetPosition);
                         }
                     }
                 });
@@ -838,7 +831,7 @@ public class AlbumMediaActivity extends Activity {
             draggedView = null;
         }
         if (grid != null) {
-            grid.invalidateViews();
+            adapter.notifyDataSetChanged();
         }
     }
 
@@ -879,16 +872,16 @@ public class AlbumMediaActivity extends Activity {
             return;
         }
         if (listMode) {
-            grid.setNumColumns(1);
-            grid.setColumnWidth(getResources().getDisplayMetrics().widthPixels);
-            grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
+            layoutManager.setSpanCount(1);
         } else {
-            grid.setNumColumns(GridView.AUTO_FIT);
-            grid.setColumnWidth(Ui.dp(this, 126));
-            grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
+            layoutManager.setSpanCount(mediaSpanCount());
         }
         adapter.setListMode(listMode);
         applyGridSpacing();
+    }
+
+    private int mediaSpanCount() {
+        return Math.max(2, getResources().getDisplayMetrics().widthPixels / Ui.dp(this, 126));
     }
 
     private String optionKey(String suffix) {
@@ -950,7 +943,7 @@ public class AlbumMediaActivity extends Activity {
     }
 
     private void openDetail(MediaItem item, int position, boolean shuffleMode) {
-        savedFirstVisible = grid == null ? 0 : grid.getFirstVisiblePosition();
+        savedFirstVisible = layoutManager == null ? 0 : layoutManager.findFirstVisibleItemPosition();
         Intent intent = new Intent(this, DetailActivity.class);
         intent.putExtra("uri", item.uri.toString());
         intent.putExtra("name", item.name);
