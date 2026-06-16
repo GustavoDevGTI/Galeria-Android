@@ -115,13 +115,13 @@ class AlbumRecyclerAdapter(
             )
         }
 
-        val thumb = FrameLayout(context)
+        val thumb = SquareFrameLayout(context)
         val cover = SquareImageView(context).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
             background = Ui.rounded(Ui.surface(context), folderRadius(), context)
             clipToOutline = true
         }
-        thumb.addView(cover, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        thumb.addView(cover, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         val check = TextView(context).apply {
             setTextColor(Color.WHITE)

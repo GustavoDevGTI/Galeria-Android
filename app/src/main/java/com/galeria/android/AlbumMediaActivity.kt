@@ -39,9 +39,6 @@ class AlbumMediaActivity : Activity() {
     private lateinit var layoutManager: GridLayoutManager
     private lateinit var searchInput: EditText
     private lateinit var emptyView: TextView
-    private var pendingHiddenCopy: File? = null
-    private var pendingMoveItem: MediaItem? = null
-    private var pendingMoveFolder: String? = null
     private var albumKey: String? = null
     private var albumName: String = "Álbum"
     private lateinit var prefs: SharedPreferences
@@ -53,6 +50,7 @@ class AlbumMediaActivity : Activity() {
     private lateinit var selectionBar: LinearLayout
     private lateinit var selectionActions: LinearLayout
     private lateinit var selectAllText: TextView
+    private var spacingDecoration: RecyclerView.ItemDecoration? = null
     private var dragMoved = false
     private var showImages = true
     private var showVideos = true
@@ -214,7 +212,6 @@ class AlbumMediaActivity : Activity() {
                 return true
             }
         })
-        adapter.setSpacingDp(gridSpacingDp)
         applyViewMode()
         grid.adapter = adapter
         grid.setOnTouchListener { _, event ->
@@ -429,10 +426,10 @@ class AlbumMediaActivity : Activity() {
     private fun applyGridSpacing() {
         if (!::grid.isInitialized) return
         val gap = Ui.dp(this, gridSpacingDp)
-        grid.setPadding(gap, gap, gap, Ui.dp(this, 16))
-        if (::adapter.isInitialized) {
-            adapter.setSpacingDp(gridSpacingDp)
-        }
+        spacingDecoration?.let(grid::removeItemDecoration)
+        spacingDecoration = GridSpacingItemDecoration(gap, layoutManager.spanCount).also(grid::addItemDecoration)
+        grid.setPadding(0, 0, 0, Ui.dp(this, 16))
+        grid.invalidateItemDecorations()
     }
 
     private fun enterSelectionMode() {
@@ -791,119 +788,12 @@ class AlbumMediaActivity : Activity() {
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
     }
 
-    private fun confirmDelete(item: MediaItem) {
-        AlertDialog.Builder(this)
-            .setTitle("Excluir item")
-            .setMessage("Tem certeza que deseja excluir este arquivo?")
-            .setPositiveButton("Excluir") { _, _ -> deleteItem(item) }
-            .setNegativeButton("Cancelar", null)
-            .show()
-    }
-
-    private fun deleteItem(item: MediaItem) {
-        val result = MediaActions.requestDelete(this, item.uri, REQ_DELETE)
-        if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, "Item excluído.")
-            loadMedia(true)
-        } else if (result == MediaActions.RESULT_FAILED) {
-            requestFileManagementAccess()
-        }
-    }
-
-    private fun confirmHide(item: MediaItem) {
-        AlertDialog.Builder(this)
-            .setTitle("Ocultar item")
-            .setMessage("O arquivo será copiado para a área oculta do app e removido da galeria pública.")
-            .setPositiveButton("Ocultar") { _, _ -> hideItem(item) }
-            .setNegativeButton("Cancelar", null)
-            .show()
-    }
-
-    private fun hideItem(item: MediaItem) {
-        pendingHiddenCopy = MediaActions.copyToHidden(this, item)
-        if (pendingHiddenCopy == null) {
-            Ui.toast(this, "Não foi possível copiar para ocultos.")
-            return
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val result = MediaActions.requestDelete(this, item.uri, REQ_HIDE_DELETE)
-            if (result == MediaActions.RESULT_DONE) {
-                Ui.toast(this, "Item ocultado.")
-                pendingHiddenCopy = null
-                loadMedia(true)
-            } else if (result == MediaActions.RESULT_FAILED) {
-                pendingHiddenCopy?.delete()
-                pendingHiddenCopy = null
-                requestFileManagementAccess()
-            }
-        } else {
-            val deleted = contentResolver.delete(item.uri, null, null)
-            if (deleted > 0) {
-                Ui.toast(this, "Item ocultado.")
-            } else {
-                pendingHiddenCopy?.delete()
-                Ui.toast(this, "Não foi possível remover o original.")
-            }
-            pendingHiddenCopy = null
-            loadMedia(true)
-        }
-    }
-
-    private fun askMoveFolder(item: MediaItem) {
-        val input = EditText(this).apply {
-            setSingleLine(true)
-            hint = "Ex.: Viagens"
-            setTextColor(Ui.text(this@AlbumMediaActivity))
-            setHintTextColor(Ui.muted(this@AlbumMediaActivity))
-        }
-        AlertDialog.Builder(this)
-            .setTitle("Mover para pasta")
-            .setMessage("Digite o nome da pasta dentro de Fotos ou Vídeos.")
-            .setView(input)
-            .setPositiveButton("Mover") { _, _ -> moveItem(item, input.text.toString()) }
-            .setNegativeButton("Cancelar", null)
-            .show()
-    }
-
-    private fun moveItem(item: MediaItem, folder: String) {
-        pendingMoveItem = item
-        pendingMoveFolder = folder
-        val result = MediaActions.moveToFolder(this, item, folder)
-        if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, "Item movido.")
-            pendingMoveItem = null
-            pendingMoveFolder = null
-            loadMedia(true)
-        } else if (result == MediaActions.RESULT_NEEDS_PERMISSION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            MediaActions.requestWrite(this, item.uri, REQ_MOVE_WRITE)
-        } else {
-            requestFileManagementAccess()
-        }
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_HIDE_DELETE) {
-            if (resultCode == RESULT_OK) {
-                Ui.toast(this, "Item ocultado.")
-            } else if (pendingHiddenCopy != null) {
-                pendingHiddenCopy?.delete()
-                Ui.toast(this, "Ocultação cancelada.")
-            }
-            pendingHiddenCopy = null
-            loadMedia(true)
-        } else if (requestCode == REQ_DELETE) {
+        if (requestCode == REQ_DELETE) {
             if (resultCode == RESULT_OK) {
                 Ui.toast(this, "Item excluído.")
             }
-            loadMedia(true)
-        } else if (requestCode == REQ_MOVE_WRITE && pendingMoveItem != null) {
-            if (resultCode == RESULT_OK) {
-                val result = MediaActions.moveToFolder(this, pendingMoveItem!!, pendingMoveFolder.orEmpty())
-                Ui.toast(this, if (result == MediaActions.RESULT_DONE) "Item movido." else "Não foi possível mover.")
-            }
-            pendingMoveItem = null
-            pendingMoveFolder = null
             loadMedia(true)
         }
     }
@@ -915,8 +805,6 @@ class AlbumMediaActivity : Activity() {
 
     companion object {
         private const val REQ_DELETE = 11
-        private const val REQ_HIDE_DELETE = 12
-        private const val REQ_MOVE_WRITE = 13
         private const val MAX_GRID_SPACING_DP = 8
         private const val GROUP_NONE = "none"
         private const val GROUP_TYPE = "type"

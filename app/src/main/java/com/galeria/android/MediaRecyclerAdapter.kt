@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.media.ThumbnailUtils
 import android.net.Uri
 import android.os.Build
+import android.text.TextUtils
 import android.util.LruCache
 import android.util.Size
 import android.view.Gravity
@@ -37,18 +38,12 @@ class MediaRecyclerAdapter(
     private var filter = ""
     private var listMode = false
     private var selectionMode = false
-    private var spacingDp = 0
 
     fun submit(nextItems: List<MediaItem>) {
         allItems.clear()
         allItems.addAll(nextItems)
         selectedUris.retainAll(nextItems.mapTo(HashSet()) { it.uri.toString() })
         applyFilter(filter)
-    }
-
-    fun setSpacingDp(spacingDp: Int) {
-        this.spacingDp = spacingDp
-        notifyDataSetChanged()
     }
 
     fun setListMode(listMode: Boolean) {
@@ -182,9 +177,18 @@ class MediaRecyclerAdapter(
             orientation = if (asList) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             gravity = if (asList) Gravity.CENTER_VERTICAL else Gravity.LEFT
             setBackgroundColor(Color.TRANSPARENT)
+            layoutParams = RecyclerView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
         }
-        val thumb = FrameLayout(context).apply { setBackgroundColor(Color.TRANSPARENT) }
-        val image: ImageView = if (asList) ImageView(context) else SquareImageView(context)
+        val thumb: FrameLayout = if (asList) {
+            FrameLayout(context)
+        } else {
+            SquareFrameLayout(context)
+        }
+        thumb.setBackgroundColor(Color.TRANSPARENT)
+        val image = ImageView(context)
         image.scaleType = ImageView.ScaleType.CENTER_CROP
         image.setBackgroundColor(Color.TRANSPARENT)
         thumb.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -225,6 +229,7 @@ class MediaRecyclerAdapter(
             textSize = if (asList) 14f else 11f
             isSingleLine = !asList
             maxLines = if (asList) 2 else 1
+            ellipsize = TextUtils.TruncateAt.END
             gravity = Gravity.LEFT
             setPadding(Ui.dp(context, if (asList) 12 else 2), Ui.dp(context, if (asList) 0 else 4), Ui.dp(context, 2), 0)
         }
@@ -234,17 +239,12 @@ class MediaRecyclerAdapter(
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(context, 24))
         }
         item.addView(name, nameParams)
-        return Holder(item, image, badge, name, check, asList)
+        return Holder(item, image, badge, name, check)
     }
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val item = visibleItems[position]
         val selected = selectedUris.contains(item.uri.toString())
-        val gap = Ui.dp(context, spacingDp)
-        (holder.itemView.layoutParams as? RecyclerView.LayoutParams)?.let {
-            it.setMargins(gap / 2, gap / 2, gap / 2, gap / 2)
-            holder.itemView.layoutParams = it
-        }
         holder.itemView.alpha = if (selected) 0.78f else 1f
         holder.itemView.scaleX = if (selected) 0.94f else 1f
         holder.itemView.scaleY = if (selected) 0.94f else 1f
@@ -333,8 +333,7 @@ class MediaRecyclerAdapter(
         val image: ImageView,
         val badge: TextView,
         val name: TextView,
-        val check: TextView,
-        val listMode: Boolean
+        val check: TextView
     ) : RecyclerView.ViewHolder(itemView)
 
     private object MediaStoreCompat {

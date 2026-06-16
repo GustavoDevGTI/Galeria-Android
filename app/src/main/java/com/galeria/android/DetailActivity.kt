@@ -105,7 +105,7 @@ class DetailActivity : Activity() {
         shuffleMode = intent.getBooleanExtra("shuffle_mode", false)
         prepareMediaQueue(uri, name, mime, path)
         buildLayout()
-        loadCurrentItem(0)
+        loadCurrentItem()
     }
 
     private fun prepareMediaQueue(currentUri: Uri, name: String?, mime: String?, path: String?) {
@@ -402,7 +402,7 @@ class DetailActivity : Activity() {
             .start()
     }
 
-    private fun loadCurrentItem(direction: Int) {
+    private fun loadCurrentItem() {
         releasePlayer()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
@@ -766,7 +766,7 @@ class DetailActivity : Activity() {
                 }
                 runOnUiThread {
                     Ui.toast(this, "Orientação alterada.")
-                    loadCurrentItem(0)
+                    loadCurrentItem()
                 }
             } catch (_: SecurityException) {
                 runOnUiThread { MediaActions.requestWrite(this, item.uri, REQ_ROTATE_WRITE) }
@@ -877,7 +877,7 @@ class DetailActivity : Activity() {
             return
         }
         if (currentIndex >= mediaQueue.size) currentIndex = mediaQueue.size - 1
-        loadCurrentItem(0)
+        loadCurrentItem()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
