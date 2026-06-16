@@ -1,5 +1,7 @@
 package com.galeria.android
 
+import android.app.Activity
+import android.os.Build
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
@@ -135,6 +137,28 @@ class Ui private constructor() {
         fun setPadding(view: View, left: Int, top: Int, right: Int, bottom: Int) {
             val context = view.context
             view.setPadding(dp(context, left), dp(context, top), dp(context, right), dp(context, bottom))
+        }
+
+        @JvmStatic
+        fun applyOpenTransition(activity: Activity) {
+            applyActivityTransition(activity, true)
+        }
+
+        @JvmStatic
+        fun applyCloseTransition(activity: Activity) {
+            applyActivityTransition(activity, false)
+        }
+
+        private fun applyActivityTransition(activity: Activity, opening: Boolean) {
+            val enterAnim = android.R.anim.fade_in
+            val exitAnim = android.R.anim.fade_out
+            if (Build.VERSION.SDK_INT >= 34) {
+                val overrideType = if (opening) Activity.OVERRIDE_TRANSITION_OPEN else Activity.OVERRIDE_TRANSITION_CLOSE
+                activity.overrideActivityTransition(overrideType, enterAnim, exitAnim)
+            } else {
+                @Suppress("DEPRECATION")
+                activity.overridePendingTransition(enterAnim, exitAnim)
+            }
         }
     }
 }

@@ -785,7 +785,6 @@ class AlbumMediaActivity : Activity() {
             putExtra("shuffle_mode", shuffleMode)
         }
         startActivity(intent)
-        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

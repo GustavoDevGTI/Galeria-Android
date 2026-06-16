@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace "com.galeria.android"
+    namespace = "com.galeria.android"
     compileSdk 36
 
     defaultConfig {
-        applicationId "com.galeria.android"
+        applicationId = "com.galeria.android"
         minSdk 23
         targetSdk 36
         versionCode 7

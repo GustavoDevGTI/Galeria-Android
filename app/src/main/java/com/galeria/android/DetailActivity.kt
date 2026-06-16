@@ -22,7 +22,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -38,6 +37,8 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -97,6 +98,7 @@ class DetailActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Ui.applyOpenTransition(this)
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
         val uri = Uri.parse(intent.getStringExtra("uri").orEmpty())
         val name = intent.getStringExtra("name")
@@ -935,9 +937,15 @@ class DetailActivity : Activity() {
     private fun currentItem(): MediaItem = mediaQueue[currentIndex]
 
     private fun applyWindowSettings() {
-        window.statusBarColor = Color.BLACK
-        window.navigationBarColor = Color.BLACK
-        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowCompat.getInsetsController(window, window.decorView)?.apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         if (prefs.getBoolean("fullscreen_max_brightness", false)) {
             val params = window.attributes
             params.screenBrightness = 1f
@@ -1003,7 +1011,7 @@ class DetailActivity : Activity() {
     private fun resetSpeedAndFinish() {
         playbackSpeed = 1f
         finish()
-        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+        Ui.applyCloseTransition(this)
     }
 
     private fun statusBarHeight(): Int {
