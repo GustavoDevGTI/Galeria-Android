@@ -1,14 +1,19 @@
 package com.galeria.android
 
 import android.app.Activity
-import android.os.Build
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.PopupWindow
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import kotlin.math.max
@@ -45,6 +50,16 @@ class Ui private constructor() {
             val seed = themeSeed(context)
             return if (darkMode(context)) blend(seed, Color.BLACK, 0.62f) else blend(seed, Color.WHITE, 0.74f)
         }
+
+        @JvmStatic
+        fun menuSurface(context: Context): Int {
+            val seed = themeSeed(context)
+            return if (darkMode(context)) blend(seed, Color.BLACK, 0.74f) else blend(seed, Color.BLACK, 0.58f)
+        }
+
+        @JvmStatic
+        fun menuText(context: Context): Int =
+            if (darkMode(context)) TEXT else blend(Color.WHITE, themeSeed(context), 0.10f)
 
         @JvmStatic
         fun text(context: Context): Int = if (darkMode(context)) TEXT else Color.rgb(18, 18, 18)
@@ -140,6 +155,54 @@ class Ui private constructor() {
         }
 
         @JvmStatic
+        fun showPopupOptions(anchor: View, items: List<String>, onSelect: (String) -> Unit): PopupWindow {
+            val context = anchor.context
+            val scroll = ScrollView(context).apply {
+                isVerticalScrollBarEnabled = false
+                background = rounded(menuSurface(context), 10, context)
+            }
+            val content = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            for (item in items) {
+                val row = TextView(context).apply {
+                    text = item
+                    setTextColor(menuText(context))
+                    textSize = 15f
+                    gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                    setPadding(dp(context, 18), dp(context, 16), dp(context, 18), dp(context, 16))
+                    setOnClickListener {
+                        popupRef[0]?.dismiss()
+                        onSelect(item)
+                    }
+                }
+                content.addView(
+                    row,
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                )
+            }
+            scroll.addView(
+                content,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            val width = dp(context, 248)
+            val popup = PopupWindow(scroll, width, ViewGroup.LayoutParams.WRAP_CONTENT, true).apply {
+                isOutsideTouchable = true
+                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                elevation = dp(context, 10).toFloat()
+            }
+            popupRef[0] = popup
+            popup.showAsDropDown(anchor, anchor.width - width, dp(context, 6))
+            return popup
+        }
+
+        @JvmStatic
         fun applyOpenTransition(activity: Activity) {
             applyActivityTransition(activity, true)
         }
@@ -160,5 +223,7 @@ class Ui private constructor() {
                 activity.overridePendingTransition(enterAnim, exitAnim)
             }
         }
+
+        private val popupRef = arrayOfNulls<PopupWindow>(1)
     }
 }

@@ -24,7 +24,6 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -42,6 +41,9 @@ class MainActivity : Activity() {
     private lateinit var layoutManager: GridLayoutManager
     private lateinit var root: LinearLayout
     private lateinit var top: LinearLayout
+    private lateinit var searchIconButton: ImageButton
+    private lateinit var selectAllChip: TextView
+    private lateinit var moreButton: ImageButton
     private lateinit var selectionBar: LinearLayout
     private lateinit var selectionActions: LinearLayout
     private lateinit var selectAllText: TextView
@@ -105,14 +107,22 @@ class MainActivity : Activity() {
         }
         root.addView(top, topParams)
 
-        val searchIcon = iconButton(R.drawable.ic_search).apply {
+        selectAllChip = Ui.title(this, "[ ]", 16).apply {
+            gravity = Gravity.CENTER
+            setTextColor(Ui.text(this@MainActivity))
+            visibility = View.GONE
+            setOnClickListener { toggleSelectAll() }
+        }
+        top.addView(selectAllChip, LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 38)))
+
+        searchIconButton = iconButton(R.drawable.ic_search).apply {
             setOnClickListener {
                 searchInput.requestFocus()
                 (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
                     .showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT)
             }
         }
-        top.addView(searchIcon, LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 38)))
+        top.addView(searchIconButton, LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 38)))
 
         searchInput = EditText(this).apply {
             hint = "Pesquisar pastas"
@@ -133,10 +143,16 @@ class MainActivity : Activity() {
         }
         top.addView(searchInput, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
 
-        val more = iconButton(R.drawable.ic_more_vertical).apply {
-            setOnClickListener { showMenu(it) }
+        moreButton = iconButton(R.drawable.ic_more_vertical).apply {
+            setOnClickListener {
+                if (adapter.isSelectionMode()) {
+                    exitSelectionMode()
+                } else {
+                    showMenu(it)
+                }
+            }
         }
-        top.addView(more, LinearLayout.LayoutParams(Ui.dp(this, 30), Ui.dp(this, 38)))
+        top.addView(moreButton, LinearLayout.LayoutParams(Ui.dp(this, 30), Ui.dp(this, 38)))
 
         selectionBar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -153,10 +169,6 @@ class MainActivity : Activity() {
         }
         selectionBar.addView(cancelSelection, LinearLayout.LayoutParams(Ui.dp(this, 96), Ui.dp(this, 38)))
         selectionBar.visibility = View.GONE
-        val selectionParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            setMargins(Ui.dp(this@MainActivity, 14), 0, Ui.dp(this@MainActivity, 14), Ui.dp(this@MainActivity, 8))
-        }
-        root.addView(selectionBar, selectionParams)
 
         val content = FrameLayout(this)
         grid = RecyclerView(this).apply {
@@ -177,6 +189,7 @@ class MainActivity : Activity() {
                 val intent = Intent(this@MainActivity, AlbumMediaActivity::class.java).apply {
                     putExtra("album_key", album.key)
                     putExtra("album_name", album.name)
+                    putExtra("include_hidden_filesystem", shouldIncludeHiddenFilesystem())
                 }
                 startActivity(intent)
             }
@@ -226,26 +239,29 @@ class MainActivity : Activity() {
         selectionActions = LinearLayout(this).apply {
             gravity = Gravity.CENTER
             setBackgroundColor(Ui.bg(this@MainActivity))
-            Ui.setPadding(this, 10, 8, 10, 12)
+            setPadding(Ui.dp(this@MainActivity, 10), Ui.dp(this@MainActivity, 8), Ui.dp(this@MainActivity, 10), navigationBarHeight() + Ui.dp(this@MainActivity, 8))
         }
-        addSelectionAction("Compartilhar") { shareSelectedAlbums() }
-        addSelectionAction("Favoritar") { favoriteSelectedAlbums() }
-        addSelectionAction("Excluir") { confirmDeleteSelectedAlbums() }
-        addSelectionAction("Mover") { askMoveSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_share, "Compartilhar") { shareSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_star, "Favoritar") { favoriteSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_trash, "Excluir") { confirmDeleteSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_arrow_right, "Mover") { askMoveSelectedAlbums() }
         selectionActions.visibility = View.GONE
         root.addView(selectionActions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         setContentView(root)
     }
 
-    private fun addSelectionAction(label: String, listener: () -> Unit) {
-        val button = Ui.title(this, label, 14).apply {
-            setTextColor(Ui.accent(this@MainActivity))
-            gravity = Gravity.CENTER
+    private fun addSelectionAction(icon: Int, label: String, listener: () -> Unit) {
+        val button = ImageButton(this).apply {
+            setImageResource(icon)
+            setColorFilter(Ui.accent(this@MainActivity))
+            contentDescription = label
+            scaleType = ImageView.ScaleType.CENTER
+            setPadding(Ui.dp(this@MainActivity, 10), Ui.dp(this@MainActivity, 10), Ui.dp(this@MainActivity, 10), Ui.dp(this@MainActivity, 10))
             background = Ui.rounded(Ui.surface(this@MainActivity), 8, this@MainActivity)
             setOnClickListener { listener() }
         }
-        val params = LinearLayout.LayoutParams(0, Ui.dp(this, 42), 1f).apply {
-            setMargins(Ui.dp(this@MainActivity, 4), 0, Ui.dp(this@MainActivity, 4), 0)
+        val params = LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f).apply {
+            setMargins(Ui.dp(this@MainActivity, 6), 0, Ui.dp(this@MainActivity, 6), 0)
         }
         selectionActions.addView(button, params)
     }
@@ -260,17 +276,21 @@ class MainActivity : Activity() {
         }
 
     private fun showMenu(anchor: View) {
-        val menu = PopupMenu(this, anchor)
-        menu.menu.add("Ordenar por")
-        menu.menu.add("Filtrar mídia")
-        menu.menu.add("Organização de pastas")
-        menu.menu.add("Exibir/ocultar pastas")
-        menu.menu.add("Criar nova pasta")
-        menu.menu.add("Configurações")
-        menu.menu.add(if (showHiddenFolders) "Ocultar ocultos" else "Exibir ocultos")
-        menu.menu.add("Atualizar")
-        menu.setOnMenuItemClickListener { item ->
-            when (item.title.toString()) {
+        val showHiddenOption = if (showHiddenFolders) "Ocultar ocultos" else "Exibir ocultos"
+        Ui.showPopupOptions(
+            anchor,
+            listOf(
+                "Ordenar por",
+                "Filtrar mídia",
+                "Organização de pastas",
+                "Exibir/ocultar pastas",
+                "Criar nova pasta",
+                "Configurações",
+                showHiddenOption,
+                "Atualizar"
+            )
+        ) { selected ->
+            when (selected) {
                 "Ordenar por" -> showSortDialog()
                 "Filtrar mídia" -> showMediaFilterDialog()
                 "Organização de pastas" -> showFolderOrganizationDialog()
@@ -292,9 +312,7 @@ class MainActivity : Activity() {
                 }
                 else -> loadAlbums()
             }
-            true
         }
-        menu.show()
     }
 
     private fun enterSelectionMode() {
@@ -308,11 +326,14 @@ class MainActivity : Activity() {
 
     private fun updateSelectionUi() {
         val active = adapter.isSelectionMode()
-        selectionBar.visibility = if (active) View.VISIBLE else View.GONE
+        selectionBar.visibility = View.GONE
         selectionActions.visibility = if (active) View.VISIBLE else View.GONE
-        selectAllText.text = (if (adapter.allVisibleSelected()) "[x] " else "[ ] ") +
-            "Selecionar tudo" +
-            if (adapter.selectedCount() > 0) " (${adapter.selectedCount()})" else ""
+        selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
+        searchIconButton.visibility = if (active) View.GONE else View.VISIBLE
+        selectAllChip.text = if (adapter.allVisibleSelected()) "[x]" else "[ ]"
+        searchInput.hint = if (active) "${adapter.selectedCount()} selecionados" else "Pesquisar pastas"
+        searchInput.isEnabled = !active
+        moreButton.setImageResource(if (active) R.drawable.ic_back else R.drawable.ic_more_vertical)
         if (active && adapter.selectedCount() == 0) {
             exitSelectionMode()
         }
@@ -402,19 +423,14 @@ class MainActivity : Activity() {
     private fun askMoveSelectedAlbums() {
         val albums = adapter.selectedAlbums()
         if (albums.isEmpty()) return
-        val input = EditText(this).apply {
-            setSingleLine(true)
-            hint = "Ex.: Viagens"
-            setTextColor(Ui.text(this@MainActivity))
-            setHintTextColor(Ui.muted(this@MainActivity))
+        val targets = availableAlbumNames(albums.mapTo(HashSet()) { it.key })
+        if (targets.isEmpty()) {
+            Ui.toast(this, "Nenhum álbum disponível para mover.")
+            return
         }
-        AlertDialog.Builder(this)
-            .setTitle("Mover álbuns")
-            .setMessage("Digite o nome da pasta de destino.")
-            .setView(input)
-            .setPositiveButton("Mover") { _, _ -> moveSelectedAlbums(albums, input.text.toString()) }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        Ui.showPopupOptions(moreButton, targets) { selected ->
+            moveSelectedAlbums(albums, selected)
+        }
     }
 
     private fun moveSelectedAlbums(albums: List<AlbumItem>, folder: String) {
@@ -447,7 +463,7 @@ class MainActivity : Activity() {
             keys.add(album.key)
         }
         val items = ArrayList<MediaItem>()
-        for (item in MediaStoreRepository.loadMedia(applicationContext)) {
+        for (item in MediaStoreRepository.loadMedia(applicationContext, shouldIncludeHiddenFilesystem())) {
             if ((allMedia || keys.contains(item.albumKey)) && matchesMediaFilter(item)) {
                 items.add(item)
             }
@@ -455,10 +471,20 @@ class MainActivity : Activity() {
         return items
     }
 
+    private fun availableAlbumNames(excludedKeys: Set<String>): List<String> {
+        val names = LinkedHashSet<String>()
+        for (album in MediaStoreRepository.loadAlbums(applicationContext, shouldIncludeHiddenFilesystem())) {
+            if (album.key != "all_media" && !excludedKeys.contains(album.key) && album.name.isNotBlank()) {
+                names.add(album.name)
+            }
+        }
+        return names.toList()
+    }
+
     private fun loadAlbums() {
         val request = ++loadGeneration
         val searchAllFiles = prefs.getBoolean("search_all_files", false)
-        val includeHidden = showHiddenFolders
+        val includeHidden = shouldIncludeHiddenFilesystem()
         val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
@@ -474,7 +500,7 @@ class MainActivity : Activity() {
         }
 
         mediaLoader.execute {
-            val media = MediaStoreRepository.loadMedia(applicationContext)
+            val media = MediaStoreRepository.loadMedia(applicationContext, includeHidden)
             val filteredMedia = media.filter { matchesMediaFilter(it) }
             var albums: List<AlbumItem>
             if (searchAllFiles) {
@@ -558,6 +584,15 @@ class MainActivity : Activity() {
             searchInput.setTextColor(Ui.text(this))
             searchInput.setHintTextColor(Ui.muted(this))
         }
+        if (::selectAllChip.isInitialized) {
+            selectAllChip.setTextColor(Ui.text(this))
+        }
+        if (::searchIconButton.isInitialized) {
+            searchIconButton.setColorFilter(Ui.accent(this))
+        }
+        if (::moreButton.isInitialized) {
+            moreButton.setColorFilter(Ui.accent(this))
+        }
         if (::grid.isInitialized) grid.setBackgroundColor(Ui.bg(this))
         if (::selectionBar.isInitialized) selectionBar.background = Ui.rounded(Ui.surface(this), 8, this)
         if (::selectionActions.isInitialized) {
@@ -565,8 +600,8 @@ class MainActivity : Activity() {
             for (i in 0 until selectionActions.childCount) {
                 val child = selectionActions.getChildAt(i)
                 child.background = Ui.rounded(Ui.surface(this), 8, this)
-                if (child is TextView) {
-                    child.setTextColor(Ui.accent(this))
+                if (child is ImageButton) {
+                    child.setColorFilter(Ui.accent(this))
                 }
             }
         }
@@ -651,7 +686,7 @@ class MainActivity : Activity() {
     }
 
     private fun showFolderVisibilityDialog() {
-        val albums = MediaStoreRepository.buildAlbums(MediaStoreRepository.loadMedia(this)).toMutableList()
+        val albums = MediaStoreRepository.buildAlbums(MediaStoreRepository.loadMedia(this, true)).toMutableList()
         sortAlbums(albums)
         val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
         val labels = arrayOfNulls<String>(albums.size + 1)
@@ -825,6 +860,14 @@ class MainActivity : Activity() {
         val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
         return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 24)
     }
+
+    private fun navigationBarHeight(): Int {
+        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 18)
+    }
+
+    private fun shouldIncludeHiddenFilesystem(): Boolean =
+        showHiddenFolders || prefs.getBoolean("always_show_hidden", false)
 
     companion object {
         private const val REQ_READ = 10

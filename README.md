@@ -1,6 +1,6 @@
 # Galeria Android
 
-App de galeria Android nativo, agora totalmente em Kotlin, com foco em desempenho, navegação fluida e gestão real de mídias e pastas do aparelho.
+App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, navegação fluida e gestão real de mídias e pastas do aparelho.
 
 ## Stack atual
 
@@ -35,25 +35,16 @@ App de galeria Android nativo, agora totalmente em Kotlin, com foco em desempenh
 
 ## Estrutura importante
 
-- `app/src/main/java/com/galeria/android/MainActivity.kt`
+- `app/src/main/kotlin/com/galeria/android/MainActivity.kt`
   Tela principal de álbuns
-- `app/src/main/java/com/galeria/android/AlbumMediaActivity.kt`
+- `app/src/main/kotlin/com/galeria/android/AlbumMediaActivity.kt`
   Conteúdo interno de cada álbum
-- `app/src/main/java/com/galeria/android/DetailActivity.kt`
+- `app/src/main/kotlin/com/galeria/android/DetailActivity.kt`
   Visualizador de foto e player de vídeo
-- `app/src/main/java/com/galeria/android/MediaStoreRepository.kt`
+- `app/src/main/kotlin/com/galeria/android/MediaStoreRepository.kt`
   Carregamento e indexação das mídias
-- `app/src/main/java/com/galeria/android/MediaActions.kt`
+- `app/src/main/kotlin/com/galeria/android/MediaActions.kt`
   Operações de mover, copiar, excluir, ocultar e criar pasta
-
-## Como compilar
-
-No Windows, como o projeto está em pasta de rede, o caminho mais confiável continua sendo:
-
-```bat
-pushd "\\10.75.2.4\seafi$\gustavoborges\Desktop\Galeria Android"
-gradlew.bat assembleDebug
-```
 
 ## APK gerado
 

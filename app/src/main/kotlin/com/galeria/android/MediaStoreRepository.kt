@@ -14,29 +14,39 @@ import kotlin.math.absoluteValue
 
 object MediaStoreRepository {
     private val cacheLock = Any()
-    private const val CACHE_TTL_MS = 20_000L
-    private var cachedMedia: ArrayList<MediaItem>? = null
-    private var cachedAtMs: Long = 0L
+    private const val CACHE_TTL_MS = 180_000L
+    private var cachedVisibleMedia: ArrayList<MediaItem>? = null
+    private var cachedVisibleAtMs: Long = 0L
+    private var cachedHiddenMedia: ArrayList<MediaItem>? = null
+    private var cachedHiddenAtMs: Long = 0L
     private var cachedWithAllFilesAccess: Boolean = false
 
     @JvmStatic
-    fun loadMedia(context: Context): List<MediaItem> {
+    fun loadMedia(context: Context, includeHiddenFilesystem: Boolean = false): List<MediaItem> {
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
         val now = System.currentTimeMillis()
         synchronized(cacheLock) {
-            val cache = cachedMedia
-            if (cache != null && cachedWithAllFilesAccess == allFilesAccess && now - cachedAtMs < CACHE_TTL_MS) {
+            val cache = if (includeHiddenFilesystem) cachedHiddenMedia else cachedVisibleMedia
+            val cachedAt = if (includeHiddenFilesystem) cachedHiddenAtMs else cachedVisibleAtMs
+            if (cache != null && cachedWithAllFilesAccess == allFilesAccess && now - cachedAt < CACHE_TTL_MS) {
                 return ArrayList(cache)
             }
         }
 
         val items = ArrayList<MediaItem>()
         loadFromFilesCollection(context, items)
-        loadFromHiddenFilesystem(items, allFilesAccess)
+        if (includeHiddenFilesystem) {
+            loadFromHiddenFilesystem(items, allFilesAccess)
+        }
         items.sortByDescending { it.dateAdded }
         synchronized(cacheLock) {
-            cachedMedia = ArrayList(items)
-            cachedAtMs = now
+            if (includeHiddenFilesystem) {
+                cachedHiddenMedia = ArrayList(items)
+                cachedHiddenAtMs = now
+            } else {
+                cachedVisibleMedia = ArrayList(items)
+                cachedVisibleAtMs = now
+            }
             cachedWithAllFilesAccess = allFilesAccess
         }
         return items
@@ -45,8 +55,10 @@ object MediaStoreRepository {
     @JvmStatic
     fun invalidateCache() {
         synchronized(cacheLock) {
-            cachedMedia = null
-            cachedAtMs = 0L
+            cachedVisibleMedia = null
+            cachedVisibleAtMs = 0L
+            cachedHiddenMedia = null
+            cachedHiddenAtMs = 0L
         }
     }
 
@@ -63,12 +75,40 @@ object MediaStoreRepository {
     }
 
     @JvmStatic
-    fun loadMediaForAlbum(context: Context, albumKey: String?): List<MediaItem> {
+    fun loadMediaForAlbum(context: Context, albumKey: String?, includeHiddenFilesystem: Boolean = false): List<MediaItem> {
         if (albumKey == "all_media") {
-            return loadMedia(context)
+            return loadMedia(context, includeHiddenFilesystem)
         }
+        val allFilesAccess = MediaActions.hasAllFilesAccess(context)
+        val now = System.currentTimeMillis()
+        synchronized(cacheLock) {
+            val cache = if (includeHiddenFilesystem) cachedHiddenMedia else cachedVisibleMedia
+            val cachedAt = if (includeHiddenFilesystem) cachedHiddenAtMs else cachedVisibleAtMs
+            if (cache != null && cachedWithAllFilesAccess == allFilesAccess && now - cachedAt < CACHE_TTL_MS) {
+                return cache.filterTo(ArrayList()) { it.albumKey == albumKey }
+            }
+        }
+
+        if (!albumKey.isNullOrEmpty() && albumKey != "root") {
+            val directItems = ArrayList<MediaItem>()
+            loadFromFilesCollection(context, directItems, albumKey)
+            if (includeHiddenFilesystem) {
+                val hiddenItems = ArrayList<MediaItem>()
+                loadFromHiddenFilesystem(hiddenItems, allFilesAccess)
+                for (item in hiddenItems) {
+                    if (item.albumKey == albumKey) {
+                        directItems.add(item)
+                    }
+                }
+            }
+            if (directItems.isNotEmpty()) {
+                directItems.sortByDescending { it.dateAdded }
+                return directItems
+            }
+        }
+
         val filtered = ArrayList<MediaItem>()
-        for (item in loadMedia(context)) {
+        for (item in loadMedia(context, includeHiddenFilesystem)) {
             if (item.albumKey == albumKey) {
                 filtered.add(item)
             }
@@ -77,10 +117,10 @@ object MediaStoreRepository {
     }
 
     @JvmStatic
-    fun loadAlbums(context: Context): List<AlbumItem> =
-        buildAlbums(loadMedia(context)).sortedByDescending { it.latestDate }
+    fun loadAlbums(context: Context, includeHiddenFilesystem: Boolean = false): List<AlbumItem> =
+        buildAlbums(loadMedia(context, includeHiddenFilesystem)).sortedByDescending { it.latestDate }
 
-    private fun loadFromFilesCollection(context: Context, output: MutableList<MediaItem>) {
+    private fun loadFromFilesCollection(context: Context, output: MutableList<MediaItem>, albumKey: String? = null) {
         val collection = MediaStore.Files.getContentUri("external")
         val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             arrayOf(
@@ -109,19 +149,31 @@ object MediaStoreRepository {
         }
 
         val resolver: ContentResolver = context.contentResolver
-        val selection = "(" +
-            "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN (?,?)" +
-            " OR ${MediaStore.MediaColumns.MIME_TYPE} LIKE ?" +
-            " OR ${MediaStore.MediaColumns.MIME_TYPE} LIKE ?" +
-            ") AND ${MediaStore.MediaColumns.SIZE} > 0"
-        val args = arrayOf(
-            MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
-            MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString(),
-            "image/%",
-            "video/%"
+        val selection = StringBuilder(
+            "(" +
+                "${MediaStore.Files.FileColumns.MEDIA_TYPE} IN (?,?)" +
+                " OR ${MediaStore.MediaColumns.MIME_TYPE} LIKE ?" +
+                " OR ${MediaStore.MediaColumns.MIME_TYPE} LIKE ?" +
+                ") AND ${MediaStore.MediaColumns.SIZE} > 0"
         )
+        val args = ArrayList<String>().apply {
+            add(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString())
+            add(MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
+            add("image/%")
+            add("video/%")
+        }
+        if (!albumKey.isNullOrEmpty()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                selection.append(" AND ${MediaStore.MediaColumns.RELATIVE_PATH} = ?")
+                args.add(albumKey)
+            } else {
+                selection.append(" AND (${MediaStore.MediaColumns.DATA} LIKE ? OR ${MediaStore.MediaColumns.BUCKET_ID} = ?)")
+                args.add("%${albumKey.trimEnd('/')}%")
+                args.add(albumKey)
+            }
+        }
         try {
-            resolver.query(collection, projection, selection, args, "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { cursor ->
+            resolver.query(collection, projection, selection.toString(), args.toTypedArray(), "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { cursor ->
                 val idIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
                 val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
                 val mimeIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)

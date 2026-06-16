@@ -20,7 +20,6 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
@@ -38,6 +37,9 @@ class AlbumMediaActivity : Activity() {
     private lateinit var grid: RecyclerView
     private lateinit var layoutManager: GridLayoutManager
     private lateinit var searchInput: EditText
+    private lateinit var searchBox: LinearLayout
+    private lateinit var selectAllChip: TextView
+    private lateinit var moreButton: ImageButton
     private lateinit var emptyView: TextView
     private var albumKey: String? = null
     private var albumName: String = "Álbum"
@@ -114,11 +116,19 @@ class AlbumMediaActivity : Activity() {
         root.addView(bar)
 
         gridSpacingDp = max(0, min(MAX_GRID_SPACING_DP, prefs.getInt(spacingKey(), 3)))
-        val searchBox = LinearLayout(this).apply {
+        searchBox = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             background = Ui.rounded(Ui.search(this@AlbumMediaActivity), 18, this@AlbumMediaActivity)
             setPadding(Ui.dp(this@AlbumMediaActivity, 12), 0, Ui.dp(this@AlbumMediaActivity, 4), 0)
         }
+        selectAllChip = Ui.title(this, "[ ]", 16).apply {
+            gravity = Gravity.CENTER
+            setTextColor(Ui.text(this@AlbumMediaActivity))
+            visibility = View.GONE
+            setOnClickListener { toggleSelectAll() }
+        }
+        searchBox.addView(selectAllChip, LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 38)))
+
         searchInput = EditText(this).apply {
             hint = "Pesquisar nesta pasta"
             setHintTextColor(Ui.muted(this@AlbumMediaActivity))
@@ -136,14 +146,20 @@ class AlbumMediaActivity : Activity() {
             })
         }
         searchBox.addView(searchInput, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-        val more = ImageButton(this).apply {
+        moreButton = ImageButton(this).apply {
             setImageResource(R.drawable.ic_more_vertical)
             setBackgroundColor(Color.TRANSPARENT)
             setColorFilter(Ui.text(this@AlbumMediaActivity))
             setPadding(Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9))
-            setOnClickListener { showFolderMenu(it) }
+            setOnClickListener {
+                if (adapter.isSelectionMode()) {
+                    exitSelectionMode()
+                } else {
+                    showFolderMenu(it)
+                }
+            }
         }
-        searchBox.addView(more, LinearLayout.LayoutParams(Ui.dp(this, 42), Ui.dp(this, 42)))
+        searchBox.addView(moreButton, LinearLayout.LayoutParams(Ui.dp(this, 42), Ui.dp(this, 42)))
         val searchParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42)).apply {
             setMargins(Ui.dp(this@AlbumMediaActivity, 14), 0, Ui.dp(this@AlbumMediaActivity, 14), Ui.dp(this@AlbumMediaActivity, 8))
         }
@@ -164,10 +180,7 @@ class AlbumMediaActivity : Activity() {
         }
         selectionBar.addView(cancelSelection, LinearLayout.LayoutParams(Ui.dp(this, 96), Ui.dp(this, 38)))
         selectionBar.visibility = View.GONE
-        val selectionParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            setMargins(Ui.dp(this@AlbumMediaActivity, 14), 0, Ui.dp(this@AlbumMediaActivity, 14), Ui.dp(this@AlbumMediaActivity, 8))
-        }
-        root.addView(selectionBar, selectionParams)
+        selectionBar.visibility = View.GONE
 
         val content = FrameLayout(this)
         grid = RecyclerView(this).apply {
@@ -253,7 +266,7 @@ class AlbumMediaActivity : Activity() {
         selectionActions = LinearLayout(this).apply {
             gravity = Gravity.CENTER
             setBackgroundColor(Ui.bg(this@AlbumMediaActivity))
-            Ui.setPadding(this, 10, 8, 10, 12)
+            setPadding(Ui.dp(this@AlbumMediaActivity, 10), Ui.dp(this@AlbumMediaActivity, 8), Ui.dp(this@AlbumMediaActivity, 10), navigationBarHeight() + Ui.dp(this@AlbumMediaActivity, 8))
         }
         addSelectionAction(R.drawable.ic_share, "Compartilhar") { shareSelected() }
         addSelectionAction(R.drawable.ic_star, "Favoritar") { favoriteSelected() }
@@ -281,15 +294,18 @@ class AlbumMediaActivity : Activity() {
     }
 
     private fun showFolderMenu(anchor: View) {
-        val menu = PopupMenu(this, anchor)
-        menu.menu.add("Filtrar mídia")
-        menu.menu.add("Agrupar por")
-        menu.menu.add("Modo de visualização")
-        menu.menu.add("Criar nova pasta")
-        menu.menu.add("Aleatório")
-        menu.menu.add("Espaçamento da grade")
-        menu.setOnMenuItemClickListener { item ->
-            when (item.title.toString()) {
+        Ui.showPopupOptions(
+            anchor,
+            listOf(
+                "Filtrar mídia",
+                "Agrupar por",
+                "Modo de visualização",
+                "Criar nova pasta",
+                "Aleatório",
+                "Espaçamento da grade"
+            )
+        ) { selected ->
+            when (selected) {
                 "Filtrar mídia" -> showMediaFilterDialog()
                 "Agrupar por" -> showGroupDialog()
                 "Modo de visualização" -> showViewModeDialog()
@@ -297,9 +313,7 @@ class AlbumMediaActivity : Activity() {
                 "Aleatório" -> startRandomPlayback()
                 else -> showSpacingDialog()
             }
-            true
         }
-        menu.show()
     }
 
     private fun readAlbumOptions() {
@@ -443,9 +457,13 @@ class AlbumMediaActivity : Activity() {
 
     private fun updateSelectionUi() {
         val active = adapter.isSelectionMode() && adapter.selectedCount() > 0
-        selectionBar.visibility = if (active) View.VISIBLE else View.GONE
+        selectionBar.visibility = View.GONE
         selectionActions.visibility = if (active) View.VISIBLE else View.GONE
-        selectAllText.text = (if (adapter.allVisibleSelected()) "[x] " else "[ ] ") + "Selecionar tudo"
+        selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
+        selectAllChip.text = if (adapter.allVisibleSelected()) "[x]" else "[ ]"
+        searchInput.hint = if (active) "${adapter.selectedCount()} selecionados" else "Pesquisar nesta pasta"
+        searchInput.isEnabled = !active
+        moreButton.setImageResource(if (active) R.drawable.ic_back else R.drawable.ic_more_vertical)
         if (adapter.isSelectionMode() && adapter.selectedCount() == 0) {
             adapter.setSelectionMode(false)
         }
@@ -517,19 +535,14 @@ class AlbumMediaActivity : Activity() {
     private fun askMoveSelected() {
         val selected = adapter.selectedItems()
         if (selected.isEmpty()) return
-        val input = EditText(this).apply {
-            setSingleLine(true)
-            hint = "Ex.: Viagens"
-            setTextColor(Ui.text(this@AlbumMediaActivity))
-            setHintTextColor(Ui.muted(this@AlbumMediaActivity))
+        val targets = availableAlbumNames()
+        if (targets.isEmpty()) {
+            Ui.toast(this, "Nenhum álbum disponível para mover.")
+            return
         }
-        AlertDialog.Builder(this)
-            .setTitle("Mover selecionados")
-            .setMessage("Digite o nome da pasta de destino.")
-            .setView(input)
-            .setPositiveButton("Mover") { _, _ -> moveSelected(selected, input.text.toString()) }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        Ui.showPopupOptions(moreButton, targets) { selectedFolder ->
+            moveSelected(selected, selectedFolder)
+        }
     }
 
     private fun moveSelected(selected: List<MediaItem>, folder: String) {
@@ -557,18 +570,44 @@ class AlbumMediaActivity : Activity() {
             emptyView.visibility = View.VISIBLE
         }
         mediaLoader.execute {
-            val items = prepareAlbumMedia(MediaStoreRepository.loadMediaForAlbum(applicationContext, albumKey))
+            val items = prepareAlbumMedia(
+                MediaStoreRepository.loadMediaForAlbum(applicationContext, albumKey, shouldIncludeHiddenFilesystem())
+            )
             runOnUiThread {
                 if (request != loadGeneration || isFinishing) return@runOnUiThread
-                adapter.submit(items)
-                adapter.applyFilter(query)
-                updateEmptyState()
-                updateSelectionUi()
-                if (targetPosition > 0) {
-                    grid.scrollToPosition(targetPosition)
-                }
+                showMediaProgressively(items, query, targetPosition)
             }
         }
+    }
+
+    private fun showMediaProgressively(items: List<MediaItem>, query: String, targetPosition: Int) {
+        if (items.size <= 90 || !::grid.isInitialized) {
+            adapter.submit(items)
+            adapter.applyFilter(query)
+            updateEmptyState()
+            updateSelectionUi()
+            if (targetPosition > 0) {
+                grid.scrollToPosition(targetPosition)
+            }
+            return
+        }
+        adapter.submit(ArrayList(items.subList(0, 90)))
+        adapter.applyFilter(query)
+        updateEmptyState()
+        updateSelectionUi()
+        if (targetPosition > 0) {
+            grid.scrollToPosition(min(targetPosition, 89))
+        }
+        grid.postDelayed({
+            if (isFinishing) return@postDelayed
+            adapter.submit(items)
+            adapter.applyFilter(query)
+            updateEmptyState()
+            updateSelectionUi()
+            if (targetPosition > 0) {
+                grid.scrollToPosition(targetPosition)
+            }
+        }, 110)
     }
 
     private fun applyCustomOrder(items: List<MediaItem>): List<MediaItem> {
@@ -769,6 +808,20 @@ class AlbumMediaActivity : Activity() {
             .show()
     }
 
+    private fun availableAlbumNames(): List<String> {
+        val names = LinkedHashSet<String>()
+        for (album in MediaStoreRepository.loadAlbums(applicationContext, shouldIncludeHiddenFilesystem())) {
+            if (album.key != "all_media" && album.key != albumKey && album.name.isNotBlank()) {
+                names.add(album.name)
+            }
+        }
+        return names.toList()
+    }
+
+    private fun shouldIncludeHiddenFilesystem(): Boolean =
+        intent.getBooleanExtra("include_hidden_filesystem", false) ||
+            prefs.getBoolean("always_show_hidden", false)
+
     private fun openDetail(item: MediaItem, position: Int) {
         openDetail(item, position, false)
     }
@@ -783,6 +836,7 @@ class AlbumMediaActivity : Activity() {
             putExtra("album_key", albumKey)
             putExtra("position", position)
             putExtra("shuffle_mode", shuffleMode)
+            putExtra("include_hidden_filesystem", shouldIncludeHiddenFilesystem())
         }
         startActivity(intent)
     }
@@ -800,6 +854,11 @@ class AlbumMediaActivity : Activity() {
     private fun statusBarHeight(): Int {
         val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
         return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 24)
+    }
+
+    private fun navigationBarHeight(): Int {
+        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 10)
     }
 
     companion object {

@@ -23,12 +23,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
-import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.PopupWindow
 import android.widget.SeekBar
 import android.widget.TextView
@@ -112,8 +110,9 @@ class DetailActivity : Activity() {
 
     private fun prepareMediaQueue(currentUri: Uri, name: String?, mime: String?, path: String?) {
         val albumKey = intent.getStringExtra("album_key")
+        val includeHiddenFilesystem = intent.getBooleanExtra("include_hidden_filesystem", false)
         if (!albumKey.isNullOrEmpty()) {
-            mediaQueue.addAll(applyCustomOrder(MediaStoreRepository.loadMediaForAlbum(this, albumKey), albumKey))
+            mediaQueue.addAll(applyCustomOrder(MediaStoreRepository.loadMediaForAlbum(this, albumKey, includeHiddenFilesystem), albumKey))
         }
         if (mediaQueue.isEmpty()) {
             mediaQueue.add(MediaItem(0, currentUri, name, mime, 0, 0, path, "media", "Mídia"))
@@ -297,16 +296,19 @@ class DetailActivity : Activity() {
         }
 
     private fun showMediaMenu(anchor: View) {
-        val menu = PopupMenu(this, anchor)
-        menu.menu.add("Ocultar")
-        menu.menu.add("Copiar")
-        menu.menu.add("Mover")
-        menu.menu.add("Definir como")
-        menu.menu.add("Alterar orientação")
-        menu.menu.add("Imprimir")
-        menu.menu.add("Redimensionar")
-        menu.setOnMenuItemClickListener { item ->
-            when (item.title.toString()) {
+        Ui.showPopupOptions(
+            anchor,
+            listOf(
+                "Ocultar",
+                "Copiar",
+                "Mover",
+                "Definir como",
+                "Alterar orientação",
+                "Imprimir",
+                "Redimensionar"
+            )
+        ) { selected ->
+            when (selected) {
                 "Ocultar" -> confirmHideCurrent()
                 "Copiar" -> askFolderForCopyOrMove(true)
                 "Mover" -> askFolderForCopyOrMove(false)
@@ -315,9 +317,7 @@ class DetailActivity : Activity() {
                 "Imprimir" -> createPdfFromCurrentImage()
                 "Redimensionar" -> openImageEditor()
             }
-            true
         }
-        menu.show()
     }
 
     private fun handleSwipeOrTap(event: MotionEvent): Boolean {
@@ -677,31 +677,23 @@ class DetailActivity : Activity() {
 
     private fun askFolderForCopyOrMove(copy: Boolean) {
         val item = currentItem()
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(Ui.dp(this@DetailActivity, 18), Ui.dp(this@DetailActivity, 8), Ui.dp(this@DetailActivity, 18), 0)
+        val targets = availableAlbumNames(item)
+        if (targets.isEmpty()) {
+            Ui.toast(this, "Nenhum álbum disponível.")
+            return
         }
-        val hint = Ui.label(this, "Digite o nome do álbum de destino.").apply { gravity = Gravity.LEFT }
-        panel.addView(hint, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-
-        val input = EditText(this).apply {
-            setSingleLine(true)
-            setHint(if (item.isVideo()) "Vídeos" else "Fotos")
-            setTextColor(Ui.text(this@DetailActivity))
-            setHintTextColor(Ui.muted(this@DetailActivity))
-        }
-        panel.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
+        val labels = targets.map { it.first }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle(if (copy) "Copiar para" else "Mover para")
-            .setView(panel)
-            .setNegativeButton("Cancelar", null)
-            .setPositiveButton(if (copy) "Copiar" else "Mover") { _, _ ->
+            .setItems(labels) { _, which ->
+                val folder = targets[which].second
                 if (copy) {
-                    copyCurrentToFolder(item, input.text.toString())
+                    copyCurrentToFolder(item, folder)
                 } else {
-                    moveCurrentToFolder(item, input.text.toString())
+                    moveCurrentToFolder(item, folder)
                 }
             }
+            .setNegativeButton("Cancelar", null)
             .show()
     }
 
@@ -728,6 +720,17 @@ class DetailActivity : Activity() {
             pendingMoveFolder = null
             requestFileManagementAccess()
         }
+    }
+
+    private fun availableAlbumNames(item: MediaItem): List<Pair<String, String>> {
+        val names = LinkedHashMap<String, String>()
+        val includeHiddenFilesystem = intent.getBooleanExtra("include_hidden_filesystem", false)
+        for (album in MediaStoreRepository.loadAlbums(this, includeHiddenFilesystem)) {
+            if (album.key == "all_media" || album.key == item.albumKey || album.name.isBlank()) continue
+            val label = if (album.path.isNotBlank()) "${album.name} - ${album.path}" else album.name
+            names.putIfAbsent(label, album.name)
+        }
+        return names.entries.map { it.key to it.value }
     }
 
     private fun setCurrentAsWallpaper() {
