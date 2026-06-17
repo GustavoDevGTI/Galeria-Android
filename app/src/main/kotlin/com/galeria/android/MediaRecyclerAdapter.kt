@@ -39,11 +39,11 @@ class MediaRecyclerAdapter(
     private var listMode = false
     private var selectionMode = false
 
-    fun submit(nextItems: List<MediaItem>) {
+    fun submit(nextItems: List<MediaItem>, query: String? = filter) {
         allItems.clear()
         allItems.addAll(nextItems)
         selectedUris.retainAll(nextItems.mapTo(HashSet()) { it.uri.toString() })
-        applyFilter(filter)
+        applyFilter(query)
     }
 
     fun setListMode(listMode: Boolean) {

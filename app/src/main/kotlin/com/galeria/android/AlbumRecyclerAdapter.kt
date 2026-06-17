@@ -37,11 +37,11 @@ class AlbumRecyclerAdapter(
     private var filter = ""
     private var selectionMode = false
 
-    fun submit(albums: List<AlbumItem>) {
+    fun submit(albums: List<AlbumItem>, query: String? = filter) {
         allAlbums.clear()
         allAlbums.addAll(albums)
         selectedKeys.retainAll(albums.mapTo(HashSet()) { it.key })
-        applyFilter(filter)
+        applyFilter(query)
     }
 
     fun applyFilter(query: String?) {

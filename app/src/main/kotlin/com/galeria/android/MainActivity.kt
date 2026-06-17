@@ -174,6 +174,9 @@ class MainActivity : Activity() {
         grid = RecyclerView(this).apply {
             layoutManager = GridLayoutManager(this@MainActivity, columnCount).also { this@MainActivity.layoutManager = it }
             clipToPadding = false
+            setHasFixedSize(true)
+            setItemViewCacheSize(18)
+            recycledViewPool.setMaxRecycledViews(0, 36)
             setPadding(Ui.dp(this@MainActivity, 6), Ui.dp(this@MainActivity, 4), Ui.dp(this@MainActivity, 6), Ui.dp(this@MainActivity, 20))
             setBackgroundColor(Ui.bg(this@MainActivity))
         }
@@ -490,8 +493,7 @@ class MainActivity : Activity() {
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
             val cachedAlbums = MediaCatalogCache.readAlbums(this)
             if (cachedAlbums.isNotEmpty()) {
-                adapter.submit(cachedAlbums)
-                adapter.applyFilter(query)
+                adapter.submit(cachedAlbums, query)
                 updateEmptyText()
             } else {
                 emptyView.text = "Carregando mídia..."
@@ -545,17 +547,14 @@ class MainActivity : Activity() {
 
     private fun showAlbumsProgressively(albums: List<AlbumItem>, query: String) {
         if (albums.size <= 60 || !::grid.isInitialized) {
-            adapter.submit(albums)
-            adapter.applyFilter(query)
+            adapter.submit(albums, query)
             updateEmptyText()
             return
         }
-        adapter.submit(ArrayList(albums.subList(0, 60)))
-        adapter.applyFilter(query)
+        adapter.submit(ArrayList(albums.subList(0, 60)), query)
         updateEmptyText()
         grid.postDelayed({
-            adapter.submit(albums)
-            adapter.applyFilter(query)
+            adapter.submit(albums, query)
             updateEmptyText()
         }, 120)
     }

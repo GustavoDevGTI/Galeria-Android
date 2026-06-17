@@ -19,6 +19,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.LruCache
 import android.util.Size
 import android.view.Gravity
 import android.view.MotionEvent
@@ -82,6 +83,7 @@ class DetailActivity : Activity() {
     private var downY = 0f
     private var downX = 0f
     private var playbackSpeed = 1f
+    private var queueLoadGeneration = 0
 
     private val progressUpdater = object : Runnable {
         override fun run() {
@@ -105,25 +107,39 @@ class DetailActivity : Activity() {
         val mime = intent.getStringExtra("mime")
         val path = intent.getStringExtra("path")
         shuffleMode = intent.getBooleanExtra("shuffle_mode", false)
-        prepareMediaQueue(uri, name, mime, path)
+        prepareInitialMedia(uri, name, mime, path)
         buildLayout()
         loadCurrentItem()
+        loadAlbumQueueAsync(uri)
     }
 
-    private fun prepareMediaQueue(currentUri: Uri, name: String?, mime: String?, path: String?) {
+    private fun prepareInitialMedia(currentUri: Uri, name: String?, mime: String?, path: String?) {
+        mediaQueue.add(MediaItem(0, currentUri, name, mime, 0, 0, path, "media", "Mídia"))
+        currentIndex = 0
+    }
+
+    private fun loadAlbumQueueAsync(currentUri: Uri) {
         val albumKey = intent.getStringExtra("album_key")
         val includeHiddenFilesystem = intent.getBooleanExtra("include_hidden_filesystem", false)
-        if (!albumKey.isNullOrEmpty()) {
-            mediaQueue.addAll(applyCustomOrder(MediaStoreRepository.loadMediaForAlbum(this, albumKey, includeHiddenFilesystem), albumKey))
+        if (albumKey.isNullOrEmpty()) return
+        val request = ++queueLoadGeneration
+        executor.execute {
+            val loaded = applyCustomOrder(
+                MediaStoreRepository.loadMediaForAlbum(applicationContext, albumKey, includeHiddenFilesystem),
+                albumKey
+            )
+            runOnUiThread {
+                if (request != queueLoadGeneration || isFinishing || loaded.isEmpty()) return@runOnUiThread
+                mediaQueue.clear()
+                mediaQueue.addAll(loaded)
+                if (shuffleMode) {
+                    shuffleQueueFrom(currentUri)
+                } else {
+                    currentIndex = mediaQueue.indexOfFirst { it.uri.toString() == currentUri.toString() }.takeIf { it >= 0 } ?: 0
+                }
+                scheduleAdjacentPreload()
+            }
         }
-        if (mediaQueue.isEmpty()) {
-            mediaQueue.add(MediaItem(0, currentUri, name, mime, 0, 0, path, "media", "Mídia"))
-        }
-        if (shuffleMode) {
-            shuffleQueueFrom(currentUri)
-            return
-        }
-        currentIndex = mediaQueue.indexOfFirst { it.uri.toString() == currentUri.toString() }.takeIf { it >= 0 } ?: 0
     }
 
     private fun shuffleQueueFrom(currentUri: Uri) {
@@ -401,6 +417,7 @@ class DetailActivity : Activity() {
                     outgoingPlayer.release()
                 }
                 switchingItem = false
+                scheduleAdjacentPreload()
                 scheduleShuffleAdvance()
             }
             .start()
@@ -444,6 +461,7 @@ class DetailActivity : Activity() {
             alpha = 0f
             setBackgroundColor(Color.TRANSPARENT)
             setShutterBackgroundColor(Color.TRANSPARENT)
+            setKeepContentOnPlayerReset(true)
             useController = false
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         }
@@ -496,27 +514,62 @@ class DetailActivity : Activity() {
     }
 
     private fun loadVideoPreview(item: MediaItem, target: ImageView) {
+        val key = item.uri.toString()
+        val cached = videoPreviewCache.get(key)
+        if (cached != null) {
+            target.setImageBitmap(cached)
+            return
+        }
         executor.execute {
-            val bitmap = try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    contentResolver.loadThumbnail(item.uri, Size(900, 900), null)
-                } else {
-                    val path = if (item.uri.scheme == "file") item.uri.path else null
-                    if (path.isNullOrEmpty()) {
-                        null
-                    } else {
-                        @Suppress("DEPRECATION")
-                        ThumbnailUtils.createVideoThumbnail(path, MediaStore.Video.Thumbnails.MINI_KIND)
+            val bitmap = decodeVideoPreview(item)
+            if (bitmap != null) {
+                videoPreviewCache.put(key, bitmap)
+                target.post {
+                    if (target.parent != null) {
+                        target.setImageBitmap(bitmap)
                     }
                 }
-            } catch (_: Exception) {
-                null
-            }
-            if (bitmap != null) {
-                target.post { target.setImageBitmap(bitmap) }
             }
         }
     }
+
+    private fun scheduleAdjacentPreload() {
+        if (mediaQueue.size < 2) return
+        preloadVideoPreview(mediaQueue[wrappedIndex(currentIndex + 1)])
+        preloadVideoPreview(mediaQueue[wrappedIndex(currentIndex - 1)])
+    }
+
+    private fun preloadVideoPreview(item: MediaItem) {
+        if (!item.isVideo() || videoPreviewCache.get(item.uri.toString()) != null) return
+        executor.execute {
+            if (videoPreviewCache.get(item.uri.toString()) != null) return@execute
+            decodeVideoPreview(item)?.let { videoPreviewCache.put(item.uri.toString(), it) }
+        }
+    }
+
+    private fun wrappedIndex(index: Int): Int {
+        if (mediaQueue.isEmpty()) return 0
+        var wrapped = index % mediaQueue.size
+        if (wrapped < 0) wrapped += mediaQueue.size
+        return wrapped
+    }
+
+    private fun decodeVideoPreview(item: MediaItem): Bitmap? =
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentResolver.loadThumbnail(item.uri, Size(900, 900), null)
+            } else {
+                val path = if (item.uri.scheme == "file") item.uri.path else null
+                if (path.isNullOrEmpty()) {
+                    null
+                } else {
+                    @Suppress("DEPRECATION")
+                    ThumbnailUtils.createVideoThumbnail(path, MediaStore.Video.Thumbnails.MINI_KIND)
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
 
     private fun scheduleShuffleAdvance() {
         handler.removeCallbacks(autoAdvanceRunnable)
@@ -1078,5 +1131,8 @@ class DetailActivity : Activity() {
         private const val REQ_ROTATE_WRITE = 34
         private const val REQ_CREATE_PDF = 35
         private const val SHUFFLE_PHOTO_DELAY_MS = 4200L
+        private val videoPreviewCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 32).toInt()) {
+            override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+        }
     }
 }

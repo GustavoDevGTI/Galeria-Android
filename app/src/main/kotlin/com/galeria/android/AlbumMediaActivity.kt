@@ -186,6 +186,10 @@ class AlbumMediaActivity : Activity() {
         grid = RecyclerView(this).apply {
             layoutManager = GridLayoutManager(this@AlbumMediaActivity, mediaSpanCount()).also { this@AlbumMediaActivity.layoutManager = it }
             clipToPadding = false
+            setHasFixedSize(true)
+            setItemViewCacheSize(24)
+            recycledViewPool.setMaxRecycledViews(0, 48)
+            recycledViewPool.setMaxRecycledViews(1, 24)
             setBackgroundColor(Ui.bg(this@AlbumMediaActivity))
         }
         adapter = MediaRecyclerAdapter(this, object : MediaRecyclerAdapter.Callbacks {
@@ -582,8 +586,7 @@ class AlbumMediaActivity : Activity() {
 
     private fun showMediaProgressively(items: List<MediaItem>, query: String, targetPosition: Int) {
         if (items.size <= 90 || !::grid.isInitialized) {
-            adapter.submit(items)
-            adapter.applyFilter(query)
+            adapter.submit(items, query)
             updateEmptyState()
             updateSelectionUi()
             if (targetPosition > 0) {
@@ -591,8 +594,7 @@ class AlbumMediaActivity : Activity() {
             }
             return
         }
-        adapter.submit(ArrayList(items.subList(0, 90)))
-        adapter.applyFilter(query)
+        adapter.submit(ArrayList(items.subList(0, 90)), query)
         updateEmptyState()
         updateSelectionUi()
         if (targetPosition > 0) {
@@ -600,8 +602,7 @@ class AlbumMediaActivity : Activity() {
         }
         grid.postDelayed({
             if (isFinishing) return@postDelayed
-            adapter.submit(items)
-            adapter.applyFilter(query)
+            adapter.submit(items, query)
             updateEmptyState()
             updateSelectionUi()
             if (targetPosition > 0) {
