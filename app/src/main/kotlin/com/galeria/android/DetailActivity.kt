@@ -12,11 +12,13 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
+import android.media.ThumbnailUtils
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.util.Size
 import android.view.Gravity
 import android.view.MotionEvent
@@ -366,7 +368,7 @@ class DetailActivity : Activity() {
         }
         val incomingPage = createCurrentPage()
         incomingPage.translationX = if (horizontal) {
-            if (direction > 0) -offset.toFloat() else offset.toFloat()
+            if (direction > 0) offset.toFloat() else -offset.toFloat()
         } else {
             0f
         }
@@ -381,7 +383,7 @@ class DetailActivity : Activity() {
 
         val interpolator = DecelerateInterpolator(1.4f)
         outgoingPage?.animate()
-            ?.translationX(if (horizontal) if (direction > 0) offset.toFloat() else -offset.toFloat() else 0f)
+            ?.translationX(if (horizontal) if (direction > 0) -offset.toFloat() else offset.toFloat() else 0f)
             ?.translationY(if (horizontal) 0f else if (direction > 0) -offset.toFloat() else offset.toFloat())
             ?.alpha(0.92f)
             ?.setInterpolator(interpolator)
@@ -431,8 +433,17 @@ class DetailActivity : Activity() {
     private fun showVideo(item: MediaItem, page: FrameLayout) {
         videoControls.visibility = View.VISIBLE
         timelineRow.visibility = View.VISIBLE
-        val playerView = PlayerView(this).apply {
+        val preview = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(Color.BLACK)
+        }
+        page.addView(preview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        loadVideoPreview(item, preview)
+
+        val playerView = PlayerView(this).apply {
+            alpha = 0f
+            setBackgroundColor(Color.TRANSPARENT)
+            setShutterBackgroundColor(Color.TRANSPARENT)
             useController = false
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         }
@@ -466,12 +477,45 @@ class DetailActivity : Activity() {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 updatePlayPauseButton()
             }
+
+            override fun onRenderedFirstFrame() {
+                if (player !== currentPlayer) return
+                playerView.animate().alpha(1f).setDuration(90).start()
+                preview.animate()
+                    .alpha(0f)
+                    .setDuration(140)
+                    .withEndAction { page.removeView(preview) }
+                    .start()
+            }
         })
         player.prepare()
         player.playWhenReady = shuffleMode || prefs.getBoolean("autoplay_videos", true)
         updateSpeedButton()
         updatePlayPauseButton()
         handler.post(progressUpdater)
+    }
+
+    private fun loadVideoPreview(item: MediaItem, target: ImageView) {
+        executor.execute {
+            val bitmap = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    contentResolver.loadThumbnail(item.uri, Size(900, 900), null)
+                } else {
+                    val path = if (item.uri.scheme == "file") item.uri.path else null
+                    if (path.isNullOrEmpty()) {
+                        null
+                    } else {
+                        @Suppress("DEPRECATION")
+                        ThumbnailUtils.createVideoThumbnail(path, MediaStore.Video.Thumbnails.MINI_KIND)
+                    }
+                }
+            } catch (_: Exception) {
+                null
+            }
+            if (bitmap != null) {
+                target.post { target.setImageBitmap(bitmap) }
+            }
+        }
     }
 
     private fun scheduleShuffleAdvance() {

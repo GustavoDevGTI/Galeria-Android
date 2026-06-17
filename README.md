@@ -57,7 +57,7 @@ app\build\outputs\apk\debug\app-debug.apk
 APK versionado mantido na raiz do projeto:
 
 ```text
-Galeria-Android-versao-0.7.apk
+Galeria-Android-versao-0.8.apk
 ```
 
 ## Estado atual
