@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
@@ -58,6 +59,8 @@ class DetailActivity : Activity() {
     private var currentPlayer: ExoPlayer? = null
     private lateinit var content: FrameLayout
     private var activePage: FrameLayout? = null
+    private lateinit var topBar: LinearLayout
+    private lateinit var bottomBar: LinearLayout
     private lateinit var title: TextView
     private lateinit var currentTime: TextView
     private lateinit var durationTime: TextView
@@ -84,6 +87,17 @@ class DetailActivity : Activity() {
     private var downX = 0f
     private var playbackSpeed = 1f
     private var queueLoadGeneration = 0
+    private var hudVisible = true
+    private var dragPreviewPage: FrameLayout? = null
+    private var dragHorizontal = true
+    private var dragDirection = 0
+    private var dragTargetIndex = -1
+    private var dragDistance = 0f
+    private var lastTapTime = 0L
+    private var lastTapX = 0f
+    private var lastTapY = 0f
+    private var pendingSingleTap: Runnable? = null
+    private var zoomed = false
 
     private val progressUpdater = object : Runnable {
         override fun run() {
@@ -190,7 +204,7 @@ class DetailActivity : Activity() {
             setBackgroundColor(Color.BLACK)
         }
 
-        val bar = LinearLayout(this).apply {
+        topBar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(Color.BLACK)
             setPadding(Ui.dp(this@DetailActivity, 8), statusBarHeight() + Ui.dp(this@DetailActivity, 6), Ui.dp(this@DetailActivity, 10), Ui.dp(this@DetailActivity, 6))
@@ -198,7 +212,7 @@ class DetailActivity : Activity() {
         val back = iconButton(R.drawable.ic_back, Ui.dp(this, 48)).apply {
             setOnClickListener { resetSpeedAndFinish() }
         }
-        bar.addView(back, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 44)))
+        topBar.addView(back, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 44)))
 
         title = Ui.title(this, "", 17).apply {
             setTextColor(Color.WHITE)
@@ -207,13 +221,13 @@ class DetailActivity : Activity() {
         val titleParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
             leftMargin = Ui.dp(this@DetailActivity, 4)
         }
-        bar.addView(title, titleParams)
+        topBar.addView(title, titleParams)
 
         val more = iconButton(R.drawable.ic_more_vertical, Ui.dp(this, 48)).apply {
             setOnClickListener { showMediaMenu(it) }
         }
-        bar.addView(more, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 44)))
-        root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        topBar.addView(more, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 44)))
+        root.addView(topBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         content = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -221,7 +235,7 @@ class DetailActivity : Activity() {
         }
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        val bottom = LinearLayout(this).apply {
+        bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.BLACK)
             setPadding(Ui.dp(this@DetailActivity, 14), Ui.dp(this@DetailActivity, 4), Ui.dp(this@DetailActivity, 14), navigationBarHeight() + Ui.dp(this@DetailActivity, 8))
@@ -232,7 +246,7 @@ class DetailActivity : Activity() {
             setOnClickListener { togglePlayback() }
         }
         videoControls.addView(playPauseButton, LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 46)))
-        bottom.addView(videoControls, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48)))
+        bottomBar.addView(videoControls, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48)))
 
         timelineRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         currentTime = timeLabel("00:00")
@@ -267,7 +281,7 @@ class DetailActivity : Activity() {
         timelineRow.addView(seekBar, LinearLayout.LayoutParams(0, Ui.dp(this, 34), 1f))
         timelineRow.addView(durationTime, LinearLayout.LayoutParams(Ui.dp(this, 52), Ui.dp(this, 34)))
         timelineRow.addView(speedButton, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 34)))
-        bottom.addView(timelineRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 38)))
+        bottomBar.addView(timelineRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 38)))
 
         val actions = LinearLayout(this).apply { gravity = Gravity.CENTER }
         favoriteButton = actionButton(R.drawable.ic_star).apply { setOnClickListener { toggleFavorite() } }
@@ -276,9 +290,9 @@ class DetailActivity : Activity() {
         actions.addView(favoriteButton, actionParams())
         actions.addView(share, actionParams())
         actions.addView(trash, actionParams())
-        bottom.addView(actions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 50)))
+        bottomBar.addView(actions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 50)))
 
-        root.addView(bottom, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(bottomBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         setContentView(root)
     }
 
@@ -340,32 +354,304 @@ class DetailActivity : Activity() {
 
     private fun handleSwipeOrTap(event: MotionEvent): Boolean {
         if (switchingItem) return true
-        if (event.action == MotionEvent.ACTION_DOWN) {
-            downY = event.y
-            downX = event.x
-            return true
-        }
-        if (event.action != MotionEvent.ACTION_UP) return true
-        val deltaY = event.y - downY
-        val deltaX = event.x - downX
-        val threshold = Ui.dp(this, 72)
-        if (abs(deltaY) > threshold && abs(deltaY) > abs(deltaX)) {
-            switchItem(if (deltaY > 0) -1 else 1, false)
-            return true
-        }
-        if (abs(deltaX) > threshold && abs(deltaX) > abs(deltaY)) {
-            switchItem(if (deltaX > 0) -1 else 1, true)
-            return true
-        }
-        if (currentItem().isVideo()) {
-            togglePlayback()
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downY = event.y
+                downX = event.x
+                dragDistance = 0f
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                updateInteractiveSwipe(event)
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                cancelInteractiveSwipe()
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                updateInteractiveSwipe(event)
+                if (dragPreviewPage != null) {
+                    finishInteractiveSwipe()
+                } else {
+                    val deltaY = event.y - downY
+                    val deltaX = event.x - downX
+                    if (max(abs(deltaX), abs(deltaY)) < Ui.dp(this, 20)) {
+                        handleTap(event.x, event.y)
+                    }
+                }
+                return true
+            }
         }
         return true
+    }
+
+    private fun handleTap(x: Float, y: Float) {
+        val now = System.currentTimeMillis()
+        val closeEnough = abs(x - lastTapX) < Ui.dp(this, 56) && abs(y - lastTapY) < Ui.dp(this, 56)
+        if (now - lastTapTime <= DOUBLE_TAP_MS && closeEnough) {
+            cancelPendingSingleTap()
+            lastTapTime = 0L
+            handleDoubleTap(x, y)
+            return
+        }
+        lastTapTime = now
+        lastTapX = x
+        lastTapY = y
+        cancelPendingSingleTap()
+        pendingSingleTap = Runnable {
+            pendingSingleTap = null
+            toggleHud()
+        }.also { handler.postDelayed(it, DOUBLE_TAP_MS) }
+    }
+
+    private fun handleDoubleTap(x: Float, y: Float) {
+        val width = max(1, content.width)
+        val item = currentItem()
+        if (item.isVideo()) {
+            when {
+                x < width * 0.35f -> {
+                    seekCurrentVideoBy(-10_000L)
+                    return
+                }
+                x > width * 0.65f -> {
+                    seekCurrentVideoBy(10_000L)
+                    return
+                }
+            }
+        }
+        toggleZoom(x, y)
+    }
+
+    private fun seekCurrentVideoBy(deltaMs: Long) {
+        val player = currentPlayer ?: return
+        val duration = player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
+        val target = (player.currentPosition + deltaMs).coerceIn(0L, duration)
+        player.seekTo(target)
+        updateTimeline()
+    }
+
+    private fun toggleZoom(x: Float, y: Float) {
+        val page = activePage ?: return
+        page.animate().cancel()
+        zoomed = !zoomed
+        if (zoomed) {
+            page.pivotX = x
+            page.pivotY = y
+        }
+        page.animate()
+            .scaleX(if (zoomed) 2.15f else 1f)
+            .scaleY(if (zoomed) 2.15f else 1f)
+            .translationX(0f)
+            .translationY(0f)
+            .setDuration(170L)
+            .setInterpolator(DecelerateInterpolator(1.4f))
+            .start()
+    }
+
+    private fun resetZoom(animated: Boolean) {
+        val page = activePage ?: return
+        if (!zoomed && page.scaleX == 1f && page.scaleY == 1f) return
+        zoomed = false
+        page.animate().cancel()
+        if (animated) {
+            page.animate()
+                .scaleX(1f)
+                .scaleY(1f)
+                .translationX(0f)
+                .translationY(0f)
+                .setDuration(130L)
+                .start()
+        } else {
+            page.scaleX = 1f
+            page.scaleY = 1f
+            page.translationX = 0f
+            page.translationY = 0f
+        }
+    }
+
+    private fun cancelPendingSingleTap() {
+        pendingSingleTap?.let { handler.removeCallbacks(it) }
+        pendingSingleTap = null
+    }
+
+    private fun updateInteractiveSwipe(event: MotionEvent) {
+        if (mediaQueue.size < 2) return
+        val deltaY = event.y - downY
+        val deltaX = event.x - downX
+        if (dragPreviewPage == null) {
+            val startThreshold = Ui.dp(this, 14)
+            if (max(abs(deltaX), abs(deltaY)) < startThreshold) return
+            dragHorizontal = abs(deltaX) >= abs(deltaY)
+            val delta = if (dragHorizontal) deltaX else deltaY
+            if (abs(delta) < startThreshold) return
+            dragDirection = if (delta > 0f) -1 else 1
+            dragTargetIndex = wrappedIndex(currentIndex + dragDirection)
+            beginInteractiveSwipe()
+        }
+        val offset = swipeOffset()
+        val delta = if (dragHorizontal) deltaX else deltaY
+        dragDistance = (if (dragDirection > 0) -delta else delta).coerceIn(0f, offset.toFloat())
+        val currentTranslation = if (dragDirection > 0) -dragDistance else dragDistance
+        val incomingTranslation = if (dragDirection > 0) offset - dragDistance else -offset + dragDistance
+        activePage?.animate()?.cancel()
+        dragPreviewPage?.animate()?.cancel()
+        if (dragHorizontal) {
+            activePage?.translationX = currentTranslation
+            dragPreviewPage?.translationX = incomingTranslation
+        } else {
+            activePage?.translationY = currentTranslation
+            dragPreviewPage?.translationY = incomingTranslation
+        }
+    }
+
+    private fun beginInteractiveSwipe() {
+        cancelPendingSingleTap()
+        resetZoom(false)
+        val page = createSwipePreviewPage(mediaQueue[dragTargetIndex])
+        val offset = swipeOffset()
+        if (dragHorizontal) {
+            page.translationX = if (dragDirection > 0) offset.toFloat() else -offset.toFloat()
+        } else {
+            page.translationY = if (dragDirection > 0) offset.toFloat() else -offset.toFloat()
+        }
+        dragPreviewPage = page
+        content.addView(page, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    }
+
+    private fun finishInteractiveSwipe() {
+        val offset = swipeOffset()
+        val shouldCommit = dragDistance > max(Ui.dp(this, 72).toFloat(), offset * 0.22f)
+        if (shouldCommit) {
+            commitInteractiveSwipe(offset)
+        } else {
+            cancelInteractiveSwipe(offset)
+        }
+    }
+
+    private fun commitInteractiveSwipe(offset: Int) {
+        val incomingPage = dragPreviewPage ?: return
+        val outgoingPage = activePage
+        val outgoingPlayer = currentPlayer
+        switchingItem = true
+        zoomed = false
+        saveCurrentPosition()
+        handler.removeCallbacks(progressUpdater)
+        handler.removeCallbacks(autoAdvanceRunnable)
+        speedPopup?.dismiss()
+        currentPlayer = null
+        currentVideoKey = null
+        currentIndex = dragTargetIndex
+        val outgoingTarget = if (dragDirection > 0) -offset.toFloat() else offset.toFloat()
+        val interpolator = DecelerateInterpolator(1.35f)
+        outgoingPage?.animate()
+            ?.translationX(if (dragHorizontal) outgoingTarget else 0f)
+            ?.translationY(if (dragHorizontal) 0f else outgoingTarget)
+            ?.setInterpolator(interpolator)
+            ?.setDuration(165)
+            ?.start()
+        incomingPage.animate()
+            .translationX(0f)
+            .translationY(0f)
+            .setInterpolator(interpolator)
+            .setDuration(165)
+            .withEndAction {
+                outgoingPage?.let { content.removeView(it) }
+                if (outgoingPlayer != null && outgoingPlayer !== currentPlayer) {
+                    outgoingPlayer.release()
+                }
+                activePage = incomingPage
+                applyCurrentUiAfterInteractiveSwipe()
+                resetInteractiveSwipeState()
+                switchingItem = false
+                scheduleAdjacentPreload()
+                scheduleShuffleAdvance()
+            }
+            .start()
+    }
+
+    private fun cancelInteractiveSwipe(offset: Int = swipeOffset()) {
+        val incomingPage = dragPreviewPage
+        val incomingTarget = if (dragDirection > 0) offset.toFloat() else -offset.toFloat()
+        val interpolator = DecelerateInterpolator(1.35f)
+        activePage?.animate()
+            ?.translationX(0f)
+            ?.translationY(0f)
+            ?.setInterpolator(interpolator)
+            ?.setDuration(150)
+            ?.start()
+        incomingPage?.animate()
+            ?.translationX(if (dragHorizontal) incomingTarget else 0f)
+            ?.translationY(if (dragHorizontal) 0f else incomingTarget)
+            ?.setInterpolator(interpolator)
+            ?.setDuration(150)
+            ?.withEndAction {
+                content.removeView(incomingPage)
+                resetInteractiveSwipeState()
+            }
+            ?.start()
+        if (incomingPage == null) {
+            resetInteractiveSwipeState()
+        }
+    }
+
+    private fun resetInteractiveSwipeState() {
+        dragPreviewPage = null
+        dragDirection = 0
+        dragTargetIndex = -1
+        dragDistance = 0f
+    }
+
+    private fun swipeOffset(): Int =
+        if (dragHorizontal) {
+            if (content.width == 0) resources.displayMetrics.widthPixels else content.width
+        } else {
+            if (content.height == 0) resources.displayMetrics.heightPixels else content.height
+        }
+
+    private fun applyCurrentUiAfterInteractiveSwipe() {
+        val item = currentItem()
+        title.text = item.name
+        updateFavoriteButton()
+        if (item.isVideo()) {
+            content.removeAllViews()
+            activePage = createCurrentPage()
+            content.addView(activePage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        } else {
+            videoControls.visibility = View.GONE
+            timelineRow.visibility = View.GONE
+        }
+    }
+
+    private fun toggleHud() {
+        if (!::topBar.isInitialized || !::bottomBar.isInitialized) return
+        hudVisible = !hudVisible
+        val show = hudVisible
+        animateHudView(topBar, show)
+        animateHudView(bottomBar, show)
+        speedPopup?.dismiss()
+    }
+
+    private fun animateHudView(view: View, show: Boolean) {
+        view.animate().cancel()
+        if (show) {
+            view.alpha = 0f
+            view.visibility = View.VISIBLE
+        }
+        view.animate()
+            .alpha(if (show) 1f else 0f)
+            .setDuration(140L)
+            .withEndAction {
+                if (!show) view.visibility = View.GONE
+            }
+            .start()
     }
 
     private fun switchItem(direction: Int, horizontal: Boolean) {
         if (mediaQueue.size < 2) return
         switchingItem = true
+        cancelPendingSingleTap()
+        resetZoom(false)
         saveCurrentPosition()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
@@ -393,7 +679,7 @@ class DetailActivity : Activity() {
         } else {
             if (direction > 0) offset.toFloat() else -offset.toFloat()
         }
-        incomingPage.alpha = 0.98f
+        incomingPage.alpha = 1f
         content.addView(incomingPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         activePage = incomingPage
 
@@ -401,14 +687,12 @@ class DetailActivity : Activity() {
         outgoingPage?.animate()
             ?.translationX(if (horizontal) if (direction > 0) -offset.toFloat() else offset.toFloat() else 0f)
             ?.translationY(if (horizontal) 0f else if (direction > 0) -offset.toFloat() else offset.toFloat())
-            ?.alpha(0.92f)
             ?.setInterpolator(interpolator)
             ?.setDuration(245)
             ?.start()
         incomingPage.animate()
             .translationX(0f)
             .translationY(0f)
-            .alpha(1f)
             .setInterpolator(interpolator)
             .setDuration(245)
             .withEndAction {
@@ -424,6 +708,8 @@ class DetailActivity : Activity() {
     }
 
     private fun loadCurrentItem() {
+        cancelPendingSingleTap()
+        zoomed = false
         releasePlayer()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
@@ -444,6 +730,21 @@ class DetailActivity : Activity() {
             showImage(item, page)
         }
         scheduleShuffleAdvance()
+        return page
+    }
+
+    private fun createSwipePreviewPage(item: MediaItem): FrameLayout {
+        val page = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        if (item.isVideo()) {
+            val preview = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setBackgroundColor(Color.BLACK)
+            }
+            page.addView(preview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            loadVideoPreview(item, preview)
+        } else {
+            addImageToPage(item, page, true)
+        }
         return page
     }
 
@@ -535,8 +836,16 @@ class DetailActivity : Activity() {
 
     private fun scheduleAdjacentPreload() {
         if (mediaQueue.size < 2) return
-        preloadVideoPreview(mediaQueue[wrappedIndex(currentIndex + 1)])
-        preloadVideoPreview(mediaQueue[wrappedIndex(currentIndex - 1)])
+        preloadMediaPreview(mediaQueue[wrappedIndex(currentIndex + 1)])
+        preloadMediaPreview(mediaQueue[wrappedIndex(currentIndex - 1)])
+    }
+
+    private fun preloadMediaPreview(item: MediaItem) {
+        if (item.isVideo()) {
+            preloadVideoPreview(item)
+        } else {
+            preloadImagePreview(item)
+        }
     }
 
     private fun preloadVideoPreview(item: MediaItem) {
@@ -544,6 +853,15 @@ class DetailActivity : Activity() {
         executor.execute {
             if (videoPreviewCache.get(item.uri.toString()) != null) return@execute
             decodeVideoPreview(item)?.let { videoPreviewCache.put(item.uri.toString(), it) }
+        }
+    }
+
+    private fun preloadImagePreview(item: MediaItem) {
+        val key = item.uri.toString()
+        if (!item.isImage() || imagePreviewCache.get(key) != null) return
+        executor.execute {
+            if (imagePreviewCache.get(key) != null) return@execute
+            decodeImagePreview(item.uri)?.let { imagePreviewCache.put(key, it) }
         }
     }
 
@@ -582,23 +900,76 @@ class DetailActivity : Activity() {
     private fun showImage(item: MediaItem, page: FrameLayout) {
         videoControls.visibility = View.GONE
         timelineRow.visibility = View.GONE
+        addImageToPage(item, page, true)
+    }
+
+    private fun addImageToPage(item: MediaItem, page: FrameLayout, loadFullQuality: Boolean) {
         val image = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(Color.BLACK)
         }
         page.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        image.tag = item.uri
+        loadImagePreview(item, image)
+        if (!loadFullQuality) return
         executor.execute {
             try {
-                val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    contentResolver.loadThumbnail(item.uri, Size(1800, 1800), null)
-                } else {
-                    BitmapFactory.decodeStream(contentResolver.openInputStream(item.uri))
+                val bitmap = decodeDisplayBitmap(item.uri)
+                image.post {
+                    if (image.tag == item.uri) {
+                        image.setImageBitmap(bitmap)
+                    }
                 }
-                image.post { image.setImageBitmap(bitmap) }
             } catch (_: Exception) {
                 image.post { Ui.toast(this, "Não foi possível abrir a imagem.") }
             }
         }
+    }
+
+    private fun loadImagePreview(item: MediaItem, target: ImageView) {
+        val key = item.uri.toString()
+        val cached = imagePreviewCache.get(key)
+        if (cached != null) {
+            target.setImageBitmap(cached)
+            return
+        }
+        executor.execute {
+            val bitmap = decodeImagePreview(item.uri)
+            if (bitmap != null) {
+                imagePreviewCache.put(key, bitmap)
+                target.post {
+                    if (target.tag == item.uri) {
+                        target.setImageBitmap(bitmap)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun decodeImagePreview(uri: Uri): Bitmap? =
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentResolver.loadThumbnail(uri, Size(1800, 1800), null)
+            } else {
+                decodeBitmap(uri, IMAGE_PREVIEW_MAX_SIDE)
+            }
+        } catch (_: Exception) {
+            null
+        }
+
+    @Throws(Exception::class)
+    private fun decodeDisplayBitmap(uri: Uri): Bitmap {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val source = ImageDecoder.createSource(contentResolver, uri)
+            return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val maxSide = max(info.size.width, info.size.height)
+                if (maxSide > HIGH_QUALITY_IMAGE_MAX_SIDE) {
+                    decoder.setTargetSampleSize((maxSide + HIGH_QUALITY_IMAGE_MAX_SIDE - 1) / HIGH_QUALITY_IMAGE_MAX_SIDE)
+                }
+            }
+        }
+        return decodeBitmap(uri, HIGH_QUALITY_IMAGE_MAX_SIDE)
     }
 
     private fun togglePlayback() {
@@ -1090,6 +1461,7 @@ class DetailActivity : Activity() {
     override fun onPause() {
         super.onPause()
         saveCurrentPosition()
+        cancelPendingSingleTap()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
         currentPlayer?.pause()
@@ -1097,6 +1469,7 @@ class DetailActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        cancelPendingSingleTap()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
         releasePlayer()
@@ -1131,7 +1504,13 @@ class DetailActivity : Activity() {
         private const val REQ_ROTATE_WRITE = 34
         private const val REQ_CREATE_PDF = 35
         private const val SHUFFLE_PHOTO_DELAY_MS = 4200L
+        private const val DOUBLE_TAP_MS = 260L
+        private const val IMAGE_PREVIEW_MAX_SIDE = 1800
+        private const val HIGH_QUALITY_IMAGE_MAX_SIDE = 8192
         private val videoPreviewCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 32).toInt()) {
+            override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+        }
+        private val imagePreviewCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 32).toInt()) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }
     }

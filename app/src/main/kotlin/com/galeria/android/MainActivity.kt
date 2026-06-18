@@ -19,14 +19,17 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
+import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ListView
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import java.util.Locale
 import java.util.Random
 import java.util.concurrent.Executors
@@ -38,6 +41,7 @@ class MainActivity : Activity() {
     private lateinit var emptyView: TextView
     private lateinit var searchInput: EditText
     private lateinit var grid: RecyclerView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var layoutManager: GridLayoutManager
     private lateinit var root: LinearLayout
     private lateinit var top: LinearLayout
@@ -228,7 +232,16 @@ class MainActivity : Activity() {
             scaleDetector.onTouchEvent(event)
             false
         }
-        content.addView(grid)
+        swipeRefresh = SwipeRefreshLayout(this).apply {
+            setColorSchemeColors(Ui.accent(this@MainActivity))
+            setProgressBackgroundColorSchemeColor(Ui.surface(this@MainActivity))
+            setOnRefreshListener {
+                MediaStoreRepository.invalidateCache()
+                loadAlbums()
+            }
+        }
+        swipeRefresh.addView(grid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        content.addView(swipeRefresh, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         emptyView = Ui.label(this, "Nenhuma pasta encontrada.").apply {
             visibility = View.GONE
@@ -532,9 +545,7 @@ class MainActivity : Activity() {
             } else {
                 albums = MediaStoreRepository.buildAlbums(filteredMedia)
             }
-            if (!includeHidden) {
-                albums = albums.filter { !hiddenKeys.contains(it.key) && !isHiddenAlbum(it) }
-            }
+            albums = albums.filter { !hiddenKeys.contains(it.key) && (includeHidden || !isHiddenAlbum(it)) }
             val sorted = albums.toMutableList()
             sortAlbums(sorted)
             MediaCatalogCache.writeAlbums(applicationContext, sorted)
@@ -549,10 +560,12 @@ class MainActivity : Activity() {
         if (albums.size <= 60 || !::grid.isInitialized) {
             adapter.submit(albums, query)
             updateEmptyText()
+            if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
             return
         }
         adapter.submit(ArrayList(albums.subList(0, 60)), query)
         updateEmptyText()
+        if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
         grid.postDelayed({
             adapter.submit(albums, query)
             updateEmptyText()
@@ -593,6 +606,10 @@ class MainActivity : Activity() {
             moreButton.setColorFilter(Ui.accent(this))
         }
         if (::grid.isInitialized) grid.setBackgroundColor(Ui.bg(this))
+        if (::swipeRefresh.isInitialized) {
+            swipeRefresh.setColorSchemeColors(Ui.accent(this))
+            swipeRefresh.setProgressBackgroundColorSchemeColor(Ui.surface(this))
+        }
         if (::selectionBar.isInitialized) selectionBar.background = Ui.rounded(Ui.surface(this), 8, this)
         if (::selectionActions.isInitialized) {
             selectionActions.setBackgroundColor(Ui.bg(this))
@@ -685,48 +702,127 @@ class MainActivity : Activity() {
     }
 
     private fun showFolderVisibilityDialog() {
-        val albums = MediaStoreRepository.buildAlbums(MediaStoreRepository.loadMedia(this, true)).toMutableList()
+        val albumsByKey = LinkedHashMap<String, AlbumItem>()
+        for (album in adapter.visibleAlbumsSnapshot()) {
+            albumsByKey[album.key] = album
+        }
+        for (album in MediaCatalogCache.readAlbums(this)) {
+            albumsByKey[album.key] = album
+        }
+        val albums = albumsByKey.values.toMutableList()
         sortAlbums(albums)
+        showFolderVisibilityDialog(albums)
+    }
+
+    private fun showFolderVisibilityDialog(albums: List<AlbumItem>) {
         val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
-        val labels = arrayOfNulls<String>(albums.size + 1)
-        val checked = BooleanArray(albums.size + 1)
-        labels[0] = "Exibir pastas ocultas temporariamente"
-        checked[0] = showHiddenFolders
-        for (i in albums.indices) {
-            val album = albums[i]
-            labels[i + 1] = "${album.name} (${album.count})"
-            checked[i + 1] = !hiddenKeys.contains(album.key)
+        val mutableAlbums = albums.toMutableList()
+        val checkedKeys = HashSet<String>()
+        for (album in mutableAlbums) {
+            if (!hiddenKeys.contains(album.key) && (showHiddenFolders || !isHiddenAlbum(album))) {
+                checkedKeys.add(album.key)
+            }
+        }
+        val labels = ArrayAdapter<String>(this, android.R.layout.simple_list_item_multiple_choice)
+        val listView = ListView(this).apply {
+            choiceMode = ListView.CHOICE_MODE_MULTIPLE
+            adapter = labels
+            divider = null
+            setBackgroundColor(Ui.bg(this@MainActivity))
+            setOnItemClickListener { _, _, position, _ ->
+                val key = mutableAlbums.getOrNull(position)?.key ?: return@setOnItemClickListener
+                if (isItemChecked(position)) {
+                    checkedKeys.add(key)
+                } else {
+                    checkedKeys.remove(key)
+                }
+            }
+        }
+        val refresher = SwipeRefreshLayout(this).apply {
+            setColorSchemeColors(Ui.accent(this@MainActivity))
+            setProgressBackgroundColorSchemeColor(Ui.surface(this@MainActivity))
+            addView(listView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this@MainActivity, 420)))
         }
 
-        AlertDialog.Builder(this)
-            .setTitle("Exibir/ocultar pastas")
-            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
-                checked[which] = isChecked
+        fun renderAlbums() {
+            labels.clear()
+            for (album in mutableAlbums) {
+                labels.add("${album.name} (${album.count})")
             }
+            labels.notifyDataSetChanged()
+            listView.post {
+                for (i in mutableAlbums.indices) {
+                    listView.setItemChecked(i, checkedKeys.contains(mutableAlbums[i].key))
+                }
+            }
+        }
+
+        fun refreshHiddenAlbums(markVersionScanned: Boolean) {
+            mediaLoader.execute {
+                MediaStoreRepository.invalidateCache()
+                val refreshed = MediaStoreRepository.buildAlbums(
+                    MediaStoreRepository.loadMedia(applicationContext, true)
+                ).toMutableList()
+                sortAlbums(refreshed)
+                if (markVersionScanned) {
+                    prefs.edit().putLong(PREF_HIDDEN_SCAN_VERSION, currentAppVersionCode()).apply()
+                }
+                runOnUiThread {
+                    if (isFinishing) return@runOnUiThread
+                    mutableAlbums.clear()
+                    mutableAlbums.addAll(refreshed)
+                    renderAlbums()
+                    refresher.isRefreshing = false
+                }
+            }
+        }
+
+        refresher.setOnRefreshListener {
+            refreshHiddenAlbums(false)
+        }
+        renderAlbums()
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Exibir/ocultar pastas")
+            .setMessage("Puxe a lista para baixo para buscar novas pastas ocultas.")
+            .setView(refresher)
             .setNeutralButton("Mostrar todas") { _, _ ->
                 prefs.edit()
                     .putStringSet("hidden_folder_keys", HashSet())
-                    .putBoolean("show_hidden_folders", false)
+                    .putBoolean("show_hidden_folders", true)
                     .apply()
-                showHiddenFolders = false
+                showHiddenFolders = true
                 loadAlbums()
             }
             .setNegativeButton("Cancelar", null)
             .setPositiveButton("OK") { _, _ ->
-                val nextHidden = HashSet<String>()
-                for (i in albums.indices) {
-                    if (!checked[i + 1]) {
-                        nextHidden.add(albums[i].key)
+                val nextHidden = HashSet(hiddenKeys)
+                for (album in mutableAlbums) {
+                    if (checkedKeys.contains(album.key)) {
+                        nextHidden.remove(album.key)
+                    } else {
+                        nextHidden.add(album.key)
                     }
                 }
-                showHiddenFolders = checked[0]
+                showHiddenFolders = mutableAlbums.any { checkedKeys.contains(it.key) && isHiddenAlbum(it) }
                 prefs.edit()
                     .putStringSet("hidden_folder_keys", nextHidden)
                     .putBoolean("show_hidden_folders", showHiddenFolders)
                     .apply()
                 loadAlbums()
             }
-            .show()
+            .create()
+        dialog.setOnShowListener {
+            if (shouldAutoScanHiddenAlbums()) {
+                refresher.post {
+                    if (!isFinishing && dialog.isShowing) {
+                        refresher.isRefreshing = true
+                        refreshHiddenAlbums(true)
+                    }
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun setColumnCount(nextCount: Int) {
@@ -855,6 +951,22 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun shouldAutoScanHiddenAlbums(): Boolean =
+        prefs.getLong(PREF_HIDDEN_SCAN_VERSION, -1L) != currentAppVersionCode()
+
+    private fun currentAppVersionCode(): Long =
+        try {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode.toLong()
+            }
+        } catch (_: Exception) {
+            0L
+        }
+
     private fun statusBarHeight(): Int {
         val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
         return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 24)
@@ -872,6 +984,7 @@ class MainActivity : Activity() {
         private const val REQ_READ = 10
         private const val PREFS = "gallery_albums"
         private const val PREF_ALL_FILES_PROMPTED = "all_files_prompted"
+        private const val PREF_HIDDEN_SCAN_VERSION = "hidden_scan_version"
         private const val SORT_NAME = "name"
         private const val SORT_PATH = "path"
         private const val SORT_SIZE = "size"

@@ -24,6 +24,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import java.io.File
 import java.util.Calendar
 import java.util.Locale
@@ -35,6 +36,7 @@ import kotlin.math.min
 class AlbumMediaActivity : Activity() {
     private lateinit var adapter: MediaRecyclerAdapter
     private lateinit var grid: RecyclerView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var layoutManager: GridLayoutManager
     private lateinit var searchInput: EditText
     private lateinit var searchBox: LinearLayout
@@ -180,7 +182,6 @@ class AlbumMediaActivity : Activity() {
         }
         selectionBar.addView(cancelSelection, LinearLayout.LayoutParams(Ui.dp(this, 96), Ui.dp(this, 38)))
         selectionBar.visibility = View.GONE
-        selectionBar.visibility = View.GONE
 
         val content = FrameLayout(this)
         grid = RecyclerView(this).apply {
@@ -259,7 +260,16 @@ class AlbumMediaActivity : Activity() {
             }
             true
         }
-        content.addView(grid)
+        swipeRefresh = SwipeRefreshLayout(this).apply {
+            setColorSchemeColors(Ui.accent(this@AlbumMediaActivity))
+            setProgressBackgroundColorSchemeColor(Ui.surface(this@AlbumMediaActivity))
+            setOnRefreshListener {
+                MediaStoreRepository.invalidateCache()
+                loadMedia(true)
+            }
+        }
+        swipeRefresh.addView(grid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        content.addView(swipeRefresh, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         emptyView = Ui.label(this, "Nenhuma foto ou vídeo nesta pasta.").apply {
             visibility = View.GONE
@@ -589,6 +599,7 @@ class AlbumMediaActivity : Activity() {
             adapter.submit(items, query)
             updateEmptyState()
             updateSelectionUi()
+            if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
             if (targetPosition > 0) {
                 grid.scrollToPosition(targetPosition)
             }
@@ -597,6 +608,7 @@ class AlbumMediaActivity : Activity() {
         adapter.submit(ArrayList(items.subList(0, 90)), query)
         updateEmptyState()
         updateSelectionUi()
+        if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
         if (targetPosition > 0) {
             grid.scrollToPosition(min(targetPosition, 89))
         }

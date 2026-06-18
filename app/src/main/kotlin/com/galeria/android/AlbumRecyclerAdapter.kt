@@ -104,6 +104,8 @@ class AlbumRecyclerAdapter(
 
     fun selectedAlbums(): List<AlbumItem> = visibleAlbums.filter { selectedKeys.contains(it.key) }
 
+    fun visibleAlbumsSnapshot(): List<AlbumItem> = ArrayList(visibleAlbums)
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         val item = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
