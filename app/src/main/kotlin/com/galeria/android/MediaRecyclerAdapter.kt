@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.ImageDecoder
 import android.media.ThumbnailUtils
 import android.net.Uri
 import android.os.Build
@@ -299,15 +300,39 @@ class MediaRecyclerAdapter(
             } catch (_: Exception) {
             }
         }
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                return context.contentResolver.loadThumbnail(uri, Size(360, 360), null)
+        readImageThumbnail(uri)?.let { return it }
+        return null
+    }
+
+    private fun readImageThumbnail(uri: Uri): Bitmap? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return try {
+                val source = ImageDecoder.createSource(context.contentResolver, uri)
+                ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                    val maxSide = maxOf(info.size.width, info.size.height)
+                    if (maxSide > THUMBNAIL_MAX_SIDE) {
+                        decoder.setTargetSampleSize((maxSide + THUMBNAIL_MAX_SIDE - 1) / THUMBNAIL_MAX_SIDE)
+                    }
+                }
+            } catch (_: Exception) {
+                null
             }
-        } catch (_: Exception) {
         }
         return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             context.contentResolver.openInputStream(uri)?.use { input ->
-                val options = BitmapFactory.Options().apply { inSampleSize = 8 }
+                BitmapFactory.decodeStream(input, null, bounds)
+            }
+            var sample = 1
+            while (bounds.outWidth / sample > THUMBNAIL_MAX_SIDE || bounds.outHeight / sample > THUMBNAIL_MAX_SIDE) {
+                sample *= 2
+            }
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = maxOf(1, sample)
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            context.contentResolver.openInputStream(uri)?.use { input ->
                 BitmapFactory.decodeStream(input, null, options)
             }
         } catch (_: Exception) {
@@ -342,6 +367,7 @@ class MediaRecyclerAdapter(
     }
 
     companion object {
+        private const val THUMBNAIL_MAX_SIDE = 720
         private val thumbCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 16).toInt()) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }

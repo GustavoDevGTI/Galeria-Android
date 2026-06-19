@@ -7,10 +7,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.database.ContentObserver
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
@@ -66,12 +70,25 @@ class MainActivity : Activity() {
     private var lastColumnGestureMs = 0L
     private val mediaLoader = Executors.newSingleThreadExecutor()
     private var loadGeneration = 0
+    private val mediaRefreshHandler = Handler(Looper.getMainLooper())
+    private val mediaRefreshRunnable = Runnable {
+        if (!isFinishing && hasReadPermission()) {
+            MediaStoreRepository.invalidateCache()
+            loadAlbums()
+        }
+    }
+    private val mediaObserver = object : ContentObserver(mediaRefreshHandler) {
+        override fun onChange(selfChange: Boolean, uri: Uri?) {
+            scheduleMediaRefresh()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         loadSettings()
         buildLayout()
+        registerMediaObserver()
         if (hasReadPermission()) {
             ensureFileManagementAccess(false)
             loadAlbums()
@@ -91,6 +108,11 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
+        try {
+            contentResolver.unregisterContentObserver(mediaObserver)
+        } catch (_: Exception) {
+        }
         mediaLoader.shutdownNow()
     }
 
@@ -894,6 +916,18 @@ class MainActivity : Activity() {
             name.endsWith(".arw") ||
             name.endsWith(".orf") ||
             name.endsWith(".rw2")
+
+    private fun registerMediaObserver() {
+        try {
+            contentResolver.registerContentObserver(MediaStore.Files.getContentUri("external"), true, mediaObserver)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun scheduleMediaRefresh() {
+        mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
+        mediaRefreshHandler.postDelayed(mediaRefreshRunnable, 700L)
+    }
 
     private fun updateEmptyText() {
         if (!::adapter.isInitialized || !::emptyView.isInitialized) return

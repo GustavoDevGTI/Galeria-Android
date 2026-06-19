@@ -4,10 +4,15 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
+import android.database.ContentObserver
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
@@ -65,6 +70,18 @@ class AlbumMediaActivity : Activity() {
     private var groupMode = GROUP_NONE
     private val mediaLoader = Executors.newSingleThreadExecutor()
     private var loadGeneration = 0
+    private val mediaRefreshHandler = Handler(Looper.getMainLooper())
+    private val mediaRefreshRunnable = Runnable {
+        if (!isFinishing) {
+            MediaStoreRepository.invalidateCache()
+            loadMedia(true)
+        }
+    }
+    private val mediaObserver = object : ContentObserver(mediaRefreshHandler) {
+        override fun onChange(selfChange: Boolean, uri: Uri?) {
+            scheduleMediaRefresh()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,6 +90,7 @@ class AlbumMediaActivity : Activity() {
         albumName = intent.getStringExtra("album_name")?.takeIf { it.isNotEmpty() } ?: "Álbum"
         readAlbumOptions()
         buildLayout()
+        registerMediaObserver()
         loadMedia(false)
     }
 
@@ -85,7 +103,24 @@ class AlbumMediaActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
+        try {
+            contentResolver.unregisterContentObserver(mediaObserver)
+        } catch (_: Exception) {
+        }
         mediaLoader.shutdownNow()
+    }
+
+    private fun registerMediaObserver() {
+        try {
+            contentResolver.registerContentObserver(MediaStore.Files.getContentUri("external"), true, mediaObserver)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun scheduleMediaRefresh() {
+        mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
+        mediaRefreshHandler.postDelayed(mediaRefreshRunnable, 700L)
     }
 
     private fun buildLayout() {
