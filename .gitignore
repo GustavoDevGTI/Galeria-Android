@@ -3,6 +3,7 @@ build/
 app/build/
 local.properties
 *.apk
+!Galeria-Android-apk-atual.apk
 *.ap_
 *.aab
 *.iml

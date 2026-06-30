@@ -50,13 +50,25 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 
 ## APK gerado
 
+Download direto da versão mais recente:
+
+[Baixar Galeria Android - APK atual](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-apk-atual.apk)
+
 Build padrão do Gradle:
 
 ```text
 app\build\outputs\apk\debug\app-debug.apk
 ```
 
-APK versionado mantido na raiz do projeto:
+APK atual mantido na raiz do projeto e versionado no GitHub:
+
+```text
+Galeria-Android-apk-atual.apk
+```
+
+Sempre que o repositório for atualizado com uma nova versão testável, este arquivo deve ser substituído pelo APK mais recente antes do commit/push.
+
+APK versionado de referência mantido na raiz do projeto:
 
 ```text
 Galeria-Android-versao-0.8.apk
