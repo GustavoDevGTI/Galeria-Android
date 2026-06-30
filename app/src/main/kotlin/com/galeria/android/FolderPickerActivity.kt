@@ -118,18 +118,14 @@ class FolderPickerActivity : Activity() {
         dir != null && dir.absolutePath.startsWith(rootDir.absolutePath)
 
     private fun askCreateFolder() {
-        val input = EditText(this).apply {
-            setSingleLine(true)
-            hint = "Nome da pasta"
-            setTextColor(Ui.text(this@FolderPickerActivity))
-            setHintTextColor(Ui.muted(this@FolderPickerActivity))
+        Ui.showTextInputDialog(
+            this,
+            "Criar nova pasta",
+            "Nome da pasta",
+            positiveText = "Criar"
+        ) { name ->
+            createFolder(name)
         }
-        AlertDialog.Builder(this)
-            .setTitle("Criar nova pasta")
-            .setView(input)
-            .setNegativeButton("Cancelar", null)
-            .setPositiveButton("Criar") { _, _ -> createFolder(input.text.toString()) }
-            .show()
     }
 
     private fun createFolder(name: String) {

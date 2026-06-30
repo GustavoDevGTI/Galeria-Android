@@ -378,96 +378,93 @@ class AlbumMediaActivity : Activity() {
     private fun showMediaFilterDialog() {
         val labels = arrayOf("Imagens", "Vídeos", "GIFs", "Imagens RAW", "SVGs")
         val checked = booleanArrayOf(showImages, showVideos, showGifs, showRaw, showSvgs)
-        AlertDialog.Builder(this)
-            .setTitle("Filtrar mídia")
-            .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
-            .setNegativeButton("Cancelar", null)
-            .setPositiveButton("OK") { _, _ ->
-                showImages = checked[0]
-                showVideos = checked[1]
-                showGifs = checked[2]
-                showRaw = checked[3]
-                showSvgs = checked[4]
-                prefs.edit()
-                    .putBoolean(optionKey("filter_images"), showImages)
-                    .putBoolean(optionKey("filter_videos"), showVideos)
-                    .putBoolean(optionKey("filter_gifs"), showGifs)
-                    .putBoolean(optionKey("filter_raw"), showRaw)
-                    .putBoolean(optionKey("filter_svg"), showSvgs)
-                    .apply()
-                loadMedia(true)
-            }
-            .show()
+        Ui.showMultiChoiceDialog(this, "Filtrar mídia", labels, checked) { selected ->
+            showImages = selected[0]
+            showVideos = selected[1]
+            showGifs = selected[2]
+            showRaw = selected[3]
+            showSvgs = selected[4]
+            prefs.edit()
+                .putBoolean(optionKey("filter_images"), showImages)
+                .putBoolean(optionKey("filter_videos"), showVideos)
+                .putBoolean(optionKey("filter_gifs"), showGifs)
+                .putBoolean(optionKey("filter_raw"), showRaw)
+                .putBoolean(optionKey("filter_svg"), showSvgs)
+                .apply()
+            loadMedia(true)
+        }
     }
 
     private fun showGroupDialog() {
         val labels = arrayOf("Não agrupar arquivos", "Tipo de arquivo", "Extensão", "Data da foto (por dia)", "Data da foto (por mês)")
         val values = arrayOf(GROUP_NONE, GROUP_TYPE, GROUP_EXTENSION, GROUP_DAY, GROUP_MONTH)
         var choice = values.indexOf(groupMode).takeIf { it >= 0 } ?: 0
-        AlertDialog.Builder(this)
-            .setTitle("Agrupar por")
-            .setSingleChoiceItems(labels, choice) { _, which -> choice = which }
-            .setNegativeButton("Cancelar", null)
-            .setPositiveButton("OK") { _, _ ->
-                groupMode = values[choice]
-                prefs.edit().putString(optionKey("group_mode"), groupMode).apply()
-                loadMedia(true)
-            }
-            .show()
+        Ui.showChoiceDialog(this, "Agrupar por", labels, choice) { which ->
+            choice = which
+            groupMode = values[choice]
+            prefs.edit().putString(optionKey("group_mode"), groupMode).apply()
+            loadMedia(true)
+        }
     }
 
     private fun showViewModeDialog() {
         val labels = arrayOf("Grade", "Lista")
         var choice = if (listMode) 1 else 0
-        AlertDialog.Builder(this)
-            .setTitle("Modo de visualização")
-            .setSingleChoiceItems(labels, choice) { _, which -> choice = which }
-            .setNegativeButton("Cancelar", null)
-            .setPositiveButton("OK") { _, _ ->
-                listMode = choice == 1
-                prefs.edit().putBoolean(optionKey("list_mode"), listMode).apply()
-                applyViewMode()
-            }
-            .show()
+        Ui.showChoiceDialog(this, "Modo de visualização", labels, choice) { which ->
+            choice = which
+            listMode = choice == 1
+            prefs.edit().putBoolean(optionKey("list_mode"), listMode).apply()
+            applyViewMode()
+        }
     }
 
     private fun showCreateFolderDialog() {
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(Ui.dp(this@AlbumMediaActivity, 18), Ui.dp(this@AlbumMediaActivity, 8), Ui.dp(this@AlbumMediaActivity, 18), 0)
+        Ui.showTextInputDialog(
+            this,
+            "Criar nova pasta",
+            "Título",
+            message = folderDisplayPath()
+        ) { name ->
+            createFolder(name)
         }
-        val path = Ui.label(this, folderDisplayPath()).apply {
-            gravity = Gravity.LEFT
-            textSize = 13f
-        }
-        panel.addView(path, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        val input = EditText(this).apply {
-            setSingleLine(true)
-            hint = "Título"
-            setTextColor(Ui.text(this@AlbumMediaActivity))
-            setHintTextColor(Ui.muted(this@AlbumMediaActivity))
-        }
-        panel.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
-        AlertDialog.Builder(this)
-            .setTitle("Criar nova pasta")
-            .setView(panel)
-            .setNegativeButton("Cancelar", null)
-            .setPositiveButton("OK") { _, _ -> createFolder(input.text.toString()) }
-            .show()
     }
 
     private fun showSpacingDialog() {
+        lateinit var dialog: AlertDialog
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(Ui.dp(this@AlbumMediaActivity, 22), Ui.dp(this@AlbumMediaActivity, 12), Ui.dp(this@AlbumMediaActivity, 22), Ui.dp(this@AlbumMediaActivity, 4))
+            background = Ui.rounded(Ui.surface(this@AlbumMediaActivity), 4, this@AlbumMediaActivity)
+            setPadding(
+                Ui.dp(this@AlbumMediaActivity, 24),
+                Ui.dp(this@AlbumMediaActivity, 20),
+                Ui.dp(this@AlbumMediaActivity, 24),
+                Ui.dp(this@AlbumMediaActivity, 8)
+            )
         }
-        val hint = Ui.label(this, "Vale para todas as pastas. Esquerda: mais espaço   Direita: sem espaço").apply {
-            textSize = 12f
+        panel.addView(
+            TextView(this).apply {
+                text = "Espaçamento da grade"
+                textSize = 20f
+                setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+                setTextColor(Ui.text(this@AlbumMediaActivity))
+            },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+        val hint = TextView(this).apply {
+            text = "Vale para todas as pastas. Esquerda: mais espaço. Direita: sem espaço."
+            textSize = 13f
+            setTextColor(Ui.text(this@AlbumMediaActivity))
+            alpha = 0.78f
+            gravity = Gravity.START
+            setPadding(0, Ui.dp(this@AlbumMediaActivity, 6), 0, Ui.dp(this@AlbumMediaActivity, 12))
         }
         panel.addView(hint, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val seekBar = SeekBar(this).apply {
             max = MAX_GRID_SPACING_DP
             progress = MAX_GRID_SPACING_DP - gridSpacingDp
+            progressTintList = android.content.res.ColorStateList.valueOf(Ui.accent(this@AlbumMediaActivity))
+            thumbTintList = android.content.res.ColorStateList.valueOf(Ui.accent(this@AlbumMediaActivity))
+            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Ui.muted(this@AlbumMediaActivity))
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
                     gridSpacingDp = MAX_GRID_SPACING_DP - progress
@@ -479,11 +476,37 @@ class AlbumMediaActivity : Activity() {
             })
         }
         panel.addView(seekBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48)))
-        AlertDialog.Builder(this)
-            .setTitle("Espaçamento da grade")
-            .setView(panel)
-            .setPositiveButton("OK", null)
-            .show()
+        panel.addView(
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                setPadding(0, Ui.dp(this@AlbumMediaActivity, 8), 0, 0)
+                addView(
+                    TextView(this@AlbumMediaActivity).apply {
+                        text = "OK"
+                        textSize = 14f
+                        setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+                        setTextColor(Ui.text(this@AlbumMediaActivity))
+                        gravity = Gravity.CENTER
+                        isClickable = true
+                        isFocusable = true
+                        setPadding(
+                            Ui.dp(this@AlbumMediaActivity, 14),
+                            Ui.dp(this@AlbumMediaActivity, 12),
+                            Ui.dp(this@AlbumMediaActivity, 14),
+                            Ui.dp(this@AlbumMediaActivity, 12)
+                        )
+                        setOnClickListener { dialog.dismiss() }
+                    }
+                )
+            },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
+        dialog = AlertDialog.Builder(this).setView(panel).create()
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        }
+        dialog.show()
     }
 
     private fun applyGridSpacing() {

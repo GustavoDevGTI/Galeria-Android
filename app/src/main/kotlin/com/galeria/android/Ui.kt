@@ -1,7 +1,9 @@
 package com.galeria.android
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
@@ -11,8 +13,11 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.RadioButton
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -149,6 +154,131 @@ class Ui private constructor() {
         }
 
         @JvmStatic
+        fun showChoiceDialog(
+            context: Context,
+            title: String,
+            labels: Array<String>,
+            checkedIndex: Int,
+            message: String? = null,
+            neutralText: String? = null,
+            onNeutral: (() -> Unit)? = null,
+            onConfirm: (Int) -> Unit
+        ): AlertDialog {
+            var selected = checkedIndex.coerceIn(0, labels.lastIndex)
+            lateinit var dialog: AlertDialog
+            lateinit var content: LinearLayout
+            fun refreshRows() {
+                for (i in 0 until content.childCount) {
+                    val row = content.getChildAt(i) as LinearLayout
+                    val radio = row.findViewWithTag<RadioButton>("radio")
+                    radio.isChecked = i == selected
+                    row.alpha = if (radio.isChecked) 1f else 0.72f
+                }
+            }
+            val body = themedDialogBody(context, title, message)
+            content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            labels.forEachIndexed { index, label ->
+                val row = themedChoiceRow(context, label, index, true) {
+                    selected = index
+                    refreshRows()
+                }
+                content.addView(row)
+            }
+            body.addView(content)
+            body.addView(themedDialogButtons(context, neutralText, onNeutral, { dialog.dismiss() }) {
+                onConfirm(selected)
+                dialog.dismiss()
+            })
+            dialog = AlertDialog.Builder(context).setView(body).create()
+            dialog.setOnShowListener {
+                dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                refreshRows()
+            }
+            dialog.show()
+            return dialog
+        }
+
+        @JvmStatic
+        fun showMultiChoiceDialog(
+            context: Context,
+            title: String,
+            labels: Array<String>,
+            checked: BooleanArray,
+            message: String? = null,
+            onConfirm: (BooleanArray) -> Unit
+        ): AlertDialog {
+            val selected = checked.copyOf()
+            lateinit var dialog: AlertDialog
+            val body = themedDialogBody(context, title, message)
+            val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            labels.forEachIndexed { index, label ->
+                val row = themedChoiceRow(context, label, index, false) {
+                    selected[index] = !selected[index]
+                    val check = it.findViewWithTag<CheckBox>("check")
+                    check.isChecked = selected[index]
+                    it.alpha = if (selected[index]) 1f else 0.72f
+                }
+                val check = row.findViewWithTag<CheckBox>("check")
+                check.isChecked = selected[index]
+                row.alpha = if (selected[index]) 1f else 0.72f
+                content.addView(row)
+            }
+            body.addView(content)
+            body.addView(themedDialogButtons(context, null, null, { dialog.dismiss() }) {
+                onConfirm(selected)
+                dialog.dismiss()
+            })
+            dialog = AlertDialog.Builder(context).setView(body).create()
+            dialog.setOnShowListener {
+                dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            }
+            dialog.show()
+            return dialog
+        }
+
+        @JvmStatic
+        fun showTextInputDialog(
+            context: Context,
+            title: String,
+            hint: String,
+            message: String? = null,
+            positiveText: String = "OK",
+            onConfirm: (String) -> Unit
+        ): AlertDialog {
+            lateinit var dialog: AlertDialog
+            val body = themedDialogBody(context, title, message)
+            val input = EditText(context).apply {
+                setSingleLine(true)
+                this.hint = hint
+                textSize = 16f
+                setTextColor(text(context))
+                setHintTextColor(muted(context))
+                backgroundTintList = ColorStateList.valueOf(muted(context))
+                setPadding(0, dp(context, 8), 0, dp(context, 4))
+            }
+            body.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 58)))
+            body.addView(
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                    setPadding(0, dp(context, 8), 0, 0)
+                    addView(themedDialogButton(context, "Cancelar") { dialog.dismiss() })
+                    addView(themedDialogButton(context, positiveText, true) {
+                        onConfirm(input.text.toString())
+                        dialog.dismiss()
+                    })
+                }
+            )
+            dialog = AlertDialog.Builder(context).setView(body).create()
+            dialog.setOnShowListener {
+                dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                input.requestFocus()
+            }
+            dialog.show()
+            return dialog
+        }
+
+        @JvmStatic
         fun setPadding(view: View, left: Int, top: Int, right: Int, bottom: Int) {
             val context = view.context
             view.setPadding(dp(context, left), dp(context, top), dp(context, right), dp(context, bottom))
@@ -223,6 +353,113 @@ class Ui private constructor() {
                 activity.overridePendingTransition(enterAnim, exitAnim)
             }
         }
+
+        private fun themedDialogBody(context: Context, title: String, message: String?): LinearLayout {
+            val body = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                background = rounded(surface(context), 4, context)
+                setPadding(dp(context, 24), dp(context, 20), dp(context, 24), dp(context, 8))
+            }
+            body.addView(
+                TextView(context).apply {
+                    text = title
+                    textSize = 20f
+                    setTypeface(Typeface.DEFAULT_BOLD)
+                    setTextColor(text(context))
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            )
+            if (!message.isNullOrBlank()) {
+                body.addView(
+                    TextView(context).apply {
+                        text = message
+                        textSize = 14f
+                        setTextColor(text(context))
+                        alpha = 0.78f
+                        setPadding(0, dp(context, 6), 0, dp(context, 10))
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                )
+            }
+            return body
+        }
+
+        private fun themedChoiceRow(
+            context: Context,
+            label: String,
+            index: Int,
+            radio: Boolean,
+            onClick: (LinearLayout) -> Unit
+        ): LinearLayout =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dp(context, 48)
+                setPadding(dp(context, 6), dp(context, 4), dp(context, 6), dp(context, 4))
+                setBackgroundColor(if (index % 2 == 0) surface(context) else search(context))
+                if (radio) {
+                    addView(
+                        RadioButton(context).apply {
+                            tag = "radio"
+                            buttonTintList = ColorStateList.valueOf(accent(context))
+                            isClickable = false
+                            isFocusable = false
+                        }
+                    )
+                } else {
+                    addView(
+                        CheckBox(context).apply {
+                            tag = "check"
+                            buttonTintList = ColorStateList.valueOf(accent(context))
+                            isClickable = false
+                            isFocusable = false
+                        }
+                    )
+                }
+                addView(
+                    TextView(context).apply {
+                        text = label
+                        textSize = 16f
+                        setTextColor(text(context))
+                        gravity = Gravity.CENTER_VERTICAL
+                    },
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                )
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { onClick(this) }
+            }
+
+        private fun themedDialogButtons(
+            context: Context,
+            neutralText: String?,
+            onNeutral: (() -> Unit)?,
+            onCancel: () -> Unit,
+            onOk: () -> Unit
+        ): LinearLayout =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                setPadding(0, dp(context, 8), 0, 0)
+                if (neutralText != null && onNeutral != null) {
+                    addView(themedDialogButton(context, neutralText) { onNeutral() })
+                }
+                addView(themedDialogButton(context, "Cancelar") { onCancel() })
+                addView(themedDialogButton(context, "OK", true) { onOk() })
+            }
+
+        private fun themedDialogButton(context: Context, label: String, primary: Boolean = false, onClick: () -> Unit): TextView =
+            TextView(context).apply {
+                text = label
+                textSize = 14f
+                setTextColor(text(context))
+                if (primary) setTypeface(Typeface.DEFAULT_BOLD)
+                gravity = Gravity.CENTER
+                isClickable = true
+                isFocusable = true
+                setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 12))
+                setOnClickListener { onClick() }
+            }
 
         private val popupRef = arrayOfNulls<PopupWindow>(1)
     }

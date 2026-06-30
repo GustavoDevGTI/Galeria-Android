@@ -26,7 +26,9 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - Agrupamento por tipo, extensão e data
 - Modo de visualização em grade e lista
 - Ajuste global de espaçamento da grade
-- Área de itens ocultos
+- Área de itens ocultos com gerenciamento de exibição/ocultação de pastas
+- Fixação de pastas no gerenciamento de ocultos para manter pastas importantes no topo e forçar varredura dos ocultos quando necessário
+- Submenus padronizados com o tema escolhido, mantendo contraste adequado em temas claros e escuros
 - Editor básico de imagem com recorte e pincel
 - Exportação de imagem para PDF
 - Definir imagem como papel de parede
@@ -65,6 +67,8 @@ Galeria-Android-versao-0.8.apk
 - Código principal migrado para Kotlin
 - Grade baseada em RecyclerView
 - Melhorias contínuas de fluidez, cache local e carregamento progressivo
+- Diálogos e submenus principais usam componentes temáticos próprios do app
+- Gerenciamento de ocultos atualizado com lista rolável, botões fixos e suporte a pastas fixadas
 - App em evolução com foco em desempenho para bibliotecas grandes
 
 ## Próximos passos naturais
