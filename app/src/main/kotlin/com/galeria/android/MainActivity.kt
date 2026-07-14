@@ -92,7 +92,7 @@ class MainActivity : Activity() {
         buildLayout()
         registerMediaObserver()
         if (hasReadPermission()) {
-            ensureFileManagementAccess(false)
+            ensureInitialFileManagementAccess()
             loadAlbums()
         } else {
             requestReadPermission()
@@ -525,7 +525,7 @@ class MainActivity : Activity() {
         val request = ++loadGeneration
         val searchAllFiles = prefs.getBoolean("search_all_files", false)
         val includeHidden = shouldIncludeHiddenFilesystem()
-        val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
+        var hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
             val cachedAlbums = MediaCatalogCache.readAlbums(this)
@@ -871,7 +871,28 @@ class MainActivity : Activity() {
             addView(listView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dialogListHeight))
         }
 
+        var showHiddenCheck: CheckBox? = null
+        var showHiddenLabel: TextView? = null
+
+        fun hiddenAlbumsInDialog(): List<AlbumItem> =
+            mutableAlbums.filter { isHiddenAlbum(it) || hiddenKeys.contains(it.key) }
+
+        fun allAlbumsChecked(): Boolean =
+            mutableAlbums.isNotEmpty() && mutableAlbums.all { checkedKeys.contains(it.key) }
+
+        fun hiddenAlbumsChecked(): Boolean {
+            val hiddenAlbums = hiddenAlbumsInDialog()
+            return hiddenAlbums.isNotEmpty() && hiddenAlbums.all { checkedKeys.contains(it.key) }
+        }
+
+        fun updateShowHiddenControl() {
+            val allChecked = allAlbumsChecked()
+            showHiddenCheck?.isChecked = allChecked
+            showHiddenLabel?.text = if (allChecked || hiddenAlbumsChecked()) "Desmarcar ocultos" else "Exibir ocultos"
+        }
+
         fun renderAlbums() {
+            updateShowHiddenControl()
             listAdapter.notifyDataSetChanged()
         }
 
@@ -919,29 +940,29 @@ class MainActivity : Activity() {
         }
         renderAlbums()
 
-        lateinit var dialog: AlertDialog
-        fun showAllAlbums() {
+        fun loadHiddenAlbums() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
                 requestHiddenScanAccess()
                 return
             }
             refresher.isRefreshing = true
-            refreshHiddenAlbums(true) {
-                checkedKeys.clear()
+            refreshHiddenAlbums(true)
+        }
+
+        fun toggleShowHiddenSelection() {
+            if (allAlbumsChecked() || hiddenAlbumsChecked()) {
+                for (album in hiddenAlbumsInDialog()) {
+                    checkedKeys.remove(album.key)
+                }
+            } else {
                 for (album in mutableAlbums) {
                     checkedKeys.add(album.key)
                 }
-                prefs.edit()
-                    .putStringSet("hidden_folder_keys", HashSet())
-                    .putBoolean("show_hidden_folders", true)
-                    .apply()
-                showHiddenFolders = true
-                MediaStoreRepository.invalidateCache()
-                loadAlbums()
-                dialog.dismiss()
             }
+            renderAlbums()
         }
 
+        lateinit var dialog: AlertDialog
         fun applyFolderVisibility() {
             val nextHidden = HashSet(hiddenKeys)
             for (album in mutableAlbums) {
@@ -998,11 +1019,45 @@ class MainActivity : Activity() {
             )
             addView(
                 TextView(this@MainActivity).apply {
-                    text = "Marque as pastas que devem aparecer. Puxe a lista para baixo para buscar novas pastas ocultas."
+                    text = "Carregue as pastas ocultas, marque o que deve aparecer e confirme em OK."
                     textSize = 14f
                     setTextColor(dialogText)
                     alpha = 0.78f
                     setPadding(0, Ui.dp(this@MainActivity, 6), 0, Ui.dp(this@MainActivity, 8))
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            )
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(0, Ui.dp(this@MainActivity, 2), 0, Ui.dp(this@MainActivity, 8))
+                    addView(dialogButton("Carregar ocultos") { loadHiddenAlbums() })
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            )
+            addView(
+                LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(Ui.dp(this@MainActivity, 2), Ui.dp(this@MainActivity, 4), 0, Ui.dp(this@MainActivity, 8))
+                    isClickable = true
+                    setOnClickListener { toggleShowHiddenSelection() }
+                    val checkbox = CheckBox(this@MainActivity).apply {
+                        buttonTintList = android.content.res.ColorStateList.valueOf(dialogText)
+                        isClickable = false
+                        isFocusable = false
+                    }
+                    showHiddenCheck = checkbox
+                    val label = TextView(this@MainActivity).apply {
+                        text = "Exibir ocultos"
+                        textSize = 15f
+                        setTextColor(dialogText)
+                        setPadding(Ui.dp(this@MainActivity, 8), 0, 0, 0)
+                    }
+                    showHiddenLabel = label
+                    addView(checkbox)
+                    addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                 },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             )
@@ -1013,8 +1068,6 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
             background = Ui.rounded(Ui.blend(dialogBg, Color.WHITE, 0.03f), 0, this@MainActivity)
             setPadding(Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 4), Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 2))
-            addView(dialogButton("Mostrar todas") { showAllAlbums() })
-            addView(dialogButton("Cancelar") { dialog.dismiss() })
             addView(dialogButton("OK", primary = true) { applyFolderVisibility() })
         }
         val panel = FrameLayout(this).apply {
@@ -1159,12 +1212,19 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_READ && hasReadPermission()) {
-            ensureFileManagementAccess(false)
+            ensureInitialFileManagementAccess()
             loadAlbums()
         } else {
             emptyView.visibility = View.VISIBLE
             emptyView.text = "Autorize acesso completo a fotos e vídeos para carregar a galeria."
         }
+    }
+
+    private fun ensureInitialFileManagementAccess() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || MediaActions.hasAllFilesAccess(this)) return
+        if (prefs.getBoolean(PREF_INITIAL_ALL_FILES_REQUESTED, false)) return
+        prefs.edit().putBoolean(PREF_INITIAL_ALL_FILES_REQUESTED, true).apply()
+        ensureFileManagementAccess(true)
     }
 
     private fun ensureFileManagementAccess(force: Boolean) {
@@ -1216,6 +1276,7 @@ class MainActivity : Activity() {
         private const val REQ_READ = 10
         private const val PREFS = "gallery_albums"
         private const val PREF_ALL_FILES_PROMPTED = "all_files_prompted"
+        private const val PREF_INITIAL_ALL_FILES_REQUESTED = "initial_all_files_requested"
         private const val PREF_HIDDEN_SCAN_VERSION = "hidden_scan_version"
         private const val PREF_PINNED_HIDDEN_FOLDER_KEYS = "pinned_hidden_folder_keys"
         private const val SORT_NAME = "name"
