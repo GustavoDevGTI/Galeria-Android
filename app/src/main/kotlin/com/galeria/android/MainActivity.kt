@@ -862,8 +862,8 @@ class MainActivity : Activity() {
         }
         listView.adapter = listAdapter
         val dialogListHeight = min(
-            Ui.dp(this, 280),
-            (resources.displayMetrics.heightPixels * 0.34f).toInt()
+            Ui.dp(this, 248),
+            (resources.displayMetrics.heightPixels * 0.29f).toInt()
         )
         val refresher = SwipeRefreshLayout(this).apply {
             setColorSchemeColors(dialogText)
@@ -991,11 +991,16 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
                 isClickable = true
                 isFocusable = true
+                background = Ui.rounded(
+                    if (primary) Ui.blend(dialogBg, dialogText, 0.18f) else Ui.blend(dialogBg, dialogText, 0.10f),
+                    18,
+                    this@MainActivity
+                )
                 setPadding(
                     Ui.dp(this@MainActivity, 14),
-                    Ui.dp(this@MainActivity, 12),
+                    Ui.dp(this@MainActivity, 8),
                     Ui.dp(this@MainActivity, 14),
-                    Ui.dp(this@MainActivity, 12)
+                    Ui.dp(this@MainActivity, 8)
                 )
                 setOnClickListener { onClick() }
             }
@@ -1003,10 +1008,10 @@ class MainActivity : Activity() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(
-                Ui.dp(this@MainActivity, 24),
-                Ui.dp(this@MainActivity, 20),
-                Ui.dp(this@MainActivity, 24),
-                Ui.dp(this@MainActivity, 66)
+                Ui.dp(this@MainActivity, 22),
+                Ui.dp(this@MainActivity, 16),
+                Ui.dp(this@MainActivity, 22),
+                Ui.dp(this@MainActivity, 54)
             )
             addView(
                 TextView(this@MainActivity).apply {
@@ -1023,7 +1028,7 @@ class MainActivity : Activity() {
                     textSize = 14f
                     setTextColor(dialogText)
                     alpha = 0.78f
-                    setPadding(0, Ui.dp(this@MainActivity, 6), 0, Ui.dp(this@MainActivity, 8))
+                    setPadding(0, Ui.dp(this@MainActivity, 5), 0, Ui.dp(this@MainActivity, 6))
                 },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             )
@@ -1031,16 +1036,7 @@ class MainActivity : Activity() {
                 LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(0, Ui.dp(this@MainActivity, 2), 0, Ui.dp(this@MainActivity, 8))
-                    addView(dialogButton("Carregar ocultos") { loadHiddenAlbums() })
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            )
-            addView(
-                LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(Ui.dp(this@MainActivity, 2), Ui.dp(this@MainActivity, 4), 0, Ui.dp(this@MainActivity, 8))
+                    setPadding(Ui.dp(this@MainActivity, 2), Ui.dp(this@MainActivity, 3), 0, Ui.dp(this@MainActivity, 8))
                     isClickable = true
                     setOnClickListener { toggleShowHiddenSelection() }
                     val checkbox = CheckBox(this@MainActivity).apply {
@@ -1058,6 +1054,7 @@ class MainActivity : Activity() {
                     showHiddenLabel = label
                     addView(checkbox)
                     addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    addView(dialogButton("Carregar ocultos") { loadHiddenAlbums() })
                 },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             )
@@ -1067,7 +1064,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
             background = Ui.rounded(Ui.blend(dialogBg, Color.WHITE, 0.03f), 0, this@MainActivity)
-            setPadding(Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 4), Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 2))
+            setPadding(Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 6), Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 6))
             addView(dialogButton("OK", primary = true) { applyFolderVisibility() })
         }
         val panel = FrameLayout(this).apply {
@@ -1075,7 +1072,7 @@ class MainActivity : Activity() {
             addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(
                 buttonBar,
-                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this@MainActivity, 56), Gravity.BOTTOM)
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this@MainActivity, 50), Gravity.BOTTOM)
             )
         }
 
