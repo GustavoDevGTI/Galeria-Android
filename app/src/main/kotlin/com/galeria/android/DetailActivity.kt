@@ -199,14 +199,13 @@ class DetailActivity : Activity() {
 
     private fun buildLayout() {
         applyWindowSettings()
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
         }
 
         topBar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(0x66000000)
             setPadding(Ui.dp(this@DetailActivity, 8), statusBarHeight() + Ui.dp(this@DetailActivity, 6), Ui.dp(this@DetailActivity, 10), Ui.dp(this@DetailActivity, 6))
         }
         val back = iconButton(R.drawable.ic_back, Ui.dp(this, 48)).apply {
@@ -227,17 +226,16 @@ class DetailActivity : Activity() {
             setOnClickListener { showMediaMenu(it) }
         }
         topBar.addView(more, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 44)))
-        root.addView(topBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         content = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             setOnTouchListener { _, event -> handleSwipeOrTap(event) }
         }
-        root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(0x66000000)
             setPadding(Ui.dp(this@DetailActivity, 14), Ui.dp(this@DetailActivity, 4), Ui.dp(this@DetailActivity, 14), navigationBarHeight() + Ui.dp(this@DetailActivity, 8))
         }
         videoControls = LinearLayout(this).apply { gravity = Gravity.CENTER }
@@ -292,7 +290,8 @@ class DetailActivity : Activity() {
         actions.addView(trash, actionParams())
         bottomBar.addView(actions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 50)))
 
-        root.addView(bottomBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(topBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
+        root.addView(bottomBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         setContentView(root)
     }
 

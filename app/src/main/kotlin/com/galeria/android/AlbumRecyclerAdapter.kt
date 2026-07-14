@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.media.MediaMetadataRetriever
 import android.media.ThumbnailUtils
 import android.net.Uri
 import android.os.Build
@@ -207,16 +208,8 @@ class AlbumRecyclerAdapter(
     }
 
     private fun readThumbnail(uri: Uri): Bitmap? {
-        if (uri.scheme == "file" && isVideoFile(uri.path)) {
-            try {
-                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ThumbnailUtils.createVideoThumbnail(File(uri.path!!), Size(420, 420), null)
-                } else {
-                    @Suppress("DEPRECATION")
-                    ThumbnailUtils.createVideoThumbnail(uri.path ?: return null, MediaStoreCompat.MINI_KIND)
-                }
-            } catch (_: Exception) {
-            }
+        if (isVideoUri(uri)) {
+            readVideoThumbnail(uri)?.let { return it }
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -231,6 +224,43 @@ class AlbumRecyclerAdapter(
             }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun readVideoThumbnail(uri: Uri): Bitmap? {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                return context.contentResolver.loadThumbnail(uri, Size(420, 420), null)
+            }
+        } catch (_: Exception) {
+        }
+        if (uri.scheme == "file" && isVideoFile(uri.path)) {
+            try {
+                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ThumbnailUtils.createVideoThumbnail(File(uri.path!!), Size(420, 420), null)
+                } else {
+                    @Suppress("DEPRECATION")
+                    ThumbnailUtils.createVideoThumbnail(uri.path ?: return null, MediaStoreCompat.MINI_KIND)
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return try {
+            MediaMetadataRetriever().use { retriever ->
+                retriever.setDataSource(context, uri)
+                retriever.frameAtTime
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun isVideoUri(uri: Uri): Boolean {
+        if (uri.scheme == "file") return isVideoFile(uri.path)
+        return try {
+            context.contentResolver.getType(uri)?.startsWith("video/") == true
+        } catch (_: Exception) {
+            false
         }
     }
 

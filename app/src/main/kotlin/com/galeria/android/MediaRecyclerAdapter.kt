@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.ImageDecoder
+import android.media.MediaMetadataRetriever
 import android.media.ThumbnailUtils
 import android.net.Uri
 import android.os.Build
@@ -275,7 +276,7 @@ class MediaRecyclerAdapter(
         if (!loadingKeys.add(key)) return
         executor.execute {
             try {
-                val bitmap = readThumbnail(item.uri)
+                val bitmap = readThumbnail(item)
                 if (bitmap != null) thumbCache.put(key, bitmap)
                 target.post {
                     if (item.uri == target.tag) {
@@ -288,7 +289,22 @@ class MediaRecyclerAdapter(
         }
     }
 
-    private fun readThumbnail(uri: Uri): Bitmap? {
+    private fun readThumbnail(item: MediaItem): Bitmap? {
+        if (item.isVideo()) {
+            readVideoThumbnail(item.uri)?.let { return it }
+        }
+        val uri = item.uri
+        readImageThumbnail(uri)?.let { return it }
+        return null
+    }
+
+    private fun readVideoThumbnail(uri: Uri): Bitmap? {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                return context.contentResolver.loadThumbnail(uri, Size(360, 360), null)
+            }
+        } catch (_: Exception) {
+        }
         if (uri.scheme == "file" && isVideoFile(uri.path)) {
             try {
                 return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -300,8 +316,14 @@ class MediaRecyclerAdapter(
             } catch (_: Exception) {
             }
         }
-        readImageThumbnail(uri)?.let { return it }
-        return null
+        return try {
+            MediaMetadataRetriever().use { retriever ->
+                retriever.setDataSource(context, uri)
+                retriever.frameAtTime
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun readImageThumbnail(uri: Uri): Bitmap? {

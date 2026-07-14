@@ -16,6 +16,8 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - Exibição por álbuns e por conteúdo
 - Suporte a fotos, vídeos, GIFs, SVGs e imagens RAW
 - Reprodução de vídeos com Media3 / ExoPlayer
+- Miniaturas reais para vídeos na grade de mídias e nas capas de álbuns
+- Player de vídeo em tela cheia com HUD superior e inferior translúcida sobreposta à mídia
 - Navegação fluida entre mídias por gesto
 - Reprodução aleatória dentro do álbum
 - Favoritar, compartilhar, ocultar, copiar, mover e excluir arquivos
@@ -75,6 +77,8 @@ Sempre que o repositório for atualizado com uma nova versão testável, gere um
 - Melhorias contínuas de fluidez, cache local e carregamento progressivo
 - Diálogos e submenus principais usam componentes temáticos próprios do app
 - Gerenciamento de ocultos atualizado com lista rolável, botões fixos e suporte a pastas fixadas
+- Player ajustado para manter o vídeo ocupando o máximo possível da tela sem ser reduzido pelos controles
+- Geração de thumbnails de vídeo corrigida com fallback para MediaMetadataRetriever
 - App em evolução com foco em desempenho para bibliotecas grandes
 
 ## Próximos passos naturais
