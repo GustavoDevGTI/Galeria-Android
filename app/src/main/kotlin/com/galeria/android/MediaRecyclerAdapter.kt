@@ -208,17 +208,6 @@ class MediaRecyclerAdapter(
         }
         thumb.addView(check, checkParams)
 
-        val badge = TextView(context).apply {
-            text = "VIDEO"
-            setTextColor(Ui.text(context))
-            textSize = 10f
-            gravity = Gravity.CENTER
-            setBackgroundColor(0x99000000.toInt())
-        }
-        val badgeParams = FrameLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 22)).apply {
-            gravity = Gravity.BOTTOM or Gravity.RIGHT
-        }
-        thumb.addView(badge, badgeParams)
         val thumbParams = if (asList) {
             LinearLayout.LayoutParams(Ui.dp(context, 82), Ui.dp(context, 82))
         } else {
@@ -228,20 +217,16 @@ class MediaRecyclerAdapter(
 
         val name = TextView(context).apply {
             setTextColor(Ui.muted(context))
-            textSize = if (asList) 14f else 11f
-            isSingleLine = !asList
-            maxLines = if (asList) 2 else 1
+            textSize = 14f
+            maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
             gravity = Gravity.LEFT
-            setPadding(Ui.dp(context, if (asList) 12 else 2), Ui.dp(context, if (asList) 0 else 4), Ui.dp(context, 2), 0)
+            setPadding(Ui.dp(context, 12), 0, Ui.dp(context, 2), 0)
         }
-        val nameParams = if (asList) {
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        } else {
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(context, 24))
+        if (asList) {
+            item.addView(name, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
-        item.addView(name, nameParams)
-        return Holder(item, image, badge, name, check)
+        return Holder(item, image, name, check)
     }
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
@@ -255,7 +240,6 @@ class MediaRecyclerAdapter(
         }
         holder.check.visibility = if (selectionMode || selected) View.VISIBLE else View.GONE
         holder.check.text = if (selected) "\u2713" else ""
-        holder.badge.visibility = if (item.isVideo()) View.VISIBLE else View.GONE
         holder.name.text = item.name
         holder.image.setImageBitmap(null)
         holder.image.tag = item.uri
@@ -378,7 +362,6 @@ class MediaRecyclerAdapter(
     class Holder(
         itemView: View,
         val image: ImageView,
-        val badge: TextView,
         val name: TextView,
         val check: TextView
     ) : RecyclerView.ViewHolder(itemView)

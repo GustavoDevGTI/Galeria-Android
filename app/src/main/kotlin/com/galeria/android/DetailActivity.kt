@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.app.WallpaperManager
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -199,6 +200,8 @@ class DetailActivity : Activity() {
 
     private fun buildLayout() {
         applyWindowSettings()
+        val navSideInset = navigationBarSideInset()
+        val navBottomInset = navigationBarBottomInset()
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
         }
@@ -206,7 +209,12 @@ class DetailActivity : Activity() {
         topBar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(0x66000000)
-            setPadding(Ui.dp(this@DetailActivity, 8), statusBarHeight() + Ui.dp(this@DetailActivity, 6), Ui.dp(this@DetailActivity, 10), Ui.dp(this@DetailActivity, 6))
+            setPadding(
+                Ui.dp(this@DetailActivity, 8),
+                statusBarHeight() + Ui.dp(this@DetailActivity, 6),
+                navSideInset + Ui.dp(this@DetailActivity, 10),
+                Ui.dp(this@DetailActivity, 6)
+            )
         }
         val back = iconButton(R.drawable.ic_back, Ui.dp(this, 48)).apply {
             setOnClickListener { resetSpeedAndFinish() }
@@ -236,7 +244,12 @@ class DetailActivity : Activity() {
         bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0x66000000)
-            setPadding(Ui.dp(this@DetailActivity, 14), Ui.dp(this@DetailActivity, 4), Ui.dp(this@DetailActivity, 14), navigationBarHeight() + Ui.dp(this@DetailActivity, 8))
+            setPadding(
+                Ui.dp(this@DetailActivity, 14),
+                Ui.dp(this@DetailActivity, 4),
+                navSideInset + Ui.dp(this@DetailActivity, 14),
+                navBottomInset + Ui.dp(this@DetailActivity, 8)
+            )
         }
         videoControls = LinearLayout(this).apply { gravity = Gravity.CENTER }
         playPauseButton = iconButton(R.drawable.ic_play, Ui.dp(this, 46)).apply {
@@ -520,7 +533,7 @@ class DetailActivity : Activity() {
 
     private fun finishInteractiveSwipe() {
         val offset = swipeOffset()
-        val shouldCommit = dragDistance > max(Ui.dp(this, 72).toFloat(), offset * 0.22f)
+        val shouldCommit = dragDistance > max(Ui.dp(this, 48).toFloat(), offset * 0.14f)
         if (shouldCommit) {
             commitInteractiveSwipe(offset)
         } else {
@@ -1495,6 +1508,17 @@ class DetailActivity : Activity() {
         val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
         return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 24)
     }
+
+    private fun navigationBarWidth(): Int {
+        val resourceId = resources.getIdentifier("navigation_bar_width", "dimen", "android")
+        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else navigationBarHeight()
+    }
+
+    private fun navigationBarSideInset(): Int =
+        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) navigationBarWidth() else 0
+
+    private fun navigationBarBottomInset(): Int =
+        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 0 else navigationBarHeight()
 
     companion object {
         private const val REQ_DELETE = 31
