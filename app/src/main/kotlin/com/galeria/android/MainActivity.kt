@@ -875,14 +875,24 @@ class MainActivity : Activity() {
             listAdapter.notifyDataSetChanged()
         }
 
-        fun refreshHiddenAlbums(markVersionScanned: Boolean) {
+        fun requestHiddenScanAccess() {
+            refresher.isRefreshing = false
+            Ui.toast(this, "Permita acesso total aos arquivos para localizar pastas ocultas.")
+            ensureFileManagementAccess(true)
+        }
+
+        fun refreshHiddenAlbums(markVersionScanned: Boolean, afterRefresh: (() -> Unit)? = null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
+                requestHiddenScanAccess()
+                return
+            }
             mediaLoader.execute {
                 MediaStoreRepository.invalidateCache()
                 val refreshed = MediaStoreRepository.buildAlbums(
                     MediaStoreRepository.loadMedia(applicationContext, true)
                 ).toMutableList()
                 sortAlbums(refreshed)
-                if (markVersionScanned) {
+                if (markVersionScanned && MediaActions.hasAllFilesAccess(applicationContext)) {
                     prefs.edit().putLong(PREF_HIDDEN_SCAN_VERSION, currentAppVersionCode()).apply()
                 }
                 runOnUiThread {
@@ -899,6 +909,7 @@ class MainActivity : Activity() {
                     }
                     renderAlbums()
                     refresher.isRefreshing = false
+                    afterRefresh?.invoke()
                 }
             }
         }
@@ -910,14 +921,25 @@ class MainActivity : Activity() {
 
         lateinit var dialog: AlertDialog
         fun showAllAlbums() {
-            prefs.edit()
-                .putStringSet("hidden_folder_keys", HashSet())
-                .putBoolean("show_hidden_folders", true)
-                .apply()
-            showHiddenFolders = true
-            MediaStoreRepository.invalidateCache()
-            loadAlbums()
-            dialog.dismiss()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
+                requestHiddenScanAccess()
+                return
+            }
+            refresher.isRefreshing = true
+            refreshHiddenAlbums(true) {
+                checkedKeys.clear()
+                for (album in mutableAlbums) {
+                    checkedKeys.add(album.key)
+                }
+                prefs.edit()
+                    .putStringSet("hidden_folder_keys", HashSet())
+                    .putBoolean("show_hidden_folders", true)
+                    .apply()
+                showHiddenFolders = true
+                MediaStoreRepository.invalidateCache()
+                loadAlbums()
+                dialog.dismiss()
+            }
         }
 
         fun applyFolderVisibility() {
@@ -1010,11 +1032,12 @@ class MainActivity : Activity() {
         dialog.setOnShowListener {
             dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
             if (!hiddenDialogScannedThisSession || shouldAutoScanHiddenAlbums() || pinnedKeys.isNotEmpty()) {
-                hiddenDialogScannedThisSession = true
                 refresher.post {
                     if (!isFinishing && dialog.isShowing) {
                         refresher.isRefreshing = true
-                        refreshHiddenAlbums(true)
+                        refreshHiddenAlbums(true) {
+                            hiddenDialogScannedThisSession = true
+                        }
                     }
                 }
             }
