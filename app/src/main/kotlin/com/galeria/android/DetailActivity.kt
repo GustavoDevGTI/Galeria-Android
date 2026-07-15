@@ -533,7 +533,7 @@ class DetailActivity : Activity() {
 
     private fun finishInteractiveSwipe() {
         val offset = swipeOffset()
-        val shouldCommit = dragDistance > max(Ui.dp(this, 48).toFloat(), offset * 0.14f)
+        val shouldCommit = dragDistance > max(Ui.dp(this, 48).toFloat(), offset * 0.08f)
         if (shouldCommit) {
             commitInteractiveSwipe(offset)
         } else {
@@ -632,6 +632,7 @@ class DetailActivity : Activity() {
         } else {
             videoControls.visibility = View.GONE
             timelineRow.visibility = View.GONE
+            activePage?.let { page -> loadFullQualityImageIntoPage(item, page) }
         }
     }
 
@@ -755,7 +756,7 @@ class DetailActivity : Activity() {
             page.addView(preview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             loadVideoPreview(item, preview)
         } else {
-            addImageToPage(item, page, true)
+            addImageToPage(item, page, false)
         }
         return page
     }
@@ -870,10 +871,16 @@ class DetailActivity : Activity() {
 
     private fun preloadImagePreview(item: MediaItem) {
         val key = item.uri.toString()
-        if (!item.isImage() || imagePreviewCache.get(key) != null) return
+        if (!item.isImage() || imageDisplayCache.get(key) != null) return
         executor.execute {
-            if (imagePreviewCache.get(key) != null) return@execute
-            decodeImagePreview(item.uri)?.let { imagePreviewCache.put(key, it) }
+            if (imageDisplayCache.get(key) != null) return@execute
+            try {
+                cacheDisplayBitmap(key, decodeDisplayBitmap(item.uri))
+            } catch (_: Exception) {
+                if (imagePreviewCache.get(key) == null) {
+                    decodeImagePreview(item.uri)?.let { imagePreviewCache.put(key, it) }
+                }
+            }
         }
     }
 
@@ -922,20 +929,15 @@ class DetailActivity : Activity() {
         }
         page.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         image.tag = item.uri
+        val key = item.uri.toString()
+        val displayCached = imageDisplayCache.get(key)
+        if (displayCached != null) {
+            image.setImageBitmap(displayCached)
+            return
+        }
         loadImagePreview(item, image)
         if (!loadFullQuality) return
-        executor.execute {
-            try {
-                val bitmap = decodeDisplayBitmap(item.uri)
-                image.post {
-                    if (image.tag == item.uri) {
-                        image.setImageBitmap(bitmap)
-                    }
-                }
-            } catch (_: Exception) {
-                image.post { Ui.toast(this, "Não foi possível abrir a imagem.") }
-            }
-        }
+        loadFullQualityImageIntoPage(item, page)
     }
 
     private fun loadImagePreview(item: MediaItem, target: ImageView) {
@@ -955,6 +957,46 @@ class DetailActivity : Activity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun loadFullQualityImageIntoPage(item: MediaItem, page: FrameLayout) {
+        val image = findTaggedImage(page, item.uri) ?: return
+        val key = item.uri.toString()
+        val cached = imageDisplayCache.get(key)
+        if (cached != null) {
+            image.setImageBitmap(cached)
+            return
+        }
+        executor.execute {
+            try {
+                val bitmap = decodeDisplayBitmap(item.uri)
+                cacheDisplayBitmap(key, bitmap)
+                image.post {
+                    if (image.tag == item.uri) {
+                        image.setImageBitmap(bitmap)
+                    }
+                }
+            } catch (_: Exception) {
+                image.post { Ui.toast(this, "Não foi possível abrir a imagem.") }
+            }
+        }
+    }
+
+    private fun findTaggedImage(parent: ViewGroup, uri: Uri): ImageView? {
+        for (index in 0 until parent.childCount) {
+            val child = parent.getChildAt(index)
+            if (child is ImageView && child.tag == uri) return child
+            if (child is ViewGroup) {
+                findTaggedImage(child, uri)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun cacheDisplayBitmap(key: String, bitmap: Bitmap) {
+        if (bitmap.byteCount <= imageDisplayCache.maxSize() / 2) {
+            imageDisplayCache.put(key, bitmap)
         }
     }
 
@@ -1534,6 +1576,9 @@ class DetailActivity : Activity() {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }
         private val imagePreviewCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 32).toInt()) {
+            override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
+        }
+        private val imageDisplayCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 8).toInt()) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }
     }
