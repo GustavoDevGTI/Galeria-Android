@@ -1,17 +1,8 @@
 package com.galeria.android
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.ImageDecoder
-import android.media.MediaMetadataRetriever
-import android.media.ThumbnailUtils
-import android.net.Uri
-import android.os.Build
 import android.text.TextUtils
-import android.util.LruCache
-import android.util.Size
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -19,10 +10,17 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.paging.AsyncPagingDataDiffer
+import androidx.paging.CombinedLoadStates
+import androidx.paging.PagingData
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListUpdateCallback
 import androidx.recyclerview.widget.RecyclerView
-import java.io.File
+import coil3.load
+import coil3.request.allowHardware
+import coil3.request.crossfade
+import kotlinx.coroutines.Dispatchers
 import java.util.Locale
-import java.util.concurrent.Executors
 
 class MediaRecyclerAdapter(
     private val context: Context,
@@ -33,20 +31,72 @@ class MediaRecyclerAdapter(
         fun onMediaLongClick(view: View, position: Int): Boolean
     }
 
-    private val executor = Executors.newFixedThreadPool(2)
     private val allItems = ArrayList<MediaItem>()
     private val visibleItems = ArrayList<MediaItem>()
     private val selectedUris = HashSet<String>()
     private var filter = ""
     private var listMode = false
     private var selectionMode = false
+    private var pagingMode = false
+    private val pagingDiffer = AsyncPagingDataDiffer(
+        diffCallback = object : DiffUtil.ItemCallback<MediaItem>() {
+            override fun areItemsTheSame(oldItem: MediaItem, newItem: MediaItem): Boolean =
+                oldItem.uri == newItem.uri
+
+            override fun areContentsTheSame(oldItem: MediaItem, newItem: MediaItem): Boolean =
+                oldItem.id == newItem.id &&
+                    oldItem.name == newItem.name &&
+                    oldItem.mimeType == newItem.mimeType &&
+                    oldItem.dateAdded == newItem.dateAdded &&
+                    oldItem.size == newItem.size &&
+                    oldItem.relativePath == newItem.relativePath &&
+                    oldItem.albumKey == newItem.albumKey
+        },
+        updateCallback = object : ListUpdateCallback {
+            override fun onInserted(position: Int, count: Int) {
+                if (pagingMode) notifyItemRangeInserted(position, count)
+            }
+
+            override fun onRemoved(position: Int, count: Int) {
+                if (pagingMode) notifyItemRangeRemoved(position, count)
+            }
+
+            override fun onMoved(fromPosition: Int, toPosition: Int) {
+                if (pagingMode) notifyItemMoved(fromPosition, toPosition)
+            }
+
+            override fun onChanged(position: Int, count: Int, payload: Any?) {
+                if (pagingMode) notifyItemRangeChanged(position, count, payload)
+            }
+        },
+        mainDispatcher = Dispatchers.Main,
+        workerDispatcher = Dispatchers.Default
+    )
 
     fun submit(nextItems: List<MediaItem>, query: String? = filter) {
+        pagingMode = false
         allItems.clear()
         allItems.addAll(nextItems)
         selectedUris.retainAll(nextItems.mapTo(HashSet()) { it.uri.toString() })
         applyFilter(query)
     }
+
+    suspend fun submitPagingData(data: PagingData<MediaItem>) {
+        if (!pagingMode) {
+            pagingMode = true
+            allItems.clear()
+            visibleItems.clear()
+            selectedUris.clear()
+            notifyDataSetChanged()
+        }
+        pagingDiffer.submitData(data)
+    }
+
+    fun addLoadStateListener(listener: (CombinedLoadStates) -> Unit) {
+        pagingDiffer.addLoadStateListener(listener)
+    }
+
+    fun isPagingMode(): Boolean = pagingMode
 
     fun setListMode(listMode: Boolean) {
         if (this.listMode != listMode) {
@@ -57,6 +107,7 @@ class MediaRecyclerAdapter(
 
     fun applyFilter(query: String?) {
         filter = query?.trim()?.lowercase(Locale.US).orEmpty()
+        if (pagingMode) return
         visibleItems.clear()
         for (item in allItems) {
             if (filter.isEmpty() ||
@@ -128,8 +179,8 @@ class MediaRecyclerAdapter(
     fun isSelectionMode(): Boolean = selectionMode
 
     fun toggleSelection(position: Int) {
-        if (position !in visibleItems.indices) return
-        val key = visibleItems[position].uri.toString()
+        val item = itemOrNull(position) ?: return
+        val key = item.uri.toString()
         if (!selectedUris.add(key)) {
             selectedUris.remove(key)
         }
@@ -137,17 +188,17 @@ class MediaRecyclerAdapter(
     }
 
     fun selectPosition(position: Int) {
-        if (position in visibleItems.indices) {
-            selectedUris.add(visibleItems[position].uri.toString())
+        itemOrNull(position)?.let {
+            selectedUris.add(it.uri.toString())
             notifyDataSetChanged()
         }
     }
 
     fun isSelected(position: Int): Boolean =
-        position in visibleItems.indices && selectedUris.contains(visibleItems[position].uri.toString())
+        itemOrNull(position)?.let { selectedUris.contains(it.uri.toString()) } == true
 
     fun selectAllVisible() {
-        for (item in visibleItems) {
+        for (item in currentVisibleItems()) {
             selectedUris.add(item.uri.toString())
         }
         notifyDataSetChanged()
@@ -159,17 +210,36 @@ class MediaRecyclerAdapter(
         notifyDataSetChanged()
     }
 
-    fun allVisibleSelected(): Boolean = visibleItems.isNotEmpty() && selectedUris.size >= visibleItems.size
+    fun allVisibleSelected(): Boolean {
+        val items = currentVisibleItems()
+        return items.isNotEmpty() && items.all { selectedUris.contains(it.uri.toString()) }
+    }
 
     fun selectedCount(): Int = selectedUris.size
 
-    fun selectedItems(): List<MediaItem> = visibleItems.filter { selectedUris.contains(it.uri.toString()) }
+    fun selectedItems(): List<MediaItem> = currentVisibleItems().filter { selectedUris.contains(it.uri.toString()) }
 
-    fun currentOrder(): List<MediaItem> = ArrayList(allItems)
+    fun currentOrder(): List<MediaItem> =
+        if (pagingMode) ArrayList(pagingDiffer.snapshot().items) else ArrayList(allItems)
 
-    fun getCount(): Int = visibleItems.size
+    fun getCount(): Int = if (pagingMode) pagingDiffer.itemCount else visibleItems.size
 
-    fun getItem(position: Int): MediaItem = visibleItems[position]
+    fun getItem(position: Int): MediaItem = itemOrNull(position)
+        ?: throw IndexOutOfBoundsException("Mídia ainda não carregada na posição $position")
+
+    fun positionOf(uri: String): Int = currentVisibleItems().indexOfFirst { it.uri.toString() == uri }
+
+    private fun itemOrNull(position: Int): MediaItem? {
+        if (position < 0) return null
+        return if (pagingMode) {
+            if (position < pagingDiffer.itemCount) pagingDiffer.peek(position) else null
+        } else {
+            visibleItems.getOrNull(position)
+        }
+    }
+
+    private fun currentVisibleItems(): List<MediaItem> =
+        if (pagingMode) pagingDiffer.snapshot().items else visibleItems
 
     override fun getItemViewType(position: Int): Int = if (listMode) 1 else 0
 
@@ -230,134 +300,42 @@ class MediaRecyclerAdapter(
     }
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
-        val item = visibleItems[position]
+        val item = if (pagingMode) pagingDiffer.getItem(position) else visibleItems[position]
+        if (item == null) {
+            holder.image.setImageDrawable(null)
+            holder.name.text = ""
+            holder.check.visibility = View.GONE
+            holder.itemView.setOnClickListener(null)
+            holder.itemView.setOnLongClickListener(null)
+            return
+        }
         val selected = selectedUris.contains(item.uri.toString())
         holder.itemView.alpha = if (selected) 0.78f else 1f
         holder.itemView.scaleX = if (selected) 0.94f else 1f
         holder.itemView.scaleY = if (selected) 0.94f else 1f
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            holder.itemView.translationZ = if (selected) -Ui.dp(context, 2).toFloat() else 0f
-        }
+        holder.itemView.translationZ = if (selected) -Ui.dp(context, 2).toFloat() else 0f
         holder.check.visibility = if (selectionMode || selected) View.VISIBLE else View.GONE
         holder.check.text = if (selected) "\u2713" else ""
         holder.name.text = item.name
-        holder.image.setImageBitmap(null)
-        holder.image.tag = item.uri
-        val cached = thumbCache.get(item.uri.toString())
-        if (cached != null) {
-            holder.image.setImageBitmap(cached)
-        } else {
-            loadThumbnail(item, holder.image)
+        val key = "media:${item.uri}"
+        holder.image.load(item.uri) {
+            size(720, 720)
+            memoryCacheKey(key)
+            diskCacheKey(key)
+            allowHardware(true)
+            crossfade(false)
         }
-        holder.itemView.setOnClickListener { callbacks.onMediaClick(holder.bindingAdapterPosition) }
-        holder.itemView.setOnLongClickListener { callbacks.onMediaLongClick(it, holder.bindingAdapterPosition) }
-    }
-
-    override fun getItemCount(): Int = visibleItems.size
-
-    private fun loadThumbnail(item: MediaItem, target: ImageView) {
-        val key = item.uri.toString()
-        if (!loadingKeys.add(key)) return
-        executor.execute {
-            try {
-                val bitmap = readThumbnail(item)
-                if (bitmap != null) thumbCache.put(key, bitmap)
-                target.post {
-                    if (item.uri == target.tag) {
-                        target.setImageBitmap(bitmap)
-                    }
-                }
-            } finally {
-                loadingKeys.remove(key)
-            }
+        holder.itemView.setOnClickListener {
+            val currentPosition = holder.bindingAdapterPosition
+            if (currentPosition != RecyclerView.NO_POSITION) callbacks.onMediaClick(currentPosition)
+        }
+        holder.itemView.setOnLongClickListener {
+            val currentPosition = holder.bindingAdapterPosition
+            currentPosition != RecyclerView.NO_POSITION && callbacks.onMediaLongClick(it, currentPosition)
         }
     }
 
-    private fun readThumbnail(item: MediaItem): Bitmap? {
-        if (item.isVideo()) {
-            readVideoThumbnail(item.uri)?.let { return it }
-        }
-        val uri = item.uri
-        readImageThumbnail(uri)?.let { return it }
-        return null
-    }
-
-    private fun readVideoThumbnail(uri: Uri): Bitmap? {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                return context.contentResolver.loadThumbnail(uri, Size(360, 360), null)
-            }
-        } catch (_: Exception) {
-        }
-        if (uri.scheme == "file" && isVideoFile(uri.path)) {
-            try {
-                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ThumbnailUtils.createVideoThumbnail(File(uri.path!!), Size(360, 360), null)
-                } else {
-                    @Suppress("DEPRECATION")
-                    ThumbnailUtils.createVideoThumbnail(uri.path ?: return null, MediaStoreCompat.MINI_KIND)
-                }
-            } catch (_: Exception) {
-            }
-        }
-        return try {
-            MediaMetadataRetriever().use { retriever ->
-                retriever.setDataSource(context, uri)
-                retriever.frameAtTime
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun readImageThumbnail(uri: Uri): Bitmap? {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            return try {
-                val source = ImageDecoder.createSource(context.contentResolver, uri)
-                ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                    val maxSide = maxOf(info.size.width, info.size.height)
-                    if (maxSide > THUMBNAIL_MAX_SIDE) {
-                        decoder.setTargetSampleSize((maxSide + THUMBNAIL_MAX_SIDE - 1) / THUMBNAIL_MAX_SIDE)
-                    }
-                }
-            } catch (_: Exception) {
-                null
-            }
-        }
-        return try {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                BitmapFactory.decodeStream(input, null, bounds)
-            }
-            var sample = 1
-            while (bounds.outWidth / sample > THUMBNAIL_MAX_SIDE || bounds.outHeight / sample > THUMBNAIL_MAX_SIDE) {
-                sample *= 2
-            }
-            val options = BitmapFactory.Options().apply {
-                inSampleSize = maxOf(1, sample)
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-            }
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                BitmapFactory.decodeStream(input, null, options)
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun isVideoFile(path: String?): Boolean {
-        if (path == null) return false
-        val name = path.lowercase(Locale.US)
-        return name.endsWith(".mp4") ||
-            name.endsWith(".mkv") ||
-            name.endsWith(".webm") ||
-            name.endsWith(".mov") ||
-            name.endsWith(".avi") ||
-            name.endsWith(".3gp") ||
-            name.endsWith(".m4v") ||
-            name.endsWith(".ts")
-    }
+    override fun getItemCount(): Int = if (pagingMode) pagingDiffer.itemCount else visibleItems.size
 
     class Holder(
         itemView: View,
@@ -366,16 +344,4 @@ class MediaRecyclerAdapter(
         val check: TextView
     ) : RecyclerView.ViewHolder(itemView)
 
-    private object MediaStoreCompat {
-        @Suppress("DEPRECATION")
-        const val MINI_KIND: Int = android.provider.MediaStore.Video.Thumbnails.MINI_KIND
-    }
-
-    companion object {
-        private const val THUMBNAIL_MAX_SIDE = 720
-        private val thumbCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 16).toInt()) {
-            override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
-        }
-        private val loadingKeys = java.util.Collections.synchronizedSet(HashSet<String>())
-    }
 }

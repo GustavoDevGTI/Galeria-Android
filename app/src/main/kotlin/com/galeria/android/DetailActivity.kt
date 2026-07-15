@@ -1,6 +1,5 @@
 package com.galeria.android
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.app.WallpaperManager
 import android.content.Intent
@@ -10,7 +9,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
@@ -26,6 +24,7 @@ import android.util.Size
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
@@ -35,13 +34,25 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
+import androidx.annotation.OptIn
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import coil3.SingletonImageLoader
+import coil3.load
+import coil3.request.ImageRequest
+import coil3.request.allowHardware
+import coil3.request.crossfade
+import coil3.size.Precision
+import com.github.panpf.zoomimage.CoilZoomImageView
+import com.github.panpf.zoomimage.view.zoom.OnViewTapListener
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -52,10 +63,10 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-class DetailActivity : Activity() {
+@OptIn(UnstableApi::class)
+class DetailActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
-    private val imageExecutor = Executors.newSingleThreadExecutor()
-    private val preloadExecutor = Executors.newSingleThreadExecutor()
+    private val videoPreviewExecutor = Executors.newSingleThreadExecutor()
     private val mediaQueue = ArrayList<MediaItem>()
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var prefs: SharedPreferences
@@ -101,6 +112,7 @@ class DetailActivity : Activity() {
     private var lastTapY = 0f
     private var pendingSingleTap: Runnable? = null
     private var zoomed = false
+    private val gestureTouchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop.toFloat() }
     @Volatile private var preloadGeneration = 0
 
     private val progressUpdater = object : Runnable {
@@ -118,6 +130,11 @@ class DetailActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                resetSpeedAndFinish()
+            }
+        })
         Ui.applyOpenTransition(this)
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
         val uri = Uri.parse(intent.getStringExtra("uri").orEmpty())
@@ -178,7 +195,7 @@ class DetailActivity : Activity() {
     }
 
     private fun applyCustomOrder(items: List<MediaItem>, albumKey: String): List<MediaItem> {
-        val saved = prefs.getString("custom_order_$albumKey", "").orEmpty()
+        val saved = GalleryCatalogStore.migrateLegacyOrder(applicationContext, albumKey)
         if (saved.isEmpty()) return items
         val byUri = HashMap<String, MediaItem>()
         for (item in items) {
@@ -186,7 +203,7 @@ class DetailActivity : Activity() {
         }
         val ordered = ArrayList<MediaItem>()
         val used = HashSet<String>()
-        for (line in saved.split("\n")) {
+        for (line in saved) {
             val item = byUri[line]
             if (item != null) {
                 ordered.add(item)
@@ -371,9 +388,7 @@ class DetailActivity : Activity() {
         if (switchingItem) return true
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downY = event.y
-                downX = event.x
-                dragDistance = 0f
+                beginPointerGesture(event)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -389,9 +404,9 @@ class DetailActivity : Activity() {
                 if (dragPreviewPage != null) {
                     finishInteractiveSwipe()
                 } else {
-                    val deltaY = event.y - downY
-                    val deltaX = event.x - downX
-                    if (max(abs(deltaX), abs(deltaY)) < Ui.dp(this, 20)) {
+                    val deltaY = event.rawY - downY
+                    val deltaX = event.rawX - downX
+                    if (max(abs(deltaX), abs(deltaY)) < gestureTouchSlop) {
                         handleTap(event.x, event.y)
                     }
                 }
@@ -435,7 +450,9 @@ class DetailActivity : Activity() {
                 }
             }
         }
-        toggleZoom(x, y)
+        if (activeZoomImage() == null) {
+            toggleZoom(x, y)
+        }
     }
 
     private fun seekCurrentVideoBy(deltaMs: Long) {
@@ -466,6 +483,7 @@ class DetailActivity : Activity() {
 
     private fun resetZoom(animated: Boolean) {
         val page = activePage ?: return
+        activeZoomImage()?.zoomable?.reset()
         if (!zoomed && page.scaleX == 1f && page.scaleY == 1f) return
         zoomed = false
         page.animate().cancel()
@@ -490,12 +508,18 @@ class DetailActivity : Activity() {
         pendingSingleTap = null
     }
 
+    private fun beginPointerGesture(event: MotionEvent) {
+        downY = event.rawY
+        downX = event.rawX
+        dragDistance = 0f
+    }
+
     private fun updateInteractiveSwipe(event: MotionEvent) {
         if (mediaQueue.size < 2) return
-        val deltaY = event.y - downY
-        val deltaX = event.x - downX
+        val deltaY = event.rawY - downY
+        val deltaX = event.rawX - downX
         if (dragPreviewPage == null) {
-            val startThreshold = Ui.dp(this, 14)
+            val startThreshold = gestureTouchSlop
             if (max(abs(deltaX), abs(deltaY)) < startThreshold) return
             dragHorizontal = abs(deltaX) >= abs(deltaY)
             val delta = if (dragHorizontal) deltaX else deltaY
@@ -509,8 +533,6 @@ class DetailActivity : Activity() {
         dragDistance = (if (dragDirection > 0) -delta else delta).coerceIn(0f, offset.toFloat())
         val currentTranslation = if (dragDirection > 0) -dragDistance else dragDistance
         val incomingTranslation = if (dragDirection > 0) offset - dragDistance else -offset + dragDistance
-        activePage?.animate()?.cancel()
-        dragPreviewPage?.animate()?.cancel()
         if (dragHorizontal) {
             activePage?.translationX = currentTranslation
             dragPreviewPage?.translationX = incomingTranslation
@@ -522,8 +544,14 @@ class DetailActivity : Activity() {
 
     private fun beginInteractiveSwipe() {
         cancelPendingSingleTap()
-        resetZoom(false)
+        if (activeZoomImage() == null) {
+            resetZoom(false)
+        } else {
+            zoomed = false
+        }
+        activePage?.animate()?.cancel()
         val page = createSwipePreviewPage(mediaQueue[dragTargetIndex])
+        page.animate().cancel()
         val offset = swipeOffset()
         if (dragHorizontal) {
             page.translationX = if (dragDirection > 0) offset.toFloat() else -offset.toFloat()
@@ -536,7 +564,7 @@ class DetailActivity : Activity() {
 
     private fun finishInteractiveSwipe() {
         val offset = swipeOffset()
-        val shouldCommit = dragDistance > max(Ui.dp(this, 48).toFloat(), offset * 0.06f)
+        val shouldCommit = dragDistance >= gestureTouchSlop * 1.35f
         if (shouldCommit) {
             commitInteractiveSwipe(offset)
         } else {
@@ -760,7 +788,7 @@ class DetailActivity : Activity() {
             page.addView(preview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             loadVideoPreview(item, preview)
         } else {
-            addImageToPage(item, page, false)
+            addImageToPage(item, page)
         }
         return page
     }
@@ -838,7 +866,7 @@ class DetailActivity : Activity() {
             target.setImageBitmap(cached)
             return
         }
-        imageExecutor.execute {
+        videoPreviewExecutor.execute {
             val bitmap = decodeVideoPreview(item)
             if (bitmap != null) {
                 videoPreviewCache.put(key, bitmap)
@@ -880,7 +908,7 @@ class DetailActivity : Activity() {
 
     private fun preloadVideoPreview(item: MediaItem, generation: Int) {
         if (!item.isVideo() || videoPreviewCache.get(item.uri.toString()) != null) return
-        preloadExecutor.execute {
+        videoPreviewExecutor.execute {
             if (generation != preloadGeneration) return@execute
             if (videoPreviewCache.get(item.uri.toString()) != null) return@execute
             decodeVideoPreview(item)?.let { videoPreviewCache.put(item.uri.toString(), it) }
@@ -889,18 +917,16 @@ class DetailActivity : Activity() {
 
     private fun preloadImagePreview(item: MediaItem, generation: Int) {
         val key = item.uri.toString()
-        if (!item.isImage() || imageDisplayCache.get(key) != null) return
-        preloadExecutor.execute {
-            if (generation != preloadGeneration) return@execute
-            if (imageDisplayCache.get(key) != null) return@execute
-            try {
-                cacheDisplayBitmap(key, decodeDisplayBitmap(item.uri))
-            } catch (_: Exception) {
-                if (imagePreviewCache.get(key) == null) {
-                    decodeImagePreview(item.uri)?.let { imagePreviewCache.put(key, it) }
-                }
-            }
-        }
+        if (!item.isImage() || generation != preloadGeneration) return
+        val metrics = resources.displayMetrics
+        val request = ImageRequest.Builder(this)
+            .data(item.uri)
+            .memoryCacheKey(key)
+            .diskCacheKey(key)
+            .size(metrics.widthPixels, metrics.heightPixels)
+            .allowHardware(true)
+            .build()
+        SingletonImageLoader.get(this).enqueue(request)
     }
 
     private fun wrappedIndex(index: Int): Int {
@@ -938,111 +964,100 @@ class DetailActivity : Activity() {
     private fun showImage(item: MediaItem, page: FrameLayout) {
         videoControls.visibility = View.GONE
         timelineRow.visibility = View.GONE
-        addImageToPage(item, page, true)
+        addImageToPage(item, page)
     }
 
-    private fun addImageToPage(item: MediaItem, page: FrameLayout, loadFullQuality: Boolean) {
-        val image = ImageView(this).apply {
+    private fun addImageToPage(item: MediaItem, page: FrameLayout) {
+        val image = CoilZoomImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(Color.BLACK)
+            scrollBar = null
         }
         page.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         image.tag = item.uri
-        val key = item.uri.toString()
-        val displayCached = imageDisplayCache.get(key)
-        if (displayCached != null) {
-            image.setImageBitmap(displayCached)
-            return
-        }
-        loadImagePreview(item, image)
-        if (!loadFullQuality) return
-        loadFullQualityImageIntoPage(item, page)
-    }
-
-    private fun loadImagePreview(item: MediaItem, target: ImageView) {
-        val key = item.uri.toString()
-        val cached = imagePreviewCache.get(key)
-        if (cached != null) {
-            target.setImageBitmap(cached)
-            return
-        }
-        imageExecutor.execute {
-            val bitmap = decodeImagePreview(item.uri)
-            if (bitmap != null) {
-                imagePreviewCache.put(key, bitmap)
-                target.post {
-                    if (target.tag == item.uri) {
-                        target.setImageBitmap(bitmap)
+        var pagingGesture = false
+        image.setOnTouchListener { _, event ->
+            val atBaseScale = isAtBaseZoom(image)
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    pagingGesture = false
+                    beginPointerGesture(event)
+                    false
+                }
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    if (dragPreviewPage != null) cancelInteractiveSwipe()
+                    pagingGesture = false
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (event.pointerCount > 1 || !atBaseScale) {
+                        if (pagingGesture || dragPreviewPage != null) cancelInteractiveSwipe()
+                        pagingGesture = false
+                        false
+                    } else {
+                        updateInteractiveSwipe(event)
+                        if (!pagingGesture && dragPreviewPage != null) {
+                            pagingGesture = true
+                            val cancelEvent = MotionEvent.obtain(event).apply {
+                                action = MotionEvent.ACTION_CANCEL
+                            }
+                            image.onTouchEvent(cancelEvent)
+                            cancelEvent.recycle()
+                        }
+                        pagingGesture
                     }
                 }
+                MotionEvent.ACTION_UP -> {
+                    if (pagingGesture) {
+                        updateInteractiveSwipe(event)
+                        finishInteractiveSwipe()
+                        pagingGesture = false
+                        true
+                    } else {
+                        false
+                    }
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    if (pagingGesture || dragPreviewPage != null) cancelInteractiveSwipe()
+                    val consumed = pagingGesture
+                    pagingGesture = false
+                    consumed
+                }
+                else -> pagingGesture
             }
         }
-    }
-
-    private fun loadFullQualityImageIntoPage(item: MediaItem, page: FrameLayout) {
-        val image = findTaggedImage(page, item.uri) ?: return
-        val key = item.uri.toString()
-        val cached = imageDisplayCache.get(key)
-        if (cached != null) {
-            image.setImageBitmap(cached)
-            return
+        image.onViewTapListener = OnViewTapListener { _, _ ->
+            toggleHud()
         }
-        imageExecutor.execute {
-            try {
-                val bitmap = decodeDisplayBitmap(item.uri)
-                cacheDisplayBitmap(key, bitmap)
-                image.post {
+        image.load(item.uri) {
+            memoryCacheKey(item.uri.toString())
+            diskCacheKey(item.uri.toString())
+            crossfade(false)
+            allowHardware(true)
+            precision(Precision.INEXACT)
+            listener(
+                onError = { _, _ ->
                     if (image.tag == item.uri) {
-                        image.setImageBitmap(bitmap)
+                        Ui.toast(this@DetailActivity, "Não foi possível abrir a imagem.")
                     }
                 }
-            } catch (_: Exception) {
-                image.post { Ui.toast(this, "Não foi possível abrir a imagem.") }
-            }
+            )
         }
     }
 
-    private fun findTaggedImage(parent: ViewGroup, uri: Uri): ImageView? {
-        for (index in 0 until parent.childCount) {
-            val child = parent.getChildAt(index)
-            if (child is ImageView && child.tag == uri) return child
-            if (child is ViewGroup) {
-                findTaggedImage(child, uri)?.let { return it }
-            }
+    private fun activeZoomImage(): CoilZoomImageView? {
+        val page = activePage ?: return null
+        for (index in 0 until page.childCount) {
+            val child = page.getChildAt(index)
+            if (child is CoilZoomImageView) return child
         }
         return null
     }
 
-    private fun cacheDisplayBitmap(key: String, bitmap: Bitmap) {
-        if (bitmap.byteCount <= imageDisplayCache.maxSize()) {
-            imageDisplayCache.put(key, bitmap)
-        }
-    }
-
-    private fun decodeImagePreview(uri: Uri): Bitmap? =
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentResolver.loadThumbnail(uri, Size(1800, 1800), null)
-            } else {
-                decodeBitmap(uri, IMAGE_PREVIEW_MAX_SIDE)
-            }
-        } catch (_: Exception) {
-            null
-        }
-
-    @Throws(Exception::class)
-    private fun decodeDisplayBitmap(uri: Uri): Bitmap {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val source = ImageDecoder.createSource(contentResolver, uri)
-            return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-                val maxSide = max(info.size.width, info.size.height)
-                if (maxSide > HIGH_QUALITY_IMAGE_MAX_SIDE) {
-                    decoder.setTargetSampleSize((maxSide + HIGH_QUALITY_IMAGE_MAX_SIDE - 1) / HIGH_QUALITY_IMAGE_MAX_SIDE)
-                }
-            }
-        }
-        return decodeBitmap(uri, HIGH_QUALITY_IMAGE_MAX_SIDE)
+    private fun isAtBaseZoom(image: CoilZoomImageView): Boolean {
+        val scale = image.zoomable.transformState.value.scaleX
+        val minimum = image.zoomable.minScaleState.value
+        return scale <= minimum * 1.01f
     }
 
     private fun togglePlayback() {
@@ -1269,7 +1284,7 @@ class DetailActivity : Activity() {
         for (album in MediaStoreRepository.loadAlbums(this, includeHiddenFilesystem)) {
             if (album.key == "all_media" || album.key == item.albumKey || album.name.isBlank()) continue
             val label = if (album.path.isNotBlank()) "${album.name} - ${album.path}" else album.name
-            names.putIfAbsent(label, album.name)
+            if (!names.containsKey(label)) names[label] = album.name
         }
         return names.entries.map { it.key to it.value }
     }
@@ -1482,7 +1497,7 @@ class DetailActivity : Activity() {
 
     private fun applyWindowSettings() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowCompat.getInsetsController(window, window.decorView)?.apply {
+        WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -1547,13 +1562,7 @@ class DetailActivity : Activity() {
         handler.removeCallbacks(autoAdvanceRunnable)
         releasePlayer()
         executor.shutdownNow()
-        imageExecutor.shutdownNow()
-        preloadExecutor.shutdownNow()
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        resetSpeedAndFinish()
+        videoPreviewExecutor.shutdownNow()
     }
 
     private fun resetSpeedAndFinish() {
@@ -1591,16 +1600,8 @@ class DetailActivity : Activity() {
         private const val REQ_CREATE_PDF = 35
         private const val SHUFFLE_PHOTO_DELAY_MS = 4200L
         private const val DOUBLE_TAP_MS = 260L
-        private const val IMAGE_PREVIEW_MAX_SIDE = 1800
-        private const val HIGH_QUALITY_IMAGE_MAX_SIDE = 8192
-        private const val PRELOAD_AROUND_RADIUS = 10
+        private const val PRELOAD_AROUND_RADIUS = 5
         private val videoPreviewCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 32).toInt()) {
-            override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
-        }
-        private val imagePreviewCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 32).toInt()) {
-            override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
-        }
-        private val imageDisplayCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 3).toInt()) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }
     }

@@ -1,12 +1,6 @@
 package com.galeria.android
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.media.ThumbnailUtils
-import android.os.Build
-import android.util.LruCache
-import android.util.Size
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -14,11 +8,12 @@ import android.widget.BaseAdapter
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
+import coil3.load
+import coil3.request.allowHardware
+import coil3.request.crossfade
 import java.io.File
-import java.util.concurrent.Executors
 
 class HiddenFileAdapter(private val context: Context) : BaseAdapter() {
-    private val executor = Executors.newFixedThreadPool(2)
     private val files = ArrayList<File>()
 
     fun submit(nextFiles: Array<File>?) {
@@ -80,52 +75,15 @@ class HiddenFileAdapter(private val context: Context) : BaseAdapter() {
         val file = getItem(position)
         val key = "${file.absolutePath}:${file.lastModified()}"
         holder.name.text = file.name
-        holder.image.tag = key
-        val cached = thumbCache.get(key)
-        if (cached != null) {
-            holder.image.setImageBitmap(cached)
-            return frame
-        }
-        holder.image.setImageBitmap(null)
-        executor.execute {
-            val bitmap = thumbnail(file)
-            if (bitmap != null) thumbCache.put(key, bitmap)
-            holder.image.post {
-                if (key == holder.image.tag) {
-                    holder.image.setImageBitmap(bitmap)
-                }
-            }
+        holder.image.load(file) {
+            size(720, 720)
+            memoryCacheKey(key)
+            diskCacheKey(key)
+            allowHardware(true)
+            crossfade(false)
         }
         return frame
     }
 
-    private fun thumbnail(file: File): Bitmap? {
-        val mime = FileDetailActivity.mimeFor(file)
-        return try {
-            if (mime.startsWith("video/")) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ThumbnailUtils.createVideoThumbnail(file, Size(360, 360), null)
-                } else {
-                    @Suppress("DEPRECATION")
-                    ThumbnailUtils.createVideoThumbnail(
-                        file.absolutePath,
-                        android.provider.MediaStore.Video.Thumbnails.MINI_KIND
-                    )
-                }
-            } else {
-                val options = BitmapFactory.Options().apply { inSampleSize = 6 }
-                BitmapFactory.decodeFile(file.absolutePath, options)
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
     private class Holder(val image: ImageView, val name: TextView)
-
-    companion object {
-        private val thumbCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 24).toInt()) {
-            override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
-        }
-    }
 }

@@ -1,15 +1,7 @@
 package com.galeria.android
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.media.MediaMetadataRetriever
-import android.media.ThumbnailUtils
-import android.net.Uri
-import android.os.Build
-import android.util.LruCache
-import android.util.Size
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -18,9 +10,10 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import java.io.File
+import coil3.load
+import coil3.request.allowHardware
+import coil3.request.crossfade
 import java.util.Locale
-import java.util.concurrent.Executors
 
 class AlbumRecyclerAdapter(
     private val context: Context,
@@ -31,7 +24,6 @@ class AlbumRecyclerAdapter(
         fun onAlbumLongClick(view: View, position: Int): Boolean
     }
 
-    private val executor = Executors.newFixedThreadPool(2)
     private val allAlbums = ArrayList<AlbumItem>()
     private val visibleAlbums = ArrayList<AlbumItem>()
     private val selectedKeys = HashSet<String>()
@@ -160,23 +152,23 @@ class AlbumRecyclerAdapter(
         holder.itemView.alpha = if (selected) 0.78f else 1f
         holder.itemView.scaleX = if (selected) 0.94f else 1f
         holder.itemView.scaleY = if (selected) 0.94f else 1f
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            holder.itemView.translationZ = if (selected) -Ui.dp(context, 2).toFloat() else 0f
-        }
+        holder.itemView.translationZ = if (selected) -Ui.dp(context, 2).toFloat() else 0f
         holder.check.visibility = if (selectionMode || selected) View.VISIBLE else View.GONE
         holder.check.text = if (selected) "\u2713" else ""
         holder.name.text = "${album.name} (${album.count})"
         holder.name.setTextColor(Ui.text(context))
         holder.cover.background = Ui.rounded(Ui.surface(context), folderRadius(), context)
-        holder.cover.setImageBitmap(null)
-        album.cover?.let { cover ->
-            holder.cover.tag = cover.uri
-            val key = cover.uri.toString()
-            val cached = coverCache.get(key)
-            if (cached != null) {
-                holder.cover.setImageBitmap(cached)
-            } else {
-                loadThumbnail(cover.uri, holder.cover)
+        val cover = album.cover
+        if (cover == null) {
+            holder.cover.setImageDrawable(null)
+        } else {
+            val key = "album:${cover.uri}"
+            holder.cover.load(cover.uri) {
+                size(420, 420)
+                memoryCacheKey(key)
+                diskCacheKey(key)
+                allowHardware(true)
+                crossfade(false)
             }
         }
         holder.itemView.setOnClickListener { callbacks.onAlbumClick(holder.bindingAdapterPosition) }
@@ -184,98 +176,6 @@ class AlbumRecyclerAdapter(
     }
 
     override fun getItemCount(): Int = visibleAlbums.size
-
-    private fun loadThumbnail(uri: Uri, target: SquareImageView) {
-        val key = uri.toString()
-        if (!loadingKeys.add(key)) {
-            return
-        }
-        executor.execute {
-            try {
-                val bitmap = readThumbnail(uri)
-                if (bitmap != null) {
-                    coverCache.put(key, bitmap)
-                }
-                target.post {
-                    if (uri == target.tag) {
-                        target.setImageBitmap(bitmap)
-                    }
-                }
-            } finally {
-                loadingKeys.remove(key)
-            }
-        }
-    }
-
-    private fun readThumbnail(uri: Uri): Bitmap? {
-        if (isVideoUri(uri)) {
-            readVideoThumbnail(uri)?.let { return it }
-        }
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                return context.contentResolver.loadThumbnail(uri, Size(420, 420), null)
-            }
-        } catch (_: Exception) {
-        }
-        return try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                val options = BitmapFactory.Options().apply { inSampleSize = 8 }
-                BitmapFactory.decodeStream(input, null, options)
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun readVideoThumbnail(uri: Uri): Bitmap? {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                return context.contentResolver.loadThumbnail(uri, Size(420, 420), null)
-            }
-        } catch (_: Exception) {
-        }
-        if (uri.scheme == "file" && isVideoFile(uri.path)) {
-            try {
-                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    ThumbnailUtils.createVideoThumbnail(File(uri.path!!), Size(420, 420), null)
-                } else {
-                    @Suppress("DEPRECATION")
-                    ThumbnailUtils.createVideoThumbnail(uri.path ?: return null, MediaStoreCompat.MINI_KIND)
-                }
-            } catch (_: Exception) {
-            }
-        }
-        return try {
-            MediaMetadataRetriever().use { retriever ->
-                retriever.setDataSource(context, uri)
-                retriever.frameAtTime
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun isVideoUri(uri: Uri): Boolean {
-        if (uri.scheme == "file") return isVideoFile(uri.path)
-        return try {
-            context.contentResolver.getType(uri)?.startsWith("video/") == true
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun isVideoFile(path: String?): Boolean {
-        if (path == null) return false
-        val name = path.lowercase(Locale.US)
-        return name.endsWith(".mp4") ||
-            name.endsWith(".mkv") ||
-            name.endsWith(".webm") ||
-            name.endsWith(".mov") ||
-            name.endsWith(".avi") ||
-            name.endsWith(".3gp") ||
-            name.endsWith(".m4v") ||
-            name.endsWith(".ts")
-    }
 
     private fun folderRadius(): Int {
         val style = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
@@ -294,15 +194,4 @@ class AlbumRecyclerAdapter(
         val check: TextView
     ) : RecyclerView.ViewHolder(itemView)
 
-    private object MediaStoreCompat {
-        @Suppress("DEPRECATION")
-        const val MINI_KIND: Int = android.provider.MediaStore.Video.Thumbnails.MINI_KIND
-    }
-
-    companion object {
-        private val coverCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 16).toInt()) {
-            override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
-        }
-        private val loadingKeys = java.util.Collections.synchronizedSet(HashSet<String>())
-    }
 }

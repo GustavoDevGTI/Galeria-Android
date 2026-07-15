@@ -6,6 +6,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Looper
 import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import java.io.File
@@ -14,12 +15,14 @@ import kotlin.math.absoluteValue
 
 object MediaStoreRepository {
     private val cacheLock = Any()
+    private val scanLock = Any()
     private const val CACHE_TTL_MS = 180_000L
     private var cachedVisibleMedia: ArrayList<MediaItem>? = null
     private var cachedVisibleAtMs: Long = 0L
     private var cachedHiddenMedia: ArrayList<MediaItem>? = null
     private var cachedHiddenAtMs: Long = 0L
     private var cachedWithAllFilesAccess: Boolean = false
+    private var cacheInvalidated: Boolean = false
 
     @JvmStatic
     fun loadMedia(context: Context, includeHiddenFilesystem: Boolean = false): List<MediaItem> {
@@ -28,17 +31,60 @@ object MediaStoreRepository {
         synchronized(cacheLock) {
             val cache = if (includeHiddenFilesystem) cachedHiddenMedia else cachedVisibleMedia
             val cachedAt = if (includeHiddenFilesystem) cachedHiddenAtMs else cachedVisibleAtMs
-            if (cache != null && cachedWithAllFilesAccess == allFilesAccess && now - cachedAt < CACHE_TTL_MS) {
+            if (!cacheInvalidated && cache != null && cachedWithAllFilesAccess == allFilesAccess && now - cachedAt < CACHE_TTL_MS) {
                 return ArrayList(cache)
             }
         }
 
+        if (!cacheInvalidated) {
+            val memorySnapshot = GalleryCatalogStore.snapshot(includeHiddenFilesystem)
+            if (memorySnapshot.isNotEmpty()) {
+                cacheResult(memorySnapshot, includeHiddenFilesystem, allFilesAccess)
+                return memorySnapshot
+            }
+            if (Looper.myLooper() != Looper.getMainLooper()) {
+                val stored = GalleryCatalogStore.readMedia(context.applicationContext, includeHiddenFilesystem)
+                if (stored.isNotEmpty()) {
+                    cacheResult(stored, includeHiddenFilesystem, allFilesAccess)
+                    return stored
+                }
+            }
+        }
+
+        return refreshMedia(context, includeHiddenFilesystem)
+    }
+
+    @JvmStatic
+    fun refreshMedia(
+        context: Context,
+        includeHiddenFilesystem: Boolean = false,
+        force: Boolean = false
+    ): List<MediaItem> = synchronized(scanLock) {
+        val allFilesAccess = MediaActions.hasAllFilesAccess(context)
+        if (!force && GalleryCatalogStore.hasFreshCatalog(
+                context.applicationContext,
+                includeHiddenFilesystem,
+                allFilesAccess,
+                30_000L
+            )
+        ) {
+            val stored = GalleryCatalogStore.readMedia(context.applicationContext, includeHiddenFilesystem)
+            cacheResult(stored, includeHiddenFilesystem, allFilesAccess)
+            return@synchronized stored
+        }
         val items = ArrayList<MediaItem>()
         loadFromFilesCollection(context, items)
         if (includeHiddenFilesystem) {
             loadFromHiddenFilesystem(items, allFilesAccess)
         }
         items.sortByDescending { it.dateAdded }
+        GalleryCatalogStore.writeMedia(context.applicationContext, items, includeHiddenFilesystem, allFilesAccess)
+        cacheResult(items, includeHiddenFilesystem, allFilesAccess)
+        items
+    }
+
+    private fun cacheResult(items: List<MediaItem>, includeHiddenFilesystem: Boolean, allFilesAccess: Boolean) {
+        val now = System.currentTimeMillis()
         synchronized(cacheLock) {
             if (includeHiddenFilesystem) {
                 cachedHiddenMedia = ArrayList(items)
@@ -48,8 +94,8 @@ object MediaStoreRepository {
                 cachedVisibleAtMs = now
             }
             cachedWithAllFilesAccess = allFilesAccess
+            cacheInvalidated = false
         }
-        return items
     }
 
     @JvmStatic
@@ -59,6 +105,7 @@ object MediaStoreRepository {
             cachedVisibleAtMs = 0L
             cachedHiddenMedia = null
             cachedHiddenAtMs = 0L
+            cacheInvalidated = true
         }
     }
 

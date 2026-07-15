@@ -7,6 +7,11 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - Kotlin nativo
 - Android SDK 36
 - RecyclerView para grades e listas
+- Coil 3 para thumbnails, imagens em alta qualidade e pré-carregamento
+- ZoomImage para zoom fluido em imagens grandes
+- Room para cache local do catálogo e da organização
+- Paging 3 para carregamento progressivo das grades
+- WorkManager para varreduras pesadas em segundo plano
 - MediaStore para leitura de mídias do aparelho
 - AndroidX Media3 / ExoPlayer para reprodução de vídeo
 
@@ -18,7 +23,9 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - Reprodução de vídeos com Media3 / ExoPlayer
 - Miniaturas reais para vídeos na grade de mídias e nas capas de álbuns
 - Player de vídeo em tela cheia com HUD superior e inferior translúcida sobreposta à mídia
-- Navegação fluida entre mídias por gesto
+- Navegação fluida entre mídias por gestos horizontais e verticais
+- Arrastes curtos trocam a mídia, com proteção para toques simples e duplos
+- Pré-carregamento das cinco mídias anteriores e posteriores em alta qualidade
 - Reprodução aleatória dentro do álbum
 - Favoritar, compartilhar, ocultar, copiar, mover e excluir arquivos
 - Criação de novas pastas
@@ -47,6 +54,10 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
   Visualizador de foto e player de vídeo
 - `app/src/main/kotlin/com/galeria/android/MediaStoreRepository.kt`
   Carregamento e indexação das mídias
+- `app/src/main/kotlin/com/galeria/android/GalleryDatabase.kt`
+  Cache local do catálogo, álbuns e ordens personalizadas
+- `app/src/main/kotlin/com/galeria/android/MediaScanWorker.kt`
+  Varreduras de mídia executadas em segundo plano
 - `app/src/main/kotlin/com/galeria/android/MediaActions.kt`
   Operações de mover, copiar, excluir, ocultar e criar pasta
 
@@ -74,7 +85,10 @@ Sempre que o repositório for atualizado com uma nova versão testável, gere um
 
 - Código principal migrado para Kotlin
 - Grade baseada em RecyclerView
-- Melhorias contínuas de fluidez, cache local e carregamento progressivo
+- Cache local com Room, carregamento progressivo com Paging 3 e varreduras com WorkManager
+- Imagens e thumbnails carregados pelo Coil 3, sem transição de baixa para alta resolução
+- Visualização de imagens grandes com zoom dedicado e carregamento em alta qualidade
+- Gestos usam coordenadas absolutas e um único controlador, eliminando a tremedeira durante a transição
 - Diálogos e submenus principais usam componentes temáticos próprios do app
 - Gerenciamento de ocultos atualizado com lista rolável, botões fixos e suporte a pastas fixadas
 - Player ajustado para manter o vídeo ocupando o máximo possível da tela sem ser reduzido pelos controles

@@ -1,7 +1,6 @@
 package com.galeria.android
 
 import android.Manifest
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
@@ -32,16 +31,21 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import java.util.Locale
 import java.util.Random
+import java.util.UUID
 import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.min
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private lateinit var adapter: AlbumRecyclerAdapter
     private lateinit var emptyView: TextView
     private lateinit var searchInput: EditText
@@ -67,7 +71,6 @@ class MainActivity : Activity() {
     private var showSvgs = true
     private var showPortraits = false
     private var showHiddenFolders = false
-    private var hiddenDialogScannedThisSession = false
     private var columnCount = 3
     private var lastColumnGestureMs = 0L
     private val mediaLoader = Executors.newSingleThreadExecutor()
@@ -75,8 +78,7 @@ class MainActivity : Activity() {
     private val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val mediaRefreshRunnable = Runnable {
         if (!isFinishing && hasReadPermission()) {
-            MediaStoreRepository.invalidateCache()
-            loadAlbums()
+            refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
         }
     }
     private val mediaObserver = object : ContentObserver(mediaRefreshHandler) {
@@ -147,7 +149,7 @@ class MainActivity : Activity() {
             setOnClickListener {
                 searchInput.requestFocus()
                 (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
-                    .showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT)
+                    .showSoftInput(searchInput, 0)
             }
         }
         top.addView(searchIconButton, LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 38)))
@@ -260,8 +262,7 @@ class MainActivity : Activity() {
             setColorSchemeColors(Ui.accent(this@MainActivity))
             setProgressBackgroundColorSchemeColor(Ui.surface(this@MainActivity))
             setOnRefreshListener {
-                MediaStoreRepository.invalidateCache()
-                loadAlbums()
+                refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
             }
         }
         swipeRefresh.addView(grid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -528,7 +529,9 @@ class MainActivity : Activity() {
         var hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
-            val cachedAlbums = MediaCatalogCache.readAlbums(this)
+            val cachedAlbums = MediaStoreRepository.buildAlbums(
+                GalleryCatalogStore.snapshot(shouldIncludeHiddenFilesystem())
+            )
             if (cachedAlbums.isNotEmpty()) {
                 adapter.submit(cachedAlbums, query)
                 updateEmptyText()
@@ -572,7 +575,6 @@ class MainActivity : Activity() {
             albums = albums.filter { !hiddenKeys.contains(it.key) && (includeHidden || !isHiddenAlbum(it)) }
             val sorted = albums.toMutableList()
             sortAlbums(sorted)
-            MediaCatalogCache.writeAlbums(applicationContext, sorted)
             runOnUiThread {
                 if (request != loadGeneration || isFinishing) return@runOnUiThread
                 showAlbumsProgressively(sorted, query)
@@ -722,7 +724,7 @@ class MainActivity : Activity() {
         for (album in adapter.visibleAlbumsSnapshot()) {
             albumsByKey[album.key] = album
         }
-        for (album in MediaCatalogCache.readAlbums(this)) {
+        for (album in MediaStoreRepository.buildAlbums(GalleryCatalogStore.snapshot(true))) {
             albumsByKey[album.key] = album
         }
         val albums = albumsByKey.values.toMutableList()
@@ -902,37 +904,45 @@ class MainActivity : Activity() {
             ensureFileManagementAccess(true)
         }
 
-        fun refreshHiddenAlbums(markVersionScanned: Boolean, afterRefresh: (() -> Unit)? = null) {
+        fun refreshHiddenAlbums(markVersionScanned: Boolean) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
                 requestHiddenScanAccess()
                 return
             }
-            mediaLoader.execute {
-                MediaStoreRepository.invalidateCache()
-                val refreshed = MediaStoreRepository.buildAlbums(
-                    MediaStoreRepository.loadMedia(applicationContext, true)
-                ).toMutableList()
-                sortAlbums(refreshed)
-                if (markVersionScanned && MediaActions.hasAllFilesAccess(applicationContext)) {
-                    prefs.edit().putLong(PREF_HIDDEN_SCAN_VERSION, currentAppVersionCode()).apply()
-                }
-                runOnUiThread {
-                    if (isFinishing) return@runOnUiThread
-                    val previousVisible = HashSet(checkedKeys)
-                    mutableAlbums.clear()
-                    mutableAlbums.addAll(refreshed)
-                    sortVisibilityAlbums()
-                    checkedKeys.clear()
-                    for (album in mutableAlbums) {
-                        if (previousVisible.contains(album.key) || (!hiddenKeys.contains(album.key) && (showHiddenFolders || !isHiddenAlbum(album)))) {
-                            checkedKeys.add(album.key)
+            val workId = MediaScanScheduler.enqueue(applicationContext, includeHidden = true, replace = true)
+            observeWorkCompletion(
+                workId,
+                onSuccess = {
+                    mediaLoader.execute {
+                        val refreshed = MediaStoreRepository.buildAlbums(
+                            GalleryCatalogStore.readMedia(applicationContext, true)
+                        ).toMutableList()
+                        sortAlbums(refreshed)
+                        if (markVersionScanned && MediaActions.hasAllFilesAccess(applicationContext)) {
+                            prefs.edit().putLong(PREF_HIDDEN_SCAN_INSTALL_TIME, currentInstallTimestamp()).apply()
+                        }
+                        runOnUiThread {
+                            if (isFinishing) return@runOnUiThread
+                            val previousVisible = HashSet(checkedKeys)
+                            mutableAlbums.clear()
+                            mutableAlbums.addAll(refreshed)
+                            sortVisibilityAlbums()
+                            checkedKeys.clear()
+                            for (album in mutableAlbums) {
+                                if (previousVisible.contains(album.key) || (!hiddenKeys.contains(album.key) && (showHiddenFolders || !isHiddenAlbum(album)))) {
+                                    checkedKeys.add(album.key)
+                                }
+                            }
+                            renderAlbums()
+                            refresher.isRefreshing = false
                         }
                     }
-                    renderAlbums()
+                },
+                onFailure = {
                     refresher.isRefreshing = false
-                    afterRefresh?.invoke()
+                    Ui.toast(this, "Não foi possível atualizar as pastas ocultas.")
                 }
-            }
+            )
         }
 
         refresher.setOnRefreshListener {
@@ -977,7 +987,6 @@ class MainActivity : Activity() {
                 .putStringSet("hidden_folder_keys", nextHidden)
                 .putBoolean("show_hidden_folders", showHiddenFolders)
                 .apply()
-            MediaStoreRepository.invalidateCache()
             loadAlbums()
             dialog.dismiss()
         }
@@ -1081,13 +1090,11 @@ class MainActivity : Activity() {
             .create()
         dialog.setOnShowListener {
             dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-            if (!hiddenDialogScannedThisSession || shouldAutoScanHiddenAlbums() || pinnedKeys.isNotEmpty()) {
+            if (shouldAutoScanHiddenAlbums()) {
                 refresher.post {
                     if (!isFinishing && dialog.isShowing) {
                         refresher.isRefreshing = true
-                        refreshHiddenAlbums(true) {
-                            hiddenDialogScannedThisSession = true
-                        }
+                        refreshHiddenAlbums(true)
                     }
                 }
             }
@@ -1172,6 +1179,41 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun refreshCatalogWithWorker(includeHidden: Boolean) {
+        val workId = MediaScanScheduler.enqueue(applicationContext, includeHidden, replace = true)
+        observeWorkCompletion(
+            workId,
+            onSuccess = {
+                if (!isFinishing) loadAlbums()
+            },
+            onFailure = {
+                if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
+            }
+        )
+    }
+
+    private fun observeWorkCompletion(
+        workId: UUID,
+        onSuccess: () -> Unit,
+        onFailure: () -> Unit
+    ) {
+        val workManager = WorkManager.getInstance(applicationContext)
+        val workInfo = workManager.getWorkInfoByIdLiveData(workId)
+        val observer = object : Observer<WorkInfo?> {
+            override fun onChanged(value: WorkInfo?) {
+                value ?: return
+                if (!value.state.isFinished) return
+                workInfo.removeObserver(this)
+                if (value.state == WorkInfo.State.SUCCEEDED) {
+                    onSuccess()
+                } else {
+                    onFailure()
+                }
+            }
+        }
+        workInfo.observe(this, observer)
+    }
+
     private fun scheduleMediaRefresh() {
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
         mediaRefreshHandler.postDelayed(mediaRefreshRunnable, 700L)
@@ -1241,17 +1283,11 @@ class MainActivity : Activity() {
     }
 
     private fun shouldAutoScanHiddenAlbums(): Boolean =
-        prefs.getLong(PREF_HIDDEN_SCAN_VERSION, -1L) != currentAppVersionCode()
+        prefs.getLong(PREF_HIDDEN_SCAN_INSTALL_TIME, -1L) != currentInstallTimestamp()
 
-    private fun currentAppVersionCode(): Long =
+    private fun currentInstallTimestamp(): Long =
         try {
-            val info = packageManager.getPackageInfo(packageName, 0)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                info.longVersionCode
-            } else {
-                @Suppress("DEPRECATION")
-                info.versionCode.toLong()
-            }
+            packageManager.getPackageInfo(packageName, 0).lastUpdateTime
         } catch (_: Exception) {
             0L
         }
@@ -1274,7 +1310,7 @@ class MainActivity : Activity() {
         private const val PREFS = "gallery_albums"
         private const val PREF_ALL_FILES_PROMPTED = "all_files_prompted"
         private const val PREF_INITIAL_ALL_FILES_REQUESTED = "initial_all_files_requested"
-        private const val PREF_HIDDEN_SCAN_VERSION = "hidden_scan_version"
+        private const val PREF_HIDDEN_SCAN_INSTALL_TIME = "hidden_scan_install_time"
         private const val PREF_PINNED_HIDDEN_FOLDER_KEYS = "pinned_hidden_folder_keys"
         private const val SORT_NAME = "name"
         private const val SORT_PATH = "path"

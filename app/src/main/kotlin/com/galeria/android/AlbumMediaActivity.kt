@@ -1,6 +1,5 @@
 package com.galeria.android
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
@@ -27,9 +26,18 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
+import androidx.paging.LoadState
+import androidx.paging.PagingConfig
+import androidx.paging.filter
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Calendar
 import java.util.Locale
@@ -38,7 +46,7 @@ import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.min
 
-class AlbumMediaActivity : Activity() {
+class AlbumMediaActivity : ComponentActivity() {
     private lateinit var adapter: MediaRecyclerAdapter
     private lateinit var grid: RecyclerView
     private lateinit var swipeRefresh: SwipeRefreshLayout
@@ -70,11 +78,16 @@ class AlbumMediaActivity : Activity() {
     private var groupMode = GROUP_NONE
     private val mediaLoader = Executors.newSingleThreadExecutor()
     private var loadGeneration = 0
+    private var pagingJob: Job? = null
+    private var pendingPagedScrollPosition = -1
+    private val searchHandler = Handler(Looper.getMainLooper())
+    private val searchReload = Runnable {
+        if (!isFinishing) loadMedia(false)
+    }
     private val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val mediaRefreshRunnable = Runnable {
         if (!isFinishing) {
-            MediaStoreRepository.invalidateCache()
-            loadMedia(true)
+            refreshCatalogWithWorker()
         }
     }
     private val mediaObserver = object : ContentObserver(mediaRefreshHandler) {
@@ -102,6 +115,8 @@ class AlbumMediaActivity : Activity() {
     }
 
     override fun onDestroy() {
+        pagingJob?.cancel()
+        searchHandler.removeCallbacks(searchReload)
         super.onDestroy()
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
         try {
@@ -109,6 +124,20 @@ class AlbumMediaActivity : Activity() {
         } catch (_: Exception) {
         }
         mediaLoader.shutdownNow()
+    }
+
+    private fun refreshCatalogWithWorker() {
+        val workId = MediaScanScheduler.enqueue(
+            applicationContext,
+            shouldIncludeHiddenFilesystem(),
+            replace = true
+        )
+        mediaLoader.execute {
+            androidx.work.WorkManager.getInstance(applicationContext).getWorkInfoById(workId).get()
+            runOnUiThread {
+                if (!isFinishing) loadMedia(true)
+            }
+        }
     }
 
     private fun registerMediaObserver() {
@@ -176,8 +205,13 @@ class AlbumMediaActivity : Activity() {
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                    adapter.applyFilter(s?.toString().orEmpty())
-                    updateEmptyState()
+                    if (::adapter.isInitialized && (adapter.isPagingMode() || groupMode == GROUP_NONE)) {
+                        searchHandler.removeCallbacks(searchReload)
+                        searchHandler.postDelayed(searchReload, 180L)
+                    } else if (::adapter.isInitialized) {
+                        adapter.applyFilter(s?.toString().orEmpty())
+                        updateEmptyState()
+                    }
                 }
                 override fun afterTextChanged(s: Editable?) = Unit
             })
@@ -243,6 +277,10 @@ class AlbumMediaActivity : Activity() {
 
             override fun onMediaLongClick(view: View, position: Int): Boolean {
                 if (position !in 0 until adapter.getCount()) return true
+                if (adapter.isPagingMode()) {
+                    loadFullAlbumForSelection(adapter.getItem(position).uri.toString(), view)
+                    return true
+                }
                 if (!adapter.isSelectionMode()) {
                     enterSelectionMode()
                     adapter.selectPosition(position)
@@ -265,6 +303,22 @@ class AlbumMediaActivity : Activity() {
                 return true
             }
         })
+        adapter.addLoadStateListener { states ->
+            if (!adapter.isPagingMode() || !::swipeRefresh.isInitialized) return@addLoadStateListener
+            val refresh = states.refresh
+            swipeRefresh.isRefreshing = refresh is LoadState.Loading && adapter.getCount() > 0
+            if (refresh is LoadState.NotLoading) {
+                updateEmptyState()
+                updateSelectionUi()
+                if (pendingPagedScrollPosition > 0 && adapter.getCount() > 0) {
+                    grid.scrollToPosition(min(pendingPagedScrollPosition, adapter.getCount() - 1))
+                    pendingPagedScrollPosition = -1
+                }
+            } else if (refresh is LoadState.Error) {
+                emptyView.text = "Não foi possível carregar as mídias."
+                emptyView.visibility = if (adapter.getCount() == 0) View.VISIBLE else View.GONE
+            }
+        }
         applyViewMode()
         grid.adapter = adapter
         grid.setOnTouchListener { _, event ->
@@ -299,8 +353,7 @@ class AlbumMediaActivity : Activity() {
             setColorSchemeColors(Ui.accent(this@AlbumMediaActivity))
             setProgressBackgroundColorSchemeColor(Ui.surface(this@AlbumMediaActivity))
             setOnRefreshListener {
-                MediaStoreRepository.invalidateCache()
-                loadMedia(true)
+                refreshCatalogWithWorker()
             }
         }
         swipeRefresh.addView(grid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -522,9 +575,42 @@ class AlbumMediaActivity : Activity() {
         adapter.setSelectionMode(true)
     }
 
+    private fun loadFullAlbumForSelection(selectedUri: String, pressedView: View) {
+        val request = ++loadGeneration
+        pagingJob?.cancel()
+        pressedView.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
+        mediaLoader.execute {
+            val items = prepareAlbumMedia(
+                MediaStoreRepository.loadMediaForAlbum(
+                    applicationContext,
+                    albumKey,
+                    shouldIncludeHiddenFilesystem()
+                )
+            )
+            val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
+            runOnUiThread {
+                if (request != loadGeneration || isFinishing) return@runOnUiThread
+                adapter.submit(items, query)
+                val position = adapter.positionOf(selectedUri)
+                if (position >= 0) {
+                    enterSelectionMode()
+                    adapter.selectPosition(position)
+                    grid.scrollToPosition(position)
+                    updateSelectionUi()
+                } else {
+                    pressedView.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(90).start()
+                }
+            }
+        }
+    }
+
     private fun exitSelectionMode() {
+        val wasSelecting = adapter.isSelectionMode()
         adapter.clearSelection()
         updateSelectionUi()
+        if (wasSelecting && groupMode == GROUP_NONE) {
+            loadMedia(true)
+        }
     }
 
     private fun updateSelectionUi() {
@@ -601,7 +687,6 @@ class AlbumMediaActivity : Activity() {
         }
         Ui.toast(this, "$deleted item(ns) excluídos.")
         exitSelectionMode()
-        loadMedia(true)
     }
 
     private fun askMoveSelected() {
@@ -630,13 +715,21 @@ class AlbumMediaActivity : Activity() {
         }
         Ui.toast(this, "$moved item(ns) movidos.")
         exitSelectionMode()
-        loadMedia(true)
     }
 
     private fun loadMedia(preserveScroll: Boolean) {
         val request = ++loadGeneration
         val targetPosition = if (preserveScroll) layoutManager.findFirstVisibleItemPosition() else savedFirstVisible
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
+        if (groupMode == GROUP_NONE && !adapter.isSelectionMode()) {
+            if (adapter.getCount() == 0 && ::emptyView.isInitialized) {
+                emptyView.text = "Carregando mídias..."
+                emptyView.visibility = View.VISIBLE
+            }
+            loadPagedMedia(request, query, targetPosition)
+            return
+        }
+        pagingJob?.cancel()
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
             emptyView.text = "Carregando mídia..."
             emptyView.visibility = View.VISIBLE
@@ -647,42 +740,48 @@ class AlbumMediaActivity : Activity() {
             )
             runOnUiThread {
                 if (request != loadGeneration || isFinishing) return@runOnUiThread
-                showMediaProgressively(items, query, targetPosition)
+                showMedia(items, query, targetPosition)
             }
         }
     }
 
-    private fun showMediaProgressively(items: List<MediaItem>, query: String, targetPosition: Int) {
-        if (items.size <= 90 || !::grid.isInitialized) {
-            adapter.submit(items, query)
-            updateEmptyState()
-            updateSelectionUi()
-            if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
-            if (targetPosition > 0) {
-                grid.scrollToPosition(targetPosition)
-            }
-            return
+    private fun loadPagedMedia(request: Int, query: String, targetPosition: Int) {
+        pagingJob?.cancel()
+        pendingPagedScrollPosition = targetPosition
+        pagingJob = lifecycleScope.launch {
+            GalleryCatalogStore.pagedMedia(
+                applicationContext,
+                shouldIncludeHiddenFilesystem(),
+                albumKey,
+                query,
+                PagingConfig(
+                    pageSize = 60,
+                    initialLoadSize = 90,
+                    prefetchDistance = 30,
+                    enablePlaceholders = false,
+                    maxSize = 300
+                )
+            ).map { page -> page.filter(::matchesMediaFilter) }
+                .collectLatest { page ->
+                    if (request == loadGeneration && !isFinishing) {
+                        adapter.submitPagingData(page)
+                    }
+                }
         }
-        adapter.submit(ArrayList(items.subList(0, 90)), query)
+    }
+
+    private fun showMedia(items: List<MediaItem>, query: String, targetPosition: Int) {
+        adapter.submit(items, query)
         updateEmptyState()
         updateSelectionUi()
         if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
         if (targetPosition > 0) {
-            grid.scrollToPosition(min(targetPosition, 89))
+            grid.scrollToPosition(min(targetPosition, max(0, adapter.getCount() - 1)))
         }
-        grid.postDelayed({
-            if (isFinishing) return@postDelayed
-            adapter.submit(items, query)
-            updateEmptyState()
-            updateSelectionUi()
-            if (targetPosition > 0) {
-                grid.scrollToPosition(targetPosition)
-            }
-        }, 110)
     }
 
     private fun applyCustomOrder(items: List<MediaItem>): List<MediaItem> {
-        val saved = prefs.getString(orderKey(), "").orEmpty()
+        val saved = GalleryCatalogStore.migrateLegacyOrder(applicationContext, albumKey ?: "all")
         if (saved.isEmpty()) return items
         val byUri = HashMap<String, MediaItem>()
         for (item in items) {
@@ -690,7 +789,7 @@ class AlbumMediaActivity : Activity() {
         }
         val ordered = ArrayList<MediaItem>()
         val used = HashSet<String>()
-        for (line in saved.split("\n")) {
+        for (line in saved) {
             val item = byUri[line]
             if (item != null) {
                 ordered.add(item)
@@ -768,15 +867,14 @@ class AlbumMediaActivity : Activity() {
     }
 
     private fun saveCustomOrder() {
-        val builder = StringBuilder()
-        for (item in adapter.currentOrder()) {
-            builder.append(item.uri).append('\n')
+        val order = adapter.currentOrder()
+        mediaLoader.execute {
+            GalleryCatalogStore.saveCustomOrder(applicationContext, albumKey ?: "all", order)
+            runOnUiThread {
+                if (!isFinishing) Ui.toast(this, "Ordem personalizada salva.")
+            }
         }
-        prefs.edit().putString(orderKey(), builder.toString()).apply()
-        Ui.toast(this, "Ordem personalizada salva.")
     }
-
-    private fun orderKey(): String = "custom_order_${albumKey ?: "all"}"
 
     private fun spacingKey(): String = "grid_spacing_global"
 

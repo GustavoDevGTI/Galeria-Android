@@ -1,7 +1,4 @@
 <resources>
     <color name="bg">#101214</color>
-    <color name="surface">#1A1A1A</color>
-    <color name="text_primary">#F5F7FA</color>
-    <color name="text_secondary">#AAB2BD</color>
     <color name="accent">#F5F7FA</color>
 </resources>

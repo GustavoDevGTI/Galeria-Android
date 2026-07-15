@@ -12,13 +12,16 @@ import android.webkit.MimeTypeMap
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem as PlayerMediaItem
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import java.io.File
 import java.util.Locale
 
+@OptIn(UnstableApi::class)
 class FileDetailActivity : Activity() {
     private lateinit var file: File
     private lateinit var mimeType: String
