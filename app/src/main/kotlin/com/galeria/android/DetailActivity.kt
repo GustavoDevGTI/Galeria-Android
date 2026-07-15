@@ -99,6 +99,7 @@ class DetailActivity : Activity() {
     private var lastTapY = 0f
     private var pendingSingleTap: Runnable? = null
     private var zoomed = false
+    @Volatile private var preloadGeneration = 0
 
     private val progressUpdater = object : Runnable {
         override fun run() {
@@ -533,7 +534,7 @@ class DetailActivity : Activity() {
 
     private fun finishInteractiveSwipe() {
         val offset = swipeOffset()
-        val shouldCommit = dragDistance > max(Ui.dp(this, 48).toFloat(), offset * 0.08f)
+        val shouldCommit = dragDistance > max(Ui.dp(this, 48).toFloat(), offset * 0.06f)
         if (shouldCommit) {
             commitInteractiveSwipe(offset)
         } else {
@@ -849,30 +850,44 @@ class DetailActivity : Activity() {
 
     private fun scheduleAdjacentPreload() {
         if (mediaQueue.size < 2) return
-        preloadMediaPreview(mediaQueue[wrappedIndex(currentIndex + 1)])
-        preloadMediaPreview(mediaQueue[wrappedIndex(currentIndex - 1)])
-    }
-
-    private fun preloadMediaPreview(item: MediaItem) {
-        if (item.isVideo()) {
-            preloadVideoPreview(item)
-        } else {
-            preloadImagePreview(item)
+        val generation = ++preloadGeneration
+        val centerIndex = currentIndex
+        val seen = HashSet<String>()
+        val radius = min(PRELOAD_AROUND_RADIUS, mediaQueue.size - 1)
+        for (distance in 1..radius) {
+            schedulePreloadTarget(centerIndex + distance, generation, seen)
+            schedulePreloadTarget(centerIndex - distance, generation, seen)
         }
     }
 
-    private fun preloadVideoPreview(item: MediaItem) {
+    private fun schedulePreloadTarget(index: Int, generation: Int, seen: MutableSet<String>) {
+        val item = mediaQueue[wrappedIndex(index)]
+        if (!seen.add(item.uri.toString())) return
+        preloadMediaPreview(item, generation)
+    }
+
+    private fun preloadMediaPreview(item: MediaItem, generation: Int = preloadGeneration) {
+        if (item.isVideo()) {
+            preloadVideoPreview(item, generation)
+        } else {
+            preloadImagePreview(item, generation)
+        }
+    }
+
+    private fun preloadVideoPreview(item: MediaItem, generation: Int) {
         if (!item.isVideo() || videoPreviewCache.get(item.uri.toString()) != null) return
         executor.execute {
+            if (generation != preloadGeneration) return@execute
             if (videoPreviewCache.get(item.uri.toString()) != null) return@execute
             decodeVideoPreview(item)?.let { videoPreviewCache.put(item.uri.toString(), it) }
         }
     }
 
-    private fun preloadImagePreview(item: MediaItem) {
+    private fun preloadImagePreview(item: MediaItem, generation: Int) {
         val key = item.uri.toString()
         if (!item.isImage() || imageDisplayCache.get(key) != null) return
         executor.execute {
+            if (generation != preloadGeneration) return@execute
             if (imageDisplayCache.get(key) != null) return@execute
             try {
                 cacheDisplayBitmap(key, decodeDisplayBitmap(item.uri))
@@ -995,7 +1010,7 @@ class DetailActivity : Activity() {
     }
 
     private fun cacheDisplayBitmap(key: String, bitmap: Bitmap) {
-        if (bitmap.byteCount <= imageDisplayCache.maxSize() / 2) {
+        if (bitmap.byteCount <= imageDisplayCache.maxSize()) {
             imageDisplayCache.put(key, bitmap)
         }
     }
@@ -1572,13 +1587,14 @@ class DetailActivity : Activity() {
         private const val DOUBLE_TAP_MS = 260L
         private const val IMAGE_PREVIEW_MAX_SIDE = 1800
         private const val HIGH_QUALITY_IMAGE_MAX_SIDE = 8192
+        private const val PRELOAD_AROUND_RADIUS = 10
         private val videoPreviewCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 32).toInt()) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }
         private val imagePreviewCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 32).toInt()) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }
-        private val imageDisplayCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 8).toInt()) {
+        private val imageDisplayCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 3).toInt()) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }
     }
