@@ -54,6 +54,8 @@ import kotlin.math.min
 
 class DetailActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
+    private val imageExecutor = Executors.newSingleThreadExecutor()
+    private val preloadExecutor = Executors.newSingleThreadExecutor()
     private val mediaQueue = ArrayList<MediaItem>()
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var prefs: SharedPreferences
@@ -555,6 +557,7 @@ class DetailActivity : Activity() {
         currentPlayer = null
         currentVideoKey = null
         currentIndex = dragTargetIndex
+        preloadGeneration++
         val outgoingTarget = if (dragDirection > 0) -offset.toFloat() else offset.toFloat()
         val interpolator = DecelerateInterpolator(1.35f)
         outgoingPage?.animate()
@@ -633,7 +636,6 @@ class DetailActivity : Activity() {
         } else {
             videoControls.visibility = View.GONE
             timelineRow.visibility = View.GONE
-            activePage?.let { page -> loadFullQualityImageIntoPage(item, page) }
         }
     }
 
@@ -677,6 +679,7 @@ class DetailActivity : Activity() {
         currentIndex += direction
         if (currentIndex < 0) currentIndex = mediaQueue.size - 1
         if (currentIndex >= mediaQueue.size) currentIndex = 0
+        preloadGeneration++
         val offset = if (horizontal) {
             if (content.width == 0) resources.displayMetrics.widthPixels else content.width
         } else {
@@ -835,7 +838,7 @@ class DetailActivity : Activity() {
             target.setImageBitmap(cached)
             return
         }
-        executor.execute {
+        imageExecutor.execute {
             val bitmap = decodeVideoPreview(item)
             if (bitmap != null) {
                 videoPreviewCache.put(key, bitmap)
@@ -854,6 +857,7 @@ class DetailActivity : Activity() {
         val centerIndex = currentIndex
         val seen = HashSet<String>()
         val radius = min(PRELOAD_AROUND_RADIUS, mediaQueue.size - 1)
+        schedulePreloadTarget(centerIndex, generation, seen)
         for (distance in 1..radius) {
             schedulePreloadTarget(centerIndex + distance, generation, seen)
             schedulePreloadTarget(centerIndex - distance, generation, seen)
@@ -876,7 +880,7 @@ class DetailActivity : Activity() {
 
     private fun preloadVideoPreview(item: MediaItem, generation: Int) {
         if (!item.isVideo() || videoPreviewCache.get(item.uri.toString()) != null) return
-        executor.execute {
+        preloadExecutor.execute {
             if (generation != preloadGeneration) return@execute
             if (videoPreviewCache.get(item.uri.toString()) != null) return@execute
             decodeVideoPreview(item)?.let { videoPreviewCache.put(item.uri.toString(), it) }
@@ -886,7 +890,7 @@ class DetailActivity : Activity() {
     private fun preloadImagePreview(item: MediaItem, generation: Int) {
         val key = item.uri.toString()
         if (!item.isImage() || imageDisplayCache.get(key) != null) return
-        executor.execute {
+        preloadExecutor.execute {
             if (generation != preloadGeneration) return@execute
             if (imageDisplayCache.get(key) != null) return@execute
             try {
@@ -962,7 +966,7 @@ class DetailActivity : Activity() {
             target.setImageBitmap(cached)
             return
         }
-        executor.execute {
+        imageExecutor.execute {
             val bitmap = decodeImagePreview(item.uri)
             if (bitmap != null) {
                 imagePreviewCache.put(key, bitmap)
@@ -983,7 +987,7 @@ class DetailActivity : Activity() {
             image.setImageBitmap(cached)
             return
         }
-        executor.execute {
+        imageExecutor.execute {
             try {
                 val bitmap = decodeDisplayBitmap(item.uri)
                 cacheDisplayBitmap(key, bitmap)
@@ -1543,6 +1547,8 @@ class DetailActivity : Activity() {
         handler.removeCallbacks(autoAdvanceRunnable)
         releasePlayer()
         executor.shutdownNow()
+        imageExecutor.shutdownNow()
+        preloadExecutor.shutdownNow()
     }
 
     @Deprecated("Deprecated in Java")
