@@ -2,6 +2,8 @@ package com.galeria.android
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
@@ -56,10 +58,54 @@ data class CustomMediaOrderEntity(
     val position: Int
 )
 
+data class CachedAlbumSummary(
+    val albumKey: String,
+    val albumName: String,
+    val itemCount: Int,
+    val latestDate: Long,
+    val firstDate: Long,
+    val totalSize: Long,
+    val relativePath: String,
+    val coverUri: String,
+    val coverMimeType: String
+)
+
 @Dao
 abstract class GalleryDao {
     @Query("SELECT * FROM cached_media WHERE scope = :scope ORDER BY dateAdded DESC")
     abstract fun media(scope: String): List<CachedMediaEntity>
+
+    @Query(
+        """
+        SELECT
+            media.albumKey AS albumKey,
+            MAX(media.albumName) AS albumName,
+            COUNT(*) AS itemCount,
+            MAX(media.dateAdded) AS latestDate,
+            COALESCE(MIN(CASE WHEN media.dateAdded > 0 THEN media.dateAdded END), 0) AS firstDate,
+            SUM(CASE WHEN media.size > 0 THEN media.size ELSE 0 END) AS totalSize,
+            MAX(media.relativePath) AS relativePath,
+            (
+                SELECT cover.uri
+                FROM cached_media AS cover
+                WHERE cover.scope = :scope AND cover.albumKey = media.albumKey
+                ORDER BY cover.dateAdded DESC
+                LIMIT 1
+            ) AS coverUri,
+            (
+                SELECT cover.mimeType
+                FROM cached_media AS cover
+                WHERE cover.scope = :scope AND cover.albumKey = media.albumKey
+                ORDER BY cover.dateAdded DESC
+                LIMIT 1
+            ) AS coverMimeType
+        FROM cached_media AS media
+        WHERE media.scope = :scope
+        GROUP BY media.albumKey
+        ORDER BY latestDate DESC
+        """
+    )
+    abstract fun albumSummaries(scope: String): List<CachedAlbumSummary>
 
     @Query(
         """
@@ -149,6 +195,7 @@ abstract class GalleryDatabase : RoomDatabase() {
 object GalleryCatalogStore {
     private const val VISIBLE_SCOPE = "visible"
     private const val COMPLETE_SCOPE = "complete"
+    private const val CATALOG_META_PREFS = "gallery_catalog_meta"
     @Volatile private var visibleSnapshot: List<MediaItem> = emptyList()
     @Volatile private var completeSnapshot: List<MediaItem> = emptyList()
 
@@ -158,6 +205,33 @@ object GalleryCatalogStore {
         updateSnapshot(includeHidden, result)
         return result
     }
+
+    fun readAlbums(context: Context, includeHidden: Boolean): List<AlbumItem> =
+        GalleryDatabase.get(context).galleryDao().albumSummaries(scope(includeHidden)).map { summary ->
+            val cover = summary.coverUri.takeIf { it.isNotEmpty() }?.let { uri ->
+                MediaItem(
+                    0L,
+                    Uri.parse(uri),
+                    "",
+                    summary.coverMimeType,
+                    summary.latestDate,
+                    0L,
+                    summary.relativePath,
+                    summary.albumKey,
+                    summary.albumName
+                )
+            }
+            AlbumItem(
+                summary.albumKey,
+                summary.albumName,
+                summary.itemCount,
+                cover,
+                summary.latestDate,
+                summary.firstDate,
+                summary.totalSize,
+                summary.relativePath
+            )
+        }
 
     fun snapshot(includeHidden: Boolean): List<MediaItem> =
         ArrayList(if (includeHidden) completeSnapshot else visibleSnapshot)
@@ -179,26 +253,64 @@ object GalleryCatalogStore {
 
     fun writeMedia(context: Context, items: List<MediaItem>, includeHidden: Boolean, allFilesAccess: Boolean) {
         val scope = scope(includeHidden)
+        val dao = GalleryDatabase.get(context).galleryDao()
+        val preferences = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
+        val fingerprint = catalogFingerprint(items)
+        val previousFingerprint = preferences.getLong(fingerprintKey(includeHidden), Long.MIN_VALUE)
+        val previousState = dao.state(scope)
+        val state = CatalogStateEntity(scope, System.currentTimeMillis(), allFilesAccess)
+        if (previousFingerprint == fingerprint && previousState?.allFilesAccess == allFilesAccess) {
+            dao.saveState(state)
+            preferences.edit()
+                .putString(versionKey(includeHidden), currentMediaStoreVersion(context))
+                .apply()
+            updateSnapshot(includeHidden, items)
+            return
+        }
         val entities = items.map { item ->
             CachedMediaEntity(
                 scope, item.uri.toString(), item.id, item.name, item.mimeType, item.dateAdded,
                 item.size, item.relativePath, item.albumKey, item.albumName
             )
         }
-        GalleryDatabase.get(context).galleryDao().replaceMedia(
-            scope,
-            entities,
-            CatalogStateEntity(scope, System.currentTimeMillis(), allFilesAccess)
-        )
+        dao.replaceMedia(scope, entities, state)
+        preferences.edit()
+            .putLong(fingerprintKey(includeHidden), fingerprint)
+            .putString(versionKey(includeHidden), currentMediaStoreVersion(context))
+            .apply()
         updateSnapshot(includeHidden, items)
     }
+
+    private fun catalogFingerprint(items: List<MediaItem>): Long {
+        var fingerprint = 1125899906842597L
+        for (item in items) {
+            fingerprint = fingerprint * 31 + item.uri.toString().hashCode()
+            fingerprint = fingerprint * 31 + item.dateAdded
+            fingerprint = fingerprint * 31 + item.size
+        }
+        return fingerprint
+    }
+
+    private fun fingerprintKey(includeHidden: Boolean): String =
+        "catalog_fingerprint_${if (includeHidden) "complete" else "visible"}"
 
     fun customOrder(context: Context, albumKey: String): List<String> =
         GalleryDatabase.get(context).galleryDao().customOrder(albumKey)
 
     fun hasFreshCatalog(context: Context, includeHidden: Boolean, allFilesAccess: Boolean, maxAgeMs: Long): Boolean {
         val state = GalleryDatabase.get(context).galleryDao().state(scope(includeHidden)) ?: return false
-        return state.allFilesAccess == allFilesAccess && System.currentTimeMillis() - state.scannedAt <= maxAgeMs
+        if (state.allFilesAccess != allFilesAccess) return false
+        val age = System.currentTimeMillis() - state.scannedAt
+        if (includeHidden) return age <= maxAgeMs
+        val currentVersion = currentMediaStoreVersion(context)
+        val storedVersion = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
+            .getString(versionKey(false), "")
+            .orEmpty()
+        return if (currentVersion.isNotEmpty() && storedVersion.isNotEmpty()) {
+            currentVersion == storedVersion
+        } else {
+            age <= maxAgeMs
+        }
     }
 
     fun saveCustomOrder(context: Context, albumKey: String, items: List<MediaItem>) {
@@ -219,6 +331,15 @@ object GalleryCatalogStore {
     }
 
     private fun scope(includeHidden: Boolean) = if (includeHidden) COMPLETE_SCOPE else VISIBLE_SCOPE
+
+    private fun versionKey(includeHidden: Boolean) = "media_store_version_${scope(includeHidden)}"
+
+    private fun currentMediaStoreVersion(context: Context): String =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            runCatching { MediaStore.getVersion(context, MediaStore.VOLUME_EXTERNAL) }.getOrDefault("")
+        } else {
+            ""
+        }
 
     private fun updateSnapshot(includeHidden: Boolean, items: List<MediaItem>) {
         val copy = ArrayList(items)

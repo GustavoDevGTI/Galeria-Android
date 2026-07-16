@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "GaleriaAndroid"
 include ":app"
+include ":benchmark"

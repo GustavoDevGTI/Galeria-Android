@@ -9,6 +9,7 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 class MediaScanWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result = try {
@@ -31,7 +32,7 @@ class MediaScanWorker(context: Context, params: WorkerParameters) : Worker(conte
 
 object MediaScanScheduler {
     fun enqueue(context: Context, includeHidden: Boolean, replace: Boolean): UUID {
-        val request = OneTimeWorkRequestBuilder<MediaScanWorker>()
+        val requestBuilder = OneTimeWorkRequestBuilder<MediaScanWorker>()
             .setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
             .setInputData(
                 workDataOf(
@@ -39,7 +40,12 @@ object MediaScanScheduler {
                     MediaScanWorker.KEY_FORCE to replace
                 )
             )
-            .build()
+        if (!replace) {
+            requestBuilder
+                .addTag(MAINTENANCE_SCAN_TAG)
+                .setInitialDelay(MAINTENANCE_SCAN_DELAY_SECONDS, TimeUnit.SECONDS)
+        }
+        val request = requestBuilder.build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             if (includeHidden) "gallery_complete_scan" else "gallery_visible_scan",
             if (replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
@@ -47,4 +53,11 @@ object MediaScanScheduler {
         )
         return request.id
     }
+
+    fun cancelMaintenance(context: Context) {
+        WorkManager.getInstance(context).cancelAllWorkByTag(MAINTENANCE_SCAN_TAG)
+    }
+
+    private const val MAINTENANCE_SCAN_DELAY_SECONDS = 15L
+    private const val MAINTENANCE_SCAN_TAG = "gallery_maintenance_scan"
 }

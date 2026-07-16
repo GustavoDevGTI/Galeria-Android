@@ -1,0 +1,33 @@
+plugins {
+    id "com.android.test"
+}
+
+android {
+    namespace = "com.galeria.android.benchmark"
+    compileSdk 37
+
+    defaultConfig {
+        minSdk 23
+        targetSdk 37
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments["androidx.benchmark.suppressErrors"] = "EMULATOR"
+    }
+
+    targetProjectPath = ":app"
+    experimentalProperties["android.experimental.self-instrumenting"] = true
+
+    buildTypes {
+        benchmark {
+            debuggable true
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ["benchmark"]
+        }
+    }
+}
+
+dependencies {
+    implementation "androidx.test.ext:junit:1.3.0"
+    implementation "androidx.test.espresso:espresso-core:3.7.0"
+    implementation "androidx.test.uiautomator:uiautomator:2.4.0"
+    implementation "androidx.benchmark:benchmark-macro-junit4:1.4.1"
+}

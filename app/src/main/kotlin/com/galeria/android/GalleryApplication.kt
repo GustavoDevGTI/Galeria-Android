@@ -1,6 +1,8 @@
 package com.galeria.android
 
 import android.app.Application
+import android.util.Log
+import androidx.work.Configuration
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
@@ -8,12 +10,11 @@ import coil3.memory.MemoryCache
 import coil3.video.VideoFrameDecoder
 import okio.Path.Companion.toPath
 
-class GalleryApplication : Application(), SingletonImageLoader.Factory {
-    override fun onCreate() {
-        super.onCreate()
-        cacheDir.resolve("album_catalog_cache.json").delete()
-        MediaScanScheduler.enqueue(this, includeHidden = false, replace = false)
-    }
+class GalleryApplication : Application(), SingletonImageLoader.Factory, Configuration.Provider {
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setMinimumLoggingLevel(Log.ERROR)
+            .build()
 
     override fun newImageLoader(context: android.content.Context): ImageLoader =
         ImageLoader.Builder(context)

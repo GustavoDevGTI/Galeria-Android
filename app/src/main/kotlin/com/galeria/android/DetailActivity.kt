@@ -51,8 +51,15 @@ import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.request.crossfade
 import coil3.size.Precision
+import coil3.size.Scale
 import com.github.panpf.zoomimage.CoilZoomImageView
 import com.github.panpf.zoomimage.view.zoom.OnViewTapListener
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -67,6 +74,10 @@ import kotlin.math.min
 class DetailActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private val videoPreviewExecutor = Executors.newSingleThreadExecutor()
+    private val imagePreloadScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO.limitedParallelism(MAX_CONCURRENT_IMAGE_PRELOADS)
+    )
+    private val imagePreloadJobs = LinkedHashMap<String, Job>()
     private val mediaQueue = ArrayList<MediaItem>()
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var prefs: SharedPreferences
@@ -406,7 +417,7 @@ class DetailActivity : ComponentActivity() {
                 } else {
                     val deltaY = event.rawY - downY
                     val deltaX = event.rawX - downX
-                    if (max(abs(deltaX), abs(deltaY)) < gestureTouchSlop) {
+                    if (SwipeGestureRules.isTap(deltaX, deltaY, gestureTouchSlop)) {
                         handleTap(event.x, event.y)
                     }
                 }
@@ -519,12 +530,9 @@ class DetailActivity : ComponentActivity() {
         val deltaY = event.rawY - downY
         val deltaX = event.rawX - downX
         if (dragPreviewPage == null) {
-            val startThreshold = gestureTouchSlop
-            if (max(abs(deltaX), abs(deltaY)) < startThreshold) return
-            dragHorizontal = abs(deltaX) >= abs(deltaY)
-            val delta = if (dragHorizontal) deltaX else deltaY
-            if (abs(delta) < startThreshold) return
-            dragDirection = if (delta > 0f) -1 else 1
+            val intent = SwipeGestureRules.intent(deltaX, deltaY, gestureTouchSlop) ?: return
+            dragHorizontal = intent.axis == SwipeAxis.HORIZONTAL
+            dragDirection = intent.direction
             dragTargetIndex = wrappedIndex(currentIndex + dragDirection)
             beginInteractiveSwipe()
         }
@@ -564,7 +572,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun finishInteractiveSwipe() {
         val offset = swipeOffset()
-        val shouldCommit = dragDistance >= gestureTouchSlop * 1.35f
+        val shouldCommit = SwipeGestureRules.shouldCommit(dragDistance, gestureTouchSlop)
         if (shouldCommit) {
             commitInteractiveSwipe(offset)
         } else {
@@ -664,6 +672,7 @@ class DetailActivity : ComponentActivity() {
         } else {
             videoControls.visibility = View.GONE
             timelineRow.visibility = View.GONE
+            activePage?.let { promoteImagePage(item, it) }
         }
     }
 
@@ -713,7 +722,7 @@ class DetailActivity : ComponentActivity() {
         } else {
             if (content.height == 0) resources.displayMetrics.heightPixels else content.height
         }
-        val incomingPage = createCurrentPage()
+        val incomingPage = createSwipePreviewPage(currentItem())
         incomingPage.translationX = if (horizontal) {
             if (direction > 0) offset.toFloat() else -offset.toFloat()
         } else {
@@ -745,6 +754,8 @@ class DetailActivity : ComponentActivity() {
                 if (outgoingPlayer != null && outgoingPlayer !== currentPlayer) {
                     outgoingPlayer.release()
                 }
+                activePage = incomingPage
+                applyCurrentUiAfterInteractiveSwipe()
                 switchingItem = false
                 scheduleAdjacentPreload()
                 scheduleShuffleAdvance()
@@ -788,7 +799,7 @@ class DetailActivity : ComponentActivity() {
             page.addView(preview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             loadVideoPreview(item, preview)
         } else {
-            addImageToPage(item, page)
+            addImagePreviewToPage(item, page)
         }
         return page
     }
@@ -885,24 +896,41 @@ class DetailActivity : ComponentActivity() {
         val centerIndex = currentIndex
         val seen = HashSet<String>()
         val radius = min(PRELOAD_AROUND_RADIUS, mediaQueue.size - 1)
-        schedulePreloadTarget(centerIndex, generation, seen)
+        val ordered = ArrayList<MediaItem>(radius * 2 + 1)
+        collectPreloadTarget(centerIndex, seen, ordered)
         for (distance in 1..radius) {
-            schedulePreloadTarget(centerIndex + distance, generation, seen)
-            schedulePreloadTarget(centerIndex - distance, generation, seen)
+            collectPreloadTarget(centerIndex + distance, seen, ordered)
+            collectPreloadTarget(centerIndex - distance, seen, ordered)
+        }
+        updateImagePreloadWindow(ordered.filter { it.isImage() })
+        for (item in ordered) {
+            if (item.isVideo()) preloadVideoPreview(item, generation)
         }
     }
 
-    private fun schedulePreloadTarget(index: Int, generation: Int, seen: MutableSet<String>) {
+    private fun collectPreloadTarget(index: Int, seen: MutableSet<String>, target: MutableList<MediaItem>) {
         val item = mediaQueue[wrappedIndex(index)]
         if (!seen.add(item.uri.toString())) return
-        preloadMediaPreview(item, generation)
+        target.add(item)
     }
 
-    private fun preloadMediaPreview(item: MediaItem, generation: Int = preloadGeneration) {
-        if (item.isVideo()) {
-            preloadVideoPreview(item, generation)
-        } else {
-            preloadImagePreview(item, generation)
+    private fun updateImagePreloadWindow(items: List<MediaItem>) {
+        val desiredKeys = items.mapTo(LinkedHashSet()) { viewerPreviewKey(it) }
+        val iterator = imagePreloadJobs.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (!desiredKeys.contains(entry.key)) {
+                entry.value.cancel()
+                iterator.remove()
+            }
+        }
+        for (item in items) {
+            val key = viewerPreviewKey(item)
+            if (imagePreloadJobs.containsKey(key)) continue
+            val request = viewerPreviewRequest(item)
+            imagePreloadJobs[key] = imagePreloadScope.launch {
+                SingletonImageLoader.get(this@DetailActivity).execute(request)
+            }
         }
     }
 
@@ -915,19 +943,27 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun preloadImagePreview(item: MediaItem, generation: Int) {
-        val key = item.uri.toString()
-        if (!item.isImage() || generation != preloadGeneration) return
+    private fun viewerPreviewRequest(item: MediaItem): ImageRequest {
         val metrics = resources.displayMetrics
-        val request = ImageRequest.Builder(this)
+        return ImageRequest.Builder(this)
             .data(item.uri)
-            .memoryCacheKey(key)
-            .diskCacheKey(key)
+            .memoryCacheKey(viewerPreviewKey(item))
+            .diskCacheKey(viewerSourceKey(item))
             .size(metrics.widthPixels, metrics.heightPixels)
+            .precision(Precision.EXACT)
+            .scale(Scale.FIT)
             .allowHardware(true)
             .build()
-        SingletonImageLoader.get(this).enqueue(request)
     }
+
+    private fun viewerPreviewKey(item: MediaItem): String {
+        val metrics = resources.displayMetrics
+        return "viewer_preview:${item.uri}:${metrics.widthPixels}x${metrics.heightPixels}"
+    }
+
+    private fun viewerNativeKey(item: MediaItem): String = "viewer_native:${item.uri}"
+
+    private fun viewerSourceKey(item: MediaItem): String = "viewer_source:${item.uri}"
 
     private fun wrappedIndex(index: Int): Int {
         if (mediaQueue.isEmpty()) return 0
@@ -964,14 +1000,37 @@ class DetailActivity : ComponentActivity() {
     private fun showImage(item: MediaItem, page: FrameLayout) {
         videoControls.visibility = View.GONE
         timelineRow.visibility = View.GONE
-        addImageToPage(item, page)
+        addImagePreviewToPage(item, page)
+        promoteImagePage(item, page)
     }
 
-    private fun addImageToPage(item: MediaItem, page: FrameLayout) {
+    private fun addImagePreviewToPage(item: MediaItem, page: FrameLayout) {
+        val preview = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.BLACK)
+            tag = IMAGE_PREVIEW_TAG
+        }
+        page.addView(preview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        preview.load(item.uri) {
+            val metrics = resources.displayMetrics
+            size(metrics.widthPixels, metrics.heightPixels)
+            precision(Precision.EXACT)
+            scale(Scale.FIT)
+            memoryCacheKey(viewerPreviewKey(item))
+            diskCacheKey(viewerSourceKey(item))
+            allowHardware(true)
+            crossfade(false)
+        }
+    }
+
+    private fun promoteImagePage(item: MediaItem, page: FrameLayout) {
+        if (page.children().any { it is CoilZoomImageView }) return
+        val preview = page.children().firstOrNull { it.tag == IMAGE_PREVIEW_TAG }
         val image = CoilZoomImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(Color.BLACK)
             scrollBar = null
+            alpha = 0f
         }
         page.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         image.tag = item.uri
@@ -1030,12 +1089,19 @@ class DetailActivity : ComponentActivity() {
             toggleHud()
         }
         image.load(item.uri) {
-            memoryCacheKey(item.uri.toString())
-            diskCacheKey(item.uri.toString())
+            memoryCacheKey(viewerNativeKey(item))
+            diskCacheKey(viewerSourceKey(item))
             crossfade(false)
             allowHardware(true)
-            precision(Precision.INEXACT)
+            precision(Precision.EXACT)
+            scale(Scale.FIT)
             listener(
+                onSuccess = { _, _ ->
+                    if (image.tag == item.uri) {
+                        image.alpha = 1f
+                        preview?.let { page.removeView(it) }
+                    }
+                },
                 onError = { _, _ ->
                     if (image.tag == item.uri) {
                         Ui.toast(this@DetailActivity, "Não foi possível abrir a imagem.")
@@ -1052,6 +1118,10 @@ class DetailActivity : ComponentActivity() {
             if (child is CoilZoomImageView) return child
         }
         return null
+    }
+
+    private fun ViewGroup.children(): Sequence<View> = sequence {
+        for (index in 0 until childCount) yield(getChildAt(index))
     }
 
     private fun isAtBaseZoom(image: CoilZoomImageView): Boolean {
@@ -1561,6 +1631,9 @@ class DetailActivity : ComponentActivity() {
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
         releasePlayer()
+        imagePreloadJobs.values.forEach { it.cancel() }
+        imagePreloadJobs.clear()
+        imagePreloadScope.cancel()
         executor.shutdownNow()
         videoPreviewExecutor.shutdownNow()
     }
@@ -1601,6 +1674,8 @@ class DetailActivity : ComponentActivity() {
         private const val SHUFFLE_PHOTO_DELAY_MS = 4200L
         private const val DOUBLE_TAP_MS = 260L
         private const val PRELOAD_AROUND_RADIUS = 5
+        private const val MAX_CONCURRENT_IMAGE_PRELOADS = 2
+        private const val IMAGE_PREVIEW_TAG = "viewer_image_preview"
         private val videoPreviewCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 32).toInt()) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }

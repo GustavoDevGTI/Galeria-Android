@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
@@ -30,6 +31,7 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.paging.LoadState
 import androidx.paging.PagingConfig
+import androidx.paging.PagingData
 import androidx.paging.filter
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -80,14 +82,41 @@ class AlbumMediaActivity : ComponentActivity() {
     private var loadGeneration = 0
     private var pagingJob: Job? = null
     private var pendingPagedScrollPosition = -1
+    private var gridScrollState = RecyclerView.SCROLL_STATE_IDLE
+    private var pendingPagingData: PagingData<MediaItem>? = null
+    private var pendingMediaRefresh = false
+    private var mediaRefreshScheduled = false
+    private var gridPoolWarmupRemaining = 0
+    private var warmedGridPoolViewType = -1
+    private var firstResume = true
+    private val createdAtElapsedRealtime = SystemClock.elapsedRealtime()
     private val searchHandler = Handler(Looper.getMainLooper())
     private val searchReload = Runnable {
         if (!isFinishing) loadMedia(false)
     }
     private val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val mediaRefreshRunnable = Runnable {
+        mediaRefreshScheduled = false
         if (!isFinishing) {
-            refreshCatalogWithWorker()
+            if (::grid.isInitialized && grid.scrollState != RecyclerView.SCROLL_STATE_IDLE) {
+                pendingMediaRefresh = true
+            } else {
+                pendingMediaRefresh = false
+                refreshCatalogWithWorker()
+            }
+        }
+    }
+    private val gridPoolWarmup = object : Runnable {
+        override fun run() {
+            if (isFinishing || isDestroyed || gridPoolWarmupRemaining <= 0 || !::grid.isInitialized) return
+            if (grid.scrollState != RecyclerView.SCROLL_STATE_IDLE || dragging) {
+                grid.postDelayed(this, GRID_POOL_WARMUP_RETRY_MS)
+                return
+            }
+            val viewType = if (listMode) 1 else 0
+            grid.recycledViewPool.putRecycledView(adapter.createViewHolder(grid, viewType))
+            gridPoolWarmupRemaining--
+            if (gridPoolWarmupRemaining > 0) grid.postDelayed(this, GRID_POOL_WARMUP_STEP_MS)
         }
     }
     private val mediaObserver = object : ContentObserver(mediaRefreshHandler) {
@@ -104,11 +133,17 @@ class AlbumMediaActivity : ComponentActivity() {
         readAlbumOptions()
         buildLayout()
         registerMediaObserver()
-        loadMedia(false)
+        mediaRefreshHandler.postDelayed({
+            if (!isFinishing) loadMedia(false)
+        }, INITIAL_MEDIA_DELAY_MS)
     }
 
     override fun onResume() {
         super.onResume()
+        if (firstResume) {
+            firstResume = false
+            return
+        }
         if (::adapter.isInitialized) {
             loadMedia(true)
         }
@@ -117,6 +152,7 @@ class AlbumMediaActivity : ComponentActivity() {
     override fun onDestroy() {
         pagingJob?.cancel()
         searchHandler.removeCallbacks(searchReload)
+        if (::grid.isInitialized) grid.removeCallbacks(gridPoolWarmup)
         super.onDestroy()
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
         try {
@@ -133,9 +169,19 @@ class AlbumMediaActivity : ComponentActivity() {
             replace = true
         )
         mediaLoader.execute {
-            androidx.work.WorkManager.getInstance(applicationContext).getWorkInfoById(workId).get()
-            runOnUiThread {
-                if (!isFinishing) loadMedia(true)
+            try {
+                androidx.work.WorkManager.getInstance(applicationContext).getWorkInfoById(workId).get()
+                if (!Thread.currentThread().isInterrupted) {
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) loadMedia(true)
+                    }
+                }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            } catch (_: Exception) {
+                runOnUiThread {
+                    if (!isFinishing && ::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
+                }
             }
         }
     }
@@ -149,7 +195,10 @@ class AlbumMediaActivity : ComponentActivity() {
 
     private fun scheduleMediaRefresh() {
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
-        mediaRefreshHandler.postDelayed(mediaRefreshRunnable, 700L)
+        mediaRefreshScheduled = true
+        val age = SystemClock.elapsedRealtime() - createdAtElapsedRealtime
+        val delay = max(MEDIA_REFRESH_DEBOUNCE_MS, MEDIA_OBSERVER_GRACE_MS - age)
+        mediaRefreshHandler.postDelayed(mediaRefreshRunnable, delay)
     }
 
     private fun buildLayout() {
@@ -257,10 +306,23 @@ class AlbumMediaActivity : ComponentActivity() {
             layoutManager = GridLayoutManager(this@AlbumMediaActivity, mediaSpanCount()).also { this@AlbumMediaActivity.layoutManager = it }
             clipToPadding = false
             setHasFixedSize(true)
-            setItemViewCacheSize(24)
-            recycledViewPool.setMaxRecycledViews(0, 48)
-            recycledViewPool.setMaxRecycledViews(1, 24)
+            setItemViewCacheSize(12)
+            recycledViewPool.setMaxRecycledViews(0, 24)
+            recycledViewPool.setMaxRecycledViews(1, 12)
             setBackgroundColor(Ui.bg(this@AlbumMediaActivity))
+            itemAnimator = null
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                    gridScrollState = newState
+                    if (newState == RecyclerView.SCROLL_STATE_IDLE) {
+                        submitPendingPagingData()
+                        if (pendingMediaRefresh) {
+                            pendingMediaRefresh = false
+                            scheduleMediaRefresh()
+                        }
+                    }
+                }
+            })
         }
         adapter = MediaRecyclerAdapter(this, object : MediaRecyclerAdapter.Callbacks {
             override fun onMediaClick(position: Int) {
@@ -303,6 +365,7 @@ class AlbumMediaActivity : ComponentActivity() {
                 return true
             }
         })
+        updateThumbnailRequestSize()
         adapter.addLoadStateListener { states ->
             if (!adapter.isPagingMode() || !::swipeRefresh.isInitialized) return@addLoadStateListener
             val refresh = states.refresh
@@ -310,6 +373,7 @@ class AlbumMediaActivity : ComponentActivity() {
             if (refresh is LoadState.NotLoading) {
                 updateEmptyState()
                 updateSelectionUi()
+                warmGridPoolGradually()
                 if (pendingPagedScrollPosition > 0 && adapter.getCount() > 0) {
                     grid.scrollToPosition(min(pendingPagedScrollPosition, adapter.getCount() - 1))
                     pendingPagedScrollPosition = -1
@@ -322,6 +386,11 @@ class AlbumMediaActivity : ComponentActivity() {
         applyViewMode()
         grid.adapter = adapter
         grid.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_DOWN && mediaRefreshScheduled) {
+                mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
+                mediaRefreshScheduled = false
+                pendingMediaRefresh = true
+            }
             if (!dragging) return@setOnTouchListener false
             if (event.action == MotionEvent.ACTION_MOVE) {
                 val targetView = grid.findChildViewUnder(event.x, event.y)
@@ -377,6 +446,17 @@ class AlbumMediaActivity : ComponentActivity() {
         selectionActions.visibility = View.GONE
         root.addView(selectionActions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         setContentView(root)
+    }
+
+    private fun warmGridPoolGradually() {
+        if (!::grid.isInitialized || adapter.getCount() == 0) return
+        val viewType = if (listMode) 1 else 0
+        if (warmedGridPoolViewType == viewType) return
+        warmedGridPoolViewType = viewType
+        val target = if (listMode) 4 else mediaSpanCount() * 2
+        gridPoolWarmupRemaining = max(gridPoolWarmupRemaining, target)
+        grid.removeCallbacks(gridPoolWarmup)
+        grid.postDelayed(gridPoolWarmup, GRID_POOL_WARMUP_STEP_MS)
     }
 
     private fun addSelectionAction(icon: Int, label: String, listener: () -> Unit) {
@@ -569,6 +649,7 @@ class AlbumMediaActivity : ComponentActivity() {
         spacingDecoration = GridSpacingItemDecoration(gap, layoutManager.spanCount).also(grid::addItemDecoration)
         grid.setPadding(0, 0, 0, Ui.dp(this, 16))
         grid.invalidateItemDecorations()
+        updateThumbnailRequestSize()
     }
 
     private fun enterSelectionMode() {
@@ -755,18 +836,31 @@ class AlbumMediaActivity : ComponentActivity() {
                 albumKey,
                 query,
                 PagingConfig(
-                    pageSize = 60,
-                    initialLoadSize = 90,
-                    prefetchDistance = 30,
+                    pageSize = 30,
+                    initialLoadSize = 45,
+                    prefetchDistance = 12,
                     enablePlaceholders = false,
-                    maxSize = 300
+                    maxSize = 180
                 )
             ).map { page -> page.filter(::matchesMediaFilter) }
                 .collectLatest { page ->
                     if (request == loadGeneration && !isFinishing) {
-                        adapter.submitPagingData(page)
+                        if (gridScrollState == RecyclerView.SCROLL_STATE_IDLE && !dragging) {
+                            adapter.submitPagingData(page)
+                        } else {
+                            pendingPagingData = page
+                        }
                     }
                 }
+        }
+    }
+
+    private fun submitPendingPagingData() {
+        val page = pendingPagingData ?: return
+        if (dragging || gridScrollState != RecyclerView.SCROLL_STATE_IDLE || isFinishing) return
+        pendingPagingData = null
+        lifecycleScope.launch {
+            adapter.submitPagingData(page)
         }
     }
 
@@ -815,25 +909,11 @@ class AlbumMediaActivity : ComponentActivity() {
         return filtered
     }
 
-    private fun matchesMediaFilter(item: MediaItem): Boolean {
-        if (item.isVideo()) return showVideos
-        val name = item.name.lowercase(Locale.US)
-        val mime = item.mimeType.lowercase(Locale.US)
-        if (mime == "image/gif" || name.endsWith(".gif")) return showGifs
-        if (mime == "image/svg+xml" || name.endsWith(".svg")) return showSvgs
-        if (isRawImage(name, mime)) return showRaw
-        return item.isImage() && showImages
-    }
-
-    private fun isRawImage(name: String, mime: String): Boolean =
-        mime.contains("raw") ||
-            name.endsWith(".dng") ||
-            name.endsWith(".raw") ||
-            name.endsWith(".cr2") ||
-            name.endsWith(".nef") ||
-            name.endsWith(".arw") ||
-            name.endsWith(".orf") ||
-            name.endsWith(".rw2")
+    private fun matchesMediaFilter(item: MediaItem): Boolean = MediaFilterRules.matches(
+        item.name,
+        item.mimeType,
+        MediaFilterOptions(showImages, showVideos, showGifs, showRaw, showSvgs)
+    )
 
     private fun applyGrouping(items: MutableList<MediaItem>) {
         if (groupMode == GROUP_NONE) return
@@ -883,7 +963,8 @@ class AlbumMediaActivity : ComponentActivity() {
         dragPosition = -1
         draggedView?.animate()?.alpha(1f)?.scaleX(1f)?.scaleY(1f)?.setDuration(110)?.start()
         draggedView = null
-        adapter.notifyDataSetChanged()
+        adapter.refreshSelectionVisuals()
+        submitPendingPagingData()
     }
 
     private fun animateGridMove() {
@@ -916,6 +997,18 @@ class AlbumMediaActivity : ComponentActivity() {
         layoutManager.spanCount = if (listMode) 1 else mediaSpanCount()
         adapter.setListMode(listMode)
         applyGridSpacing()
+    }
+
+    private fun updateThumbnailRequestSize() {
+        if (!::adapter.isInitialized || !::layoutManager.isInitialized) return
+        val size = if (listMode) {
+            Ui.dp(this, 82)
+        } else {
+            val spans = max(1, layoutManager.spanCount)
+            val totalGaps = Ui.dp(this, gridSpacingDp) * max(0, spans - 1)
+            max(Ui.dp(this, 96), (resources.displayMetrics.widthPixels - totalGaps) / spans)
+        }
+        adapter.setGridThumbnailSize(size)
     }
 
     private fun mediaSpanCount(): Int =
@@ -1033,6 +1126,11 @@ class AlbumMediaActivity : ComponentActivity() {
     companion object {
         private const val REQ_DELETE = 11
         private const val MAX_GRID_SPACING_DP = 8
+        private const val INITIAL_MEDIA_DELAY_MS = 60L
+        private const val GRID_POOL_WARMUP_STEP_MS = 24L
+        private const val GRID_POOL_WARMUP_RETRY_MS = 80L
+        private const val MEDIA_OBSERVER_GRACE_MS = 3_000L
+        private const val MEDIA_REFRESH_DEBOUNCE_MS = 5_000L
         private const val GROUP_NONE = "none"
         private const val GROUP_TYPE = "type"
         private const val GROUP_EXTENSION = "extension"

@@ -38,8 +38,6 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import java.util.Locale
-import java.util.Random
 import java.util.UUID
 import java.util.concurrent.Executors
 import kotlin.math.max
@@ -75,15 +73,26 @@ class MainActivity : ComponentActivity() {
     private var lastColumnGestureMs = 0L
     private val mediaLoader = Executors.newSingleThreadExecutor()
     private var loadGeneration = 0
+    private var firstResume = true
+    private var mainScreenResumed = false
+    private var mediaObserverRefreshPending = false
+    private var mediaObserverRefreshScheduled = false
+    private var deferredCatalogRefreshPending = false
+    private var pendingAlbumSubmission: PendingAlbumSubmission? = null
     private val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val mediaRefreshRunnable = Runnable {
-        if (!isFinishing && hasReadPermission()) {
+        mediaObserverRefreshScheduled = false
+        if (!isFinishing && mainScreenResumed && hasWindowFocus() && hasReadPermission()) {
+            mediaObserverRefreshPending = false
             refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
+        } else {
+            mediaObserverRefreshPending = true
         }
     }
     private val mediaObserver = object : ContentObserver(mediaRefreshHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            scheduleMediaRefresh()
+            mediaObserverRefreshPending = true
+            if (mainScreenResumed && hasWindowFocus()) scheduleMediaRefresh()
         }
     }
 
@@ -95,7 +104,9 @@ class MainActivity : ComponentActivity() {
         registerMediaObserver()
         if (hasReadPermission()) {
             ensureInitialFileManagementAccess()
-            loadAlbums()
+            mediaRefreshHandler.postDelayed({
+                if (!isFinishing && hasReadPermission()) loadAlbums()
+            }, INITIAL_CATALOG_DELAY_MS)
         } else {
             requestReadPermission()
         }
@@ -103,11 +114,25 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        mainScreenResumed = true
+        if (firstResume) {
+            firstResume = false
+            return
+        }
         loadSettings()
         applyThemeColors()
         if (hasReadPermission()) {
             loadAlbums()
+            if (mediaObserverRefreshPending) scheduleMediaRefresh()
         }
+    }
+
+    override fun onPause() {
+        mainScreenResumed = false
+        if (mediaObserverRefreshScheduled) mediaObserverRefreshPending = true
+        mediaObserverRefreshScheduled = false
+        mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
+        super.onPause()
     }
 
     override fun onDestroy() {
@@ -205,8 +230,8 @@ class MainActivity : ComponentActivity() {
             layoutManager = GridLayoutManager(this@MainActivity, columnCount).also { this@MainActivity.layoutManager = it }
             clipToPadding = false
             setHasFixedSize(true)
-            setItemViewCacheSize(18)
-            recycledViewPool.setMaxRecycledViews(0, 36)
+            setItemViewCacheSize(10)
+            recycledViewPool.setMaxRecycledViews(0, 24)
             setPadding(Ui.dp(this@MainActivity, 6), Ui.dp(this@MainActivity, 4), Ui.dp(this@MainActivity, 6), Ui.dp(this@MainActivity, 20))
             setBackgroundColor(Ui.bg(this@MainActivity))
         }
@@ -219,6 +244,7 @@ class MainActivity : ComponentActivity() {
                     return
                 }
                 val album = adapter.getItem(position)
+                MediaScanScheduler.cancelMaintenance(applicationContext)
                 val intent = Intent(this@MainActivity, AlbumMediaActivity::class.java).apply {
                     putExtra("album_key", album.key)
                     putExtra("album_name", album.name)
@@ -236,7 +262,16 @@ class MainActivity : ComponentActivity() {
                 return true
             }
         })
+        adapter.setCoverSize(albumCoverSizePx())
         grid.adapter = adapter
+        grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                if (newState != RecyclerView.SCROLL_STATE_IDLE) return
+                val pending = pendingAlbumSubmission ?: return
+                pendingAlbumSubmission = null
+                submitAlbumsNow(pending.albums, pending.query)
+            }
+        })
         scaleDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 val now = System.currentTimeMillis()
@@ -526,76 +561,136 @@ class MainActivity : ComponentActivity() {
         val request = ++loadGeneration
         val searchAllFiles = prefs.getBoolean("search_all_files", false)
         val includeHidden = shouldIncludeHiddenFilesystem()
-        var hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
+        val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
-            val cachedAlbums = MediaStoreRepository.buildAlbums(
-                GalleryCatalogStore.snapshot(shouldIncludeHiddenFilesystem())
-            )
-            if (cachedAlbums.isNotEmpty()) {
-                adapter.submit(cachedAlbums, query)
-                updateEmptyText()
-            } else {
-                emptyView.text = "Carregando mídia..."
-                emptyView.visibility = View.VISIBLE
-            }
+            emptyView.text = "Carregando mídia..."
+            emptyView.visibility = View.VISIBLE
         }
 
         mediaLoader.execute {
-            val media = MediaStoreRepository.loadMedia(applicationContext, includeHidden)
-            val filteredMedia = media.filter { matchesMediaFilter(it) }
-            var albums: List<AlbumItem>
-            if (searchAllFiles) {
-                val cover = filteredMedia.firstOrNull()
-                var latest = 0L
-                var first = Long.MAX_VALUE
-                var size = 0L
-                for (item in filteredMedia) {
-                    latest = max(latest, item.dateAdded)
-                    if (item.dateAdded > 0) {
-                        first = min(first, item.dateAdded)
-                    }
-                    size += max(0L, item.size)
-                }
-                albums = listOf(
-                    AlbumItem(
-                        "all_media",
-                        "Todos os arquivos",
-                        filteredMedia.size,
-                        cover,
-                        latest,
-                        if (first == Long.MAX_VALUE) latest else first,
-                        size,
-                        ""
-                    )
-                )
-            } else {
-                albums = MediaStoreRepository.buildAlbums(filteredMedia)
+            val cachedSummaries = GalleryCatalogStore.readAlbums(applicationContext, includeHidden)
+            if (cachedSummaries.isNotEmpty() && includesAllMediaTypes()) {
+                val cachedAlbums = prepareAlbums(cachedSummaries, hiddenKeys, includeHidden, searchAllFiles)
+                postAlbums(request, cachedAlbums, query)
             }
-            albums = albums.filter { !hiddenKeys.contains(it.key) && (includeHidden || !isHiddenAlbum(it)) }
-            val sorted = albums.toMutableList()
-            sortAlbums(sorted)
-            runOnUiThread {
-                if (request != loadGeneration || isFinishing) return@runOnUiThread
-                showAlbumsProgressively(sorted, query)
+
+            if (cachedSummaries.isEmpty()) {
+                val media = MediaStoreRepository.refreshMedia(applicationContext, includeHidden, force = true)
+                val albums = buildAlbumsFromMedia(media, hiddenKeys, includeHidden, searchAllFiles)
+                postAlbums(request, albums, query)
+                return@execute
+            }
+
+            if (!includesAllMediaTypes()) {
+                val media = MediaStoreRepository.loadMedia(applicationContext, includeHidden)
+                val albums = buildAlbumsFromMedia(media, hiddenKeys, includeHidden, searchAllFiles)
+                postAlbums(request, albums, query)
+            }
+
+            val allFilesAccess = MediaActions.hasAllFilesAccess(applicationContext)
+            if (!GalleryCatalogStore.hasFreshCatalog(
+                    applicationContext,
+                    includeHidden,
+                    allFilesAccess,
+                    CATALOG_FALLBACK_MAX_AGE_MS
+                )
+            ) {
+                runOnUiThread { scheduleDeferredCatalogRefresh(includeHidden) }
             }
         }
     }
 
+    private fun postAlbums(request: Int, albums: List<AlbumItem>, query: String) {
+        val sorted = albums.toMutableList()
+        sortAlbums(sorted)
+        runOnUiThread {
+            if (request != loadGeneration || isFinishing) return@runOnUiThread
+            showAlbumsProgressively(sorted, query)
+        }
+    }
+
+    private fun prepareAlbums(
+        source: List<AlbumItem>,
+        hiddenKeys: Set<String>,
+        includeHidden: Boolean,
+        searchAllFiles: Boolean
+    ): List<AlbumItem> {
+        val visible = source.filter { !hiddenKeys.contains(it.key) && (includeHidden || !isHiddenAlbum(it)) }
+        if (!searchAllFiles) return visible
+        if (visible.isEmpty()) return emptyList()
+        val latestAlbum = visible.maxByOrNull { it.latestDate }
+        val latest = latestAlbum?.latestDate ?: 0L
+        val first = visible.asSequence().map { it.firstDate }.filter { it > 0L }.minOrNull() ?: latest
+        return listOf(
+            AlbumItem(
+                "all_media",
+                "Todos os arquivos",
+                visible.sumOf { it.count },
+                latestAlbum?.cover,
+                latest,
+                first,
+                visible.sumOf { max(0L, it.totalSize) },
+                ""
+            )
+        )
+    }
+
+    private fun buildAlbumsFromMedia(
+        media: List<MediaItem>,
+        hiddenKeys: Set<String>,
+        includeHidden: Boolean,
+        searchAllFiles: Boolean
+    ): List<AlbumItem> {
+        val filteredMedia = media.filter(::matchesMediaFilter)
+        return prepareAlbums(
+            MediaStoreRepository.buildAlbums(filteredMedia),
+            hiddenKeys,
+            includeHidden,
+            searchAllFiles
+        )
+    }
+
+    private fun includesAllMediaTypes(): Boolean =
+        (showImages || showPortraits) && showVideos && showGifs && showRaw && showSvgs
+
+    private fun scheduleDeferredCatalogRefresh(includeHidden: Boolean) {
+        if (deferredCatalogRefreshPending || isFinishing || !::grid.isInitialized) return
+        deferredCatalogRefreshPending = true
+        grid.postDelayed({
+            if (isFinishing) {
+                deferredCatalogRefreshPending = false
+            } else if (!hasWindowFocus()) {
+                deferredCatalogRefreshPending = false
+            } else {
+                refreshCatalogWithWorker(includeHidden, force = false)
+            }
+        }, DEFERRED_REFRESH_DELAY_MS)
+    }
+
     private fun showAlbumsProgressively(albums: List<AlbumItem>, query: String) {
         if (albums.size <= 60 || !::grid.isInitialized) {
-            adapter.submit(albums, query)
-            updateEmptyText()
-            if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
+            submitAlbumsWhenIdle(albums, query)
             return
         }
-        adapter.submit(ArrayList(albums.subList(0, 60)), query)
+        submitAlbumsWhenIdle(ArrayList(albums.subList(0, 60)), query)
+        grid.postDelayed({
+            submitAlbumsWhenIdle(albums, query)
+        }, 120)
+    }
+
+    private fun submitAlbumsWhenIdle(albums: List<AlbumItem>, query: String) {
+        if (::grid.isInitialized && grid.scrollState != RecyclerView.SCROLL_STATE_IDLE) {
+            pendingAlbumSubmission = PendingAlbumSubmission(ArrayList(albums), query)
+            return
+        }
+        submitAlbumsNow(albums, query)
+    }
+
+    private fun submitAlbumsNow(albums: List<AlbumItem>, query: String) {
+        adapter.submit(albums, query)
         updateEmptyText()
         if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
-        grid.postDelayed({
-            adapter.submit(albums, query)
-            updateEmptyText()
-        }, 120)
     }
 
     private fun loadSettings() {
@@ -1115,62 +1210,30 @@ class MainActivity : ComponentActivity() {
                 .setDuration(85)
                 .withEndAction {
                     layoutManager.spanCount = columnCount
+                    adapter.setCoverSize(albumCoverSizePx())
                     grid.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(130).start()
                 }
                 .start()
         }
     }
 
+    private fun albumCoverSizePx(): Int {
+        val horizontalPadding = Ui.dp(this, 12)
+        val itemPadding = Ui.dp(this, 16) * columnCount
+        return max(Ui.dp(this, 96), (resources.displayMetrics.widthPixels - horizontalPadding - itemPadding) / columnCount)
+    }
+
     private fun sortAlbums(albums: MutableList<AlbumItem>) {
-        if (sortMode == SORT_RANDOM) {
-            albums.shuffle(Random(42))
-            if (sortDesc) albums.reverse()
-            return
-        }
-        albums.sortWith { first, second ->
-            val result = when (sortMode) {
-                SORT_NAME -> first.name.compareTo(second.name, ignoreCase = true)
-                SORT_PATH -> first.path.compareTo(second.path, ignoreCase = true)
-                SORT_SIZE -> first.totalSize.compareTo(second.totalSize)
-                SORT_CREATED -> first.firstDate.compareTo(second.firstDate)
-                else -> first.latestDate.compareTo(second.latestDate)
-            }
-            if (sortDesc) -result else result
-        }
+        AlbumRules.sort(albums, sortMode, sortDesc)
     }
 
-    private fun isHiddenAlbum(album: AlbumItem): Boolean {
-        val path = (album.path.ifEmpty { album.key }).replace('\\', '/')
-        if (path.isEmpty()) return false
-        val parts = path.split("/")
-        return parts.any { it.startsWith(".") || it.equals("Private", true) || it.equals("Hidden", true) }
-    }
+    private fun isHiddenAlbum(album: AlbumItem): Boolean = AlbumRules.isHidden(album.path, album.key)
 
-    private fun matchesMediaFilter(item: MediaItem): Boolean {
-        val mime = item.mimeType.lowercase(Locale.US)
-        val name = item.name.lowercase(Locale.US)
-        if (isGif(mime, name)) return showGifs
-        if (isSvg(mime, name)) return showSvgs
-        if (isRaw(name)) return showRaw
-        if (item.isVideo()) return showVideos
-        if (item.isImage()) return showImages || showPortraits
-        return false
-    }
-
-    private fun isGif(mime: String, name: String): Boolean =
-        mime == "image/gif" || name.endsWith(".gif")
-
-    private fun isSvg(mime: String, name: String): Boolean =
-        mime == "image/svg+xml" || name.endsWith(".svg")
-
-    private fun isRaw(name: String): Boolean =
-        name.endsWith(".dng") ||
-            name.endsWith(".raw") ||
-            name.endsWith(".cr2") ||
-            name.endsWith(".nef") ||
-            name.endsWith(".arw") ||
-            name.endsWith(".orf") ||
-            name.endsWith(".rw2")
+    private fun matchesMediaFilter(item: MediaItem): Boolean = MediaFilterRules.matches(
+        item.name,
+        item.mimeType,
+        MediaFilterOptions(showImages, showVideos, showGifs, showRaw, showSvgs, showPortraits)
+    )
 
     private fun registerMediaObserver() {
         try {
@@ -1179,14 +1242,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun refreshCatalogWithWorker(includeHidden: Boolean) {
-        val workId = MediaScanScheduler.enqueue(applicationContext, includeHidden, replace = true)
+    private fun refreshCatalogWithWorker(includeHidden: Boolean, force: Boolean = true) {
+        val workId = MediaScanScheduler.enqueue(applicationContext, includeHidden, replace = force)
         observeWorkCompletion(
             workId,
             onSuccess = {
+                deferredCatalogRefreshPending = false
                 if (!isFinishing) loadAlbums()
             },
             onFailure = {
+                deferredCatalogRefreshPending = false
                 if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
             }
         )
@@ -1216,6 +1281,7 @@ class MainActivity : ComponentActivity() {
 
     private fun scheduleMediaRefresh() {
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
+        mediaObserverRefreshScheduled = true
         mediaRefreshHandler.postDelayed(mediaRefreshRunnable, 700L)
     }
 
@@ -1312,11 +1378,19 @@ class MainActivity : ComponentActivity() {
         private const val PREF_INITIAL_ALL_FILES_REQUESTED = "initial_all_files_requested"
         private const val PREF_HIDDEN_SCAN_INSTALL_TIME = "hidden_scan_install_time"
         private const val PREF_PINNED_HIDDEN_FOLDER_KEYS = "pinned_hidden_folder_keys"
-        private const val SORT_NAME = "name"
-        private const val SORT_PATH = "path"
-        private const val SORT_SIZE = "size"
-        private const val SORT_MODIFIED = "modified"
-        private const val SORT_CREATED = "created"
-        private const val SORT_RANDOM = "random"
+        private const val CATALOG_FALLBACK_MAX_AGE_MS = 6 * 60 * 60 * 1000L
+        private const val DEFERRED_REFRESH_DELAY_MS = 900L
+        private const val INITIAL_CATALOG_DELAY_MS = 90L
+        private const val SORT_NAME = AlbumRules.SORT_NAME
+        private const val SORT_PATH = AlbumRules.SORT_PATH
+        private const val SORT_SIZE = AlbumRules.SORT_SIZE
+        private const val SORT_MODIFIED = AlbumRules.SORT_MODIFIED
+        private const val SORT_CREATED = AlbumRules.SORT_CREATED
+        private const val SORT_RANDOM = AlbumRules.SORT_RANDOM
     }
+
+    private data class PendingAlbumSubmission(
+        val albums: List<AlbumItem>,
+        val query: String
+    )
 }

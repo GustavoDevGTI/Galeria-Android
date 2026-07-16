@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView
 import coil3.load
 import coil3.request.allowHardware
 import coil3.request.crossfade
+import coil3.size.Precision
 import kotlinx.coroutines.Dispatchers
 import java.util.Locale
 
@@ -38,6 +39,12 @@ class MediaRecyclerAdapter(
     private var listMode = false
     private var selectionMode = false
     private var pagingMode = false
+    private var gridThumbnailSizePx = 360
+
+    init {
+        setHasStableIds(true)
+    }
+
     private val pagingDiffer = AsyncPagingDataDiffer(
         diffCallback = object : DiffUtil.ItemCallback<MediaItem>() {
             override fun areItemsTheSame(oldItem: MediaItem, newItem: MediaItem): Boolean =
@@ -83,11 +90,12 @@ class MediaRecyclerAdapter(
 
     suspend fun submitPagingData(data: PagingData<MediaItem>) {
         if (!pagingMode) {
+            val previousCount = visibleItems.size
             pagingMode = true
             allItems.clear()
             visibleItems.clear()
             selectedUris.clear()
-            notifyDataSetChanged()
+            if (previousCount > 0) notifyItemRangeRemoved(0, previousCount)
         }
         pagingDiffer.submitData(data)
     }
@@ -101,7 +109,7 @@ class MediaRecyclerAdapter(
     fun setListMode(listMode: Boolean) {
         if (this.listMode != listMode) {
             this.listMode = listMode
-            notifyDataSetChanged()
+            if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_LAYOUT)
         }
     }
 
@@ -154,10 +162,14 @@ class MediaRecyclerAdapter(
         }
         insertAt = minOf(remaining.size, insertAt + 1)
         remaining.addAll(insertAt, moving)
+        val changedStart = minOf(targetPosition, visibleItems.indexOfFirst { selectedUris.contains(it.uri.toString()) })
+            .coerceAtLeast(0)
+        val changedEnd = maxOf(targetPosition, visibleItems.indexOfLast { selectedUris.contains(it.uri.toString()) })
+            .coerceAtLeast(changedStart)
         visibleItems.clear()
         visibleItems.addAll(remaining)
         syncAllItemsFromVisible()
-        notifyDataSetChanged()
+        notifyItemRangeChanged(changedStart, changedEnd - changedStart + 1, PAYLOAD_POSITION)
         return true
     }
 
@@ -169,11 +181,12 @@ class MediaRecyclerAdapter(
     }
 
     fun setSelectionMode(selectionMode: Boolean) {
+        if (this.selectionMode == selectionMode && (selectionMode || selectedUris.isEmpty())) return
         this.selectionMode = selectionMode
         if (!selectionMode) {
             selectedUris.clear()
         }
-        notifyDataSetChanged()
+        notifySelectionRangeChanged()
     }
 
     fun isSelectionMode(): Boolean = selectionMode
@@ -184,14 +197,21 @@ class MediaRecyclerAdapter(
         if (!selectedUris.add(key)) {
             selectedUris.remove(key)
         }
-        notifyDataSetChanged()
+        notifyItemChanged(position, PAYLOAD_SELECTION)
     }
 
     fun selectPosition(position: Int) {
         itemOrNull(position)?.let {
             selectedUris.add(it.uri.toString())
-            notifyDataSetChanged()
+            notifyItemChanged(position, PAYLOAD_SELECTION)
         }
+    }
+
+    fun setGridThumbnailSize(sizePx: Int) {
+        val bounded = maxOf(96, sizePx)
+        if (gridThumbnailSizePx == bounded) return
+        gridThumbnailSizePx = bounded
+        if (!listMode && itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_THUMBNAIL_SIZE)
     }
 
     fun isSelected(position: Int): Boolean =
@@ -201,13 +221,21 @@ class MediaRecyclerAdapter(
         for (item in currentVisibleItems()) {
             selectedUris.add(item.uri.toString())
         }
-        notifyDataSetChanged()
+        notifySelectionRangeChanged()
     }
 
     fun clearSelection() {
         selectedUris.clear()
         selectionMode = false
-        notifyDataSetChanged()
+        notifySelectionRangeChanged()
+    }
+
+    fun refreshSelectionVisuals() {
+        notifySelectionRangeChanged()
+    }
+
+    private fun notifySelectionRangeChanged() {
+        if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_SELECTION)
     }
 
     fun allVisibleSelected(): Boolean {
@@ -242,6 +270,9 @@ class MediaRecyclerAdapter(
         if (pagingMode) pagingDiffer.snapshot().items else visibleItems
 
     override fun getItemViewType(position: Int): Int = if (listMode) 1 else 0
+
+    override fun getItemId(position: Int): Long = itemOrNull(position)?.uri?.toString()?.hashCode()?.toLong()
+        ?: RecyclerView.NO_ID
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         val asList = viewType == 1
@@ -309,22 +340,23 @@ class MediaRecyclerAdapter(
             holder.itemView.setOnLongClickListener(null)
             return
         }
-        val selected = selectedUris.contains(item.uri.toString())
-        holder.itemView.alpha = if (selected) 0.78f else 1f
-        holder.itemView.scaleX = if (selected) 0.94f else 1f
-        holder.itemView.scaleY = if (selected) 0.94f else 1f
-        holder.itemView.translationZ = if (selected) -Ui.dp(context, 2).toFloat() else 0f
-        holder.check.visibility = if (selectionMode || selected) View.VISIBLE else View.GONE
-        holder.check.text = if (selected) "\u2713" else ""
-        holder.name.text = item.name
-        val key = "media:${item.uri}"
-        holder.image.load(item.uri) {
-            size(720, 720)
-            memoryCacheKey(key)
-            diskCacheKey(key)
-            allowHardware(true)
-            crossfade(false)
+        bindItem(holder, item)
+    }
+
+    override fun onBindViewHolder(holder: Holder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isEmpty() || payloads.contains(PAYLOAD_POSITION) || payloads.contains(PAYLOAD_LAYOUT)) {
+            onBindViewHolder(holder, position)
+            return
         }
+        val item = itemOrNull(position) ?: return
+        if (payloads.contains(PAYLOAD_SELECTION)) bindSelection(holder, item)
+        if (payloads.contains(PAYLOAD_THUMBNAIL_SIZE)) bindThumbnail(holder, item)
+    }
+
+    private fun bindItem(holder: Holder, item: MediaItem) {
+        bindSelection(holder, item)
+        holder.name.text = item.name
+        bindThumbnail(holder, item)
         holder.itemView.setOnClickListener {
             val currentPosition = holder.bindingAdapterPosition
             if (currentPosition != RecyclerView.NO_POSITION) callbacks.onMediaClick(currentPosition)
@@ -332,6 +364,30 @@ class MediaRecyclerAdapter(
         holder.itemView.setOnLongClickListener {
             val currentPosition = holder.bindingAdapterPosition
             currentPosition != RecyclerView.NO_POSITION && callbacks.onMediaLongClick(it, currentPosition)
+        }
+    }
+
+    private fun bindSelection(holder: Holder, item: MediaItem) {
+        val selected = selectedUris.contains(item.uri.toString())
+        holder.itemView.alpha = if (selected) 0.78f else 1f
+        holder.itemView.scaleX = if (selected) 0.94f else 1f
+        holder.itemView.scaleY = if (selected) 0.94f else 1f
+        holder.itemView.translationZ = if (selected) -Ui.dp(context, 2).toFloat() else 0f
+        holder.check.visibility = if (selectionMode || selected) View.VISIBLE else View.GONE
+        holder.check.text = if (selected) "\u2713" else ""
+    }
+
+    private fun bindThumbnail(holder: Holder, item: MediaItem) {
+        val requestSize = if (listMode) Ui.dp(context, 82) else gridThumbnailSizePx
+        val diskKey = "media:${item.uri}"
+        val memoryKey = "$diskKey:$requestSize"
+        holder.image.load(item.uri) {
+            size(requestSize, requestSize)
+            precision(Precision.INEXACT)
+            memoryCacheKey(memoryKey)
+            diskCacheKey(diskKey)
+            allowHardware(true)
+            crossfade(false)
         }
     }
 
@@ -343,5 +399,12 @@ class MediaRecyclerAdapter(
         val name: TextView,
         val check: TextView
     ) : RecyclerView.ViewHolder(itemView)
+
+    private companion object {
+        const val PAYLOAD_SELECTION = "selection"
+        const val PAYLOAD_THUMBNAIL_SIZE = "thumbnail_size"
+        const val PAYLOAD_POSITION = "position"
+        const val PAYLOAD_LAYOUT = "layout"
+    }
 
 }

@@ -5,7 +5,7 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 ## Stack atual
 
 - Kotlin nativo
-- Android SDK 36
+- Android SDK 37
 - RecyclerView para grades e listas
 - Coil 3 para thumbnails, imagens em alta qualidade e pré-carregamento
 - ZoomImage para zoom fluido em imagens grandes
@@ -14,6 +14,7 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - WorkManager para varreduras pesadas em segundo plano
 - MediaStore para leitura de mídias do aparelho
 - AndroidX Media3 / ExoPlayer para reprodução de vídeo
+- Macrobenchmark, Perfetto e Baseline Profile para medição e otimização de startup e rolagem
 
 ## Funções já disponíveis
 
@@ -61,6 +62,68 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - `app/src/main/kotlin/com/galeria/android/MediaActions.kt`
   Operações de mover, copiar, excluir, ocultar e criar pasta
 
+## Testes automatizados
+
+A suíte atual possui 15 testes:
+
+- 11 testes unitários locais para filtros de mídia, identificação de pastas ocultas, ordenação de álbuns e regras de gestos
+- 3 testes instrumentados do Room para resumos de álbuns, isolamento dos catálogos e paginação com ordem personalizada
+- 1 teste instrumentado de abertura da tela principal e disponibilidade da pesquisa
+
+Executar apenas os testes unitários rápidos:
+
+```text
+gradlew.bat :app:testDebugUnitTest
+```
+
+Executar os testes instrumentados com um emulador conectado:
+
+```text
+gradlew.bat :app:connectedDebugAndroidTest
+```
+
+Executar a validação completa antes de gerar um APK:
+
+```text
+gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:connectedDebugAndroidTest
+```
+
+Os testes locais ficam em `app/src/test/kotlin` e os testes executados no Android ficam em `app/src/androidTest/kotlin`.
+
+### Testes de desempenho
+
+O módulo `benchmark` mede a partida fria e a rolagem dentro de um álbum usando a variante `benchmark`, sem o custo da instrumentação `debug`.
+
+Executar todos os macrobenchmarks:
+
+```text
+gradlew.bat :benchmark:connectedBenchmarkAndroidTest
+```
+
+Capturar somente um swipe com trace Perfetto:
+
+```text
+gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.galeria.android.benchmark.GalleryMacrobenchmark#singleSwipePerfetto"
+```
+
+Regenerar o Baseline Profile após alterar os fluxos principais:
+
+```text
+gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.galeria.android.benchmark.BaselineProfileGenerator#generate"
+```
+
+O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
+
+### Validação da versão 0.8
+
+- 11 testes unitários e 4 testes instrumentados aprovados
+- Lint, builds `debug` e `benchmark` aprovados
+- Macrobenchmark de um swipe aprovado com captura Perfetto
+- Nenhum `MediaScanWorker` ou `serviceBind` executado durante o gesto medido
+- Baseline Profile com 8.409 regras incluído no APK
+
+O próximo critério de decisão é a validação em aparelho físico com bibliotecas reais. Caso Room, Paging 3, WorkManager ou o pipeline atual de imagens ainda causem perda perceptível de fluidez, o histórico do Git permite comparar com a versão anterior e reduzir o uso de bibliotecas de forma seletiva, preservando apenas as que entregarem benefício comprovado.
+
 ## APK gerado
 
 Download direto da versão mais recente:
@@ -86,7 +149,19 @@ Sempre que o repositório for atualizado com uma nova versão testável, gere um
 - Código principal migrado para Kotlin
 - Grade baseada em RecyclerView
 - Cache local com Room, carregamento progressivo com Paging 3 e varreduras com WorkManager
+- Abertura da tela principal baseada em resumos de álbuns calculados pelo Room, sem carregar milhares de mídias na memória
+- Catálogo invalidado pela versão do MediaStore, evitando varreduras completas quando nada mudou
+- WorkManager inicializado sob demanda, sem custo de varredura ou inicialização pesada a cada abertura do app
+- Varreduras de manutenção são adiadas e canceladas ao entrar em um álbum; atualizações manuais continuam imediatas
+- Paging ajustado para lotes menores e pré-carregamento próximo à área visível do álbum
+- Entregas do Paging e atualizações de álbuns são adiadas durante gestos e aplicadas quando a grade fica ociosa
+- Adapters usam IDs estáveis, `DiffUtil` e payloads para evitar redesenhos completos em seleção e atualização de capas
+- Miniaturas decodificadas no tamanho real da grade, com chaves de cache separadas por resolução
+- Carregamentos duplicados do primeiro `onResume` removidos das telas de álbuns e mídias
 - Imagens e thumbnails carregados pelo Coil 3, sem transição de baixa para alta resolução
+- Preview de tela e imagem nativa usam chaves separadas; a imagem visível só é substituída quando a resolução final está pronta
+- Pré-carregamento do visualizador é limitado a duas decodificações simultâneas e cancela itens fora da janela de cinco mídias
+- Baseline Profile com os fluxos de abertura, lista de álbuns e grade de mídias incluído nas builds
 - Visualização de imagens grandes com zoom dedicado e carregamento em alta qualidade
 - Gestos usam coordenadas absolutas e um único controlador, eliminando a tremedeira durante a transição
 - Diálogos e submenus principais usam componentes temáticos próprios do app
@@ -97,7 +172,6 @@ Sempre que o repositório for atualizado com uma nova versão testável, gere um
 
 ## Próximos passos naturais
 
-- Refinar cache de thumbnails e pré-carregamento
-- Continuar a reduzir latência na primeira abertura
+- Medir o desempenho em aparelhos com bibliotecas de mídia grandes
 - Expandir o editor de imagem
 - Evoluir organização personalizada de álbuns e mídias
