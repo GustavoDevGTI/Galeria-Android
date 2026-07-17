@@ -24,11 +24,13 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - Reprodução de vídeos com Media3 / ExoPlayer
 - Miniaturas reais para vídeos na grade de mídias e nas capas de álbuns
 - Player de vídeo em tela cheia com HUD superior e inferior translúcida sobreposta à mídia
+- Controle de áudio no player para ativar ou silenciar o vídeo durante a navegação
 - Navegação fluida entre mídias por gestos horizontais e verticais
 - Arrastes curtos trocam a mídia, com proteção para toques simples e duplos
 - Pré-carregamento das cinco mídias anteriores e posteriores em alta qualidade
 - Reprodução aleatória dentro do álbum
 - Favoritar, compartilhar, ocultar, copiar, mover e excluir arquivos
+- Movimentação entre álbuns pelo caminho real da pasta, incluindo destinos em `DCIM`, `Pictures`, `Movies` e pastas de aplicativos
 - Criação de novas pastas
 - Reordenação personalizada de mídias por arrastar e soltar
 - Seleção múltipla de mídias e álbuns
@@ -64,11 +66,12 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 
 ## Testes automatizados
 
-A suíte atual possui 15 testes:
+A suíte atual possui 16 testes:
 
 - 11 testes unitários locais para filtros de mídia, identificação de pastas ocultas, ordenação de álbuns e regras de gestos
 - 3 testes instrumentados do Room para resumos de álbuns, isolamento dos catálogos e paginação com ordem personalizada
 - 1 teste instrumentado de abertura da tela principal e disponibilidade da pesquisa
+- 1 teste instrumentado que cria uma mídia, move para outro álbum e confirma o caminho final no MediaStore
 
 Executar apenas os testes unitários rápidos:
 
@@ -116,7 +119,7 @@ O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Med
 
 ### Validação da versão 0.8
 
-- 11 testes unitários e 4 testes instrumentados aprovados
+- 11 testes unitários e 5 testes instrumentados aprovados
 - Lint, builds `debug` e `benchmark` aprovados
 - Macrobenchmark de um swipe aprovado com captura Perfetto
 - Nenhum `MediaScanWorker` ou `serviceBind` executado durante o gesto medido
@@ -167,6 +170,8 @@ Sempre que o repositório for atualizado com uma nova versão testável, gere um
 - Diálogos e submenus principais usam componentes temáticos próprios do app
 - Gerenciamento de ocultos atualizado com lista rolável, botões fixos e suporte a pastas fixadas
 - Player ajustado para manter o vídeo ocupando o máximo possível da tela sem ser reduzido pelos controles
+- Player com controle de som integrado à barra inferior e estado preservado ao navegar entre vídeos
+- Operações de mover e copiar usam o caminho real do álbum selecionado, com MediaStore e fallback direto para mídias ocultas
 - Geração de thumbnails de vídeo corrigida com fallback para MediaMetadataRetriever
 - App em evolução com foco em desempenho para bibliotecas grandes
 

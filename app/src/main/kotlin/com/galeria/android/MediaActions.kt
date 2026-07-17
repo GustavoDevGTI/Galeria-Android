@@ -181,65 +181,46 @@ class MediaActions private constructor() {
 
         @JvmStatic
         fun moveToFolder(activity: Activity, item: MediaItem, folderName: String): Int {
-            val cleanName = cleanFolderName(folderName)
-            if (cleanName.isEmpty()) {
+            val relativePath = destinationRelativePath(folderName, item.isVideo())
+            if (relativePath.isEmpty()) {
                 return RESULT_FAILED
             }
 
-            if (hasAllFilesAccess(activity)) {
-                return moveToFolderDirect(activity, item, cleanName)
-            }
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val values = ContentValues()
-                val baseDir = if (item.isVideo()) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, "$baseDir/$cleanName/")
-                return try {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                }
+                try {
                     val updated = activity.contentResolver.update(item.uri, values, null, null)
                     if (updated > 0) {
                         MediaStoreRepository.invalidateCache()
+                        return RESULT_DONE
                     }
-                    if (updated > 0) RESULT_DONE else RESULT_FAILED
                 } catch (_: SecurityException) {
+                    if (!hasAllFilesAccess(activity)) return RESULT_NEEDS_PERMISSION
+                } catch (_: Exception) {
+                    // File-backed hidden media is moved by the direct fallback below.
+                }
+                return if (hasAllFilesAccess(activity)) {
+                    moveToFolderDirect(activity, item, relativePath)
+                } else {
                     RESULT_NEEDS_PERMISSION
                 }
             }
 
-            val currentFile = fileFromMediaStore(activity, item.uri)
-            if (currentFile == null || !currentFile.exists()) {
-                return RESULT_FAILED
-            }
-            val baseDir = if (item.isVideo()) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
-            val targetDir = File(Environment.getExternalStoragePublicDirectory(baseDir), cleanName)
-            if (!targetDir.exists() && !targetDir.mkdirs()) {
-                return RESULT_FAILED
-            }
-            val targetFile = uniqueFile(targetDir, currentFile.name)
-            val moved = currentFile.renameTo(targetFile)
-            if (moved) {
-                MediaScannerConnection.scanFile(
-                    activity,
-                    arrayOf(targetFile.absolutePath, currentFile.absolutePath),
-                    null,
-                    null
-                )
-                MediaStoreRepository.invalidateCache()
-                return RESULT_DONE
-            }
-            return RESULT_FAILED
+            return moveToFolderDirect(activity, item, relativePath)
         }
 
         @JvmStatic
         fun copyToFolder(activity: Activity, item: MediaItem, folderName: String): Int {
-            val cleanName = cleanFolderName(folderName)
-            if (cleanName.isEmpty()) {
+            val relativePath = destinationRelativePath(folderName, item.isVideo())
+            if (relativePath.isEmpty()) {
                 return RESULT_FAILED
             }
 
             val isVideo = item.isVideo()
-            val baseDir = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
             if (hasAllFilesAccess(activity)) {
-                return copyToFolderDirect(activity, item, cleanName, baseDir)
+                return copyToFolderDirect(activity, item, relativePath)
             }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -251,7 +232,7 @@ class MediaActions private constructor() {
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, item.name)
                     put(MediaStore.MediaColumns.MIME_TYPE, item.mimeType)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, "$baseDir/$cleanName/")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
 
@@ -274,7 +255,7 @@ class MediaActions private constructor() {
             if (currentFile == null || !currentFile.exists()) {
                 return RESULT_FAILED
             }
-            val targetDir = File(Environment.getExternalStoragePublicDirectory(baseDir), cleanName)
+            val targetDir = File(Environment.getExternalStorageDirectory(), relativePath)
             if (!targetDir.exists() && !targetDir.mkdirs()) {
                 return RESULT_FAILED
             }
@@ -398,6 +379,32 @@ class MediaActions private constructor() {
                 ?.replace(Regex("\\s+"), " ")
                 .orEmpty()
 
+        @JvmStatic
+        fun destinationRelativePath(value: String?, isVideo: Boolean): String {
+            var normalized = value
+                ?.trim()
+                ?.replace('\\', '/')
+                ?.trim('/')
+                .orEmpty()
+            if (normalized.isEmpty()) return ""
+
+            val storageRoot = Environment.getExternalStorageDirectory().absolutePath
+                .replace('\\', '/')
+                .trimEnd('/')
+            if (normalized.startsWith(storageRoot, ignoreCase = true)) {
+                normalized = normalized.substring(storageRoot.length).trim('/')
+            }
+            if (!normalized.contains('/')) {
+                val baseDir = if (isVideo) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
+                normalized = "$baseDir/${cleanFolderName(normalized)}"
+            } else {
+                normalized = normalized.split('/')
+                    .filter { it.isNotBlank() }
+                    .joinToString("/") { cleanFolderName(it) }
+            }
+            return if (normalized.isEmpty()) "" else "$normalized/"
+        }
+
         private fun copyUri(activity: Activity, sourceUri: Uri, targetUri: Uri): Boolean {
             return try {
                 activity.contentResolver.openInputStream(sourceUri).use { input ->
@@ -431,14 +438,13 @@ class MediaActions private constructor() {
             }
         }
 
-        private fun moveToFolderDirect(activity: Activity, item: MediaItem, cleanName: String): Int {
+        private fun moveToFolderDirect(activity: Activity, item: MediaItem, relativePath: String): Int {
             val currentFile = fileFromMediaStore(activity, item.uri)
             if (currentFile == null || !currentFile.exists()) {
                 return RESULT_FAILED
             }
 
-            val baseDir = if (item.isVideo()) Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES
-            val targetDir = File(Environment.getExternalStoragePublicDirectory(baseDir), cleanName)
+            val targetDir = File(Environment.getExternalStorageDirectory(), relativePath)
             if (!targetDir.exists() && !targetDir.mkdirs()) {
                 return RESULT_FAILED
             }
@@ -478,12 +484,12 @@ class MediaActions private constructor() {
             return RESULT_FAILED
         }
 
-        private fun copyToFolderDirect(activity: Activity, item: MediaItem, cleanName: String, baseDir: String): Int {
+        private fun copyToFolderDirect(activity: Activity, item: MediaItem, relativePath: String): Int {
             val currentFile = fileFromMediaStore(activity, item.uri)
             if (currentFile == null || !currentFile.exists()) {
                 return RESULT_FAILED
             }
-            val targetDir = File(Environment.getExternalStoragePublicDirectory(baseDir), cleanName)
+            val targetDir = File(Environment.getExternalStorageDirectory(), relativePath)
             if (!targetDir.exists() && !targetDir.mkdirs()) {
                 return RESULT_FAILED
             }

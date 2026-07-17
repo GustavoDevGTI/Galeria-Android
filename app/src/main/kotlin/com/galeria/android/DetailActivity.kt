@@ -92,6 +92,7 @@ class DetailActivity : ComponentActivity() {
     private lateinit var speedButton: TextView
     private lateinit var playPauseButton: ImageButton
     private lateinit var favoriteButton: ImageButton
+    private lateinit var soundButton: ImageButton
     private lateinit var videoControls: LinearLayout
     private lateinit var timelineRow: LinearLayout
     private lateinit var seekBar: SeekBar
@@ -111,6 +112,7 @@ class DetailActivity : ComponentActivity() {
     private var downY = 0f
     private var downX = 0f
     private var playbackSpeed = 1f
+    private var videoMuted = false
     private var queueLoadGeneration = 0
     private var hudVisible = true
     private var dragPreviewPage: FrameLayout? = null
@@ -329,9 +331,14 @@ class DetailActivity : ComponentActivity() {
         favoriteButton = actionButton(R.drawable.ic_star).apply { setOnClickListener { toggleFavorite() } }
         val share = actionButton(R.drawable.ic_share).apply { setOnClickListener { shareCurrent() } }
         val trash = actionButton(R.drawable.ic_trash).apply { setOnClickListener { confirmDeleteCurrent() } }
+        soundButton = actionButton(R.drawable.ic_volume_on).apply {
+            contentDescription = "Desativar som"
+            setOnClickListener { toggleVideoSound() }
+        }
         actions.addView(favoriteButton, actionParams())
         actions.addView(share, actionParams())
         actions.addView(trash, actionParams())
+        actions.addView(soundButton, actionParams())
         bottomBar.addView(actions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 50)))
 
         root.addView(topBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
@@ -365,9 +372,9 @@ class DetailActivity : ComponentActivity() {
         }
 
     private fun actionParams(): LinearLayout.LayoutParams =
-        LinearLayout.LayoutParams(Ui.dp(this, 56), Ui.dp(this, 44)).apply {
-            leftMargin = Ui.dp(this@DetailActivity, 16)
-            rightMargin = Ui.dp(this@DetailActivity, 16)
+        LinearLayout.LayoutParams(Ui.dp(this, 52), Ui.dp(this, 44)).apply {
+            leftMargin = Ui.dp(this@DetailActivity, 10)
+            rightMargin = Ui.dp(this@DetailActivity, 10)
         }
 
     private fun showMediaMenu(anchor: View) {
@@ -672,6 +679,7 @@ class DetailActivity : ComponentActivity() {
         } else {
             videoControls.visibility = View.GONE
             timelineRow.visibility = View.GONE
+            soundButton.visibility = View.GONE
             activePage?.let { promoteImagePage(item, it) }
         }
     }
@@ -807,6 +815,8 @@ class DetailActivity : ComponentActivity() {
     private fun showVideo(item: MediaItem, page: FrameLayout) {
         videoControls.visibility = View.VISIBLE
         timelineRow.visibility = View.VISIBLE
+        soundButton.visibility = View.VISIBLE
+        updateSoundButton()
         val preview = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(Color.BLACK)
@@ -831,6 +841,7 @@ class DetailActivity : ComponentActivity() {
         player.setMediaItem(androidx.media3.common.MediaItem.fromUri(item.uri))
         player.repeatMode = if (!shuffleMode && prefs.getBoolean("loop_videos", false)) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         player.playbackParameters = PlaybackParameters(playbackSpeed)
+        player.volume = if (videoMuted) 0f else 1f
         playerView.player = player
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -1000,8 +1011,23 @@ class DetailActivity : ComponentActivity() {
     private fun showImage(item: MediaItem, page: FrameLayout) {
         videoControls.visibility = View.GONE
         timelineRow.visibility = View.GONE
+        soundButton.visibility = View.GONE
         addImagePreviewToPage(item, page)
         promoteImagePage(item, page)
+    }
+
+    private fun toggleVideoSound() {
+        if (!currentItem().isVideo()) return
+        videoMuted = !videoMuted
+        currentPlayer?.volume = if (videoMuted) 0f else 1f
+        updateSoundButton()
+    }
+
+    private fun updateSoundButton() {
+        if (!::soundButton.isInitialized) return
+        soundButton.setImageResource(if (videoMuted) R.drawable.ic_volume_off else R.drawable.ic_volume_on)
+        soundButton.contentDescription = if (videoMuted) "Ativar som" else "Desativar som"
+        soundButton.alpha = if (videoMuted) 0.62f else 1f
     }
 
     private fun addImagePreviewToPage(item: MediaItem, page: FrameLayout) {
@@ -1354,7 +1380,7 @@ class DetailActivity : ComponentActivity() {
         for (album in MediaStoreRepository.loadAlbums(this, includeHiddenFilesystem)) {
             if (album.key == "all_media" || album.key == item.albumKey || album.name.isBlank()) continue
             val label = if (album.path.isNotBlank()) "${album.name} - ${album.path}" else album.name
-            if (!names.containsKey(label)) names[label] = album.name
+            if (!names.containsKey(label)) names[label] = album.path.ifBlank { album.name }
         }
         return names.entries.map { it.key to it.value }
     }

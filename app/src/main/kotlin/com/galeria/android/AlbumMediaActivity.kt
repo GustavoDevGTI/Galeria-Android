@@ -773,13 +773,13 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun askMoveSelected() {
         val selected = adapter.selectedItems()
         if (selected.isEmpty()) return
-        val targets = availableAlbumNames()
+        val targets = availableAlbumTargets()
         if (targets.isEmpty()) {
             Ui.toast(this, "Nenhum álbum disponível para mover.")
             return
         }
-        Ui.showPopupOptions(moreButton, targets) { selectedFolder ->
-            moveSelected(selected, selectedFolder)
+        Ui.showPopupOptions(moreButton, targets.keys.toList()) { selectedLabel ->
+            targets[selectedLabel]?.let { moveSelected(selected, it) }
         }
     }
 
@@ -1070,14 +1070,16 @@ class AlbumMediaActivity : ComponentActivity() {
             .show()
     }
 
-    private fun availableAlbumNames(): List<String> {
-        val names = LinkedHashSet<String>()
+    private fun availableAlbumTargets(): LinkedHashMap<String, String> {
+        val targets = LinkedHashMap<String, String>()
         for (album in MediaStoreRepository.loadAlbums(applicationContext, shouldIncludeHiddenFilesystem())) {
             if (album.key != "all_media" && album.key != albumKey && album.name.isNotBlank()) {
-                names.add(album.name)
+                val path = album.path.ifBlank { album.name }
+                val label = if (album.path.isNotBlank()) "${album.name} - ${album.path}" else album.name
+                if (!targets.containsKey(label)) targets[label] = path
             }
         }
-        return names.toList()
+        return targets
     }
 
     private fun shouldIncludeHiddenFilesystem(): Boolean =
