@@ -85,11 +85,11 @@ Conclusao deste marco: as otimizacoes recuperaram quase todo o tempo das partida
 Foram executados com sucesso:
 
 - 11 testes unitarios: regras de albuns, filtros de midia e classificacao de gestos
-- 4 testes instrumentados: operacoes do Room e abertura basica da tela principal
+- 5 testes instrumentados: operacoes do Room, abertura basica da tela principal e movimentacao real entre albuns pelo MediaStore
 - Android Lint para a variante `debug`
 - Compilacao completa do APK
 
-Resultado: **15 testes aprovados, zero falhas, zero erros, lint aprovado e build aprovada**.
+Resultado: **16 testes aprovados, zero falhas, zero erros, lint aprovado e build aprovada**.
 
 As builds historicas nao possuiam essa suite. Para elas foram executados compilacao e o mesmo roteiro funcional externo, sem crashes ou ANRs.
 

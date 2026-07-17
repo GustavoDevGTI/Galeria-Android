@@ -127,6 +127,16 @@ O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Med
 
 O próximo critério de decisão é a validação em aparelho físico com bibliotecas reais. Caso Room, Paging 3, WorkManager ou o pipeline atual de imagens ainda causem perda perceptível de fluidez, o histórico do Git permite comparar com a versão anterior e reduzir o uso de bibliotecas de forma seletiva, preservando apenas as que entregarem benefício comprovado.
 
+## Relatório comparativo de desempenho
+
+O relatório técnico compara três marcos do projeto usando o mesmo ambiente e roteiro de testes:
+
+1. Versão anterior à adoção das bibliotecas
+2. Primeira integração com Coil 3, Room, WorkManager, Paging 3 e biblioteca de zoom
+3. Versão com as bibliotecas e o pipeline otimizados
+
+[Consultar o relatório completo de desempenho](RELATORIO-DESEMPENHO-BIBLIOTECAS.md)
+
 ## APK gerado
 
 Download direto da versão mais recente:
