@@ -80,6 +80,24 @@ Conclusao deste marco: a primeira integracao trouxe uma base mais escalavel, mas
 
 Conclusao deste marco: as otimizacoes recuperaram quase todo o tempo das partidas repetidas e reduziram bastante a memoria depois de navegar pelas imagens. Entretanto, o custo foi deslocado para o carregamento e a renderizacao durante os gestos.
 
+### Build atual otimizada contra a build antiga sem bibliotecas
+
+- A primeira abertura ficou **45,6% mais lenta**
+- A mediana das partidas frias ficou **5,8% mais lenta**
+- A media das partidas frias ficou **4,0% mais lenta**
+- A memoria da tela principal aumentou **79,5%**
+- A abertura do album ficou **24,4% mais lenta**
+- A memoria dentro do album aumentou **22,6%**
+- A memoria apos navegar no visualizador caiu **22,6%**
+- O primeiro scroll piorou `10,03` pontos percentuais de frames lentos
+- O percentil 90 do primeiro scroll aumentou **266,7%**, de `150 ms` para `550 ms`
+- A passagem de midias piorou `17,20` pontos percentuais de frames lentos
+- O percentil 90 da passagem aumentou **31,5%**, de `89 ms` para `117 ms`
+- O APK aumentou **84,6%**, de `4,88 MiB` para `9,01 MiB`
+- Nenhuma das duas builds apresentou crash ou ANR durante o roteiro
+
+Conclusao deste comparativo: a versao atual com bibliotecas otimizadas praticamente recuperou o desempenho das partidas frias repetidas e reduziu de forma relevante a memoria do visualizador. Em contrapartida, ainda apresenta regressao na primeira abertura, na abertura de albuns, no consumo de memoria das telas de grade e, principalmente, na fluidez do primeiro scroll e da passagem entre midias. A nova arquitetura entrega uma base mais escalavel e recursos de cache, paginacao e pre-carregamento, mas ainda nao supera a versao sem bibliotecas em fluidez geral no dataset testado.
+
 ## Testes automatizados da build atual
 
 Foram executados com sucesso:
