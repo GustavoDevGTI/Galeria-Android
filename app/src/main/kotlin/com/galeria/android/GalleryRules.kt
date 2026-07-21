@@ -80,6 +80,17 @@ object AlbumRules {
     }
 }
 
+object ViewerStateRules {
+    fun shuffledFromCurrent(availableUris: List<String>, currentUri: String, seed: Long): List<String> {
+        if (availableUris.isEmpty()) return emptyList()
+        val shuffled = availableUris.distinct().sorted().toMutableList()
+        Collections.shuffle(shuffled, Random(seed))
+        val currentIndex = shuffled.indexOf(currentUri)
+        if (currentIndex <= 0) return shuffled
+        return shuffled.drop(currentIndex) + shuffled.take(currentIndex)
+    }
+}
+
 enum class SwipeAxis { HORIZONTAL, VERTICAL }
 
 data class SwipeIntent(val axis: SwipeAxis, val direction: Int)

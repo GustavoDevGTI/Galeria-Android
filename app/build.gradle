@@ -4,6 +4,23 @@ plugins {
     id "androidx.room"
 }
 
+def releaseStoreFile = System.getenv("GALERIA_KEYSTORE_FILE")
+def releaseStorePassword = System.getenv("GALERIA_STORE_PASSWORD")
+def releaseKeyAlias = System.getenv("GALERIA_KEY_ALIAS")
+def releaseKeyPassword = System.getenv("GALERIA_KEY_PASSWORD")
+def releaseSigningConfigured = [
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+].every { it != null && !it.trim().isEmpty() }
+
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.name.toLowerCase().contains("release") } && !releaseSigningConfigured) {
+        throw new GradleException("Configure as variáveis GALERIA_KEYSTORE_FILE, GALERIA_STORE_PASSWORD, GALERIA_KEY_ALIAS e GALERIA_KEY_PASSWORD para gerar uma build release assinada.")
+    }
+}
+
 android {
     namespace = "com.galeria.android"
     compileSdk 37
@@ -22,18 +39,30 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        release {
+            if (releaseSigningConfigured) {
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.release
             minifyEnabled true
-            shrinkResources true
+            shrinkResources = true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
         benchmark {
             initWith release
-            signingConfig signingConfigs.debug
+            signingConfig = signingConfigs.debug
             debuggable false
             minifyEnabled false
-            shrinkResources false
+            shrinkResources = false
             matchingFallbacks = ["release"]
         }
     }

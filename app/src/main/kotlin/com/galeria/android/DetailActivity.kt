@@ -18,6 +18,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.LruCache
 import android.util.Size
@@ -64,7 +65,6 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.Locale
-import java.util.Random
 import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.max
@@ -115,6 +115,12 @@ class DetailActivity : ComponentActivity() {
     private var videoMuted = false
     private var queueLoadGeneration = 0
     private var hudVisible = true
+    private var shuffleSeed = 0L
+    private var restoredVideoPositionMs: Long? = null
+    private var restoredVideoPlayWhenReady: Boolean? = null
+    private var restoredShuffleDelayMs: Long? = null
+    private var shuffleAdvanceDeadlineMs = 0L
+    private var playWhenReadyBeforePause: Boolean? = null
     private var dragPreviewPage: FrameLayout? = null
     private var dragHorizontal = true
     private var dragDirection = 0
@@ -136,6 +142,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private val autoAdvanceRunnable = Runnable {
+        shuffleAdvanceDeadlineMs = 0L
         if (shuffleMode && !switchingItem && mediaQueue.size > 1) {
             switchItem(1, false)
         }
@@ -150,11 +157,22 @@ class DetailActivity : ComponentActivity() {
         })
         Ui.applyOpenTransition(this)
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
-        val uri = Uri.parse(intent.getStringExtra("uri").orEmpty())
-        val name = intent.getStringExtra("name")
-        val mime = intent.getStringExtra("mime")
-        val path = intent.getStringExtra("path")
-        shuffleMode = intent.getBooleanExtra("shuffle_mode", false)
+        val uri = Uri.parse(savedInstanceState?.getString(STATE_CURRENT_URI) ?: intent.getStringExtra("uri").orEmpty())
+        val name = savedInstanceState?.getString(STATE_CURRENT_NAME) ?: intent.getStringExtra("name")
+        val mime = savedInstanceState?.getString(STATE_CURRENT_MIME) ?: intent.getStringExtra("mime")
+        val path = savedInstanceState?.getString(STATE_CURRENT_PATH) ?: intent.getStringExtra("path")
+        shuffleMode = savedInstanceState?.getBoolean(STATE_SHUFFLE_MODE)
+            ?: intent.getBooleanExtra("shuffle_mode", false)
+        shuffleSeed = savedInstanceState?.getLong(STATE_SHUFFLE_SEED) ?: System.nanoTime()
+        if (savedInstanceState?.containsKey(STATE_VIDEO_POSITION) == true) {
+            restoredVideoPositionMs = savedInstanceState.getLong(STATE_VIDEO_POSITION)
+            restoredVideoPlayWhenReady = savedInstanceState.getBoolean(STATE_VIDEO_PLAY_WHEN_READY)
+        }
+        if (savedInstanceState?.containsKey(STATE_SHUFFLE_DELAY) == true) {
+            restoredShuffleDelayMs = savedInstanceState.getLong(STATE_SHUFFLE_DELAY)
+        }
+        playbackSpeed = savedInstanceState?.getFloat(STATE_PLAYBACK_SPEED) ?: playbackSpeed
+        videoMuted = savedInstanceState?.getBoolean(STATE_VIDEO_MUTED) ?: videoMuted
         prepareInitialMedia(uri, name, mime, path)
         buildLayout()
         loadCurrentItem()
@@ -186,24 +204,20 @@ class DetailActivity : ComponentActivity() {
                     currentIndex = mediaQueue.indexOfFirst { it.uri.toString() == currentUri.toString() }.takeIf { it >= 0 } ?: 0
                 }
                 scheduleAdjacentPreload()
+                scheduleShuffleAdvance()
             }
         }
     }
 
     private fun shuffleQueueFrom(currentUri: Uri) {
-        val remaining = ArrayList<MediaItem>()
-        var first: MediaItem? = null
-        for (item in mediaQueue) {
-            if (first == null && item.uri.toString() == currentUri.toString()) {
-                first = item
-            } else {
-                remaining.add(item)
-            }
-        }
-        remaining.shuffle(Random(System.nanoTime()))
+        val byUri = mediaQueue.associateBy { it.uri.toString() }
+        val restoredOrder = ViewerStateRules.shuffledFromCurrent(
+            availableUris = byUri.keys.toList(),
+            currentUri = currentUri.toString(),
+            seed = shuffleSeed
+        )
         mediaQueue.clear()
-        first?.let(mediaQueue::add)
-        mediaQueue.addAll(remaining)
+        restoredOrder.mapNotNullTo(mediaQueue) { byUri[it] }
         currentIndex = 0
     }
 
@@ -845,8 +859,14 @@ class DetailActivity : ComponentActivity() {
         playerView.player = player
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (!shuffleMode && playbackState == Player.STATE_READY && !videoPositionRestored) {
-                    restoreCurrentPosition()
+                if (playbackState == Player.STATE_READY && !videoPositionRestored) {
+                    val restoredPosition = restoredVideoPositionMs
+                    if (restoredPosition != null) {
+                        if (restoredPosition > 0L) player.seekTo(restoredPosition)
+                        restoredVideoPositionMs = null
+                    } else if (!shuffleMode) {
+                        restoreCurrentPosition()
+                    }
                     videoPositionRestored = true
                 }
                 if (shuffleMode && player === currentPlayer && playbackState == Player.STATE_ENDED) {
@@ -875,7 +895,9 @@ class DetailActivity : ComponentActivity() {
             }
         })
         player.prepare()
-        player.playWhenReady = shuffleMode || prefs.getBoolean("autoplay_videos", true)
+        player.playWhenReady = restoredVideoPlayWhenReady
+            ?: (shuffleMode || prefs.getBoolean("autoplay_videos", true))
+        restoredVideoPlayWhenReady = null
         updateSpeedButton()
         updatePlayPauseButton()
         handler.post(progressUpdater)
@@ -1002,9 +1024,13 @@ class DetailActivity : ComponentActivity() {
 
     private fun scheduleShuffleAdvance() {
         handler.removeCallbacks(autoAdvanceRunnable)
+        shuffleAdvanceDeadlineMs = 0L
         if (!shuffleMode || switchingItem || mediaQueue.size < 2) return
         if (!currentItem().isVideo()) {
-            handler.postDelayed(autoAdvanceRunnable, SHUFFLE_PHOTO_DELAY_MS)
+            val delay = restoredShuffleDelayMs?.coerceAtLeast(0L) ?: SHUFFLE_PHOTO_DELAY_MS
+            restoredShuffleDelayMs = null
+            shuffleAdvanceDeadlineMs = SystemClock.uptimeMillis() + delay
+            handler.postDelayed(autoAdvanceRunnable, delay)
         }
     }
 
@@ -1642,12 +1668,60 @@ class DetailActivity : ComponentActivity() {
         currentPlayer = null
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        val item = mediaQueue.getOrNull(currentIndex)
+        if (item != null) {
+            outState.putString(STATE_CURRENT_URI, item.uri.toString())
+            outState.putString(STATE_CURRENT_NAME, item.name)
+            outState.putString(STATE_CURRENT_MIME, item.mimeType)
+            outState.putString(STATE_CURRENT_PATH, item.relativePath)
+        }
+        outState.putBoolean(STATE_SHUFFLE_MODE, shuffleMode)
+        outState.putLong(STATE_SHUFFLE_SEED, shuffleSeed)
+        outState.putFloat(STATE_PLAYBACK_SPEED, playbackSpeed)
+        outState.putBoolean(STATE_VIDEO_MUTED, videoMuted)
+        currentPlayer?.let { player ->
+            outState.putLong(STATE_VIDEO_POSITION, rememberedVideoPosition())
+            outState.putBoolean(
+                STATE_VIDEO_PLAY_WHEN_READY,
+                playWhenReadyBeforePause ?: player.playWhenReady
+            )
+        }
+        val shuffleDelay = if (shuffleAdvanceDeadlineMs > 0L) {
+            (shuffleAdvanceDeadlineMs - SystemClock.uptimeMillis()).coerceAtLeast(0L)
+        } else {
+            restoredShuffleDelayMs
+        }
+        if (shuffleDelay != null) {
+            outState.putLong(
+                STATE_SHUFFLE_DELAY,
+                shuffleDelay
+            )
+        }
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (playWhenReadyBeforePause == true) {
+            currentPlayer?.play()
+        }
+        playWhenReadyBeforePause = null
+        scheduleShuffleAdvance()
+    }
+
     override fun onPause() {
         super.onPause()
         saveCurrentPosition()
         cancelPendingSingleTap()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
+        if (shuffleAdvanceDeadlineMs > 0L) {
+            restoredShuffleDelayMs =
+                (shuffleAdvanceDeadlineMs - SystemClock.uptimeMillis()).coerceAtLeast(0L)
+            shuffleAdvanceDeadlineMs = 0L
+        }
+        playWhenReadyBeforePause = currentPlayer?.playWhenReady
         currentPlayer?.pause()
     }
 
@@ -1702,6 +1776,17 @@ class DetailActivity : ComponentActivity() {
         private const val PRELOAD_AROUND_RADIUS = 5
         private const val MAX_CONCURRENT_IMAGE_PRELOADS = 2
         private const val IMAGE_PREVIEW_TAG = "viewer_image_preview"
+        private const val STATE_CURRENT_URI = "viewer_current_uri"
+        private const val STATE_CURRENT_NAME = "viewer_current_name"
+        private const val STATE_CURRENT_MIME = "viewer_current_mime"
+        private const val STATE_CURRENT_PATH = "viewer_current_path"
+        private const val STATE_SHUFFLE_MODE = "viewer_shuffle_mode"
+        private const val STATE_SHUFFLE_SEED = "viewer_shuffle_seed"
+        private const val STATE_SHUFFLE_DELAY = "viewer_shuffle_delay"
+        private const val STATE_VIDEO_POSITION = "viewer_video_position"
+        private const val STATE_VIDEO_PLAY_WHEN_READY = "viewer_video_play_when_ready"
+        private const val STATE_PLAYBACK_SPEED = "viewer_playback_speed"
+        private const val STATE_VIDEO_MUTED = "viewer_video_muted"
         private val videoPreviewCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 32).toInt()) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }

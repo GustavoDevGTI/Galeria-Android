@@ -119,8 +119,9 @@ O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Med
 
 ### Validação da versão 0.8
 
-- 11 testes unitários e 5 testes instrumentados aprovados
-- Lint, builds `debug` e `benchmark` aprovados
+- 14 testes unitários e 6 testes instrumentados aprovados
+- Teste de regressão aprovado para preservar a mídia e o fluxo aleatório após rotação da tela
+- Lint e builds `debug`, `release` e `benchmark` aprovados
 - Macrobenchmark de um swipe aprovado com captura Perfetto
 - Nenhum `MediaScanWorker` ou `serviceBind` executado durante o gesto medido
 - Baseline Profile com 8.409 regras incluído no APK
@@ -155,7 +156,18 @@ APK versionado mantido na raiz do projeto e versionado no GitHub:
 Galeria-Android-versao-0.8.apk
 ```
 
-Sempre que o repositório for atualizado com uma nova versão testável, gere um novo APK com a versão no nome, atualize o link acima e inclua esse APK no commit/push.
+O APK 0.8 publicado a partir da correção de rotação usa uma nova chave permanente. Quem instalou o APK 0.8 anterior, assinado por uma chave de depuração que não está mais disponível, precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+
+### Fluxo obrigatório de entrega
+
+Sempre que o repositório receber uma atualização testável:
+
+1. Execute testes unitários, instrumentados, lint e build de release.
+2. Gere o APK release assinado e copie-o para a raiz usando a versão atual no nome.
+3. Atualize neste README a validação, o estado do projeto e o link do APK quando a versão mudar.
+4. Inclua código, testes, README e APK no mesmo commit e faça push para o repositório.
+
+A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_STORE_PASSWORD`, `GALERIA_KEY_ALIAS` e `GALERIA_KEY_PASSWORD`. A chave e as credenciais nunca devem ser adicionadas ao Git.
 
 ## Estado atual
 
@@ -181,6 +193,7 @@ Sempre que o repositório for atualizado com uma nova versão testável, gere um
 - Gerenciamento de ocultos atualizado com lista rolável, botões fixos e suporte a pastas fixadas
 - Player ajustado para manter o vídeo ocupando o máximo possível da tela sem ser reduzido pelos controles
 - Player com controle de som integrado à barra inferior e estado preservado ao navegar entre vídeos
+- Visualização aleatória preserva a mídia atual, a ordem do fluxo, o tempo restante das imagens e a posição do vídeo após girar a tela
 - Operações de mover e copiar usam o caminho real do álbum selecionado, com MediaStore e fallback direto para mídias ocultas
 - Geração de thumbnails de vídeo corrigida com fallback para MediaMetadataRetriever
 - App em evolução com foco em desempenho para bibliotecas grandes
