@@ -29,8 +29,8 @@ android {
         applicationId = "com.galeria.android"
         minSdk 23
         targetSdk 37
-        versionCode = 8024
-        versionName = "0.8.24"
+        versionCode = 8025
+        versionName = "0.8.25"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -74,6 +74,7 @@ room {
 
 dependencies {
     implementation "androidx.appcompat:appcompat:1.7.1"
+    implementation "androidx.exifinterface:exifinterface:1.4.2"
     implementation "androidx.activity:activity-ktx:1.13.0"
     implementation "androidx.recyclerview:recyclerview:1.4.0"
     implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.2.0"

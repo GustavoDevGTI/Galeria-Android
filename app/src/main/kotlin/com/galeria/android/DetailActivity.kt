@@ -1,9 +1,11 @@
 package com.galeria.android
 
 import android.app.AlertDialog
+import android.app.RecoverableSecurityException
 import android.app.WallpaperManager
 import android.content.ActivityNotFoundException
 import android.content.ClipData
+import android.content.ContentValues
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Configuration
@@ -53,6 +55,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.exifinterface.media.ExifInterface
 import coil3.SingletonImageLoader
 import coil3.load
 import coil3.request.ImageRequest
@@ -81,6 +84,22 @@ import kotlin.math.min
 
 @OptIn(UnstableApi::class)
 class DetailActivity : ComponentActivity() {
+    private data class ImageMetadata(
+        val width: Int? = null,
+        val height: Int? = null,
+        val make: String? = null,
+        val model: String? = null,
+        val capturedAt: String? = null,
+        val iso: String? = null,
+        val aperture: String? = null,
+        val exposure: String? = null,
+        val focalLength: String? = null,
+        val latitude: Double? = null,
+        val longitude: Double? = null
+    ) {
+        val hasLocation: Boolean get() = latitude != null && longitude != null
+    }
+
     private val executor = Executors.newSingleThreadExecutor()
     private val videoPreviewExecutor = Executors.newSingleThreadExecutor()
     private val imagePreloadScope = CoroutineScope(
@@ -113,10 +132,13 @@ class DetailActivity : ComponentActivity() {
     private var pendingMoveFolder: String? = null
     private var pendingRotateItem: MediaItem? = null
     private var pendingPdfItem: MediaItem? = null
+    private var pendingRenameItem: MediaItem? = null
+    private var pendingRenameName: String? = null
     private var videoPositionRestored = false
     private var userSeeking = false
     private var switchingItem = false
     private var shuffleMode = false
+    private var presentationMode = false
     private var currentIndex = 0
     private var downY = 0f
     private var downX = 0f
@@ -140,6 +162,7 @@ class DetailActivity : ComponentActivity() {
     private var lastTapY = 0f
     private var pendingSingleTap: Runnable? = null
     private var zoomed = false
+    private val imageMetadataCache = HashMap<String, ImageMetadata>()
     private val gestureTouchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop.toFloat() }
     @Volatile private var preloadGeneration = 0
 
@@ -152,7 +175,7 @@ class DetailActivity : ComponentActivity() {
 
     private val autoAdvanceRunnable = Runnable {
         shuffleAdvanceDeadlineMs = 0L
-        if (shuffleMode && !switchingItem && mediaQueue.size > 1) {
+        if ((shuffleMode || presentationMode) && !switchingItem && mediaQueue.size > 1) {
             switchItem(1, false)
         }
     }
@@ -172,6 +195,7 @@ class DetailActivity : ComponentActivity() {
         val path = savedInstanceState?.getString(STATE_CURRENT_PATH) ?: intent.getStringExtra("path")
         shuffleMode = savedInstanceState?.getBoolean(STATE_SHUFFLE_MODE)
             ?: intent.getBooleanExtra("shuffle_mode", false)
+        presentationMode = savedInstanceState?.getBoolean(STATE_PRESENTATION_MODE) ?: false
         shuffleSeed = savedInstanceState?.getLong(STATE_SHUFFLE_SEED) ?: System.nanoTime()
         if (savedInstanceState?.containsKey(STATE_VIDEO_POSITION) == true) {
             restoredVideoPositionMs = savedInstanceState.getLong(STATE_VIDEO_POSITION)
@@ -204,9 +228,10 @@ class DetailActivity : ComponentActivity() {
                 albumKey
             )
             runOnUiThread {
-                if (request != queueLoadGeneration || isFinishing || loaded.isEmpty()) return@runOnUiThread
+                val available = if (presentationMode) loaded.filter { it.isImage() } else loaded
+                if (request != queueLoadGeneration || isFinishing || available.isEmpty()) return@runOnUiThread
                 mediaQueue.clear()
-                mediaQueue.addAll(loaded)
+                mediaQueue.addAll(available)
                 if (shuffleMode) {
                     shuffleQueueFrom(currentUri)
                 } else {
@@ -294,6 +319,7 @@ class DetailActivity : ComponentActivity() {
 
         content = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
+            contentDescription = "Visualizador de mídia"
             setOnTouchListener { _, event -> handleSwipeOrTap(event) }
         }
         root.addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -403,40 +429,161 @@ class DetailActivity : ComponentActivity() {
 
     private fun showMediaMenu(anchor: View) {
         val item = currentItem()
+        if (item.isImage()) {
+            val key = item.uri.toString()
+            val cached = imageMetadataCache[key]
+            if (cached != null) {
+                showResolvedMediaMenu(anchor, item, cached)
+            } else {
+                executor.execute {
+                    val metadata = readImageMetadata(item.uri)
+                    imageMetadataCache[key] = metadata
+                    runOnUiThread {
+                        if (!isFinishing && anchor.isAttachedToWindow && currentItem().uri == item.uri) {
+                            showResolvedMediaMenu(anchor, item, metadata)
+                        }
+                    }
+                }
+            }
+            return
+        }
+        showResolvedMediaMenu(anchor, item, null)
+    }
+
+    private fun showResolvedMediaMenu(anchor: View, item: MediaItem, imageMetadata: ImageMetadata?) {
         val loopEnabled = currentPlayer?.repeatMode == Player.REPEAT_MODE_ONE ||
             (!shuffleMode && prefs.getBoolean("loop_videos", false))
         Ui.showPopupOptions(
             anchor,
-            ViewerMenuRules.options(item.isVideo(), loopEnabled, shuffleMode)
+            ViewerMenuRules.options(
+                isVideo = item.isVideo(),
+                loopEnabled = loopEnabled,
+                shuffleMode = shuffleMode || presentationMode,
+                hasLocation = imageMetadata?.hasLocation == true
+            ),
+            widthDp = 216
         ) { selected ->
             when (selected) {
+                ViewerMenuRules.RENAME -> askRenameCurrentImage()
                 ViewerMenuRules.OPEN_WITH -> openCurrentWithAnotherApp()
                 ViewerMenuRules.COPY_TO -> askFolderForCopyOrMove(true)
                 ViewerMenuRules.MOVE_TO -> askFolderForCopyOrMove(false)
                 ViewerMenuRules.HIDE -> confirmHideCurrent()
-                ViewerMenuRules.INFORMATION -> showCurrentVideoInformation()
+                ViewerMenuRules.INFORMATION -> if (item.isVideo()) {
+                    showCurrentVideoInformation()
+                } else {
+                    showCurrentImageInformation()
+                }
                 ViewerMenuRules.ENABLE_LOOP,
                 ViewerMenuRules.DISABLE_LOOP -> toggleVideoLoop()
                 ViewerMenuRules.SET_AS -> setCurrentAsWallpaper()
                 ViewerMenuRules.ROTATE -> rotateCurrentImage()
-                ViewerMenuRules.PRINT -> createPdfFromCurrentImage()
+                ViewerMenuRules.EXPORT_PDF -> createPdfFromCurrentImage()
                 ViewerMenuRules.RESIZE -> openImageEditor()
+                ViewerMenuRules.SHOW_ON_MAP -> openCurrentImageOnMap()
+                ViewerMenuRules.PRESENTATION -> startImagePresentation()
             }
         }
     }
 
     private fun openCurrentWithAnotherApp() {
         val item = currentItem()
+        val mediaLabel = if (item.isVideo()) "vídeo" else "imagem"
         val viewIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(item.uri, item.mimeType.ifEmpty { "video/*" })
-            clipData = ClipData.newRawUri("Vídeo", item.uri)
+            setDataAndType(item.uri, item.mimeType.ifEmpty { if (item.isVideo()) "video/*" else "image/*" })
+            clipData = ClipData.newRawUri(mediaLabel, item.uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         try {
-            startActivity(Intent.createChooser(viewIntent, "Abrir vídeo com"))
+            startActivity(Intent.createChooser(viewIntent, "Abrir $mediaLabel com"))
         } catch (_: ActivityNotFoundException) {
             Ui.toast(this, "Nenhum aplicativo compatível foi encontrado.")
         }
+    }
+
+    private fun askRenameCurrentImage() {
+        val item = currentItem()
+        if (!item.isImage()) return
+        Ui.showTextInputDialog(
+            this,
+            title = "Renomear imagem",
+            hint = "Nome do arquivo",
+            positiveText = "Renomear",
+            initialValue = item.name
+        ) { requestedName ->
+            val newName = ViewerMenuRules.normalizedRename(requestedName, item.name)
+            when {
+                newName == null -> Ui.toast(this, "Digite um nome válido.")
+                newName == item.name -> Unit
+                else -> renameImage(item, newName, requestPermission = true)
+            }
+        }
+    }
+
+    private fun renameImage(item: MediaItem, newName: String, requestPermission: Boolean) {
+        try {
+            val updated = contentResolver.update(
+                item.uri,
+                ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, newName) },
+                null,
+                null
+            ) > 0
+            if (updated) {
+                applyRenamedItem(item, newName)
+                pendingRenameItem = null
+                pendingRenameName = null
+                Ui.toast(this, "Imagem renomeada.")
+            } else if (requestPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                pendingRenameItem = item
+                pendingRenameName = newName
+                MediaActions.requestWrite(this, item.uri, REQ_RENAME_WRITE)
+            } else {
+                Ui.toast(this, "Não foi possível renomear a imagem.")
+            }
+        } catch (error: SecurityException) {
+            if (!requestPermission) {
+                Ui.toast(this, "Não foi possível renomear a imagem.")
+                return
+            }
+            pendingRenameItem = item
+            pendingRenameName = newName
+            requestRenamePermission(item.uri, error)
+        }
+    }
+
+    private fun requestRenamePermission(uri: Uri, error: SecurityException) {
+        when {
+            Build.VERSION.SDK_INT == Build.VERSION_CODES.Q && error is RecoverableSecurityException -> {
+                startIntentSenderForResult(
+                    error.userAction.actionIntent.intentSender,
+                    REQ_RENAME_WRITE,
+                    null,
+                    0,
+                    0,
+                    0
+                )
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> MediaActions.requestWrite(this, uri, REQ_RENAME_WRITE)
+            else -> Ui.toast(this, "Não foi possível solicitar permissão para renomear.")
+        }
+    }
+
+    private fun applyRenamedItem(item: MediaItem, newName: String) {
+        val index = mediaQueue.indexOfFirst { it.uri == item.uri }
+        if (index < 0) return
+        mediaQueue[index] = MediaItem(
+            item.id,
+            item.uri,
+            newName,
+            item.mimeType,
+            item.dateAdded,
+            item.size,
+            item.relativePath,
+            item.albumKey,
+            item.albumName
+        )
+        if (index == currentIndex) title.text = newName
+        MediaStoreRepository.invalidateCache()
     }
 
     private fun toggleVideoLoop() {
@@ -461,6 +608,152 @@ class DetailActivity : ComponentActivity() {
                     .show()
             }
         }
+    }
+
+    private fun showCurrentImageInformation() {
+        val item = currentItem()
+        executor.execute {
+            val key = item.uri.toString()
+            val metadata = imageMetadataCache[key] ?: readImageMetadata(item.uri).also {
+                imageMetadataCache[key] = it
+            }
+            val information = buildImageInformation(item, metadata)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                AlertDialog.Builder(this)
+                    .setTitle("Informações da imagem")
+                    .setMessage(information)
+                    .setPositiveButton("Fechar", null)
+                    .show()
+            }
+        }
+    }
+
+    private fun buildImageInformation(item: MediaItem, metadata: ImageMetadata): String = buildString {
+        appendLine("Nome: ${item.name}")
+        if (metadata.width != null && metadata.height != null) {
+            appendLine("Resolução: ${metadata.width} × ${metadata.height}")
+        }
+        val size = item.size.takeIf { it > 0L } ?: queryMediaSize(item.uri)
+        size?.let { appendLine("Tamanho: ${Formatter.formatFileSize(this@DetailActivity, it)}") }
+        appendLine("Formato: ${item.mimeType.ifEmpty { "Desconhecido" }}")
+        if (item.relativePath.isNotBlank()) appendLine("Pasta: ${item.relativePath.trimEnd('/')}")
+        if (item.dateAdded > 0L) {
+            appendLine("Adicionado em: ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(item.dateAdded * 1000L))}")
+        }
+        listOfNotNull(metadata.make, metadata.model).joinToString(" ").takeIf { it.isNotBlank() }?.let {
+            appendLine("Câmera: $it")
+        }
+        metadata.capturedAt?.let { appendLine("Capturada em: $it") }
+        metadata.iso?.let { appendLine("ISO: $it") }
+        metadata.aperture?.let { appendLine("Abertura: f/$it") }
+        metadata.exposure?.let { appendLine("Exposição: ${it}s") }
+        metadata.focalLength?.let { appendLine("Distância focal: ${it} mm") }
+        if (metadata.hasLocation) {
+            append(
+                "Localização: ${String.format(Locale.US, "%.6f", metadata.latitude)}, " +
+                    String.format(Locale.US, "%.6f", metadata.longitude)
+            )
+        }
+    }.trim()
+
+    private fun readImageMetadata(uri: Uri): ImageMetadata {
+        var exifWidth: Int? = null
+        var exifHeight: Int? = null
+        var make: String? = null
+        var model: String? = null
+        var capturedAt: String? = null
+        var iso: String? = null
+        var aperture: String? = null
+        var exposure: String? = null
+        var focalLength: String? = null
+        var latitude: Double? = null
+        var longitude: Double? = null
+        try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                val exif = ExifInterface(input)
+                exifWidth = exif.getAttributeInt(ExifInterface.TAG_IMAGE_WIDTH, 0).takeIf { it > 0 }
+                exifHeight = exif.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0).takeIf { it > 0 }
+                make = exif.getAttribute(ExifInterface.TAG_MAKE)?.trim()?.takeIf { it.isNotEmpty() }
+                model = exif.getAttribute(ExifInterface.TAG_MODEL)?.trim()?.takeIf { it.isNotEmpty() }
+                capturedAt = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
+                iso = exif.getAttribute(ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY)
+                aperture = exif.getAttribute(ExifInterface.TAG_F_NUMBER)
+                exposure = exif.getAttribute(ExifInterface.TAG_EXPOSURE_TIME)
+                focalLength = exif.getAttribute(ExifInterface.TAG_FOCAL_LENGTH)
+                exif.latLong?.let { coordinates ->
+                    latitude = coordinates[0]
+                    longitude = coordinates[1]
+                }
+            }
+        } catch (_: Exception) {
+        }
+        val bounds = readImageBounds(uri)
+        return ImageMetadata(
+            width = exifWidth ?: bounds.first,
+            height = exifHeight ?: bounds.second,
+            make = make,
+            model = model,
+            capturedAt = capturedAt,
+            iso = iso,
+            aperture = aperture,
+            exposure = exposure,
+            focalLength = focalLength,
+            latitude = latitude,
+            longitude = longitude
+        )
+    }
+
+    private fun readImageBounds(uri: Uri): Pair<Int?, Int?> = try {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, options)
+        }
+        options.outWidth.takeIf { it > 0 } to options.outHeight.takeIf { it > 0 }
+    } catch (_: Exception) {
+        null to null
+    }
+
+    private fun openCurrentImageOnMap() {
+        val item = currentItem()
+        executor.execute {
+            val key = item.uri.toString()
+            val metadata = imageMetadataCache[key] ?: readImageMetadata(item.uri).also {
+                imageMetadataCache[key] = it
+            }
+            val latitude = metadata.latitude
+            val longitude = metadata.longitude
+            runOnUiThread {
+                if (latitude == null || longitude == null) {
+                    Ui.toast(this, "A imagem não possui localização GPS.")
+                    return@runOnUiThread
+                }
+                val location = Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude")
+                try {
+                    startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, location), "Exibir localização"))
+                } catch (_: ActivityNotFoundException) {
+                    Ui.toast(this, "Nenhum aplicativo de mapas foi encontrado.")
+                }
+            }
+        }
+    }
+
+    private fun startImagePresentation() {
+        val currentUri = currentItem().uri
+        val images = mediaQueue.filter { it.isImage() }
+        if (images.size < 2) {
+            Ui.toast(this, "A apresentação precisa de pelo menos duas imagens.")
+            return
+        }
+        mediaQueue.clear()
+        mediaQueue.addAll(images)
+        currentIndex = mediaQueue.indexOfFirst { it.uri == currentUri }.takeIf { it >= 0 } ?: 0
+        presentationMode = true
+        restoredShuffleDelayMs = null
+        scheduleAdjacentPreload()
+        scheduleShuffleAdvance()
+        if (hudVisible) toggleHud()
+        Ui.toast(this, "Apresentação iniciada.")
     }
 
     private fun buildVideoInformation(item: MediaItem, playerDuration: Long?): String {
@@ -997,7 +1290,7 @@ class DetailActivity : ComponentActivity() {
         currentVideoKey = "video_pos_${item.uri.hashCode()}"
         videoPositionRestored = false
         player.setMediaItem(androidx.media3.common.MediaItem.fromUri(item.uri))
-        player.repeatMode = if (!shuffleMode && prefs.getBoolean("loop_videos", false)) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        player.repeatMode = if (!shuffleMode && !presentationMode && prefs.getBoolean("loop_videos", false)) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         player.playbackParameters = PlaybackParameters(playbackSpeed)
         player.volume = if (videoMuted) 0f else 1f
         playerView.player = player
@@ -1008,16 +1301,16 @@ class DetailActivity : ComponentActivity() {
                     if (restoredPosition != null) {
                         if (restoredPosition > 0L) player.seekTo(restoredPosition)
                         restoredVideoPositionMs = null
-                    } else if (!shuffleMode) {
+                    } else if (!shuffleMode && !presentationMode) {
                         restoreCurrentPosition()
                     }
                     videoPositionRestored = true
                 }
-                if (shuffleMode && player === currentPlayer && playbackState == Player.STATE_ENDED) {
+                if ((shuffleMode || presentationMode) && player === currentPlayer && playbackState == Player.STATE_ENDED) {
                     handler.removeCallbacks(autoAdvanceRunnable)
                     handler.postDelayed(autoAdvanceRunnable, 250L)
                 }
-                if (!shuffleMode && player === currentPlayer && playbackState == Player.STATE_ENDED) {
+                if (!shuffleMode && !presentationMode && player === currentPlayer && playbackState == Player.STATE_ENDED) {
                     saveCurrentPosition()
                 }
                 updatePlayPauseButton()
@@ -1040,7 +1333,7 @@ class DetailActivity : ComponentActivity() {
         })
         player.prepare()
         player.playWhenReady = restoredVideoPlayWhenReady
-            ?: (shuffleMode || prefs.getBoolean("autoplay_videos", true))
+            ?: (shuffleMode || presentationMode || prefs.getBoolean("autoplay_videos", true))
         restoredVideoPlayWhenReady = null
         updateSpeedButton()
         updatePlayPauseButton()
@@ -1169,7 +1462,7 @@ class DetailActivity : ComponentActivity() {
     private fun scheduleShuffleAdvance() {
         handler.removeCallbacks(autoAdvanceRunnable)
         shuffleAdvanceDeadlineMs = 0L
-        if (!shuffleMode || switchingItem || mediaQueue.size < 2) return
+        if ((!shuffleMode && !presentationMode) || switchingItem || mediaQueue.size < 2) return
         if (!currentItem().isVideo()) {
             val delay = restoredShuffleDelayMs?.coerceAtLeast(0L) ?: SHUFFLE_PHOTO_DELAY_MS
             restoredShuffleDelayMs = null
@@ -1592,6 +1885,7 @@ class DetailActivity : ComponentActivity() {
                     rotated.compress(compressFormat(item), 94, output)
                 }
                 runOnUiThread {
+                    imageMetadataCache.remove(item.uri.toString())
                     Ui.toast(this, "Orientação alterada.")
                     loadCurrentItem()
                 }
@@ -1742,6 +2036,16 @@ class DetailActivity : ComponentActivity() {
             }
             pendingMoveItem = null
             pendingMoveFolder = null
+        } else if (requestCode == REQ_RENAME_WRITE) {
+            val item = pendingRenameItem
+            val name = pendingRenameName
+            if (resultCode == RESULT_OK && item != null && name != null) {
+                renameImage(item, name, requestPermission = false)
+            } else {
+                Ui.toast(this, "Renomeação cancelada.")
+            }
+            pendingRenameItem = null
+            pendingRenameName = null
         } else if (requestCode == REQ_ROTATE_WRITE) {
             val item = pendingRotateItem
             if (resultCode == RESULT_OK && item != null) {
@@ -1780,7 +2084,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun saveCurrentPosition() {
         val key = currentVideoKey
-        if (!shuffleMode && currentPlayer != null && key != null && prefs.getBoolean("remember_video_position", true)) {
+        if (!shuffleMode && !presentationMode && currentPlayer != null && key != null && prefs.getBoolean("remember_video_position", true)) {
             prefs.edit().putLong(key, rememberedVideoPosition()).apply()
         }
     }
@@ -1821,6 +2125,7 @@ class DetailActivity : ComponentActivity() {
             outState.putString(STATE_CURRENT_PATH, item.relativePath)
         }
         outState.putBoolean(STATE_SHUFFLE_MODE, shuffleMode)
+        outState.putBoolean(STATE_PRESENTATION_MODE, presentationMode)
         outState.putLong(STATE_SHUFFLE_SEED, shuffleSeed)
         outState.putFloat(STATE_PLAYBACK_SPEED, playbackSpeed)
         outState.putBoolean(STATE_VIDEO_MUTED, videoMuted)
@@ -1915,6 +2220,7 @@ class DetailActivity : ComponentActivity() {
         private const val REQ_MOVE_WRITE = 33
         private const val REQ_ROTATE_WRITE = 34
         private const val REQ_CREATE_PDF = 35
+        private const val REQ_RENAME_WRITE = 36
         private const val SHUFFLE_PHOTO_DELAY_MS = 4200L
         private const val DOUBLE_TAP_MS = 260L
         private const val PRELOAD_AROUND_RADIUS = 5
@@ -1925,6 +2231,7 @@ class DetailActivity : ComponentActivity() {
         private const val STATE_CURRENT_MIME = "viewer_current_mime"
         private const val STATE_CURRENT_PATH = "viewer_current_path"
         private const val STATE_SHUFFLE_MODE = "viewer_shuffle_mode"
+        private const val STATE_PRESENTATION_MODE = "viewer_presentation_mode"
         private const val STATE_SHUFFLE_SEED = "viewer_shuffle_seed"
         private const val STATE_SHUFFLE_DELAY = "viewer_shuffle_delay"
         private const val STATE_VIDEO_POSITION = "viewer_video_position"

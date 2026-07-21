@@ -243,6 +243,7 @@ class Ui private constructor() {
             hint: String,
             message: String? = null,
             positiveText: String = "OK",
+            initialValue: String = "",
             onConfirm: (String) -> Unit
         ): AlertDialog {
             lateinit var dialog: AlertDialog
@@ -255,6 +256,8 @@ class Ui private constructor() {
                 setHintTextColor(muted(context))
                 backgroundTintList = ColorStateList.valueOf(muted(context))
                 setPadding(0, dp(context, 8), 0, dp(context, 4))
+                setText(initialValue)
+                setSelection(initialValue.length)
             }
             body.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 58)))
             body.addView(
@@ -285,7 +288,12 @@ class Ui private constructor() {
         }
 
         @JvmStatic
-        fun showPopupOptions(anchor: View, items: List<String>, onSelect: (String) -> Unit): PopupWindow {
+        fun showPopupOptions(
+            anchor: View,
+            items: List<String>,
+            widthDp: Int = 248,
+            onSelect: (String) -> Unit
+        ): PopupWindow {
             val context = anchor.context
             val scroll = ScrollView(context).apply {
                 isVerticalScrollBarEnabled = false
@@ -321,7 +329,7 @@ class Ui private constructor() {
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
             )
-            val width = dp(context, 248)
+            val width = dp(context, widthDp)
             val popup = PopupWindow(scroll, width, ViewGroup.LayoutParams.WRAP_CONTENT, true).apply {
                 isOutsideTouchable = true
                 setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))

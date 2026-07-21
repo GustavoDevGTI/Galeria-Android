@@ -92,6 +92,7 @@ object ViewerStateRules {
 }
 
 object ViewerMenuRules {
+    const val RENAME = "Renomear"
     const val OPEN_WITH = "Abrir com"
     const val COPY_TO = "Copiar para"
     const val MOVE_TO = "Mover para"
@@ -101,12 +102,32 @@ object ViewerMenuRules {
     const val DISABLE_LOOP = "Desativar repetição"
     const val SET_AS = "Definir como"
     const val ROTATE = "Alterar orientação"
-    const val PRINT = "Imprimir"
+    const val EXPORT_PDF = "Exportar como PDF"
     const val RESIZE = "Redimensionar"
+    const val SHOW_ON_MAP = "Exibir no mapa"
+    const val PRESENTATION = "Apresentação"
 
-    fun options(isVideo: Boolean, loopEnabled: Boolean, shuffleMode: Boolean): List<String> {
+    fun options(
+        isVideo: Boolean,
+        loopEnabled: Boolean,
+        shuffleMode: Boolean,
+        hasLocation: Boolean = false
+    ): List<String> {
         if (!isVideo) {
-            return listOf(HIDE, COPY_TO, MOVE_TO, SET_AS, ROTATE, PRINT, RESIZE)
+            return buildList {
+                add(RENAME)
+                add(OPEN_WITH)
+                add(INFORMATION)
+                add(HIDE)
+                add(COPY_TO)
+                add(MOVE_TO)
+                add(SET_AS)
+                add(ROTATE)
+                add(EXPORT_PDF)
+                add(RESIZE)
+                if (hasLocation) add(SHOW_ON_MAP)
+                if (!shuffleMode) add(PRESENTATION)
+            }
         }
         return buildList {
             add(OPEN_WITH)
@@ -115,6 +136,19 @@ object ViewerMenuRules {
             add(HIDE)
             add(INFORMATION)
             if (!shuffleMode) add(if (loopEnabled) DISABLE_LOOP else ENABLE_LOOP)
+        }
+    }
+
+    fun normalizedRename(requestedName: String, currentName: String): String? {
+        val cleaned = requestedName.trim()
+            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            .trim('.', ' ')
+        if (cleaned.isEmpty()) return null
+        val currentExtension = currentName.substringAfterLast('.', "").takeIf { it.isNotEmpty() }
+        return if (currentExtension != null && !cleaned.contains('.')) {
+            "$cleaned.$currentExtension"
+        } else {
+            cleaned
         }
     }
 }
