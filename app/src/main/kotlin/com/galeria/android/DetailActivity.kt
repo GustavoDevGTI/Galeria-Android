@@ -2,6 +2,8 @@ package com.galeria.android
 
 import android.app.AlertDialog
 import android.app.WallpaperManager
+import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Configuration
@@ -12,6 +14,9 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
 import android.media.ThumbnailUtils
 import android.net.Uri
 import android.os.Build
@@ -20,6 +25,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.provider.OpenableColumns
+import android.text.format.Formatter
 import android.util.LruCache
 import android.util.Size
 import android.view.Gravity
@@ -64,6 +71,8 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import java.text.DateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.abs
@@ -278,6 +287,7 @@ class DetailActivity : ComponentActivity() {
         topBar.addView(title, titleParams)
 
         val more = iconButton(R.drawable.ic_more_vertical, Ui.dp(this, 48)).apply {
+            contentDescription = "Mais opções"
             setOnClickListener { showMediaMenu(it) }
         }
         topBar.addView(more, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 44)))
@@ -392,29 +402,163 @@ class DetailActivity : ComponentActivity() {
         }
 
     private fun showMediaMenu(anchor: View) {
+        val item = currentItem()
+        val loopEnabled = currentPlayer?.repeatMode == Player.REPEAT_MODE_ONE ||
+            (!shuffleMode && prefs.getBoolean("loop_videos", false))
         Ui.showPopupOptions(
             anchor,
-            listOf(
-                "Ocultar",
-                "Copiar",
-                "Mover",
-                "Definir como",
-                "Alterar orientação",
-                "Imprimir",
-                "Redimensionar"
-            )
+            ViewerMenuRules.options(item.isVideo(), loopEnabled, shuffleMode)
         ) { selected ->
             when (selected) {
-                "Ocultar" -> confirmHideCurrent()
-                "Copiar" -> askFolderForCopyOrMove(true)
-                "Mover" -> askFolderForCopyOrMove(false)
-                "Definir como" -> setCurrentAsWallpaper()
-                "Alterar orientação" -> rotateCurrentImage()
-                "Imprimir" -> createPdfFromCurrentImage()
-                "Redimensionar" -> openImageEditor()
+                ViewerMenuRules.OPEN_WITH -> openCurrentWithAnotherApp()
+                ViewerMenuRules.COPY_TO -> askFolderForCopyOrMove(true)
+                ViewerMenuRules.MOVE_TO -> askFolderForCopyOrMove(false)
+                ViewerMenuRules.HIDE -> confirmHideCurrent()
+                ViewerMenuRules.INFORMATION -> showCurrentVideoInformation()
+                ViewerMenuRules.ENABLE_LOOP,
+                ViewerMenuRules.DISABLE_LOOP -> toggleVideoLoop()
+                ViewerMenuRules.SET_AS -> setCurrentAsWallpaper()
+                ViewerMenuRules.ROTATE -> rotateCurrentImage()
+                ViewerMenuRules.PRINT -> createPdfFromCurrentImage()
+                ViewerMenuRules.RESIZE -> openImageEditor()
             }
         }
     }
+
+    private fun openCurrentWithAnotherApp() {
+        val item = currentItem()
+        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(item.uri, item.mimeType.ifEmpty { "video/*" })
+            clipData = ClipData.newRawUri("Vídeo", item.uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            startActivity(Intent.createChooser(viewIntent, "Abrir vídeo com"))
+        } catch (_: ActivityNotFoundException) {
+            Ui.toast(this, "Nenhum aplicativo compatível foi encontrado.")
+        }
+    }
+
+    private fun toggleVideoLoop() {
+        if (shuffleMode || !currentItem().isVideo()) return
+        val enabled = currentPlayer?.repeatMode != Player.REPEAT_MODE_ONE
+        prefs.edit().putBoolean("loop_videos", enabled).apply()
+        currentPlayer?.repeatMode = if (enabled) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        Ui.toast(this, if (enabled) "Repetição ativada." else "Repetição desativada.")
+    }
+
+    private fun showCurrentVideoInformation() {
+        val item = currentItem()
+        val playerDuration = currentPlayer?.duration?.takeIf { it > 0L }
+        executor.execute {
+            val information = buildVideoInformation(item, playerDuration)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                AlertDialog.Builder(this)
+                    .setTitle("Informações do vídeo")
+                    .setMessage(information)
+                    .setPositiveButton("Fechar", null)
+                    .show()
+            }
+        }
+    }
+
+    private fun buildVideoInformation(item: MediaItem, playerDuration: Long?): String {
+        var duration = playerDuration
+        var width: Int? = null
+        var height: Int? = null
+        var rotation = 0
+        var bitRate: Long? = null
+        var frameRate: Float? = null
+        var detectedMime: String? = null
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(this, item.uri)
+            duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: duration
+            width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+            height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+            rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            bitRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toLongOrNull()
+            frameRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()
+            detectedMime = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+        } catch (_: Exception) {
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {
+            }
+        }
+
+        val size = item.size.takeIf { it > 0L } ?: queryMediaSize(item.uri)
+        val codec = detectVideoCodec(item.uri)
+        return buildString {
+            appendLine("Nome: ${item.name}")
+            duration?.takeIf { it > 0L }?.let { appendLine("Duração: ${formatTime(it)}") }
+            if (width != null && height != null && width > 0 && height > 0) {
+                appendLine("Resolução: ${width} × ${height}")
+            }
+            if (rotation != 0) appendLine("Rotação: ${rotation}°")
+            size?.takeIf { it > 0L }?.let { appendLine("Tamanho: ${Formatter.formatFileSize(this@DetailActivity, it)}") }
+            appendLine("Formato: ${item.mimeType.ifEmpty { detectedMime ?: "Desconhecido" }}")
+            codec?.let { appendLine("Codec: $it") }
+            bitRate?.takeIf { it > 0L }?.let { appendLine("Taxa de bits: ${formatBitRate(it)}") }
+            frameRate?.takeIf { it > 0f }?.let { appendLine("Quadros por segundo: ${formatFrameRate(it)}") }
+            if (item.relativePath.isNotBlank()) appendLine("Pasta: ${item.relativePath.trimEnd('/')}")
+            if (item.dateAdded > 0L) {
+                append("Adicionado em: ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(item.dateAdded * 1000L))}")
+            }
+        }.trim()
+    }
+
+    private fun queryMediaSize(uri: Uri): Long? = try {
+        contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getLong(0).takeIf { it > 0L } else null
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun detectVideoCodec(uri: Uri): String? {
+        val extractor = MediaExtractor()
+        return try {
+            extractor.setDataSource(this, uri, null)
+            var videoMime: String? = null
+            for (index in 0 until extractor.trackCount) {
+                val mime = extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)
+                if (mime?.startsWith("video/") == true) {
+                    videoMime = mime
+                    break
+                }
+            }
+            when (videoMime) {
+                "video/avc" -> "H.264 / AVC"
+                "video/hevc" -> "H.265 / HEVC"
+                "video/x-vnd.on2.vp9" -> "VP9"
+                "video/av01" -> "AV1"
+                "video/mp4v-es" -> "MPEG-4 Visual"
+                null -> null
+                else -> videoMime.substringAfter("video/").uppercase(Locale.US)
+            }
+        } catch (_: Exception) {
+            null
+        } finally {
+            extractor.release()
+        }
+    }
+
+    private fun formatBitRate(bitsPerSecond: Long): String =
+        if (bitsPerSecond >= 1_000_000L) {
+            String.format(Locale.getDefault(), "%.1f Mbps", bitsPerSecond / 1_000_000.0)
+        } else {
+            String.format(Locale.getDefault(), "%.0f kbps", bitsPerSecond / 1_000.0)
+        }
+
+    private fun formatFrameRate(frameRate: Float): String =
+        if (abs(frameRate - frameRate.toInt()) < 0.01f) {
+            frameRate.toInt().toString()
+        } else {
+            String.format(Locale.getDefault(), "%.2f", frameRate)
+        }
 
     private fun handleSwipeOrTap(event: MotionEvent): Boolean {
         if (switchingItem) return true
