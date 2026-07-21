@@ -1,10 +1,12 @@
 package com.galeria.android
 
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.database.ContentObserver
 import android.graphics.Color
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -20,6 +22,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -28,6 +31,7 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.lifecycle.lifecycleScope
 import androidx.paging.LoadState
 import androidx.paging.PagingConfig
@@ -132,6 +136,9 @@ class AlbumMediaActivity : ComponentActivity() {
         albumName = intent.getStringExtra("album_name")?.takeIf { it.isNotEmpty() } ?: "Álbum"
         readAlbumOptions()
         buildLayout()
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = handleToolbarBack()
+        })
         registerMediaObserver()
         mediaRefreshHandler.postDelayed({
             if (!isFinishing) loadMedia(false)
@@ -209,32 +216,25 @@ class AlbumMediaActivity : ComponentActivity() {
 
         val bar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(Ui.dp(this@AlbumMediaActivity, 10), statusBarHeight() + Ui.dp(this@AlbumMediaActivity, 12), Ui.dp(this@AlbumMediaActivity, 14), Ui.dp(this@AlbumMediaActivity, 6))
+            tag = TAG_ALBUM_TOOLBAR
+            setPadding(Ui.dp(this@AlbumMediaActivity, 8), statusBarHeight() + Ui.dp(this@AlbumMediaActivity, 6), Ui.dp(this@AlbumMediaActivity, 8), Ui.dp(this@AlbumMediaActivity, 6))
         }
         val back = ImageButton(this).apply {
             setImageResource(R.drawable.ic_back)
             setBackgroundColor(Color.TRANSPARENT)
             setColorFilter(Ui.text(this@AlbumMediaActivity))
             setPadding(Ui.dp(this@AlbumMediaActivity, 8), Ui.dp(this@AlbumMediaActivity, 8), Ui.dp(this@AlbumMediaActivity, 8), Ui.dp(this@AlbumMediaActivity, 8))
-            setOnClickListener { finish() }
+            contentDescription = "Voltar"
+            setOnClickListener { handleToolbarBack() }
         }
-        bar.addView(back, LinearLayout.LayoutParams(Ui.dp(this, 50), Ui.dp(this, 50)))
-
-        val title = Ui.title(this, albumName, 21).apply {
-            isSingleLine = false
-            maxLines = 2
-        }
-        val titleParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            leftMargin = Ui.dp(this@AlbumMediaActivity, 4)
-        }
-        bar.addView(title, titleParams)
-        root.addView(bar)
+        bar.addView(back, LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 46)))
 
         gridSpacingDp = max(0, min(MAX_GRID_SPACING_DP, prefs.getInt(spacingKey(), 3)))
         searchBox = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            background = Ui.rounded(Ui.search(this@AlbumMediaActivity), 18, this@AlbumMediaActivity)
-            setPadding(Ui.dp(this@AlbumMediaActivity, 12), 0, Ui.dp(this@AlbumMediaActivity, 4), 0)
+            tag = TAG_ALBUM_SEARCH_TITLE
+            contentDescription = "Título e pesquisa do álbum"
+            setPadding(Ui.dp(this@AlbumMediaActivity, 6), 0, Ui.dp(this@AlbumMediaActivity, 4), 0)
         }
         selectAllChip = Ui.title(this, "[ ]", 16).apply {
             gravity = Gravity.CENTER
@@ -245,12 +245,18 @@ class AlbumMediaActivity : ComponentActivity() {
         searchBox.addView(selectAllChip, LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 38)))
 
         searchInput = EditText(this).apply {
-            hint = "Pesquisar nesta pasta"
-            setHintTextColor(Ui.muted(this@AlbumMediaActivity))
+            hint = albumName
+            setHintTextColor(Ui.text(this@AlbumMediaActivity))
             setTextColor(Ui.text(this@AlbumMediaActivity))
-            textSize = 14f
+            textSize = 20f
+            setTypeface(Typeface.DEFAULT, Typeface.BOLD)
             setSingleLine(true)
             setBackgroundColor(Color.TRANSPARENT)
+            isCursorVisible = false
+            contentDescription = "Pesquisar nesta pasta"
+            compoundDrawablePadding = Ui.dp(this@AlbumMediaActivity, 8)
+            setPadding(Ui.dp(this@AlbumMediaActivity, 6), 0, Ui.dp(this@AlbumMediaActivity, 6), 0)
+            setOnFocusChangeListener { _, _ -> updateSearchPresentation() }
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -266,11 +272,18 @@ class AlbumMediaActivity : ComponentActivity() {
             })
         }
         searchBox.addView(searchInput, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        val searchParams = LinearLayout.LayoutParams(0, Ui.dp(this, 42), 1f).apply {
+            leftMargin = Ui.dp(this@AlbumMediaActivity, 2)
+            rightMargin = Ui.dp(this@AlbumMediaActivity, 2)
+        }
+        bar.addView(searchBox, searchParams)
+
         moreButton = ImageButton(this).apply {
             setImageResource(R.drawable.ic_more_vertical)
             setBackgroundColor(Color.TRANSPARENT)
             setColorFilter(Ui.text(this@AlbumMediaActivity))
             setPadding(Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9))
+            contentDescription = "Mais opções"
             setOnClickListener {
                 if (adapter.isSelectionMode()) {
                     exitSelectionMode()
@@ -279,11 +292,9 @@ class AlbumMediaActivity : ComponentActivity() {
                 }
             }
         }
-        searchBox.addView(moreButton, LinearLayout.LayoutParams(Ui.dp(this, 42), Ui.dp(this, 42)))
-        val searchParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42)).apply {
-            setMargins(Ui.dp(this@AlbumMediaActivity, 14), 0, Ui.dp(this@AlbumMediaActivity, 14), Ui.dp(this@AlbumMediaActivity, 8))
-        }
-        root.addView(searchBox, searchParams)
+        bar.addView(moreButton, LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 46)))
+        root.addView(bar)
+        updateSearchPresentation()
 
         selectionBar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -695,17 +706,68 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun updateSelectionUi() {
+        if (adapter.isSelectionMode() && adapter.selectedCount() == 0) {
+            adapter.setSelectionMode(false)
+        }
         val active = adapter.isSelectionMode() && adapter.selectedCount() > 0
         selectionBar.visibility = View.GONE
         selectionActions.visibility = if (active) View.VISIBLE else View.GONE
         selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
         selectAllChip.text = if (adapter.allVisibleSelected()) "[x]" else "[ ]"
-        searchInput.hint = if (active) "${adapter.selectedCount()} selecionados" else "Pesquisar nesta pasta"
         searchInput.isEnabled = !active
         moreButton.setImageResource(if (active) R.drawable.ic_back else R.drawable.ic_more_vertical)
-        if (adapter.isSelectionMode() && adapter.selectedCount() == 0) {
-            adapter.setSelectionMode(false)
+        moreButton.contentDescription = if (active) "Cancelar seleção" else "Mais opções"
+        if (active) {
+            searchInput.clearFocus()
+            hideKeyboard()
         }
+        updateSearchPresentation()
+    }
+
+    private fun handleToolbarBack() {
+        if (::adapter.isInitialized && adapter.isSelectionMode()) {
+            exitSelectionMode()
+            return
+        }
+        if (::searchInput.isInitialized && (searchInput.hasFocus() || searchInput.text.isNotEmpty())) {
+            searchInput.setText("")
+            searchInput.clearFocus()
+            hideKeyboard()
+            updateSearchPresentation()
+            return
+        }
+        finish()
+    }
+
+    private fun updateSearchPresentation() {
+        if (!::searchInput.isInitialized || !::searchBox.isInitialized) return
+        val selecting = ::adapter.isInitialized && adapter.isSelectionMode() && adapter.selectedCount() > 0
+        val searching = !selecting && (searchInput.hasFocus() || searchInput.text.isNotEmpty())
+
+        searchBox.background = when {
+            selecting -> Ui.rounded(Ui.surface(this), 18, this)
+            searching -> Ui.rounded(Ui.search(this), 18, this)
+            else -> null
+        }
+        searchInput.hint = when {
+            selecting -> "${adapter.selectedCount()} selecionados"
+            searching -> "Pesquisar nesta pasta"
+            else -> albumName
+        }
+        searchInput.setHintTextColor(if (searching) Ui.muted(this) else Ui.text(this))
+        searchInput.textSize = if (searching) 14f else 20f
+        searchInput.setTypeface(Typeface.DEFAULT, if (searching) Typeface.NORMAL else Typeface.BOLD)
+        searchInput.isCursorVisible = searching && searchInput.hasFocus()
+
+        val searchIcon = if (selecting) null else getDrawable(R.drawable.ic_search)?.mutate()?.apply {
+            setTint(if (searching) Ui.muted(this@AlbumMediaActivity) else Ui.text(this@AlbumMediaActivity))
+        }
+        searchInput.setCompoundDrawablesRelativeWithIntrinsicBounds(searchIcon, null, null, null)
+    }
+
+    private fun hideKeyboard() {
+        val inputManager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        inputManager.hideSoftInputFromWindow(searchInput.windowToken, 0)
     }
 
     private fun toggleSelectAll() {
@@ -1126,6 +1188,8 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val TAG_ALBUM_TOOLBAR = "album_toolbar"
+        private const val TAG_ALBUM_SEARCH_TITLE = "album_search_title"
         private const val REQ_DELETE = 11
         private const val MAX_GRID_SPACING_DP = 8
         private const val INITIAL_MEDIA_DELAY_MS = 60L
