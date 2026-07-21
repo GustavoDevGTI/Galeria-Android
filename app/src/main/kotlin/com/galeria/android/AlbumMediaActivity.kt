@@ -747,20 +747,20 @@ class AlbumMediaActivity : ComponentActivity() {
         searchBox.background = when {
             selecting -> Ui.rounded(Ui.surface(this), 18, this)
             searching -> Ui.rounded(Ui.search(this), 18, this)
-            else -> null
+            else -> Ui.rounded(Ui.search(this), 18, this)
         }
         searchInput.hint = when {
             selecting -> "${adapter.selectedCount()} selecionados"
             searching -> "Pesquisar nesta pasta"
-            else -> albumName
+            else -> "Pesquisar em $albumName"
         }
-        searchInput.setHintTextColor(if (searching) Ui.muted(this) else Ui.text(this))
-        searchInput.textSize = if (searching) 14f else 20f
-        searchInput.setTypeface(Typeface.DEFAULT, if (searching) Typeface.NORMAL else Typeface.BOLD)
+        searchInput.setHintTextColor(if (selecting) Ui.text(this) else Ui.muted(this))
+        searchInput.textSize = if (selecting) 20f else if (searching) 14f else 15f
+        searchInput.setTypeface(Typeface.DEFAULT, if (selecting) Typeface.BOLD else Typeface.NORMAL)
         searchInput.isCursorVisible = searching && searchInput.hasFocus()
 
         val searchIcon = if (selecting) null else getDrawable(R.drawable.ic_search)?.mutate()?.apply {
-            setTint(if (searching) Ui.muted(this@AlbumMediaActivity) else Ui.text(this@AlbumMediaActivity))
+            setTint(Ui.muted(this@AlbumMediaActivity))
         }
         searchInput.setCompoundDrawablesRelativeWithIntrinsicBounds(searchIcon, null, null, null)
     }

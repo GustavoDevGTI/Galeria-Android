@@ -35,7 +35,7 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - Reordenação personalizada de mídias por arrastar e soltar
 - Seleção múltipla de mídias e álbuns
 - Filtro de mídia dentro dos álbuns
-- Barra única no álbum, alternando entre o nome da pasta e a pesquisa sem ocupar uma segunda linha
+- Barra única de pesquisa no álbum, identificada por formato, lupa e texto com o nome da pasta
 - Agrupamento por tipo, extensão e data
 - Modo de visualização em grade e lista
 - Ajuste global de espaçamento da grade
@@ -120,7 +120,7 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.22
+### Validação da versão 0.8.23
 
 - 14 testes unitários e 7 testes instrumentados aprovados
 - Teste de interface aprovado para título e pesquisa compartilharem a mesma barra do álbum
@@ -134,9 +134,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.22**: são **23 commits** na linha 0.8, ou **22 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.23**: são **24 commits** na linha 0.8, ou **23 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.22 usa o código `8022`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.23 usa o código `8023`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -163,6 +163,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.20`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.20) | 21/07/2026 | Preservação do fluxo aleatório após rotação |
 | [`v0.8.21`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.21) | 21/07/2026 | Controle patch por commit e histórico completo da linha 0.8 |
 | [`v0.8.22`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.22) | 21/07/2026 | Título e pesquisa unificados na barra do álbum |
+| [`v0.8.23`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.23) | 21/07/2026 | Identificação visual reforçada na pesquisa do álbum |
 
 ## Relatório comparativo de desempenho
 
@@ -178,7 +179,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.22](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.22.apk)
+[Baixar Galeria Android - versão 0.8.23](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.23.apk)
 
 Build padrão do Gradle:
 
@@ -189,10 +190,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.22.apk
+Galeria-Android-versao-0.8.23.apk
 ```
 
-O APK 0.8.22 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.23 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 
