@@ -113,6 +113,38 @@ object HiddenAlbumDialogRules {
     ): Set<String> = keysForInitialDialog(visibleNow, previouslyVisible)
 }
 
+object GridColumnRules {
+    const val MIN_COLUMNS = 2
+    const val MAX_COLUMNS = 8
+    const val SCALE_STEP = 1.12f
+
+    fun normalized(columns: Int, fallback: Int): Int =
+        (if (columns > 0) columns else fallback).coerceIn(MIN_COLUMNS, MAX_COLUMNS)
+
+    fun columnDelta(horizontalScale: Float): Int = when {
+        horizontalScale >= SCALE_STEP -> -1
+        horizontalScale <= 1f / SCALE_STEP -> 1
+        else -> 0
+    }
+
+    fun changed(columns: Int, delta: Int): Int =
+        (columns + delta).coerceIn(MIN_COLUMNS, MAX_COLUMNS)
+}
+
+object MediaIdentityRules {
+    fun sameUri(first: String, second: String): Boolean {
+        if (first == second) return true
+        val firstId = mediaStoreId(first) ?: return false
+        val secondId = mediaStoreId(second) ?: return false
+        return firstId == secondId
+    }
+
+    private fun mediaStoreId(uri: String): Long? =
+        uri.takeIf { it.startsWith("content://media/") }
+            ?.substringAfterLast('/')
+            ?.toLongOrNull()
+}
+
 object AlbumRules {
     const val SORT_NAME = "name"
     const val SORT_PATH = "path"
@@ -153,7 +185,7 @@ object ViewerStateRules {
         if (availableUris.isEmpty()) return emptyList()
         val shuffled = availableUris.distinct().sorted().toMutableList()
         Collections.shuffle(shuffled, Random(seed))
-        val currentIndex = shuffled.indexOf(currentUri)
+        val currentIndex = shuffled.indexOfFirst { MediaIdentityRules.sameUri(it, currentUri) }
         if (currentIndex <= 0) return shuffled
         return shuffled.drop(currentIndex) + shuffled.take(currentIndex)
     }

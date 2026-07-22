@@ -11,7 +11,6 @@ import android.widget.EditText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.Espresso.pressBack
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.closeSoftKeyboard
 import androidx.test.espresso.action.ViewActions.replaceText
@@ -29,6 +28,7 @@ import androidx.test.rule.GrantPermissionRule
 import org.hamcrest.Matchers.allOf
 import org.hamcrest.Matchers.containsString
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,6 +50,10 @@ class ImageMenuInstrumentedTest {
         val firstUri = insertImage(context, albumPath, "menu-first-$suffix.png")
         val secondName = "menu-second-$suffix.png"
         val secondUri = insertImage(context, albumPath, secondName)
+        MediaStoreRepository.invalidateCache()
+        val albumItems = MediaStoreRepository.loadMediaForAlbum(context, albumPath)
+        assertTrue(albumItems.any { it.name == "menu-first-$suffix.png" })
+        assertTrue(albumItems.any { it.name == secondName })
 
         try {
             val intent = Intent(context, DetailActivity::class.java).apply {
@@ -75,14 +79,16 @@ class ImageMenuInstrumentedTest {
                 onView(withText(containsString("Resolução: 1 × 1")))
                     .inRoot(isDialog())
                     .check(matches(isDisplayed()))
-                pressBack()
+                onView(withText("Fechar")).inRoot(isDialog()).perform(click())
 
                 onView(withContentDescription("Mais opções")).perform(click())
                 waitUntilDisplayed(ViewerMenuRules.RENAME)
                 onView(withText(ViewerMenuRules.RENAME)).perform(click())
+                waitUntilDisplayedInDialog("Renomear imagem")
                 onView(isAssignableFrom(EditText::class.java))
+                    .inRoot(isDialog())
                     .perform(replaceText("imagem-renomeada"), closeSoftKeyboard())
-                onView(allOf(withText("Renomear"), isClickable())).perform(click())
+                onView(allOf(withText("Renomear"), isClickable())).inRoot(isDialog()).perform(click())
                 waitUntilDisplayed("imagem-renomeada.png")
 
                 Thread.sleep(700L)
@@ -97,6 +103,7 @@ class ImageMenuInstrumentedTest {
         } finally {
             context.contentResolver.delete(firstUri, null, null)
             context.contentResolver.delete(secondUri, null, null)
+            MediaStoreRepository.invalidateCache()
         }
     }
 

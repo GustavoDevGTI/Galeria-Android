@@ -270,7 +270,9 @@ class DetailActivity : ComponentActivity() {
                 if (shuffleMode) {
                     shuffleQueueFrom(currentUri)
                 } else {
-                    currentIndex = mediaQueue.indexOfFirst { it.uri.toString() == currentUri.toString() }.takeIf { it >= 0 } ?: 0
+                    currentIndex = mediaQueue.indexOfFirst {
+                        MediaIdentityRules.sameUri(it.uri.toString(), currentUri.toString())
+                    }.takeIf { it >= 0 } ?: 0
                 }
                 scheduleAdjacentPreload()
                 scheduleShuffleAdvance()
@@ -647,21 +649,28 @@ class DetailActivity : ComponentActivity() {
 
     private fun showCurrentImageInformation() {
         val item = currentItem()
+        val key = item.uri.toString()
+        imageMetadataCache[key]?.let { metadata ->
+            showImageInformationDialog(item, metadata)
+            return
+        }
         executor.execute {
-            val key = item.uri.toString()
-            val metadata = imageMetadataCache[key] ?: readImageMetadata(item.uri).also {
+            val metadata = readImageMetadata(item.uri).also {
                 imageMetadataCache[key] = it
             }
-            val information = buildImageInformation(item, metadata)
             runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                AlertDialog.Builder(this)
-                    .setTitle("Informações da imagem")
-                    .setMessage(information)
-                    .setPositiveButton("Fechar", null)
-                    .show()
+                showImageInformationDialog(item, metadata)
             }
         }
+    }
+
+    private fun showImageInformationDialog(item: MediaItem, metadata: ImageMetadata) {
+        if (isFinishing || isDestroyed) return
+        AlertDialog.Builder(this)
+            .setTitle("Informações da imagem")
+            .setMessage(buildImageInformation(item, metadata))
+            .setPositiveButton("Fechar", null)
+            .show()
     }
 
     private fun buildImageInformation(item: MediaItem, metadata: ImageMetadata): String = buildString {

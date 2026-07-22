@@ -49,6 +49,7 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.Random
 import java.util.concurrent.Executors
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -66,6 +67,11 @@ class AlbumMediaActivity : ComponentActivity() {
     private var albumName: String = "Álbum"
     private lateinit var prefs: SharedPreferences
     private var gridSpacingDp = 3
+    private var gridColumnCount = 0
+    private var horizontalPinchScale = 1f
+    private var lastHorizontalPinchSpan = 0f
+    private var pinchGestureActive = false
+    private var pinchGestureConsumed = false
     private var dragging = false
     private var dragPosition = -1
     private var savedFirstVisible = 0
@@ -405,6 +411,52 @@ class AlbumMediaActivity : ComponentActivity() {
                 mediaRefreshScheduled = false
                 pendingMediaRefresh = true
             }
+            val pinchCandidate = !listMode && !dragging && event.pointerCount > 1
+            if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && pinchCandidate) {
+                horizontalPinchScale = 1f
+                lastHorizontalPinchSpan = horizontalPointerSpan(event)
+                pinchGestureActive = true
+                pinchGestureConsumed = true
+                grid.stopScroll()
+                grid.parent?.requestDisallowInterceptTouchEvent(true)
+                if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = false
+                return@setOnTouchListener true
+            }
+            if (event.actionMasked == MotionEvent.ACTION_MOVE && pinchGestureActive) {
+                val currentSpan = horizontalPointerSpan(event)
+                if (lastHorizontalPinchSpan > 0f && currentSpan > 0f) {
+                    val factor = currentSpan / lastHorizontalPinchSpan
+                    if (factor.isFinite() && factor in 0.5f..2f) {
+                        horizontalPinchScale *= factor
+                        val delta = GridColumnRules.columnDelta(horizontalPinchScale)
+                        if (delta != 0) {
+                            horizontalPinchScale = 1f
+                            changeGridColumnCount(delta)
+                        }
+                    }
+                }
+                lastHorizontalPinchSpan = currentSpan
+                return@setOnTouchListener true
+            }
+            if (event.actionMasked == MotionEvent.ACTION_POINTER_UP && pinchGestureActive) {
+                pinchGestureActive = false
+                horizontalPinchScale = 1f
+                lastHorizontalPinchSpan = 0f
+                if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
+                return@setOnTouchListener true
+            }
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                val consumed = pinchGestureConsumed
+                pinchGestureActive = false
+                pinchGestureConsumed = false
+                horizontalPinchScale = 1f
+                lastHorizontalPinchSpan = 0f
+                if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
+                if (consumed) return@setOnTouchListener true
+            }
+            if (pinchCandidate || pinchGestureActive || pinchGestureConsumed) {
+                return@setOnTouchListener true
+            }
             if (!dragging) return@setOnTouchListener false
             if (event.action == MotionEvent.ACTION_MOVE) {
                 val targetView = grid.findChildViewUnder(event.x, event.y)
@@ -467,7 +519,7 @@ class AlbumMediaActivity : ComponentActivity() {
         val viewType = if (listMode) 1 else 0
         if (warmedGridPoolViewType == viewType) return
         warmedGridPoolViewType = viewType
-        val target = if (listMode) 4 else mediaSpanCount() * 2
+        val target = if (listMode) 4 else gridColumnCount * 2
         gridPoolWarmupRemaining = max(gridPoolWarmupRemaining, target)
         grid.removeCallbacks(gridPoolWarmup)
         grid.postDelayed(gridPoolWarmup, GRID_POOL_WARMUP_STEP_MS)
@@ -519,6 +571,10 @@ class AlbumMediaActivity : ComponentActivity() {
         showRaw = prefs.getBoolean(optionKey("filter_raw"), true)
         showSvgs = prefs.getBoolean(optionKey("filter_svg"), true)
         listMode = prefs.getBoolean(optionKey("list_mode"), false)
+        gridColumnCount = GridColumnRules.normalized(
+            prefs.getInt(PREF_GRID_COLUMNS, 0),
+            mediaSpanCount()
+        )
         groupMode = prefs.getString(optionKey("group_mode"), GROUP_NONE) ?: GROUP_NONE
     }
 
@@ -1030,10 +1086,36 @@ class AlbumMediaActivity : ComponentActivity() {
 
     private fun applyViewMode() {
         if (!::grid.isInitialized || !::adapter.isInitialized) return
-        layoutManager.spanCount = if (listMode) 1 else mediaSpanCount()
+        layoutManager.spanCount = if (listMode) 1 else gridColumnCount
         adapter.setListMode(listMode)
+        grid.contentDescription = if (listMode) {
+            "Lista de mídias"
+        } else {
+            "Grade de mídias, $gridColumnCount colunas"
+        }
         applyGridSpacing()
     }
+
+    private fun changeGridColumnCount(delta: Int) {
+        if (listMode || !::layoutManager.isInitialized || !::grid.isInitialized) return
+        val next = GridColumnRules.changed(gridColumnCount, delta)
+        if (next == gridColumnCount) return
+        val anchorPosition = layoutManager.findFirstVisibleItemPosition()
+        val anchorOffset = layoutManager.findViewByPosition(anchorPosition)?.top ?: grid.paddingTop
+        gridColumnCount = next
+        prefs.edit().putInt(PREF_GRID_COLUMNS, gridColumnCount).apply()
+        layoutManager.spanCount = gridColumnCount
+        grid.contentDescription = "Grade de mídias, $gridColumnCount colunas"
+        applyGridSpacing()
+        if (anchorPosition != RecyclerView.NO_POSITION) {
+            layoutManager.scrollToPositionWithOffset(anchorPosition, anchorOffset)
+        }
+        warmedGridPoolViewType = -1
+        warmGridPoolGradually()
+    }
+
+    private fun horizontalPointerSpan(event: MotionEvent): Float =
+        if (event.pointerCount >= 2) abs(event.getX(0) - event.getX(1)) else 0f
 
     private fun updateThumbnailRequestSize() {
         if (!::adapter.isInitialized || !::layoutManager.isInitialized) return
@@ -1166,6 +1248,7 @@ class AlbumMediaActivity : ComponentActivity() {
         private const val TAG_ALBUM_SEARCH_TITLE = "album_search_title"
         private const val REQ_DELETE = 11
         private const val MAX_GRID_SPACING_DP = 8
+        private const val PREF_GRID_COLUMNS = "media_grid_columns"
         private const val INITIAL_MEDIA_DELAY_MS = 60L
         private const val GRID_POOL_WARMUP_STEP_MS = 24L
         private const val GRID_POOL_WARMUP_RETRY_MS = 80L

@@ -73,6 +73,37 @@ class AlbumRulesTest {
         assertEquals(setOf("camera", "viagem"), remembered)
     }
 
+    @Test
+    fun horizontalPinchChangesTheNumberOfGridColumns() {
+        assertEquals(-1, GridColumnRules.columnDelta(GridColumnRules.SCALE_STEP))
+        assertEquals(1, GridColumnRules.columnDelta(1f / GridColumnRules.SCALE_STEP))
+        assertEquals(0, GridColumnRules.columnDelta(1f))
+    }
+
+    @Test
+    fun gridColumnCountStaysInsideTheSupportedRange() {
+        assertEquals(GridColumnRules.MIN_COLUMNS, GridColumnRules.changed(GridColumnRules.MIN_COLUMNS, -1))
+        assertEquals(GridColumnRules.MAX_COLUMNS, GridColumnRules.changed(GridColumnRules.MAX_COLUMNS, 1))
+        assertEquals(4, GridColumnRules.normalized(0, 4))
+        assertEquals(GridColumnRules.MAX_COLUMNS, GridColumnRules.normalized(99, 4))
+    }
+
+    @Test
+    fun mediaStoreUrisWithTheSameIdRepresentTheSameMedia() {
+        assertTrue(
+            MediaIdentityRules.sameUri(
+                "content://media/external/images/media/321",
+                "content://media/external/file/321"
+            )
+        )
+        assertFalse(
+            MediaIdentityRules.sameUri(
+                "content://media/external/images/media/321",
+                "content://media/external/file/654"
+            )
+        )
+    }
+
     private fun albums(): List<AlbumItem> = listOf(
         AlbumItem("z", "Zeta", 3, null, 20, 10, 900, "C/Zeta"),
         AlbumItem("a", "Alpha", 1, null, 10, 5, 100, "A/Alpha"),

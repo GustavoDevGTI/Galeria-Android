@@ -311,7 +311,7 @@ class Ui private constructor() {
                     setPadding(dp(context, 18), dp(context, 16), dp(context, 18), dp(context, 16))
                     setOnClickListener {
                         popupRef[0]?.dismiss()
-                        onSelect(item)
+                        anchor.post { onSelect(item) }
                     }
                 }
                 content.addView(

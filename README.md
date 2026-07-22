@@ -42,6 +42,7 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - Barra única de pesquisa no álbum, identificada por formato, lupa e texto com o nome da pasta
 - Agrupamento por tipo, extensão e data
 - Modo de visualização em grade e lista
+- Pinça horizontal dentro dos álbuns para alternar entre 2 e 8 colunas, preservando a posição e a escolha nas próximas aberturas
 - Ajuste global de espaçamento da grade
 - Área de itens ocultos com gerenciamento de exibição/ocultação de pastas
 - Fixação de pastas no gerenciamento de ocultos para manter pastas importantes no topo e forçar varredura dos ocultos quando necessário
@@ -72,9 +73,9 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 
 ## Testes automatizados
 
-A suíte atual possui 35 testes:
+A suíte atual possui 39 testes:
 
-- 23 testes unitários locais para filtros de mídia, abertura externa, identificação e histórico de pastas ocultas, ordenação de álbuns, regras de gestos, estado e menus do visualizador
+- 26 testes unitários locais para filtros de mídia, abertura externa, identificação e histórico de pastas ocultas, colunas da grade, identidade de URIs do MediaStore, ordenação de álbuns, regras de gestos, estado e menus do visualizador
 - 3 testes instrumentados do Room para resumos de álbuns, isolamento dos catálogos e paginação com ordem personalizada
 - 1 teste instrumentado de abertura da tela principal e disponibilidade da pesquisa
 - 1 teste instrumentado que cria uma mídia, move para outro álbum e confirma o caminho final no MediaStore
@@ -85,6 +86,7 @@ A suíte atual possui 35 testes:
 - 1 teste instrumentado que confirma a Galeria no seletor "Abrir com" e abre uma URI externa
 - 1 teste instrumentado que garante seleção múltipla sem abrir ou reproduzir a mídia tocada
 - 1 teste instrumentado que garante que o submenu não carregue álbuns ocultos nunca exibidos antes da ação `Carregar ocultos`
+- 1 teste instrumentado que executa a pinça horizontal nas duas direções e confirma a alteração do número de colunas
 
 Executar apenas os testes unitários rápidos:
 
@@ -130,9 +132,11 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.28
+### Validação da versão 0.8.29
 
-- 23 testes unitários e 12 testes instrumentados aprovados
+- 26 testes unitários e 13 testes instrumentados aprovados
+- Teste de gesto aprovado para reduzir e aumentar as colunas da grade com uma pinça horizontal real
+- Teste de regressão aprovado para reconhecer como a mesma mídia as URIs equivalentes das coleções `Images` e `Files` do MediaStore
 - Teste de regressão aprovado para listar inicialmente apenas álbuns visíveis ou já exibidos no submenu de ocultos
 - Teste de regressão aprovado para manter a grade no modo de seleção e permitir escolher várias mídias para mover
 - Teste de integração aprovado para registrar e abrir imagens, GIFs e vídeos enviados por outros aplicativos
@@ -149,9 +153,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.28**: são **29 commits** na linha 0.8, ou **28 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.29**: são **30 commits** na linha 0.8, ou **29 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.28 usa o código `8028`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.29 usa o código `8029`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -184,6 +188,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.26`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.26) | 22/07/2026 | Abertura de imagens e vídeos pelo seletor de aplicativos do Android |
 | [`v0.8.27`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.27) | 22/07/2026 | Seleção múltipla sem abrir ou reproduzir a mídia tocada |
 | [`v0.8.28`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.28) | 22/07/2026 | Carregamento controlado de álbuns ocultos |
+| [`v0.8.29`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.29) | 22/07/2026 | Controle de colunas da grade por pinça horizontal |
 
 ## Relatório comparativo de desempenho
 
@@ -199,7 +204,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.28](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.28.apk)
+[Baixar Galeria Android - versão 0.8.29](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.29.apk)
 
 Build padrão do Gradle:
 
@@ -210,10 +215,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.28.apk
+Galeria-Android-versao-0.8.29.apk
 ```
 
-O APK 0.8.28 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.29 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 
@@ -246,6 +251,7 @@ A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_
 - Baseline Profile com os fluxos de abertura, lista de álbuns e grade de mídias incluído nas builds
 - Visualização de imagens grandes com zoom dedicado e carregamento em alta qualidade
 - Gestos usam coordenadas absolutas e um único controlador, eliminando a tremedeira durante a transição
+- Pinça horizontal ajusta a grade interna entre 2 e 8 colunas, salva a preferência e mantém a referência de rolagem
 - Diálogos e submenus principais usam componentes temáticos próprios do app
 - Gerenciamento de ocultos atualizado com lista rolável, botões fixos e suporte a pastas fixadas
 - Abertura do submenu de ocultos sem varredura automática: somente álbuns visíveis ou já exibidos entram na lista até o uso de `Carregar ocultos`
