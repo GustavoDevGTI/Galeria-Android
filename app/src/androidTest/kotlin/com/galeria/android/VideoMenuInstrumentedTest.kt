@@ -14,6 +14,7 @@ import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withText
@@ -66,8 +67,10 @@ class VideoMenuInstrumentedTest {
 
                 onView(withContentDescription("Mais opções")).perform(click())
                 onView(withText(ViewerMenuRules.INFORMATION)).perform(click())
-                waitUntilDisplayed("Informações do vídeo")
-                onView(withText(containsString("Formato: video/mp4"))).check(matches(isDisplayed()))
+                waitUntilDisplayedInDialog("Informações do vídeo")
+                onView(withText(containsString("Formato: video/mp4")))
+                    .inRoot(isDialog())
+                    .check(matches(isDisplayed()))
             }
         } finally {
             context.contentResolver.delete(uri, null, null)
@@ -98,5 +101,20 @@ class VideoMenuInstrumentedTest {
             }
         }
         throw AssertionError("Texto não exibido: $text", lastFailure)
+    }
+
+    private fun waitUntilDisplayedInDialog(text: String) {
+        val deadline = System.currentTimeMillis() + 5_000L
+        var lastFailure: Throwable? = null
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                onView(withText(text)).inRoot(isDialog()).check(matches(isDisplayed()))
+                return
+            } catch (failure: Throwable) {
+                lastFailure = failure
+                Thread.sleep(100L)
+            }
+        }
+        throw AssertionError("Texto não exibido no diálogo: $text", lastFailure)
     }
 }

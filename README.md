@@ -45,6 +45,7 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - Ajuste global de espaçamento da grade
 - Área de itens ocultos com gerenciamento de exibição/ocultação de pastas
 - Fixação de pastas no gerenciamento de ocultos para manter pastas importantes no topo e forçar varredura dos ocultos quando necessário
+- Submenu de ocultos limitado aos álbuns visíveis ou já exibidos anteriormente; novos álbuns ocultos só são procurados pelo botão `Carregar ocultos`
 - Submenus padronizados com o tema escolhido, mantendo contraste adequado em temas claros e escuros
 - Editor básico de imagem com recorte e pincel
 - Exportação de imagem para PDF
@@ -71,9 +72,9 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 
 ## Testes automatizados
 
-A suíte atual possui 32 testes:
+A suíte atual possui 35 testes:
 
-- 21 testes unitários locais para filtros de mídia, abertura externa, identificação de pastas ocultas, ordenação de álbuns, regras de gestos, estado e menus do visualizador
+- 23 testes unitários locais para filtros de mídia, abertura externa, identificação e histórico de pastas ocultas, ordenação de álbuns, regras de gestos, estado e menus do visualizador
 - 3 testes instrumentados do Room para resumos de álbuns, isolamento dos catálogos e paginação com ordem personalizada
 - 1 teste instrumentado de abertura da tela principal e disponibilidade da pesquisa
 - 1 teste instrumentado que cria uma mídia, move para outro álbum e confirma o caminho final no MediaStore
@@ -83,6 +84,7 @@ A suíte atual possui 32 testes:
 - 1 teste instrumentado que valida as ações, informações, renomeação e apresentação no menu de imagem
 - 1 teste instrumentado que confirma a Galeria no seletor "Abrir com" e abre uma URI externa
 - 1 teste instrumentado que garante seleção múltipla sem abrir ou reproduzir a mídia tocada
+- 1 teste instrumentado que garante que o submenu não carregue álbuns ocultos nunca exibidos antes da ação `Carregar ocultos`
 
 Executar apenas os testes unitários rápidos:
 
@@ -128,9 +130,10 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.27
+### Validação da versão 0.8.28
 
-- 21 testes unitários e 11 testes instrumentados aprovados
+- 23 testes unitários e 12 testes instrumentados aprovados
+- Teste de regressão aprovado para listar inicialmente apenas álbuns visíveis ou já exibidos no submenu de ocultos
 - Teste de regressão aprovado para manter a grade no modo de seleção e permitir escolher várias mídias para mover
 - Teste de integração aprovado para registrar e abrir imagens, GIFs e vídeos enviados por outros aplicativos
 - Teste de interface aprovado para o menu de imagem, incluindo informações, renomeação e avanço da apresentação
@@ -146,9 +149,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.27**: são **28 commits** na linha 0.8, ou **27 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.28**: são **29 commits** na linha 0.8, ou **28 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.27 usa o código `8027`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.28 usa o código `8028`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -180,6 +183,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.25`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.25) | 21/07/2026 | Menu específico para visualização de imagens |
 | [`v0.8.26`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.26) | 22/07/2026 | Abertura de imagens e vídeos pelo seletor de aplicativos do Android |
 | [`v0.8.27`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.27) | 22/07/2026 | Seleção múltipla sem abrir ou reproduzir a mídia tocada |
+| [`v0.8.28`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.28) | 22/07/2026 | Carregamento controlado de álbuns ocultos |
 
 ## Relatório comparativo de desempenho
 
@@ -195,7 +199,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.27](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.27.apk)
+[Baixar Galeria Android - versão 0.8.28](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.28.apk)
 
 Build padrão do Gradle:
 
@@ -206,10 +210,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.27.apk
+Galeria-Android-versao-0.8.28.apk
 ```
 
-O APK 0.8.27 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.28 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 
@@ -244,6 +248,7 @@ A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_
 - Gestos usam coordenadas absolutas e um único controlador, eliminando a tremedeira durante a transição
 - Diálogos e submenus principais usam componentes temáticos próprios do app
 - Gerenciamento de ocultos atualizado com lista rolável, botões fixos e suporte a pastas fixadas
+- Abertura do submenu de ocultos sem varredura automática: somente álbuns visíveis ou já exibidos entram na lista até o uso de `Carregar ocultos`
 - Player ajustado para manter o vídeo ocupando o máximo possível da tela sem ser reduzido pelos controles
 - Player com controle de som integrado à barra inferior e estado preservado ao navegar entre vídeos
 - Visualização aleatória preserva a mídia atual, a ordem do fluxo, o tempo restante das imagens e a posição do vídeo após girar a tela

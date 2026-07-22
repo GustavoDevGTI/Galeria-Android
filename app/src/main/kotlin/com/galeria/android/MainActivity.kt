@@ -199,6 +199,7 @@ class MainActivity : ComponentActivity() {
         top.addView(searchInput, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
 
         moreButton = iconButton(R.drawable.ic_more_vertical).apply {
+            contentDescription = "Mais opções"
             setOnClickListener {
                 if (adapter.isSelectionMode()) {
                     exitSelectionMode()
@@ -410,6 +411,7 @@ class MainActivity : ComponentActivity() {
         searchInput.hint = if (active) "${adapter.selectedCount()} selecionados" else "Pesquisar pastas"
         searchInput.isEnabled = !active
         moreButton.setImageResource(if (active) R.drawable.ic_back else R.drawable.ic_more_vertical)
+        moreButton.contentDescription = if (active) "Cancelar seleção" else "Mais opções"
         if (active && adapter.selectedCount() == 0) {
             exitSelectionMode()
         }
@@ -690,9 +692,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun submitAlbumsNow(albums: List<AlbumItem>, query: String) {
+        rememberVisibleFolderKeys(albums)
         adapter.submit(albums, query)
         updateEmptyText()
         if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
+    }
+
+    private fun rememberVisibleFolderKeys(albums: Collection<AlbumItem>) {
+        val previous = prefs.getStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet()) ?: HashSet()
+        val updated = HiddenAlbumDialogRules.rememberVisible(previous, albums.map { it.key })
+        if (updated != previous) {
+            prefs.edit().putStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet(updated)).apply()
+        }
     }
 
     private fun loadSettings() {
@@ -817,21 +828,52 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showFolderVisibilityDialog() {
-        val albumsByKey = LinkedHashMap<String, AlbumItem>()
-        for (album in adapter.visibleAlbumsSnapshot()) {
-            albumsByKey[album.key] = album
+        val currentAlbums = adapter.visibleAlbumsSnapshot().filter { it.key != "all_media" }
+        rememberVisibleFolderKeys(currentAlbums)
+        val previouslyVisibleKeys = HashSet(
+            prefs.getStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet()) ?: HashSet()
+        )
+        val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
+        mediaLoader.execute {
+            val visibleCatalog = GalleryCatalogStore.readAlbums(applicationContext, false)
+            val migratedVisibleKeys = visibleCatalog
+                .filter { hiddenKeys.contains(it.key) && !isHiddenAlbum(it) }
+                .map { it.key }
+            val knownKeys = HashSet(previouslyVisibleKeys).apply { addAll(migratedVisibleKeys) }
+            if (knownKeys != previouslyVisibleKeys) {
+                prefs.edit().putStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, knownKeys).apply()
+            }
+            val allowedKeys = HiddenAlbumDialogRules.keysForInitialDialog(
+                currentAlbums.map { it.key },
+                knownKeys
+            )
+            val rememberedByKey = LinkedHashMap<String, AlbumItem>()
+            for (album in visibleCatalog) {
+                if (allowedKeys.contains(album.key)) rememberedByKey[album.key] = album
+            }
+            for (album in GalleryCatalogStore.readAlbums(applicationContext, true)) {
+                if (allowedKeys.contains(album.key)) rememberedByKey[album.key] = album
+            }
+            val rememberedAlbums = rememberedByKey.values
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                val albumsByKey = LinkedHashMap<String, AlbumItem>()
+                for (album in rememberedAlbums) albumsByKey[album.key] = album
+                for (album in currentAlbums) albumsByKey[album.key] = album
+                val albums = albumsByKey.values.toMutableList()
+                sortAlbums(albums)
+                showFolderVisibilityDialog(albums)
+            }
         }
-        for (album in MediaStoreRepository.buildAlbums(GalleryCatalogStore.snapshot(true))) {
-            albumsByKey[album.key] = album
-        }
-        val albums = albumsByKey.values.toMutableList()
-        sortAlbums(albums)
-        showFolderVisibilityDialog(albums)
     }
 
     private fun showFolderVisibilityDialog(albums: List<AlbumItem>) {
         val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
         val pinnedKeys = HashSet(prefs.getStringSet(PREF_PINNED_HIDDEN_FOLDER_KEYS, HashSet()) ?: HashSet())
+        val everVisibleKeys = HashSet(
+            prefs.getStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet()) ?: HashSet()
+        )
+        everVisibleKeys.addAll(albums.map { it.key }.filter { it != "all_media" })
         val mutableAlbums = albums.toMutableList()
         val checkedKeys = HashSet<String>()
         val dialogBg = Ui.menuSurface(this)
@@ -1001,7 +1043,7 @@ class MainActivity : ComponentActivity() {
             ensureFileManagementAccess(true)
         }
 
-        fun refreshHiddenAlbums(markVersionScanned: Boolean) {
+        fun refreshHiddenAlbums() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
                 requestHiddenScanAccess()
                 return
@@ -1015,9 +1057,6 @@ class MainActivity : ComponentActivity() {
                             GalleryCatalogStore.readMedia(applicationContext, true)
                         ).toMutableList()
                         sortAlbums(refreshed)
-                        if (markVersionScanned && MediaActions.hasAllFilesAccess(applicationContext)) {
-                            prefs.edit().putLong(PREF_HIDDEN_SCAN_INSTALL_TIME, currentInstallTimestamp()).apply()
-                        }
                         runOnUiThread {
                             if (isFinishing) return@runOnUiThread
                             val previousVisible = HashSet(checkedKeys)
@@ -1026,7 +1065,7 @@ class MainActivity : ComponentActivity() {
                             sortVisibilityAlbums()
                             checkedKeys.clear()
                             for (album in mutableAlbums) {
-                                if (previousVisible.contains(album.key) || (!hiddenKeys.contains(album.key) && (showHiddenFolders || !isHiddenAlbum(album)))) {
+                                if (previousVisible.contains(album.key) || (!hiddenKeys.contains(album.key) && !isHiddenAlbum(album))) {
                                     checkedKeys.add(album.key)
                                 }
                             }
@@ -1043,7 +1082,8 @@ class MainActivity : ComponentActivity() {
         }
 
         refresher.setOnRefreshListener {
-            refreshHiddenAlbums(false)
+            refresher.isRefreshing = false
+            Ui.toast(this, "Use o botão Carregar ocultos para procurar novas pastas.")
         }
         renderAlbums()
 
@@ -1053,7 +1093,7 @@ class MainActivity : ComponentActivity() {
                 return
             }
             refresher.isRefreshing = true
-            refreshHiddenAlbums(true)
+            refreshHiddenAlbums()
         }
 
         fun toggleShowHiddenSelection() {
@@ -1080,8 +1120,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
             showHiddenFolders = mutableAlbums.any { checkedKeys.contains(it.key) && isHiddenAlbum(it) }
+            everVisibleKeys.addAll(checkedKeys.filter { it != "all_media" })
             prefs.edit()
                 .putStringSet("hidden_folder_keys", nextHidden)
+                .putStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet(everVisibleKeys))
                 .putBoolean("show_hidden_folders", showHiddenFolders)
                 .apply()
             loadAlbums()
@@ -1187,14 +1229,6 @@ class MainActivity : ComponentActivity() {
             .create()
         dialog.setOnShowListener {
             dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-            if (shouldAutoScanHiddenAlbums()) {
-                refresher.post {
-                    if (!isFinishing && dialog.isShowing) {
-                        refresher.isRefreshing = true
-                        refreshHiddenAlbums(true)
-                    }
-                }
-            }
         }
         dialog.show()
     }
@@ -1350,16 +1384,6 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
-    private fun shouldAutoScanHiddenAlbums(): Boolean =
-        prefs.getLong(PREF_HIDDEN_SCAN_INSTALL_TIME, -1L) != currentInstallTimestamp()
-
-    private fun currentInstallTimestamp(): Long =
-        try {
-            packageManager.getPackageInfo(packageName, 0).lastUpdateTime
-        } catch (_: Exception) {
-            0L
-        }
-
     private fun statusBarHeight(): Int {
         val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
         return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 24)
@@ -1378,8 +1402,8 @@ class MainActivity : ComponentActivity() {
         private const val PREFS = "gallery_albums"
         private const val PREF_ALL_FILES_PROMPTED = "all_files_prompted"
         private const val PREF_INITIAL_ALL_FILES_REQUESTED = "initial_all_files_requested"
-        private const val PREF_HIDDEN_SCAN_INSTALL_TIME = "hidden_scan_install_time"
         private const val PREF_PINNED_HIDDEN_FOLDER_KEYS = "pinned_hidden_folder_keys"
+        private const val PREF_EVER_VISIBLE_FOLDER_KEYS = "ever_visible_folder_keys"
         private const val CATALOG_FALLBACK_MAX_AGE_MS = 6 * 60 * 60 * 1000L
         private const val DEFERRED_REFRESH_DELAY_MS = 900L
         private const val INITIAL_CATALOG_DELAY_MS = 90L

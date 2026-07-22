@@ -52,6 +52,27 @@ class AlbumRulesTest {
         assertEquals(albums().map { it.key }.toSet(), first.map { it.key }.toSet())
     }
 
+    @Test
+    fun hiddenDialogOnlyStartsWithCurrentAndPreviouslyVisibleAlbums() {
+        val keys = HiddenAlbumDialogRules.keysForInitialDialog(
+            currentlyVisible = listOf("camera", "screenshots"),
+            previouslyVisible = listOf("familia", "camera")
+        )
+
+        assertEquals(setOf("camera", "screenshots", "familia"), keys)
+        assertFalse(keys.contains("oculto_nunca_exibido"))
+    }
+
+    @Test
+    fun visibleAlbumHistoryIsKeptWithoutTheSyntheticAllMediaAlbum() {
+        val remembered = HiddenAlbumDialogRules.rememberVisible(
+            previouslyVisible = listOf("camera"),
+            visibleNow = listOf("all_media", "viagem")
+        )
+
+        assertEquals(setOf("camera", "viagem"), remembered)
+    }
+
     private fun albums(): List<AlbumItem> = listOf(
         AlbumItem("z", "Zeta", 3, null, 20, 10, 900, "C/Zeta"),
         AlbumItem("a", "Alpha", 1, null, 10, 5, 100, "A/Alpha"),

@@ -1,0 +1,155 @@
+package com.galeria.android
+
+import android.Manifest
+import android.content.Context
+import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
+import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
+import androidx.test.espresso.matcher.ViewMatchers.withText
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
+import androidx.test.rule.GrantPermissionRule
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import org.hamcrest.Matchers.containsString
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+@SdkSuppress(minSdkVersion = 33)
+class HiddenAlbumDialogInstrumentedTest {
+    @get:Rule
+    val permissions: GrantPermissionRule = GrantPermissionRule.grant(
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO
+    )
+
+    @Test
+    fun openingDialogDoesNotRevealHiddenAlbumNeverShownBefore() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dao = GalleryDatabase.get(context).galleryDao()
+        val prefs = context.getSharedPreferences("gallery_albums", Context.MODE_PRIVATE)
+        val originalVisible = io { dao.media(VISIBLE_SCOPE) }
+        val originalComplete = io { dao.media(COMPLETE_SCOPE) }
+        val originalVisibleState = io { dao.state(VISIBLE_SCOPE) }
+        val originalCompleteState = io { dao.state(COMPLETE_SCOPE) }
+        val originalEverVisible = prefs.getStringSet(PREF_EVER_VISIBLE, null)?.let(::HashSet)
+        val originalHidden = prefs.getStringSet(PREF_HIDDEN_KEYS, null)?.let(::HashSet)
+        val originalShowHidden = prefs.getBoolean(PREF_SHOW_HIDDEN, false)
+        val originalInitialRequest = prefs.getBoolean(PREF_INITIAL_REQUEST, false)
+        val originalAllFilesPrompt = prefs.getBoolean(PREF_ALL_FILES_PROMPT, false)
+
+        try {
+            io {
+                dao.replaceMedia(
+                    VISIBLE_SCOPE,
+                    listOf(media(VISIBLE_SCOPE, "camera", "Câmera", "DCIM/Camera/", 3)),
+                    CatalogStateEntity(VISIBLE_SCOPE, System.currentTimeMillis(), false)
+                )
+                dao.replaceMedia(
+                    COMPLETE_SCOPE,
+                    listOf(
+                        media(COMPLETE_SCOPE, "camera", "Câmera", "DCIM/Camera/", 3),
+                        media(COMPLETE_SCOPE, "hidden-known", "Oculto conhecido", "Pictures/.known/", 2),
+                        media(COMPLETE_SCOPE, "hidden-never", "Oculto nunca exibido", "Pictures/.never/", 1)
+                    ),
+                    CatalogStateEntity(COMPLETE_SCOPE, System.currentTimeMillis(), true)
+                )
+            }
+            prefs.edit()
+                .putBoolean(PREF_INITIAL_REQUEST, true)
+                .putBoolean(PREF_ALL_FILES_PROMPT, true)
+                .putBoolean(PREF_SHOW_HIDDEN, false)
+                .putStringSet(PREF_HIDDEN_KEYS, setOf("hidden-known", "hidden-never"))
+                .putStringSet(PREF_EVER_VISIBLE, setOf("hidden-known"))
+                .commit()
+
+            ActivityScenario.launch(MainActivity::class.java).use {
+                waitUntilDisplayedContaining("Câmera")
+                onView(withContentDescription("Mais opções")).perform(click())
+                waitUntilDisplayed("Exibir/ocultar pastas")
+                onView(withText("Exibir/ocultar pastas")).perform(click())
+
+                waitUntilDisplayedContaining("Oculto conhecido")
+                onView(withText(containsString("Câmera"))).check(matches(isDisplayed()))
+                onView(withText(containsString("Oculto nunca exibido"))).check(doesNotExist())
+                onView(withText("Carregar ocultos")).check(matches(isDisplayed()))
+            }
+        } finally {
+            io {
+                dao.replaceMedia(
+                    VISIBLE_SCOPE,
+                    originalVisible,
+                    originalVisibleState ?: CatalogStateEntity(VISIBLE_SCOPE, System.currentTimeMillis(), false)
+                )
+                dao.replaceMedia(
+                    COMPLETE_SCOPE,
+                    originalComplete,
+                    originalCompleteState ?: CatalogStateEntity(COMPLETE_SCOPE, System.currentTimeMillis(), true)
+                )
+            }
+            val editor = prefs.edit()
+                .putBoolean(PREF_SHOW_HIDDEN, originalShowHidden)
+                .putBoolean(PREF_INITIAL_REQUEST, originalInitialRequest)
+                .putBoolean(PREF_ALL_FILES_PROMPT, originalAllFilesPrompt)
+            if (originalEverVisible == null) editor.remove(PREF_EVER_VISIBLE) else editor.putStringSet(PREF_EVER_VISIBLE, originalEverVisible)
+            if (originalHidden == null) editor.remove(PREF_HIDDEN_KEYS) else editor.putStringSet(PREF_HIDDEN_KEYS, originalHidden)
+            editor.commit()
+        }
+    }
+
+    private fun media(scope: String, key: String, name: String, path: String, date: Long) = CachedMediaEntity(
+        scope = scope,
+        uri = "content://hidden-dialog/$scope/$key",
+        mediaId = date,
+        name = "$key.jpg",
+        mimeType = "image/jpeg",
+        dateAdded = date,
+        size = 100,
+        relativePath = path,
+        albumKey = key,
+        albumName = name
+    )
+
+    private fun <T> io(block: () -> T): T = runBlocking { withContext(Dispatchers.IO) { block() } }
+
+    private fun waitUntilDisplayed(text: String) = waitForView {
+        onView(withText(text)).check(matches(isDisplayed()))
+    }
+
+    private fun waitUntilDisplayedContaining(text: String) = waitForView {
+        onView(withText(containsString(text))).check(matches(isDisplayed()))
+    }
+
+    private fun waitForView(assertion: () -> Unit) {
+        val deadline = System.currentTimeMillis() + 10_000L
+        var lastFailure: Throwable? = null
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                assertion()
+                return
+            } catch (failure: Throwable) {
+                lastFailure = failure
+                Thread.sleep(100L)
+            }
+        }
+        throw AssertionError("Conteúdo esperado não exibido.", lastFailure)
+    }
+
+    private companion object {
+        const val VISIBLE_SCOPE = "visible"
+        const val COMPLETE_SCOPE = "complete"
+        const val PREF_EVER_VISIBLE = "ever_visible_folder_keys"
+        const val PREF_HIDDEN_KEYS = "hidden_folder_keys"
+        const val PREF_SHOW_HIDDEN = "show_hidden_folders"
+        const val PREF_INITIAL_REQUEST = "initial_all_files_requested"
+        const val PREF_ALL_FILES_PROMPT = "all_files_prompted"
+    }
+}

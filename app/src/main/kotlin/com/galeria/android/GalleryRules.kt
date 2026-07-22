@@ -97,6 +97,22 @@ object ExternalMediaRules {
         mimeType.startsWith("image/") || mimeType.startsWith("video/")
 }
 
+object HiddenAlbumDialogRules {
+    fun keysForInitialDialog(
+        currentlyVisible: Collection<String>,
+        previouslyVisible: Collection<String>
+    ): Set<String> = LinkedHashSet<String>().apply {
+        addAll(previouslyVisible)
+        addAll(currentlyVisible)
+        remove("all_media")
+    }
+
+    fun rememberVisible(
+        previouslyVisible: Collection<String>,
+        visibleNow: Collection<String>
+    ): Set<String> = keysForInitialDialog(visibleNow, previouslyVisible)
+}
+
 object AlbumRules {
     const val SORT_NAME = "name"
     const val SORT_PATH = "path"
