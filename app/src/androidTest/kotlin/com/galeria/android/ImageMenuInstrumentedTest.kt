@@ -22,6 +22,7 @@ import androidx.test.espresso.matcher.ViewMatchers.isClickable
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withText
+import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.rule.GrantPermissionRule
@@ -70,8 +71,10 @@ class ImageMenuInstrumentedTest {
                 onView(withText(ViewerMenuRules.SHOW_ON_MAP)).check(doesNotExist())
 
                 onView(withText(ViewerMenuRules.INFORMATION)).perform(click())
-                waitUntilDisplayed("Informações da imagem")
-                onView(withText(containsString("Resolução: 1 × 1"))).check(matches(isDisplayed()))
+                waitUntilDisplayedInDialog("Informações da imagem")
+                onView(withText(containsString("Resolução: 1 × 1")))
+                    .inRoot(isDialog())
+                    .check(matches(isDisplayed()))
                 pressBack()
 
                 onView(withContentDescription("Mais opções")).perform(click())
@@ -133,6 +136,21 @@ class ImageMenuInstrumentedTest {
             }
         }
         throw AssertionError("Texto não exibido: $text", lastFailure)
+    }
+
+    private fun waitUntilDisplayedInDialog(text: String) {
+        val deadline = System.currentTimeMillis() + 10_000L
+        var lastFailure: Throwable? = null
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                onView(withText(text)).inRoot(isDialog()).check(matches(isDisplayed()))
+                return
+            } catch (failure: Throwable) {
+                lastFailure = failure
+                Thread.sleep(100L)
+            }
+        }
+        throw AssertionError("Texto não exibido no diálogo: $text", lastFailure)
     }
 
     private companion object {

@@ -351,7 +351,10 @@ class AlbumMediaActivity : ComponentActivity() {
             override fun onMediaLongClick(view: View, position: Int): Boolean {
                 if (position !in 0 until adapter.getCount()) return true
                 if (adapter.isPagingMode()) {
-                    loadFullAlbumForSelection(adapter.getItem(position).uri.toString(), view)
+                    if (!adapter.isSelectionMode()) enterSelectionMode()
+                    if (!adapter.isSelected(position)) adapter.selectPosition(position)
+                    updateSelectionUi()
+                    view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
                     return true
                 }
                 if (!adapter.isSelectionMode()) {
@@ -665,35 +668,6 @@ class AlbumMediaActivity : ComponentActivity() {
 
     private fun enterSelectionMode() {
         adapter.setSelectionMode(true)
-    }
-
-    private fun loadFullAlbumForSelection(selectedUri: String, pressedView: View) {
-        val request = ++loadGeneration
-        pagingJob?.cancel()
-        pressedView.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
-        mediaLoader.execute {
-            val items = prepareAlbumMedia(
-                MediaStoreRepository.loadMediaForAlbum(
-                    applicationContext,
-                    albumKey,
-                    shouldIncludeHiddenFilesystem()
-                )
-            )
-            val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
-            runOnUiThread {
-                if (request != loadGeneration || isFinishing) return@runOnUiThread
-                adapter.submit(items, query)
-                val position = adapter.positionOf(selectedUri)
-                if (position >= 0) {
-                    enterSelectionMode()
-                    adapter.selectPosition(position)
-                    grid.scrollToPosition(position)
-                    updateSelectionUi()
-                } else {
-                    pressedView.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(90).start()
-                }
-            }
-        }
     }
 
     private fun exitSelectionMode() {

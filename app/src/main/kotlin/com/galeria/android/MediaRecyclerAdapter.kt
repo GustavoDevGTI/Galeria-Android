@@ -335,6 +335,7 @@ class MediaRecyclerAdapter(
         if (item == null) {
             holder.image.setImageDrawable(null)
             holder.name.text = ""
+            holder.itemView.contentDescription = null
             holder.check.visibility = View.GONE
             holder.itemView.setOnClickListener(null)
             holder.itemView.setOnLongClickListener(null)
@@ -356,6 +357,7 @@ class MediaRecyclerAdapter(
     private fun bindItem(holder: Holder, item: MediaItem) {
         bindSelection(holder, item)
         holder.name.text = item.name
+        holder.itemView.contentDescription = item.name
         bindThumbnail(holder, item)
         holder.itemView.setOnClickListener {
             val currentPosition = holder.bindingAdapterPosition
