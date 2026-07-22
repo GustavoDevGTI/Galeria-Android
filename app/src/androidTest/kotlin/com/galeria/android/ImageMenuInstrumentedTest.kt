@@ -88,7 +88,7 @@ class ImageMenuInstrumentedTest {
                 onView(withText(ViewerMenuRules.PRESENTATION)).perform(click())
                 Thread.sleep(4_700L)
                 onView(withContentDescription("Visualizador de mídia")).perform(click())
-                Thread.sleep(400L)
+                waitUntilDisplayed(secondName)
                 onView(withText(secondName)).check(matches(isDisplayed()))
             }
         } finally {

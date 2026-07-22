@@ -45,6 +45,58 @@ object MediaFilterRules {
     private fun extension(name: String): String = name.substringAfterLast('.', "").lowercase(Locale.US)
 }
 
+object ExternalMediaRules {
+    private val imageMimeByExtension = mapOf(
+        "jpg" to "image/jpeg",
+        "jpeg" to "image/jpeg",
+        "png" to "image/png",
+        "gif" to "image/gif",
+        "webp" to "image/webp",
+        "bmp" to "image/bmp",
+        "heic" to "image/heic",
+        "heif" to "image/heif",
+        "avif" to "image/avif",
+        "svg" to "image/svg+xml",
+        "dng" to "image/x-adobe-dng",
+        "raw" to "image/x-raw",
+        "cr2" to "image/x-canon-cr2",
+        "cr3" to "image/x-canon-cr3",
+        "nef" to "image/x-nikon-nef",
+        "nrw" to "image/x-nikon-nrw",
+        "arw" to "image/x-sony-arw",
+        "orf" to "image/x-olympus-orf",
+        "rw2" to "image/x-panasonic-rw2",
+        "raf" to "image/x-fuji-raf"
+    )
+    private val videoMimeByExtension = mapOf(
+        "mp4" to "video/mp4",
+        "m4v" to "video/x-m4v",
+        "mkv" to "video/x-matroska",
+        "webm" to "video/webm",
+        "avi" to "video/x-msvideo",
+        "mov" to "video/quicktime",
+        "3gp" to "video/3gpp",
+        "3gpp" to "video/3gpp",
+        "ts" to "video/mp2t",
+        "mts" to "video/mp2t",
+        "m2ts" to "video/mp2t",
+        "mpg" to "video/mpeg",
+        "mpeg" to "video/mpeg"
+    )
+
+    fun normalizedMime(name: String?, declaredMime: String?): String {
+        val declared = declaredMime.orEmpty().substringBefore(';').trim().lowercase(Locale.US)
+        if (declared.startsWith("image/") || declared.startsWith("video/")) return declared
+        val extension = name.orEmpty().substringAfterLast('.', "").lowercase(Locale.US)
+        return imageMimeByExtension[extension]
+            ?: videoMimeByExtension[extension]
+            ?: declared
+    }
+
+    fun isSupported(mimeType: String): Boolean =
+        mimeType.startsWith("image/") || mimeType.startsWith("video/")
+}
+
 object AlbumRules {
     const val SORT_NAME = "name"
     const val SORT_PATH = "path"

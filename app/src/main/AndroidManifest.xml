@@ -29,7 +29,21 @@
         <activity android:name=".FolderPickerActivity" />
         <activity android:name=".FileDetailActivity" />
         <activity android:name=".HiddenActivity" />
-        <activity android:name=".DetailActivity" />
+        <activity
+            android:name=".DetailActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+        </activity>
         <activity android:name=".AlbumMediaActivity" />
         <activity
             android:name=".MainActivity"

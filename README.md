@@ -24,6 +24,7 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - Reprodução de vídeos com Media3 / ExoPlayer
 - Menu próprio para vídeos com abrir em outro app, informações técnicas, cópia, movimentação, ocultação e repetição
 - Menu próprio para imagens com renomear, abrir em outro app, informações EXIF, mapa quando houver GPS e apresentação automática
+- Integração com o seletor "Abrir com" do Android para abrir imagens, GIFs, formatos RAW e vídeos recebidos de outros aplicativos
 - Miniaturas reais para vídeos na grade de mídias e nas capas de álbuns
 - Player de vídeo em tela cheia com HUD superior e inferior translúcida sobreposta à mídia
 - Controle de áudio no player para ativar ou silenciar o vídeo durante a navegação
@@ -69,9 +70,9 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 
 ## Testes automatizados
 
-A suíte atual possui 28 testes:
+A suíte atual possui 31 testes:
 
-- 19 testes unitários locais para filtros de mídia, identificação de pastas ocultas, ordenação de álbuns, regras de gestos, estado e menus do visualizador
+- 21 testes unitários locais para filtros de mídia, abertura externa, identificação de pastas ocultas, ordenação de álbuns, regras de gestos, estado e menus do visualizador
 - 3 testes instrumentados do Room para resumos de álbuns, isolamento dos catálogos e paginação com ordem personalizada
 - 1 teste instrumentado de abertura da tela principal e disponibilidade da pesquisa
 - 1 teste instrumentado que cria uma mídia, move para outro álbum e confirma o caminho final no MediaStore
@@ -79,6 +80,7 @@ A suíte atual possui 28 testes:
 - 1 teste instrumentado que garante título e pesquisa na mesma barra do álbum
 - 1 teste instrumentado que valida as ações e a repetição no menu de vídeo
 - 1 teste instrumentado que valida as ações, informações, renomeação e apresentação no menu de imagem
+- 1 teste instrumentado que confirma a Galeria no seletor "Abrir com" e abre uma URI externa
 
 Executar apenas os testes unitários rápidos:
 
@@ -124,9 +126,10 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.25
+### Validação da versão 0.8.26
 
-- 19 testes unitários e 9 testes instrumentados aprovados
+- 21 testes unitários e 10 testes instrumentados aprovados
+- Teste de integração aprovado para registrar e abrir imagens, GIFs e vídeos enviados por outros aplicativos
 - Teste de interface aprovado para o menu de imagem, incluindo informações, renomeação e avanço da apresentação
 - Teste de regressão aprovado para separar as ações de vídeo das ferramentas exclusivas de imagem
 - Teste de interface aprovado para título e pesquisa compartilharem a mesma barra do álbum
@@ -140,9 +143,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.25**: são **26 commits** na linha 0.8, ou **25 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.26**: são **27 commits** na linha 0.8, ou **26 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.25 usa o código `8025`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.26 usa o código `8026`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -172,6 +175,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.23`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.23) | 21/07/2026 | Identificação visual reforçada na pesquisa do álbum |
 | [`v0.8.24`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.24) | 21/07/2026 | Menu específico para reprodução de vídeos |
 | [`v0.8.25`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.25) | 21/07/2026 | Menu específico para visualização de imagens |
+| [`v0.8.26`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.26) | 22/07/2026 | Abertura de imagens e vídeos pelo seletor de aplicativos do Android |
 
 ## Relatório comparativo de desempenho
 
@@ -187,7 +191,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.25](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.25.apk)
+[Baixar Galeria Android - versão 0.8.26](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.26.apk)
 
 Build padrão do Gradle:
 
@@ -198,10 +202,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.25.apk
+Galeria-Android-versao-0.8.26.apk
 ```
 
-O APK 0.8.25 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.26 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 

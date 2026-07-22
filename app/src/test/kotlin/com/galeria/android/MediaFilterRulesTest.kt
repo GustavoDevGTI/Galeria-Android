@@ -50,4 +50,17 @@ class MediaFilterRulesTest {
 
         assertTrue(MediaFilterRules.matches("retrato.jpg", "image/jpeg", portraitsOnly))
     }
+
+    @Test
+    fun externalMediaKeepsDeclaredImageAndVideoTypes() {
+        assertTrue(ExternalMediaRules.isSupported(ExternalMediaRules.normalizedMime("foto.jpg", "image/jpeg")))
+        assertTrue(ExternalMediaRules.isSupported(ExternalMediaRules.normalizedMime("filme.mp4", "video/mp4")))
+    }
+
+    @Test
+    fun externalMediaInfersGenericDownloadsByExtension() {
+        assertTrue(ExternalMediaRules.normalizedMime("captura.CR2", "application/octet-stream").startsWith("image/"))
+        assertTrue(ExternalMediaRules.normalizedMime("gravacao.MKV", null).startsWith("video/"))
+        assertFalse(ExternalMediaRules.isSupported(ExternalMediaRules.normalizedMime("documento.pdf", "application/pdf")))
+    }
 }

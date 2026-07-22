@@ -189,9 +189,26 @@ class DetailActivity : ComponentActivity() {
         })
         Ui.applyOpenTransition(this)
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
-        val uri = Uri.parse(savedInstanceState?.getString(STATE_CURRENT_URI) ?: intent.getStringExtra("uri").orEmpty())
-        val name = savedInstanceState?.getString(STATE_CURRENT_NAME) ?: intent.getStringExtra("name")
-        val mime = savedInstanceState?.getString(STATE_CURRENT_MIME) ?: intent.getStringExtra("mime")
+        val uri = resolveInitialUri(savedInstanceState)
+        if (uri == null) {
+            Ui.toast(this, "Não foi possível abrir esta mídia.")
+            finish()
+            return
+        }
+        val name = savedInstanceState?.getString(STATE_CURRENT_NAME)
+            ?: intent.getStringExtra("name")
+            ?: queryIncomingDisplayName(uri)
+            ?: uri.lastPathSegment?.substringAfterLast('/')
+        val declaredMime = savedInstanceState?.getString(STATE_CURRENT_MIME)
+            ?: intent.getStringExtra("mime")
+            ?: intent.type
+            ?: runCatching { contentResolver.getType(uri) }.getOrNull()
+        val mime = ExternalMediaRules.normalizedMime(name, declaredMime)
+        if (!ExternalMediaRules.isSupported(mime)) {
+            Ui.toast(this, "Formato de mídia não compatível.")
+            finish()
+            return
+        }
         val path = savedInstanceState?.getString(STATE_CURRENT_PATH) ?: intent.getStringExtra("path")
         shuffleMode = savedInstanceState?.getBoolean(STATE_SHUFFLE_MODE)
             ?: intent.getBooleanExtra("shuffle_mode", false)
@@ -210,6 +227,24 @@ class DetailActivity : ComponentActivity() {
         buildLayout()
         loadCurrentItem()
         loadAlbumQueueAsync(uri)
+    }
+
+    private fun resolveInitialUri(savedInstanceState: Bundle?): Uri? {
+        val saved = savedInstanceState?.getString(STATE_CURRENT_URI)?.takeIf { it.isNotBlank() }
+        val internal = intent.getStringExtra("uri")?.takeIf { it.isNotBlank() }
+        return when {
+            saved != null -> Uri.parse(saved)
+            internal != null -> Uri.parse(internal)
+            else -> intent.data
+        }
+    }
+
+    private fun queryIncomingDisplayName(uri: Uri): String? = try {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getString(0) else null
+        }
+    } catch (_: Exception) {
+        null
     }
 
     private fun prepareInitialMedia(currentUri: Uri, name: String?, mime: String?, path: String?) {
