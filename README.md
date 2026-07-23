@@ -132,10 +132,11 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.29
+### Validação da versão 0.8.30
 
-- 26 testes unitários e 13 testes instrumentados aprovados
-- Teste de gesto aprovado para reduzir e aumentar as colunas da grade com uma pinça horizontal real
+- 26 testes unitários aprovados; 13 testes instrumentados validados, sendo 11 na execução conjunta e 2 repetidos isoladamente por instabilidade de sincronização do Espresso no emulador
+- Teste de gesto aprovado para reduzir e aumentar as colunas da grade com uma pinça horizontal real, incluindo o término correto da nova animação
+- Testes de menus aprovados após isolar cada `PopupWindow` e executar a ação somente depois da confirmação de fechamento
 - Teste de regressão aprovado para reconhecer como a mesma mídia as URIs equivalentes das coleções `Images` e `Files` do MediaStore
 - Teste de regressão aprovado para listar inicialmente apenas álbuns visíveis ou já exibidos no submenu de ocultos
 - Teste de regressão aprovado para manter a grade no modo de seleção e permitir escolher várias mídias para mover
@@ -153,9 +154,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.29**: são **30 commits** na linha 0.8, ou **29 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.30**: são **31 commits** na linha 0.8, ou **30 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.29 usa o código `8029`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.30 usa o código `8030`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -189,6 +190,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.27`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.27) | 22/07/2026 | Seleção múltipla sem abrir ou reproduzir a mídia tocada |
 | [`v0.8.28`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.28) | 22/07/2026 | Carregamento controlado de álbuns ocultos |
 | [`v0.8.29`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.29) | 22/07/2026 | Controle de colunas da grade por pinça horizontal |
+| [`v0.8.30`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.30) | 23/07/2026 | Animação fluida na grade e estabilidade dos submenus |
 
 ## Relatório comparativo de desempenho
 
@@ -204,7 +206,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.29](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.29.apk)
+[Baixar Galeria Android - versão 0.8.30](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.30.apk)
 
 Build padrão do Gradle:
 
@@ -215,10 +217,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.29.apk
+Galeria-Android-versao-0.8.30.apk
 ```
 
-O APK 0.8.29 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.30 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 
@@ -251,7 +253,7 @@ A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_
 - Baseline Profile com os fluxos de abertura, lista de álbuns e grade de mídias incluído nas builds
 - Visualização de imagens grandes com zoom dedicado e carregamento em alta qualidade
 - Gestos usam coordenadas absolutas e um único controlador, eliminando a tremedeira durante a transição
-- Pinça horizontal ajusta a grade interna entre 2 e 8 colunas, salva a preferência e mantém a referência de rolagem
+- Pinça horizontal ajusta a grade interna entre 2 e 8 colunas, salva a preferência, mantém a mídia sob os dedos como referência e usa uma transição curta de escala e opacidade
 - Diálogos e submenus principais usam componentes temáticos próprios do app
 - Gerenciamento de ocultos atualizado com lista rolável, botões fixos e suporte a pastas fixadas
 - Abertura do submenu de ocultos sem varredura automática: somente álbuns visíveis ou já exibidos entram na lista até o uso de `Carregar ocultos`

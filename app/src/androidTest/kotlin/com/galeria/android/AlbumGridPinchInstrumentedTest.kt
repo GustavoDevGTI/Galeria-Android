@@ -17,7 +17,11 @@ import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.rule.GrantPermissionRule
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,6 +64,10 @@ class AlbumGridPinchInstrumentedTest {
                 }
                 onView(withContentDescription("Grade de mídias, 3 colunas"))
                     .check(matches(withContentDescription("Grade de mídias, 3 colunas")))
+                SystemClock.sleep(GRID_MOTION_SETTLE_MS)
+                scenario.onActivity { activity ->
+                    assertSettledGrid(activity.findViewById(android.R.id.content), 3)
+                }
 
                 scenario.onActivity { activity ->
                     val grid = findViewWithDescription(
@@ -71,6 +79,10 @@ class AlbumGridPinchInstrumentedTest {
                 }
                 onView(withContentDescription("Grade de mídias, 4 colunas"))
                     .check(matches(withContentDescription("Grade de mídias, 4 colunas")))
+                SystemClock.sleep(GRID_MOTION_SETTLE_MS)
+                scenario.onActivity { activity ->
+                    assertSettledGrid(activity.findViewById(android.R.id.content), 4)
+                }
             }
         } finally {
             val editor = prefs.edit()
@@ -87,6 +99,18 @@ class AlbumGridPinchInstrumentedTest {
             findViewWithDescription(view.getChildAt(index), description)?.let { return it }
         }
         return null
+    }
+
+    private fun assertSettledGrid(root: View, expectedColumns: Int) {
+        val grid = findViewWithDescription(root, "Grade de mídias, $expectedColumns colunas")
+        assertTrue(grid is RecyclerView)
+        val recycler = grid as RecyclerView
+        val manager = recycler.layoutManager
+        assertTrue(manager is GridLayoutManager)
+        assertEquals(expectedColumns, (manager as GridLayoutManager).spanCount)
+        assertEquals(1f, recycler.alpha, 0.01f)
+        assertEquals(1f, recycler.scaleX, 0.01f)
+        assertEquals(1f, recycler.scaleY, 0.01f)
     }
 
     private fun dispatchHorizontalPinch(view: View, startSpanRatio: Float, endSpanRatio: Float) {
@@ -181,5 +205,6 @@ class AlbumGridPinchInstrumentedTest {
 
     private companion object {
         const val PREF_GRID_COLUMNS = "media_grid_columns"
+        const val GRID_MOTION_SETTLE_MS = 280L
     }
 }

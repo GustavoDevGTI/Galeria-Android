@@ -72,6 +72,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private var lastHorizontalPinchSpan = 0f
     private var pinchGestureActive = false
     private var pinchGestureConsumed = false
+    private var gridDensityAnimationGeneration = 0
     private var dragging = false
     private var dragPosition = -1
     private var savedFirstVisible = 0
@@ -431,7 +432,11 @@ class AlbumMediaActivity : ComponentActivity() {
                         val delta = GridColumnRules.columnDelta(horizontalPinchScale)
                         if (delta != 0) {
                             horizontalPinchScale = 1f
-                            changeGridColumnCount(delta)
+                            changeGridColumnCount(
+                                delta,
+                                horizontalPointerCenterX(event),
+                                horizontalPointerCenterY(event)
+                            )
                         }
                     }
                 }
@@ -1086,6 +1091,11 @@ class AlbumMediaActivity : ComponentActivity() {
 
     private fun applyViewMode() {
         if (!::grid.isInitialized || !::adapter.isInitialized) return
+        gridDensityAnimationGeneration++
+        grid.animate().cancel()
+        grid.alpha = 1f
+        grid.scaleX = 1f
+        grid.scaleY = 1f
         layoutManager.spanCount = if (listMode) 1 else gridColumnCount
         adapter.setListMode(listMode)
         grid.contentDescription = if (listMode) {
@@ -1096,26 +1106,85 @@ class AlbumMediaActivity : ComponentActivity() {
         applyGridSpacing()
     }
 
-    private fun changeGridColumnCount(delta: Int) {
+    private fun changeGridColumnCount(delta: Int, focusX: Float, focusY: Float) {
         if (listMode || !::layoutManager.isInitialized || !::grid.isInitialized) return
         val next = GridColumnRules.changed(gridColumnCount, delta)
         if (next == gridColumnCount) return
-        val anchorPosition = layoutManager.findFirstVisibleItemPosition()
-        val anchorOffset = layoutManager.findViewByPosition(anchorPosition)?.top ?: grid.paddingTop
+        val focusView = grid.findChildViewUnder(focusX, focusY)
+        val focusPosition = focusView?.let(grid::getChildAdapterPosition) ?: RecyclerView.NO_POSITION
+        val anchorPosition = if (focusPosition != RecyclerView.NO_POSITION) {
+            focusPosition
+        } else {
+            layoutManager.findFirstVisibleItemPosition()
+        }
+        val anchorOffset = focusView?.top
+            ?: layoutManager.findViewByPosition(anchorPosition)?.top
+            ?: grid.paddingTop
         gridColumnCount = next
         prefs.edit().putInt(PREF_GRID_COLUMNS, gridColumnCount).apply()
-        layoutManager.spanCount = gridColumnCount
         grid.contentDescription = "Grade de mídias, $gridColumnCount colunas"
-        applyGridSpacing()
-        if (anchorPosition != RecyclerView.NO_POSITION) {
-            layoutManager.scrollToPositionWithOffset(anchorPosition, anchorOffset)
-        }
-        warmedGridPoolViewType = -1
-        warmGridPoolGradually()
+        animateGridDensityChange(delta, focusX, focusY, anchorPosition, anchorOffset)
     }
 
     private fun horizontalPointerSpan(event: MotionEvent): Float =
         if (event.pointerCount >= 2) abs(event.getX(0) - event.getX(1)) else 0f
+
+    private fun horizontalPointerCenterX(event: MotionEvent): Float =
+        if (event.pointerCount >= 2) (event.getX(0) + event.getX(1)) / 2f else grid.width / 2f
+
+    private fun horizontalPointerCenterY(event: MotionEvent): Float =
+        if (event.pointerCount >= 2) (event.getY(0) + event.getY(1)) / 2f else grid.height / 2f
+
+    private fun animateGridDensityChange(
+        delta: Int,
+        focusX: Float,
+        focusY: Float,
+        anchorPosition: Int,
+        anchorOffset: Int
+    ) {
+        val generation = ++gridDensityAnimationGeneration
+        val exitScale = if (delta > 0) 0.982f else 1.018f
+        val entryScale = if (delta > 0) 1.018f else 0.982f
+        grid.animate().cancel()
+        grid.pivotX = focusX.coerceIn(0f, grid.width.toFloat())
+        grid.pivotY = focusY.coerceIn(0f, grid.height.toFloat())
+        grid.animate()
+            .alpha(0.72f)
+            .scaleX(exitScale)
+            .scaleY(exitScale)
+            .setInterpolator(DecelerateInterpolator())
+            .setDuration(GRID_DENSITY_EXIT_MS)
+            .withEndAction {
+                if (generation != gridDensityAnimationGeneration || isFinishing || isDestroyed) {
+                    return@withEndAction
+                }
+                layoutManager.spanCount = gridColumnCount
+                applyGridSpacing()
+                updateThumbnailRequestSize()
+                if (anchorPosition != RecyclerView.NO_POSITION) {
+                    layoutManager.scrollToPositionWithOffset(anchorPosition, anchorOffset)
+                }
+                grid.scaleX = entryScale
+                grid.scaleY = entryScale
+                warmedGridPoolViewType = -1
+                warmGridPoolGradually()
+                grid.animate()
+                    .alpha(1f)
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setInterpolator(DecelerateInterpolator(1.5f))
+                    .setDuration(GRID_DENSITY_ENTRY_MS)
+                    .withEndAction {
+                        if (generation == gridDensityAnimationGeneration) {
+                            grid.alpha = 1f
+                            grid.scaleX = 1f
+                            grid.scaleY = 1f
+                        }
+                    }
+                    .start()
+            }
+            .start()
+    }
 
     private fun updateThumbnailRequestSize() {
         if (!::adapter.isInitialized || !::layoutManager.isInitialized) return
@@ -1252,6 +1321,8 @@ class AlbumMediaActivity : ComponentActivity() {
         private const val INITIAL_MEDIA_DELAY_MS = 60L
         private const val GRID_POOL_WARMUP_STEP_MS = 24L
         private const val GRID_POOL_WARMUP_RETRY_MS = 80L
+        private const val GRID_DENSITY_EXIT_MS = 70L
+        private const val GRID_DENSITY_ENTRY_MS = 125L
         private const val MEDIA_OBSERVER_GRACE_MS = 3_000L
         private const val MEDIA_REFRESH_DEBOUNCE_MS = 5_000L
         private const val GROUP_NONE = "none"

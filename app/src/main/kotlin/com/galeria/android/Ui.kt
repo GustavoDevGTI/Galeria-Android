@@ -302,6 +302,8 @@ class Ui private constructor() {
             val content = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
             }
+            val pendingSelection = arrayOfNulls<String>(1)
+            val localPopupRef = arrayOfNulls<PopupWindow>(1)
             for (item in items) {
                 val row = TextView(context).apply {
                     text = item
@@ -310,8 +312,8 @@ class Ui private constructor() {
                     gravity = Gravity.CENTER_VERTICAL or Gravity.START
                     setPadding(dp(context, 18), dp(context, 16), dp(context, 18), dp(context, 16))
                     setOnClickListener {
-                        popupRef[0]?.dismiss()
-                        anchor.post { onSelect(item) }
+                        pendingSelection[0] = item
+                        localPopupRef[0]?.dismiss()
                     }
                 }
                 content.addView(
@@ -334,8 +336,14 @@ class Ui private constructor() {
                 isOutsideTouchable = true
                 setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
                 elevation = dp(context, 10).toFloat()
+                setOnDismissListener {
+                    pendingSelection[0]?.let { selected ->
+                        pendingSelection[0] = null
+                        anchor.postDelayed({ onSelect(selected) }, POPUP_ACTION_DELAY_MS)
+                    }
+                }
             }
-            popupRef[0] = popup
+            localPopupRef[0] = popup
             popup.showAsDropDown(anchor, anchor.width - width, dp(context, 6))
             return popup
         }
@@ -469,6 +477,6 @@ class Ui private constructor() {
                 setOnClickListener { onClick() }
             }
 
-        private val popupRef = arrayOfNulls<PopupWindow>(1)
+        private const val POPUP_ACTION_DELAY_MS = 48L
     }
 }

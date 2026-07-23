@@ -2,6 +2,7 @@ package com.galeria.android
 
 import android.Manifest
 import android.content.Context
+import android.provider.MediaStore
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
@@ -14,6 +15,7 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.rule.GrantPermissionRule
+import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -34,8 +36,12 @@ class HiddenAlbumDialogInstrumentedTest {
     @Test
     fun openingDialogDoesNotRevealHiddenAlbumNeverShownBefore() {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        WorkManager.getInstance(context).cancelAllWork().result.get()
         val dao = GalleryDatabase.get(context).galleryDao()
         val prefs = context.getSharedPreferences("gallery_albums", Context.MODE_PRIVATE)
+        val catalogPrefs = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
+        val originalMediaStoreVersion = catalogPrefs.getString(PREF_MEDIA_STORE_VERSION_VISIBLE, null)
+        val allFilesAccess = MediaActions.hasAllFilesAccess(context)
         val originalVisible = io { dao.media(VISIBLE_SCOPE) }
         val originalComplete = io { dao.media(COMPLETE_SCOPE) }
         val originalVisibleState = io { dao.state(VISIBLE_SCOPE) }
@@ -51,7 +57,7 @@ class HiddenAlbumDialogInstrumentedTest {
                 dao.replaceMedia(
                     VISIBLE_SCOPE,
                     listOf(media(VISIBLE_SCOPE, "camera", "Câmera", "DCIM/Camera/", 3)),
-                    CatalogStateEntity(VISIBLE_SCOPE, System.currentTimeMillis(), false)
+                    CatalogStateEntity(VISIBLE_SCOPE, System.currentTimeMillis(), allFilesAccess)
                 )
                 dao.replaceMedia(
                     COMPLETE_SCOPE,
@@ -60,9 +66,15 @@ class HiddenAlbumDialogInstrumentedTest {
                         media(COMPLETE_SCOPE, "hidden-known", "Oculto conhecido", "Pictures/.known/", 2),
                         media(COMPLETE_SCOPE, "hidden-never", "Oculto nunca exibido", "Pictures/.never/", 1)
                     ),
-                    CatalogStateEntity(COMPLETE_SCOPE, System.currentTimeMillis(), true)
+                    CatalogStateEntity(COMPLETE_SCOPE, System.currentTimeMillis(), allFilesAccess)
                 )
             }
+            catalogPrefs.edit()
+                .putString(
+                    PREF_MEDIA_STORE_VERSION_VISIBLE,
+                    MediaStore.getVersion(context, MediaStore.VOLUME_EXTERNAL)
+                )
+                .commit()
             prefs.edit()
                 .putBoolean(PREF_INITIAL_REQUEST, true)
                 .putBoolean(PREF_ALL_FILES_PROMPT, true)
@@ -102,6 +114,11 @@ class HiddenAlbumDialogInstrumentedTest {
             if (originalEverVisible == null) editor.remove(PREF_EVER_VISIBLE) else editor.putStringSet(PREF_EVER_VISIBLE, originalEverVisible)
             if (originalHidden == null) editor.remove(PREF_HIDDEN_KEYS) else editor.putStringSet(PREF_HIDDEN_KEYS, originalHidden)
             editor.commit()
+            if (originalMediaStoreVersion == null) {
+                catalogPrefs.edit().remove(PREF_MEDIA_STORE_VERSION_VISIBLE).commit()
+            } else {
+                catalogPrefs.edit().putString(PREF_MEDIA_STORE_VERSION_VISIBLE, originalMediaStoreVersion).commit()
+            }
         }
     }
 
@@ -151,5 +168,7 @@ class HiddenAlbumDialogInstrumentedTest {
         const val PREF_SHOW_HIDDEN = "show_hidden_folders"
         const val PREF_INITIAL_REQUEST = "initial_all_files_requested"
         const val PREF_ALL_FILES_PROMPT = "all_files_prompted"
+        const val CATALOG_META_PREFS = "gallery_catalog_meta"
+        const val PREF_MEDIA_STORE_VERSION_VISIBLE = "media_store_version_visible"
     }
 }
