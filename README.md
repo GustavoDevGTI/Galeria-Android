@@ -73,7 +73,7 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 
 ## Testes automatizados
 
-A suíte atual possui 39 testes:
+A suíte atual possui 40 testes:
 
 - 26 testes unitários locais para filtros de mídia, abertura externa, identificação e histórico de pastas ocultas, colunas da grade, identidade de URIs do MediaStore, ordenação de álbuns, regras de gestos, estado e menus do visualizador
 - 3 testes instrumentados do Room para resumos de álbuns, isolamento dos catálogos e paginação com ordem personalizada
@@ -87,6 +87,7 @@ A suíte atual possui 39 testes:
 - 1 teste instrumentado que garante seleção múltipla sem abrir ou reproduzir a mídia tocada
 - 1 teste instrumentado que garante que o submenu não carregue álbuns ocultos nunca exibidos antes da ação `Carregar ocultos`
 - 1 teste instrumentado que executa a pinça horizontal nas duas direções e confirma a alteração do número de colunas
+- 1 teste instrumentado que percorre um álbum com 260 mídias e confirma o acesso ao último item
 
 Executar apenas os testes unitários rápidos:
 
@@ -132,9 +133,10 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.30
+### Validação da versão 0.8.31
 
-- 26 testes unitários aprovados; 13 testes instrumentados validados, sendo 11 na execução conjunta e 2 repetidos isoladamente por instabilidade de sincronização do Espresso no emulador
+- 26 testes unitários aprovados e 14 testes instrumentados validados
+- Teste de regressão aprovado para percorrer por gestos um álbum com 260 mídias até o último item, sem descarte das páginas anteriores
 - Teste de gesto aprovado para reduzir e aumentar as colunas da grade com uma pinça horizontal real, incluindo o término correto da nova animação
 - Testes de menus aprovados após isolar cada `PopupWindow` e executar a ação somente depois da confirmação de fechamento
 - Teste de regressão aprovado para reconhecer como a mesma mídia as URIs equivalentes das coleções `Images` e `Files` do MediaStore
@@ -154,9 +156,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.30**: são **31 commits** na linha 0.8, ou **30 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.31**: são **32 commits** na linha 0.8, ou **31 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.30 usa o código `8030`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.31 usa o código `8031`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -191,6 +193,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.28`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.28) | 22/07/2026 | Carregamento controlado de álbuns ocultos |
 | [`v0.8.29`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.29) | 22/07/2026 | Controle de colunas da grade por pinça horizontal |
 | [`v0.8.30`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.30) | 23/07/2026 | Animação fluida na grade e estabilidade dos submenus |
+| [`v0.8.31`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.31) | 03/08/2026 | Rolagem completa em álbuns extensos |
 
 ## Relatório comparativo de desempenho
 
@@ -206,7 +209,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.30](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.30.apk)
+[Baixar Galeria Android - versão 0.8.31](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.31.apk)
 
 Build padrão do Gradle:
 
@@ -217,10 +220,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.30.apk
+Galeria-Android-versao-0.8.31.apk
 ```
 
-O APK 0.8.30 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.31 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 
@@ -242,7 +245,7 @@ A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_
 - Catálogo invalidado pela versão do MediaStore, evitando varreduras completas quando nada mudou
 - WorkManager inicializado sob demanda, sem custo de varredura ou inicialização pesada a cada abertura do app
 - Varreduras de manutenção são adiadas e canceladas ao entrar em um álbum; atualizações manuais continuam imediatas
-- Paging ajustado para lotes menores e pré-carregamento próximo à área visível do álbum
+- Paging ajustado para lotes menores e pré-carregamento próximo à área visível do álbum, mantendo as páginas carregadas enquanto o álbum está aberto para não interromper a rolagem em coleções extensas
 - Entregas do Paging e atualizações de álbuns são adiadas durante gestos e aplicadas quando a grade fica ociosa
 - Adapters usam IDs estáveis, `DiffUtil` e payloads para evitar redesenhos completos em seleção e atualização de capas
 - Miniaturas decodificadas no tamanho real da grade, com chaves de cache separadas por resolução

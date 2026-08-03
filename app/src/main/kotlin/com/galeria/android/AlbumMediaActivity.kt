@@ -323,6 +323,7 @@ class AlbumMediaActivity : ComponentActivity() {
         grid = RecyclerView(this).apply {
             layoutManager = GridLayoutManager(this@AlbumMediaActivity, mediaSpanCount()).also { this@AlbumMediaActivity.layoutManager = it }
             clipToPadding = false
+            isNestedScrollingEnabled = true
             setHasFixedSize(true)
             setItemViewCacheSize(12)
             recycledViewPool.setMaxRecycledViews(0, 24)
@@ -448,6 +449,7 @@ class AlbumMediaActivity : ComponentActivity() {
                 horizontalPinchScale = 1f
                 lastHorizontalPinchSpan = 0f
                 if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
+                grid.parent?.requestDisallowInterceptTouchEvent(false)
                 return@setOnTouchListener true
             }
             if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
@@ -457,6 +459,7 @@ class AlbumMediaActivity : ComponentActivity() {
                 horizontalPinchScale = 1f
                 lastHorizontalPinchSpan = 0f
                 if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
+                grid.parent?.requestDisallowInterceptTouchEvent(false)
                 if (consumed) return@setOnTouchListener true
             }
             if (pinchCandidate || pinchGestureActive || pinchGestureConsumed) {
@@ -492,6 +495,7 @@ class AlbumMediaActivity : ComponentActivity() {
         swipeRefresh = SwipeRefreshLayout(this).apply {
             setColorSchemeColors(Ui.accent(this@AlbumMediaActivity))
             setProgressBackgroundColorSchemeColor(Ui.surface(this@AlbumMediaActivity))
+            setOnChildScrollUpCallback { _, _ -> grid.canScrollVertically(-1) }
             setOnRefreshListener {
                 refreshCatalogWithWorker()
             }
@@ -937,7 +941,7 @@ class AlbumMediaActivity : ComponentActivity() {
                     initialLoadSize = 45,
                     prefetchDistance = 12,
                     enablePlaceholders = false,
-                    maxSize = 180
+                    maxSize = PagingConfig.MAX_SIZE_UNBOUNDED
                 )
             ).map { page -> page.filter(::matchesMediaFilter) }
                 .collectLatest { page ->
