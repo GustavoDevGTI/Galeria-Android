@@ -56,6 +56,7 @@ import kotlin.math.min
 class AlbumMediaActivity : ComponentActivity() {
     private lateinit var adapter: MediaRecyclerAdapter
     private lateinit var grid: RecyclerView
+    private lateinit var fastScroller: AlbumFastScroller
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var layoutManager: GridLayoutManager
     private lateinit var searchInput: EditText
@@ -323,7 +324,6 @@ class AlbumMediaActivity : ComponentActivity() {
         grid = RecyclerView(this).apply {
             layoutManager = GridLayoutManager(this@AlbumMediaActivity, mediaSpanCount()).also { this@AlbumMediaActivity.layoutManager = it }
             clipToPadding = false
-            isNestedScrollingEnabled = true
             setHasFixedSize(true)
             setItemViewCacheSize(12)
             recycledViewPool.setMaxRecycledViews(0, 24)
@@ -449,7 +449,6 @@ class AlbumMediaActivity : ComponentActivity() {
                 horizontalPinchScale = 1f
                 lastHorizontalPinchSpan = 0f
                 if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
-                grid.parent?.requestDisallowInterceptTouchEvent(false)
                 return@setOnTouchListener true
             }
             if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
@@ -459,7 +458,6 @@ class AlbumMediaActivity : ComponentActivity() {
                 horizontalPinchScale = 1f
                 lastHorizontalPinchSpan = 0f
                 if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
-                grid.parent?.requestDisallowInterceptTouchEvent(false)
                 if (consumed) return@setOnTouchListener true
             }
             if (pinchCandidate || pinchGestureActive || pinchGestureConsumed) {
@@ -495,13 +493,23 @@ class AlbumMediaActivity : ComponentActivity() {
         swipeRefresh = SwipeRefreshLayout(this).apply {
             setColorSchemeColors(Ui.accent(this@AlbumMediaActivity))
             setProgressBackgroundColorSchemeColor(Ui.surface(this@AlbumMediaActivity))
-            setOnChildScrollUpCallback { _, _ -> grid.canScrollVertically(-1) }
             setOnRefreshListener {
                 refreshCatalogWithWorker()
             }
         }
         swipeRefresh.addView(grid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         content.addView(swipeRefresh, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        fastScroller = AlbumFastScroller(this, grid)
+        val fastScrollParams = FrameLayout.LayoutParams(
+            Ui.dp(this, 28),
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            Gravity.END
+        ).apply {
+            topMargin = Ui.dp(this@AlbumMediaActivity, 6)
+            rightMargin = Ui.dp(this@AlbumMediaActivity, 2)
+            bottomMargin = Ui.dp(this@AlbumMediaActivity, 6)
+        }
+        content.addView(fastScroller, fastScrollParams)
 
         emptyView = Ui.label(this, "Nenhuma foto ou vídeo nesta pasta.").apply {
             visibility = View.GONE
@@ -940,8 +948,8 @@ class AlbumMediaActivity : ComponentActivity() {
                     pageSize = 30,
                     initialLoadSize = 45,
                     prefetchDistance = 12,
-                    enablePlaceholders = false,
-                    maxSize = PagingConfig.MAX_SIZE_UNBOUNDED
+                    enablePlaceholders = true,
+                    maxSize = 180
                 )
             ).map { page -> page.filter(::matchesMediaFilter) }
                 .collectLatest { page ->

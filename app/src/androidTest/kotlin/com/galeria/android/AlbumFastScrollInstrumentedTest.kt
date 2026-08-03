@@ -5,13 +5,15 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.MediaStore
-import android.view.View
-import android.view.ViewGroup
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.action.ViewActions.swipeUp
+import androidx.test.espresso.action.GeneralLocation
+import androidx.test.espresso.action.GeneralSwipeAction
+import androidx.test.espresso.action.Press
+import androidx.test.espresso.action.Swipe
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
@@ -23,15 +25,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
-class LargeAlbumScrollInstrumentedTest {
+class AlbumFastScrollInstrumentedTest {
     @get:Rule
     val permissions: GrantPermissionRule = GrantPermissionRule.grant(
         Manifest.permission.READ_MEDIA_IMAGES,
@@ -39,14 +39,14 @@ class LargeAlbumScrollInstrumentedTest {
     )
 
     @Test
-    fun verticalScrollReachesTheEndOfALargeAlbum() {
+    fun draggingFastScrollReachesTheEndOfALargeAlbum() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         WorkManager.getInstance(context).cancelAllWork().result.get()
         val dao = GalleryDatabase.get(context).galleryDao()
         val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val catalogPrefs = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
         val suffix = System.currentTimeMillis()
-        val albumKey = "Pictures/GaleriaLargeScrollTest-$suffix/"
+        val albumKey = "Pictures/GaleriaFastScrollTest-$suffix/"
         val optionSuffix = albumKey.hashCode()
         val originalMedia = io { dao.media(VISIBLE_SCOPE) }
         val originalState = io { dao.state(VISIBLE_SCOPE) }
@@ -54,8 +54,6 @@ class LargeAlbumScrollInstrumentedTest {
         val hadColumns = prefs.contains(PREF_GRID_COLUMNS)
         val originalMediaStoreVersion = catalogPrefs.getString(PREF_MEDIA_STORE_VERSION_VISIBLE, null)
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
-        val firstName = mediaName(0)
-        val lastName = mediaName(TOTAL_MEDIA - 1)
 
         try {
             io {
@@ -80,38 +78,26 @@ class LargeAlbumScrollInstrumentedTest {
 
             val intent = Intent(context, AlbumMediaActivity::class.java).apply {
                 putExtra("album_key", albumKey)
-                putExtra("album_name", "Álbum extenso")
+                putExtra("album_name", "Álbum com fast scroll")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             ActivityScenario.launch<AlbumMediaActivity>(intent).use { scenario ->
-                waitUntilDisplayed(firstName)
-                val gridDescription = "Grade de mídias, $GRID_COLUMNS colunas"
-                onView(withContentDescription(gridDescription)).check(matches(isDisplayed()))
-                scenario.onActivity { activity ->
-                    val grid = findViewWithDescription(
-                        activity.findViewById(android.R.id.content),
-                        gridDescription
-                    ) as? RecyclerView
-                    assertNotNull(grid)
-                    assertTrue(requireNotNull(grid).canScrollVertically(1))
-                }
-
-                var reachedLastItem = false
-                for (attempt in 0 until MAX_SWIPE_ATTEMPTS) {
-                    reachedLastItem = viewIsDisplayed(lastName)
-                    if (reachedLastItem) break
-                    onView(withContentDescription(gridDescription)).perform(swipeUp())
-                }
-                assertTrue("A última mídia do álbum não ficou acessível pelo scroll.", reachedLastItem)
+                waitUntilDisplayed(FAST_SCROLL_DESCRIPTION)
+                onView(withContentDescription(FAST_SCROLL_DESCRIPTION))
+                    .check(matches(isDisplayed()))
+                    .perform(
+                        GeneralSwipeAction(
+                            Swipe.FAST,
+                            GeneralLocation.TOP_CENTER,
+                            GeneralLocation.BOTTOM_CENTER,
+                            Press.FINGER
+                        )
+                    )
+                waitUntilAlbumEnd(scenario)
 
                 scenario.onActivity { activity ->
-                    val grid = findViewWithDescription(
-                        activity.findViewById(android.R.id.content),
-                        gridDescription
-                    ) as? RecyclerView
-                    assertNotNull(grid)
-                    val recycler = requireNotNull(grid)
-                    assertEquals(TOTAL_MEDIA, recycler.adapter?.itemCount)
+                    val recycler = findRecyclerView(activity.findViewById(android.R.id.content))
+                    assertEquals(TOTAL_MEDIA, recycler?.adapter?.itemCount)
                 }
             }
         } finally {
@@ -138,7 +124,7 @@ class LargeAlbumScrollInstrumentedTest {
 
     private fun media(albumKey: String, index: Int) = CachedMediaEntity(
         scope = VISIBLE_SCOPE,
-        uri = "content://large-album-scroll/$index",
+        uri = "content://album-fast-scroll/$index",
         mediaId = index.toLong(),
         name = mediaName(index),
         mimeType = "image/jpeg",
@@ -146,7 +132,7 @@ class LargeAlbumScrollInstrumentedTest {
         size = 100L,
         relativePath = albumKey,
         albumKey = albumKey,
-        albumName = "Álbum extenso"
+        albumName = "Álbum com fast scroll"
     )
 
     private fun mediaName(index: Int): String = "midia-${index.toString().padStart(3, '0')}.jpg"
@@ -164,14 +150,29 @@ class LargeAlbumScrollInstrumentedTest {
             if (viewIsDisplayed(description)) return
             Thread.sleep(100L)
         }
-        throw AssertionError("Mídia inicial não exibida: $description")
+        throw AssertionError("Elemento não exibido: $description")
     }
 
-    private fun findViewWithDescription(view: View, description: String): View? {
-        if (view.contentDescription?.toString() == description) return view
-        if (view !is ViewGroup) return null
+    private fun waitUntilAlbumEnd(scenario: ActivityScenario<AlbumMediaActivity>) {
+        val deadline = System.currentTimeMillis() + LOAD_TIMEOUT_MS
+        var lastVisible = RecyclerView.NO_POSITION
+        while (System.currentTimeMillis() < deadline) {
+            scenario.onActivity { activity ->
+                val recycler = findRecyclerView(activity.findViewById(android.R.id.content))
+                lastVisible = (recycler?.layoutManager as? GridLayoutManager)
+                    ?.findLastVisibleItemPosition() ?: RecyclerView.NO_POSITION
+            }
+            if (lastVisible == TOTAL_MEDIA - 1) return
+            Thread.sleep(100L)
+        }
+        throw AssertionError("O fast scroll parou na posição $lastVisible de ${TOTAL_MEDIA - 1}.")
+    }
+
+    private fun findRecyclerView(view: android.view.View): RecyclerView? {
+        if (view is RecyclerView) return view
+        if (view !is android.view.ViewGroup) return null
         for (index in 0 until view.childCount) {
-            findViewWithDescription(view.getChildAt(index), description)?.let { return it }
+            findRecyclerView(view.getChildAt(index))?.let { return it }
         }
         return null
     }
@@ -179,10 +180,10 @@ class LargeAlbumScrollInstrumentedTest {
     private fun <T> io(block: () -> T): T = runBlocking { withContext(Dispatchers.IO) { block() } }
 
     private companion object {
+        const val FAST_SCROLL_DESCRIPTION = "Rolagem rápida do álbum"
         const val VISIBLE_SCOPE = "visible"
         const val TOTAL_MEDIA = 260
         const val GRID_COLUMNS = 4
-        const val MAX_SWIPE_ATTEMPTS = 36
         const val LOAD_TIMEOUT_MS = 15_000L
         const val PREF_GRID_COLUMNS = "media_grid_columns"
         const val CATALOG_META_PREFS = "gallery_catalog_meta"
