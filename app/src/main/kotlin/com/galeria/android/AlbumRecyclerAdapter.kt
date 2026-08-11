@@ -126,7 +126,7 @@ class AlbumRecyclerAdapter(
         val item = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.TOP
-            setPadding(Ui.dp(context, 8), Ui.dp(context, 10), Ui.dp(context, 8), Ui.dp(context, 12))
+            setPadding(Ui.dp(context, 8), Ui.dp(context, 8), Ui.dp(context, 8), Ui.dp(context, 6))
             layoutParams = RecyclerView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -162,8 +162,8 @@ class AlbumRecyclerAdapter(
             maxLines = 2
             includeFontPadding = true
         }
-        val nameParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(context, 48)).apply {
-            topMargin = Ui.dp(context, 8)
+        val nameParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(context, 44)).apply {
+            topMargin = Ui.dp(context, 6)
         }
         item.addView(name, nameParams)
         return Holder(item, cover, name, check)
