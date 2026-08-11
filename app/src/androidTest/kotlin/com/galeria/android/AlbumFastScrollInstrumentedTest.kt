@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -98,6 +99,11 @@ class AlbumFastScrollInstrumentedTest {
                 scenario.onActivity { activity ->
                     val recycler = findRecyclerView(activity.findViewById(android.R.id.content))
                     assertEquals(TOTAL_MEDIA, recycler?.adapter?.itemCount)
+                    assertFalse((recycler?.adapter as MediaRecyclerAdapter).isPagingMode())
+                    val emptyCells = (0 until recycler.childCount).count { index ->
+                        recycler.getChildAt(index).contentDescription.isNullOrEmpty()
+                    }
+                    assertEquals("O fast scroll deixou células vazias na região final.", 0, emptyCells)
                 }
             }
         } finally {

@@ -76,6 +76,13 @@ abstract class GalleryDao {
     abstract fun media(scope: String): List<CachedMediaEntity>
 
     @Query(
+        "SELECT * FROM cached_media " +
+            "WHERE scope = :scope AND albumKey = :albumKey " +
+            "ORDER BY dateAdded DESC"
+    )
+    abstract fun mediaForAlbum(scope: String, albumKey: String): List<CachedMediaEntity>
+
+    @Query(
         """
         SELECT
             media.albumKey AS albumKey,
@@ -205,6 +212,11 @@ object GalleryCatalogStore {
         updateSnapshot(includeHidden, result)
         return result
     }
+
+    fun readAlbumMedia(context: Context, includeHidden: Boolean, albumKey: String): List<MediaItem> =
+        GalleryDatabase.get(context).galleryDao()
+            .mediaForAlbum(scope(includeHidden), albumKey)
+            .map { it.toMediaItem() }
 
     fun readAlbums(context: Context, includeHidden: Boolean): List<AlbumItem> =
         GalleryDatabase.get(context).galleryDao().albumSummaries(scope(includeHidden)).map { summary ->

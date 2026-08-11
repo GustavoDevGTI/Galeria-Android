@@ -922,7 +922,8 @@ class AlbumMediaActivity : ComponentActivity() {
         val request = ++loadGeneration
         val targetPosition = if (preserveScroll) layoutManager.findFirstVisibleItemPosition() else savedFirstVisible
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
-        if (groupMode == GROUP_NONE && !adapter.isSelectionMode()) {
+        val wholeLibrary = albumKey.isNullOrEmpty() || albumKey == "all_media"
+        if (wholeLibrary && groupMode == GROUP_NONE && !adapter.isSelectionMode()) {
             if (adapter.getCount() == 0 && ::emptyView.isInitialized) {
                 emptyView.text = "Carregando mídias..."
                 emptyView.visibility = View.VISIBLE
@@ -936,8 +937,21 @@ class AlbumMediaActivity : ComponentActivity() {
             emptyView.visibility = View.VISIBLE
         }
         mediaLoader.execute {
+            val cachedAlbum = albumKey
+                ?.takeIf { it.isNotEmpty() && it != "all_media" && it != "root" }
+                ?.let { GalleryCatalogStore.readAlbumMedia(applicationContext, shouldIncludeHiddenFilesystem(), it) }
+                .orEmpty()
+            val source = if (cachedAlbum.isNotEmpty()) {
+                cachedAlbum
+            } else {
+                MediaStoreRepository.loadMediaForAlbum(
+                    applicationContext,
+                    albumKey,
+                    shouldIncludeHiddenFilesystem()
+                )
+            }
             val items = prepareAlbumMedia(
-                MediaStoreRepository.loadMediaForAlbum(applicationContext, albumKey, shouldIncludeHiddenFilesystem())
+                source
             )
             runOnUiThread {
                 if (request != loadGeneration || isFinishing) return@runOnUiThread
