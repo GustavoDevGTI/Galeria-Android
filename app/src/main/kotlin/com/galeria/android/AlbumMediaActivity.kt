@@ -131,6 +131,9 @@ class AlbumMediaActivity : ComponentActivity() {
             if (gridPoolWarmupRemaining > 0) grid.postDelayed(this, GRID_POOL_WARMUP_STEP_MS)
         }
     }
+    private val finishFastScrollPreview = Runnable {
+        if (::adapter.isInitialized) adapter.setFastScrollPreview(false)
+    }
     private val mediaObserver = object : ContentObserver(mediaRefreshHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             scheduleMediaRefresh()
@@ -168,6 +171,7 @@ class AlbumMediaActivity : ComponentActivity() {
         pagingJob?.cancel()
         searchHandler.removeCallbacks(searchReload)
         if (::grid.isInitialized) grid.removeCallbacks(gridPoolWarmup)
+        if (::grid.isInitialized) grid.removeCallbacks(finishFastScrollPreview)
         super.onDestroy()
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
         try {
@@ -499,7 +503,14 @@ class AlbumMediaActivity : ComponentActivity() {
         }
         swipeRefresh.addView(grid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         content.addView(swipeRefresh, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        fastScroller = AlbumFastScroller(this, grid)
+        fastScroller = AlbumFastScroller(this, grid) { active ->
+            grid.removeCallbacks(finishFastScrollPreview)
+            if (active) {
+                adapter.setFastScrollPreview(true)
+            } else {
+                grid.postDelayed(finishFastScrollPreview, FAST_SCROLL_PREVIEW_DURATION_MS)
+            }
+        }
         val fastScrollParams = FrameLayout.LayoutParams(
             Ui.dp(this, 28),
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1335,6 +1346,7 @@ class AlbumMediaActivity : ComponentActivity() {
         private const val GRID_POOL_WARMUP_RETRY_MS = 80L
         private const val GRID_DENSITY_EXIT_MS = 70L
         private const val GRID_DENSITY_ENTRY_MS = 125L
+        private const val FAST_SCROLL_PREVIEW_DURATION_MS = 650L
         private const val MEDIA_OBSERVER_GRACE_MS = 3_000L
         private const val MEDIA_REFRESH_DEBOUNCE_MS = 5_000L
         private const val GROUP_NONE = "none"

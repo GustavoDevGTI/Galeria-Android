@@ -133,10 +133,11 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.32
+### Validação da versão 0.8.33
 
 - 26 testes unitários aprovados e 14 testes instrumentados validados
-- Teste de interface aprovado para exibir e arrastar o fast scroll lateral em um álbum com 260 mídias até o último item
+- Teste de interface aprovado para exibir e arrastar o fast scroll lateral otimizado em um álbum com 260 mídias até o último item
+- Atualizações intermediárias do fast scroll consolidadas após 72 ms e miniaturas de prévia limitadas a 128 px, priorizando a região final escolhida
 - Teste de gesto aprovado para reduzir e aumentar as colunas da grade com uma pinça horizontal real, incluindo o término correto da nova animação
 - Testes de menus aprovados após isolar cada `PopupWindow` e executar a ação somente depois da confirmação de fechamento
 - Teste de regressão aprovado para reconhecer como a mesma mídia as URIs equivalentes das coleções `Images` e `Files` do MediaStore
@@ -156,9 +157,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.32**: são **33 commits** na linha 0.8, ou **32 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.33**: são **34 commits** na linha 0.8, ou **33 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.32 usa o código `8032`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.33 usa o código `8033`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -195,6 +196,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.30`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.30) | 23/07/2026 | Animação fluida na grade e estabilidade dos submenus |
 | [`v0.8.31`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.31) | 03/08/2026 | Rolagem completa em álbuns extensos |
 | [`v0.8.32`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.32) | 03/08/2026 | Fast scroll lateral e arrastável dentro dos álbuns |
+| [`v0.8.33`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.33) | 11/08/2026 | Atualização mais rápida durante o fast scroll |
 
 ## Relatório comparativo de desempenho
 
@@ -210,7 +212,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.32](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.32.apk)
+[Baixar Galeria Android - versão 0.8.33](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.33.apk)
 
 Build padrão do Gradle:
 
@@ -221,10 +223,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.32.apk
+Galeria-Android-versao-0.8.33.apk
 ```
 
-O APK 0.8.32 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.33 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 
@@ -247,7 +249,7 @@ A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_
 - WorkManager inicializado sob demanda, sem custo de varredura ou inicialização pesada a cada abertura do app
 - Varreduras de manutenção são adiadas e canceladas ao entrar em um álbum; atualizações manuais continuam imediatas
 - Paging ajustado para lotes menores e pré-carregamento próximo à área visível do álbum
-- Fast scroll lateral permanece visível em álbuns extensos e pode ser arrastado para saltar diretamente a qualquer região
+- Fast scroll lateral permanece visível em álbuns extensos, consolida movimentos intermediários e usa prévias leves para priorizar rapidamente a região escolhida
 - Entregas do Paging e atualizações de álbuns são adiadas durante gestos e aplicadas quando a grade fica ociosa
 - Adapters usam IDs estáveis, `DiffUtil` e payloads para evitar redesenhos completos em seleção e atualização de capas
 - Miniaturas decodificadas no tamanho real da grade, com chaves de cache separadas por resolução

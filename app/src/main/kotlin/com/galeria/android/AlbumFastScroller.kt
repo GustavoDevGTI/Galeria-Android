@@ -14,7 +14,8 @@ import kotlin.math.roundToInt
 /** Barra lateral arrastável para navegar rapidamente por álbuns extensos. */
 class AlbumFastScroller(
     context: Context,
-    private val recyclerView: RecyclerView
+    private val recyclerView: RecyclerView,
+    private val onDragStateChanged: (Boolean) -> Unit = {}
 ) : View(context) {
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Ui.muted(context)
@@ -33,6 +34,12 @@ class AlbumFastScroller(
     private var dragOffset = 0f
     private var dragging = false
     private var listenersRegistered = false
+    private var pendingTargetPosition = RecyclerView.NO_POSITION
+    private val applyPendingScroll = Runnable {
+        if (pendingTargetPosition != RecyclerView.NO_POSITION) {
+            applyTargetPosition(pendingTargetPosition)
+        }
+    }
 
     private val scrollListener = object : RecyclerView.OnScrollListener() {
         override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) = updateThumb()
@@ -60,6 +67,9 @@ class AlbumFastScroller(
     }
 
     override fun onDetachedFromWindow() {
+        removeCallbacks(applyPendingScroll)
+        if (dragging) onDragStateChanged(false)
+        dragging = false
         unregisterListeners()
         super.onDetachedFromWindow()
     }
@@ -94,27 +104,39 @@ class AlbumFastScroller(
                 parent?.requestDisallowInterceptTouchEvent(true)
                 recyclerView.stopScroll()
                 dragging = true
+                onDragStateChanged(true)
                 dragOffset = if (event.y in thumbTop..(thumbTop + thumbHeight)) {
                     event.y - thumbTop
                 } else {
                     thumbHeight / 2f
                 }
-                scrollToTouch(event.y)
+                scrollToTouch(event.y, immediate = false)
                 return true
             }
 
             MotionEvent.ACTION_MOVE -> {
                 if (!dragging) return false
-                scrollToTouch(event.y)
+                scrollToTouch(event.y, immediate = false)
                 return true
             }
 
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            MotionEvent.ACTION_UP -> {
                 if (!dragging) return false
-                scrollToTouch(event.y)
+                scrollToTouch(event.y, immediate = true)
                 dragging = false
+                onDragStateChanged(false)
                 parent?.requestDisallowInterceptTouchEvent(false)
                 performClick()
+                return true
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                if (!dragging) return false
+                removeCallbacks(applyPendingScroll)
+                pendingTargetPosition = RecyclerView.NO_POSITION
+                dragging = false
+                onDragStateChanged(false)
+                parent?.requestDisallowInterceptTouchEvent(false)
                 return true
             }
         }
@@ -126,7 +148,7 @@ class AlbumFastScroller(
         return true
     }
 
-    private fun scrollToTouch(y: Float) {
+    private fun scrollToTouch(y: Float, immediate: Boolean) {
         val adapter = recyclerView.adapter ?: return
         val itemCount = adapter.itemCount
         if (itemCount <= 1) return
@@ -135,11 +157,29 @@ class AlbumFastScroller(
         val desiredTop = (y - dragOffset).coerceIn(trackTop, trackTop + travel)
         val fraction = (desiredTop - trackTop) / travel
         val targetPosition = (fraction * (itemCount - 1)).roundToInt()
-        (recyclerView.layoutManager as? GridLayoutManager)
-            ?.scrollToPositionWithOffset(targetPosition, 0)
-            ?: recyclerView.scrollToPosition(targetPosition)
+        pendingTargetPosition = targetPosition
+        removeCallbacks(applyPendingScroll)
+        if (immediate) {
+            applyTargetPosition(targetPosition)
+        } else {
+            postDelayed(applyPendingScroll, SCROLL_SETTLE_DELAY_MS)
+        }
         thumbTop = desiredTop
         invalidate()
+    }
+
+    private fun applyTargetPosition(position: Int) {
+        removeCallbacks(applyPendingScroll)
+        pendingTargetPosition = RecyclerView.NO_POSITION
+        val layoutManager = recyclerView.layoutManager as? GridLayoutManager
+        val alignedPosition = if (layoutManager == null) {
+            position
+        } else {
+            position - position % max(1, layoutManager.spanCount)
+        }
+        if (layoutManager?.findFirstVisibleItemPosition() == alignedPosition) return
+        layoutManager?.scrollToPositionWithOffset(alignedPosition, 0)
+            ?: recyclerView.scrollToPosition(alignedPosition)
     }
 
     private fun updateThumb() {
@@ -183,5 +223,9 @@ class AlbumFastScroller(
         recyclerView.removeOnScrollListener(scrollListener)
         recyclerView.adapter?.unregisterAdapterDataObserver(dataObserver)
         listenersRegistered = false
+    }
+
+    private companion object {
+        const val SCROLL_SETTLE_DELAY_MS = 72L
     }
 }

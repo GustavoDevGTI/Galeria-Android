@@ -39,6 +39,7 @@ class MediaRecyclerAdapter(
     private var listMode = false
     private var selectionMode = false
     private var pagingMode = false
+    private var fastScrollPreview = false
     private var gridThumbnailSizePx = 360
 
     init {
@@ -214,6 +215,14 @@ class MediaRecyclerAdapter(
         if (!listMode && itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_THUMBNAIL_SIZE)
     }
 
+    fun setFastScrollPreview(enabled: Boolean) {
+        if (fastScrollPreview == enabled) return
+        fastScrollPreview = enabled
+        if (!enabled && itemCount > 0) {
+            notifyItemRangeChanged(0, itemCount, PAYLOAD_THUMBNAIL_SIZE)
+        }
+    }
+
     fun isSelected(position: Int): Boolean =
         itemOrNull(position)?.let { selectedUris.contains(it.uri.toString()) } == true
 
@@ -380,7 +389,8 @@ class MediaRecyclerAdapter(
     }
 
     private fun bindThumbnail(holder: Holder, item: MediaItem) {
-        val requestSize = if (listMode) Ui.dp(context, 82) else gridThumbnailSizePx
+        val normalSize = if (listMode) Ui.dp(context, 82) else gridThumbnailSizePx
+        val requestSize = if (fastScrollPreview) minOf(normalSize, FAST_SCROLL_PREVIEW_SIZE_PX) else normalSize
         val diskKey = "media:${item.uri}"
         val memoryKey = "$diskKey:$requestSize"
         holder.image.load(item.uri) {
@@ -407,6 +417,7 @@ class MediaRecyclerAdapter(
         const val PAYLOAD_THUMBNAIL_SIZE = "thumbnail_size"
         const val PAYLOAD_POSITION = "position"
         const val PAYLOAD_LAYOUT = "layout"
+        const val FAST_SCROLL_PREVIEW_SIZE_PX = 128
     }
 
 }
