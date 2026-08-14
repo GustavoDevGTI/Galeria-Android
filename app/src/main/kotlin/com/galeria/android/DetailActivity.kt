@@ -1552,7 +1552,7 @@ class DetailActivity : ComponentActivity() {
             memoryCacheKey(viewerPreviewKey(item))
             diskCacheKey(viewerSourceKey(item))
             allowHardware(true)
-            crossfade(false)
+            crossfade(180)
         }
     }
 
@@ -1631,8 +1631,13 @@ class DetailActivity : ComponentActivity() {
             listener(
                 onSuccess = { _, _ ->
                     if (image.tag == item.uri) {
-                        image.alpha = 1f
-                        preview?.let { page.removeView(it) }
+                        image.animate()
+                            .alpha(1f)
+                            .setDuration(180L)
+                            .withEndAction {
+                                preview?.let { page.removeView(it) }
+                            }
+                            .start()
                     }
                 },
                 onError = { _, _ ->

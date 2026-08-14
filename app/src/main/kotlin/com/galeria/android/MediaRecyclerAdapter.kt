@@ -299,10 +299,11 @@ class MediaRecyclerAdapter(
         } else {
             SquareFrameLayout(context)
         }
-        thumb.setBackgroundColor(Color.TRANSPARENT)
+        thumb.background = Ui.rounded(Color.BLACK, MEDIA_CORNER_RADIUS_DP, context)
+        thumb.clipToOutline = true
         val image = ImageView(context)
         image.scaleType = ImageView.ScaleType.CENTER_CROP
-        image.setBackgroundColor(Color.TRANSPARENT)
+        image.setBackgroundColor(Color.BLACK)
         thumb.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         val check = TextView(context).apply {
@@ -343,6 +344,7 @@ class MediaRecyclerAdapter(
         val item = if (pagingMode) pagingDiffer.getItem(position) else visibleItems[position]
         if (item == null) {
             holder.image.setImageDrawable(null)
+            holder.boundUri = null
             holder.name.text = ""
             holder.itemView.contentDescription = null
             holder.check.visibility = View.GONE
@@ -393,13 +395,18 @@ class MediaRecyclerAdapter(
         val requestSize = if (fastScrollPreview) minOf(normalSize, FAST_SCROLL_PREVIEW_SIZE_PX) else normalSize
         val diskKey = "media:${item.uri}"
         val memoryKey = "$diskKey:$requestSize"
+        val uriKey = item.uri.toString()
+        if (holder.boundUri != uriKey) {
+            holder.image.setImageDrawable(null)
+            holder.boundUri = uriKey
+        }
         holder.image.load(item.uri) {
             size(requestSize, requestSize)
             precision(Precision.INEXACT)
             memoryCacheKey(memoryKey)
             diskCacheKey(diskKey)
             allowHardware(true)
-            crossfade(false)
+            crossfade(180)
         }
     }
 
@@ -410,7 +417,9 @@ class MediaRecyclerAdapter(
         val image: ImageView,
         val name: TextView,
         val check: TextView
-    ) : RecyclerView.ViewHolder(itemView)
+    ) : RecyclerView.ViewHolder(itemView) {
+        var boundUri: String? = null
+    }
 
     private companion object {
         const val PAYLOAD_SELECTION = "selection"
@@ -418,6 +427,7 @@ class MediaRecyclerAdapter(
         const val PAYLOAD_POSITION = "position"
         const val PAYLOAD_LAYOUT = "layout"
         const val FAST_SCROLL_PREVIEW_SIZE_PX = 128
+        const val MEDIA_CORNER_RADIUS_DP = 5
     }
 
 }

@@ -11,6 +11,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -20,6 +21,8 @@ class MediaActionsInstrumentedTest {
     @Test
     fun movesMediaToTheExactSelectedAlbumPath() {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        val catalogWasDirty = GalleryCatalogStore.isCatalogDirty(context)
+        GalleryCatalogStore.clearCatalogDirty(context)
         context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
             .edit()
             .putBoolean("initial_all_files_requested", true)
@@ -81,8 +84,14 @@ class MediaActionsInstrumentedTest {
                 if (cursor.moveToFirst()) cursor.getString(0) else null
             }
             assertEquals(targetPath, actualPath)
+            assertTrue(GalleryCatalogStore.isCatalogDirty(context))
         } finally {
             resolver.delete(mediaUri, null, null)
+            if (catalogWasDirty) {
+                GalleryCatalogStore.markCatalogDirty(context)
+            } else {
+                GalleryCatalogStore.clearCatalogDirty(context)
+            }
         }
     }
 

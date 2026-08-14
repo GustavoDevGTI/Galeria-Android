@@ -194,6 +194,7 @@ class MediaActions private constructor() {
                     val updated = activity.contentResolver.update(item.uri, values, null, null)
                     if (updated > 0) {
                         MediaStoreRepository.invalidateCache()
+                        GalleryCatalogStore.markCatalogDirty(activity.applicationContext)
                         return RESULT_DONE
                     }
                 } catch (_: SecurityException) {
@@ -248,6 +249,7 @@ class MediaActions private constructor() {
                 }
                 resolver.update(targetUri, done, null, null)
                 MediaStoreRepository.invalidateCache()
+                GalleryCatalogStore.markCatalogDirty(activity.applicationContext)
                 return RESULT_DONE
             }
 
@@ -269,6 +271,7 @@ class MediaActions private constructor() {
                 }
                 MediaScannerConnection.scanFile(activity, arrayOf(targetFile.absolutePath), null, null)
                 MediaStoreRepository.invalidateCache()
+                GalleryCatalogStore.markCatalogDirty(activity.applicationContext)
                 RESULT_DONE
             } catch (_: Exception) {
                 targetFile.delete()
@@ -478,6 +481,7 @@ class MediaActions private constructor() {
                     null
                 )
                 MediaStoreRepository.invalidateCache()
+                GalleryCatalogStore.markCatalogDirty(activity.applicationContext)
                 return RESULT_DONE
             }
             targetFile.delete()
@@ -503,6 +507,7 @@ class MediaActions private constructor() {
                 }
                 MediaScannerConnection.scanFile(activity, arrayOf(targetFile.absolutePath), null, null)
                 MediaStoreRepository.invalidateCache()
+                GalleryCatalogStore.markCatalogDirty(activity.applicationContext)
                 RESULT_DONE
             } catch (_: Exception) {
                 targetFile.delete()

@@ -4,18 +4,25 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.SystemClock
 import android.provider.MediaStore
+import android.view.MotionEvent
+import android.view.View
+import android.widget.ImageView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.UiController
+import androidx.test.espresso.ViewAction
 import androidx.test.espresso.action.GeneralLocation
 import androidx.test.espresso.action.GeneralSwipeAction
 import androidx.test.espresso.action.Press
 import androidx.test.espresso.action.Swipe
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
@@ -26,9 +33,13 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.hamcrest.Matcher
+import java.util.concurrent.atomic.AtomicBoolean
 
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
@@ -84,8 +95,12 @@ class AlbumFastScrollInstrumentedTest {
             }
             ActivityScenario.launch<AlbumMediaActivity>(intent).use { scenario ->
                 waitUntilDisplayed(FAST_SCROLL_DESCRIPTION)
+                val movedBeforeRelease = AtomicBoolean(false)
                 onView(withContentDescription(FAST_SCROLL_DESCRIPTION))
                     .check(matches(isDisplayed()))
+                    .perform(slowDragToMiddle(movedBeforeRelease))
+                assertTrue("A grade ficou congelada durante o arrasto lento.", movedBeforeRelease.get())
+                onView(withContentDescription(FAST_SCROLL_DESCRIPTION))
                     .perform(
                         GeneralSwipeAction(
                             Swipe.FAST,
@@ -104,6 +119,10 @@ class AlbumFastScrollInstrumentedTest {
                         recycler.getChildAt(index).contentDescription.isNullOrEmpty()
                     }
                     assertEquals("O fast scroll deixou células vazias na região final.", 0, emptyCells)
+                    val thumbnail = findViewOfType(recycler.getChildAt(0), SquareFrameLayout::class.java)
+                    assertTrue(requireNotNull(thumbnail).clipToOutline)
+                    val image = findViewOfType(recycler.getChildAt(0), ImageView::class.java)
+                    assertNotNull(image?.background)
                 }
             }
         } finally {
@@ -172,6 +191,49 @@ class AlbumFastScrollInstrumentedTest {
             Thread.sleep(100L)
         }
         throw AssertionError("O fast scroll parou na posição $lastVisible de ${TOTAL_MEDIA - 1}.")
+    }
+
+    private fun slowDragToMiddle(movedBeforeRelease: AtomicBoolean): ViewAction = object : ViewAction {
+        override fun getConstraints(): Matcher<View> = isAssignableFrom(AlbumFastScroller::class.java)
+
+        override fun getDescription(): String = "arrastar lentamente o fast scroll sem soltar"
+
+        override fun perform(uiController: UiController, view: View) {
+            val x = view.width / 2f
+            val startY = view.height * 0.08f
+            val endY = view.height * 0.55f
+            val downTime = SystemClock.uptimeMillis()
+            var event = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, startY, 0)
+            view.dispatchTouchEvent(event)
+            event.recycle()
+            for (step in 1..8) {
+                uiController.loopMainThreadForAtLeast(85L)
+                val y = startY + (endY - startY) * step / 8f
+                val eventTime = SystemClock.uptimeMillis()
+                event = MotionEvent.obtain(downTime, eventTime, MotionEvent.ACTION_MOVE, x, y, 0)
+                view.dispatchTouchEvent(event)
+                event.recycle()
+            }
+            uiController.loopMainThreadForAtLeast(85L)
+            val recycler = findRecyclerView(view.rootView)
+            val firstVisible = (recycler?.layoutManager as? GridLayoutManager)
+                ?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
+            movedBeforeRelease.set(firstVisible > 0)
+            val upTime = SystemClock.uptimeMillis()
+            event = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, x, endY, 0)
+            view.dispatchTouchEvent(event)
+            event.recycle()
+            uiController.loopMainThreadUntilIdle()
+        }
+    }
+
+    private fun <T : View> findViewOfType(view: View, type: Class<T>): T? {
+        if (type.isInstance(view)) return type.cast(view)
+        if (view !is android.view.ViewGroup) return null
+        for (index in 0 until view.childCount) {
+            findViewOfType(view.getChildAt(index), type)?.let { return it }
+        }
+        return null
     }
 
     private fun findRecyclerView(view: android.view.View): RecyclerView? {

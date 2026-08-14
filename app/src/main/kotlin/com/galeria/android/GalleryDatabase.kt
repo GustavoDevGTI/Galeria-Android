@@ -203,6 +203,7 @@ object GalleryCatalogStore {
     private const val VISIBLE_SCOPE = "visible"
     private const val COMPLETE_SCOPE = "complete"
     private const val CATALOG_META_PREFS = "gallery_catalog_meta"
+    private const val PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION = "catalog_dirty_after_media_action"
     @Volatile private var visibleSnapshot: List<MediaItem> = emptyList()
     @Volatile private var completeSnapshot: List<MediaItem> = emptyList()
 
@@ -247,6 +248,24 @@ object GalleryCatalogStore {
 
     fun snapshot(includeHidden: Boolean): List<MediaItem> =
         ArrayList(if (includeHidden) completeSnapshot else visibleSnapshot)
+
+    fun markCatalogDirty(context: Context) {
+        context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION, true)
+            .apply()
+    }
+
+    fun isCatalogDirty(context: Context): Boolean =
+        context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
+            .getBoolean(PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION, false)
+
+    fun clearCatalogDirty(context: Context) {
+        context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .remove(PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION)
+            .apply()
+    }
 
     fun pagedMedia(
         context: Context,

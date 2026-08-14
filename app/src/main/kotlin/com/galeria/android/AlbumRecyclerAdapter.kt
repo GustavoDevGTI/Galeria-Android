@@ -32,6 +32,7 @@ class AlbumRecyclerAdapter(
     private var filter = ""
     private var selectionMode = false
     private var coverSizePx = 320
+    private var coverRevision = 0L
 
     init {
         setHasStableIds(true)
@@ -41,6 +42,11 @@ class AlbumRecyclerAdapter(
         val bounded = maxOf(96, sizePx)
         if (coverSizePx == bounded) return
         coverSizePx = bounded
+        if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_COVER)
+    }
+
+    fun refreshVisibleCovers() {
+        coverRevision++
         if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_COVER)
     }
 
@@ -136,7 +142,7 @@ class AlbumRecyclerAdapter(
         val thumb = SquareFrameLayout(context)
         val cover = SquareImageView(context).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = Ui.rounded(Ui.surface(context), folderRadius(), context)
+            background = Ui.rounded(Color.BLACK, folderRadius(), context)
             clipToOutline = true
         }
         thumb.addView(cover, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -202,12 +208,12 @@ class AlbumRecyclerAdapter(
     }
 
     private fun bindCover(holder: Holder, album: AlbumItem) {
-        holder.cover.background = Ui.rounded(Ui.surface(context), folderRadius(), context)
+        holder.cover.background = Ui.rounded(Color.BLACK, folderRadius(), context)
         val cover = album.cover
         if (cover == null) {
             holder.cover.setImageDrawable(null)
         } else {
-            val diskKey = "album:${cover.uri}"
+            val diskKey = "album:${cover.uri}:$coverRevision"
             val memoryKey = "$diskKey:$coverSizePx"
             holder.cover.load(cover.uri) {
                 size(coverSizePx, coverSizePx)
@@ -215,7 +221,7 @@ class AlbumRecyclerAdapter(
                 memoryCacheKey(memoryKey)
                 diskCacheKey(diskKey)
                 allowHardware(true)
-                crossfade(false)
+                crossfade(180)
             }
         }
     }

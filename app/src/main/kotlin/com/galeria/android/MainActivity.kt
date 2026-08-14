@@ -79,6 +79,7 @@ class MainActivity : ComponentActivity() {
     private var mediaObserverRefreshScheduled = false
     private var deferredCatalogRefreshPending = false
     private var pendingAlbumSubmission: PendingAlbumSubmission? = null
+    private var forceAlbumCoverRefreshOnNextSubmit = false
     private val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val mediaRefreshRunnable = Runnable {
         mediaObserverRefreshScheduled = false
@@ -105,7 +106,14 @@ class MainActivity : ComponentActivity() {
         if (hasReadPermission()) {
             ensureInitialFileManagementAccess()
             mediaRefreshHandler.postDelayed({
-                if (!isFinishing && hasReadPermission()) loadAlbums()
+                if (!isFinishing && hasReadPermission()) {
+                    if (GalleryCatalogStore.isCatalogDirty(applicationContext)) {
+                        if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = true
+                        refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
+                    } else {
+                        loadAlbums()
+                    }
+                }
             }, INITIAL_CATALOG_DELAY_MS)
         } else {
             requestReadPermission()
@@ -122,8 +130,13 @@ class MainActivity : ComponentActivity() {
         loadSettings()
         applyThemeColors()
         if (hasReadPermission()) {
-            loadAlbums()
-            if (mediaObserverRefreshPending) scheduleMediaRefresh()
+            if (GalleryCatalogStore.isCatalogDirty(applicationContext)) {
+                if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = true
+                refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
+            } else {
+                loadAlbums()
+                if (mediaObserverRefreshPending) scheduleMediaRefresh()
+            }
         }
     }
 
@@ -526,7 +539,12 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 Ui.toast(this, "$moved item(ns) movidos.")
                 exitSelectionMode()
-                loadAlbums()
+                if (moved > 0) {
+                    if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = true
+                    refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
+                } else {
+                    loadAlbums()
+                }
             }
         }
     }
@@ -694,6 +712,10 @@ class MainActivity : ComponentActivity() {
     private fun submitAlbumsNow(albums: List<AlbumItem>, query: String) {
         rememberVisibleFolderKeys(albums)
         adapter.submit(albums, query)
+        if (forceAlbumCoverRefreshOnNextSubmit) {
+            forceAlbumCoverRefreshOnNextSubmit = false
+            adapter.refreshVisibleCovers()
+        }
         updateEmptyText()
         if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
     }
@@ -1279,11 +1301,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refreshCatalogWithWorker(includeHidden: Boolean, force: Boolean = true) {
+        if (force && ::adapter.isInitialized) adapter.refreshVisibleCovers()
         val workId = MediaScanScheduler.enqueue(applicationContext, includeHidden, replace = force)
         observeWorkCompletion(
             workId,
             onSuccess = {
                 deferredCatalogRefreshPending = false
+                mediaObserverRefreshPending = false
+                GalleryCatalogStore.clearCatalogDirty(applicationContext)
+                forceAlbumCoverRefreshOnNextSubmit = force
                 if (!isFinishing) loadAlbums()
             },
             onFailure = {

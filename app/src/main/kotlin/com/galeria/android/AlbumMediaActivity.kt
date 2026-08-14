@@ -937,10 +937,14 @@ class AlbumMediaActivity : ComponentActivity() {
             emptyView.visibility = View.VISIBLE
         }
         mediaLoader.execute {
-            val cachedAlbum = albumKey
-                ?.takeIf { it.isNotEmpty() && it != "all_media" && it != "root" }
-                ?.let { GalleryCatalogStore.readAlbumMedia(applicationContext, shouldIncludeHiddenFilesystem(), it) }
-                .orEmpty()
+            val cachedAlbum = if (GalleryCatalogStore.isCatalogDirty(applicationContext)) {
+                emptyList()
+            } else {
+                albumKey
+                    ?.takeIf { it.isNotEmpty() && it != "all_media" && it != "root" }
+                    ?.let { GalleryCatalogStore.readAlbumMedia(applicationContext, shouldIncludeHiddenFilesystem(), it) }
+                    .orEmpty()
+            }
             val source = if (cachedAlbum.isNotEmpty()) {
                 cachedAlbum
             } else {
