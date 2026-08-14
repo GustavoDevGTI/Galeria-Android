@@ -11,7 +11,8 @@ class MediaItem(
     @JvmField val size: Long,
     relativePath: String?,
     albumKey: String?,
-    albumName: String?
+    albumName: String?,
+    @JvmField val duration: Long = 0L
 ) {
     @JvmField val name: String = name ?: "Sem nome"
     @JvmField val mimeType: String = mimeType ?: ""

@@ -503,8 +503,8 @@ class DetailActivity : ComponentActivity() {
             when (selected) {
                 ViewerMenuRules.RENAME -> askRenameCurrentImage()
                 ViewerMenuRules.OPEN_WITH -> openCurrentWithAnotherApp()
-                ViewerMenuRules.COPY_TO -> askFolderForCopyOrMove(true)
-                ViewerMenuRules.MOVE_TO -> askFolderForCopyOrMove(false)
+                ViewerMenuRules.COPY_TO -> askFolderForCopyOrMove(true, anchor)
+                ViewerMenuRules.MOVE_TO -> askFolderForCopyOrMove(false, anchor)
                 ViewerMenuRules.HIDE -> confirmHideCurrent()
                 ViewerMenuRules.INFORMATION -> if (item.isVideo()) {
                     showCurrentVideoInformation()
@@ -617,7 +617,8 @@ class DetailActivity : ComponentActivity() {
             item.size,
             item.relativePath,
             item.albumKey,
-            item.albumName
+            item.albumName,
+            item.duration
         )
         if (index == currentIndex) title.text = newName
         MediaStoreRepository.invalidateCache()
@@ -1839,26 +1840,26 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun askFolderForCopyOrMove(copy: Boolean) {
+    private fun askFolderForCopyOrMove(copy: Boolean, anchor: View) {
         val item = currentItem()
-        val targets = availableAlbumNames(item)
-        if (targets.isEmpty()) {
-            Ui.toast(this, "Nenhum álbum disponível.")
-            return
-        }
-        val labels = targets.map { it.first }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle(if (copy) "Copiar para" else "Mover para")
-            .setItems(labels) { _, which ->
-                val folder = targets[which].second
-                if (copy) {
-                    copyCurrentToFolder(item, folder)
-                } else {
-                    moveCurrentToFolder(item, folder)
+        executor.execute {
+            val targets = availableAlbumNames(item)
+            runOnUiThread {
+                if (isFinishing || !anchor.isAttachedToWindow || currentItem().uri != item.uri) return@runOnUiThread
+                if (targets.isEmpty()) {
+                    Ui.toast(this, "Nenhum álbum disponível.")
+                    return@runOnUiThread
+                }
+                Ui.showAlbumTargets(anchor, if (copy) "Copiar para" else "Mover para", targets) { album ->
+                    val folder = album.path.ifBlank { album.name }
+                    if (copy) {
+                        copyCurrentToFolder(item, folder)
+                    } else {
+                        moveCurrentToFolder(item, folder)
+                    }
                 }
             }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        }
     }
 
     private fun copyCurrentToFolder(item: MediaItem, folder: String) {
@@ -1886,15 +1887,15 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun availableAlbumNames(item: MediaItem): List<Pair<String, String>> {
-        val names = LinkedHashMap<String, String>()
+    private fun availableAlbumNames(item: MediaItem): List<AlbumItem> {
+        val names = LinkedHashMap<String, AlbumItem>()
         val includeHiddenFilesystem = intent.getBooleanExtra("include_hidden_filesystem", false)
         for (album in MediaStoreRepository.loadAlbums(this, includeHiddenFilesystem)) {
             if (album.key == "all_media" || album.key == item.albumKey || album.name.isBlank()) continue
-            val label = if (album.path.isNotBlank()) "${album.name} - ${album.path}" else album.name
-            if (!names.containsKey(label)) names[label] = album.path.ifBlank { album.name }
+            val targetKey = album.path.ifBlank { album.key }
+            if (!names.containsKey(targetKey)) names[targetKey] = album
         }
-        return names.entries.map { it.key to it.value }
+        return names.values.toList()
     }
 
     private fun setCurrentAsWallpaper() {

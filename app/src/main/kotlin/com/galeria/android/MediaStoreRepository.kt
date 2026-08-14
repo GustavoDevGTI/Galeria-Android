@@ -3,6 +3,7 @@ package com.galeria.android
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -179,6 +180,7 @@ object MediaStoreRepository {
                 MediaStore.MediaColumns.RELATIVE_PATH,
                 MediaStore.MediaColumns.BUCKET_ID,
                 MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
+                MediaStore.Video.VideoColumns.DURATION,
                 MediaStore.Files.FileColumns.MEDIA_TYPE
             )
         } else {
@@ -191,6 +193,7 @@ object MediaStoreRepository {
                 MediaStore.MediaColumns.BUCKET_ID,
                 MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
                 MediaStore.MediaColumns.DATA,
+                MediaStore.Video.VideoColumns.DURATION,
                 MediaStore.Files.FileColumns.MEDIA_TYPE
             )
         }
@@ -233,6 +236,7 @@ object MediaStoreRepository {
                 }
                 val bucketIdIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.BUCKET_ID)
                 val bucketNameIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+                val durationIndex = cursor.getColumnIndex(MediaStore.Video.VideoColumns.DURATION)
                 val dataIndex = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                     cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
                 } else {
@@ -261,7 +265,8 @@ object MediaStoreRepository {
                             cursor.getLong(sizeIndex),
                             relativePath,
                             albumKey,
-                            albumName
+                            albumName,
+                            if (durationIndex >= 0 && !cursor.isNull(durationIndex)) cursor.getLong(durationIndex) else 0L
                         )
                     )
                 }
@@ -309,17 +314,19 @@ object MediaStoreRepository {
                     continue
                 }
                 val albumName = cleanAlbumName(relativePath, file.parentFile?.name ?: "Galeria")
+                val mimeType = mimeFor(file)
                 output.add(
                     MediaItem(
                         -file.absolutePath.hashCode().toLong().absoluteValue,
                         Uri.fromFile(file),
                         file.name,
-                        mimeFor(file),
+                        mimeType,
                         maxOf(1L, file.lastModified() / 1000L),
                         file.length(),
                         relativePath,
                         if (relativePath.isEmpty()) file.parent else relativePath,
-                        albumName
+                        albumName,
+                        if (mimeType.startsWith("video/")) durationForFile(file) else 0L
                     )
                 )
             }
@@ -408,6 +415,16 @@ object MediaStoreRepository {
         }
         return if (isVideoExtension(ext)) "video/*" else "image/*"
     }
+
+    private fun durationForFile(file: File): Long = runCatching {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(file.absolutePath)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+        } finally {
+            retriever.release()
+        }
+    }.getOrDefault(0L)
 
     private fun isVideoExtension(ext: String): Boolean =
         ext == "mp4" ||

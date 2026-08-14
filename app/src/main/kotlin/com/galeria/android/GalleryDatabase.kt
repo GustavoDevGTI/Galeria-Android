@@ -19,6 +19,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -37,7 +39,8 @@ data class CachedMediaEntity(
     val size: Long,
     val relativePath: String,
     val albumKey: String,
-    val albumName: String
+    val albumName: String,
+    val duration: Long = 0L
 )
 
 @Entity(tableName = "catalog_state")
@@ -180,7 +183,7 @@ abstract class GalleryDao {
 
 @Database(
     entities = [CachedMediaEntity::class, CatalogStateEntity::class, CustomMediaOrderEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class GalleryDatabase : RoomDatabase() {
@@ -194,7 +197,13 @@ abstract class GalleryDatabase : RoomDatabase() {
                 context.applicationContext,
                 GalleryDatabase::class.java,
                 "gallery_catalog.db"
-            ).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+        }
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cached_media ADD COLUMN duration INTEGER NOT NULL DEFAULT 0")
+            }
         }
     }
 }
@@ -301,7 +310,7 @@ object GalleryCatalogStore {
         val entities = items.map { item ->
             CachedMediaEntity(
                 scope, item.uri.toString(), item.id, item.name, item.mimeType, item.dateAdded,
-                item.size, item.relativePath, item.albumKey, item.albumName
+                item.size, item.relativePath, item.albumKey, item.albumName, item.duration
             )
         }
         dao.replaceMedia(scope, entities, state)
@@ -318,6 +327,7 @@ object GalleryCatalogStore {
             fingerprint = fingerprint * 31 + item.uri.toString().hashCode()
             fingerprint = fingerprint * 31 + item.dateAdded
             fingerprint = fingerprint * 31 + item.size
+            fingerprint = fingerprint * 31 + item.duration
         }
         return fingerprint
     }
@@ -378,6 +388,6 @@ object GalleryCatalogStore {
     }
 
     private fun CachedMediaEntity.toMediaItem() = MediaItem(
-        mediaId, Uri.parse(uri), name, mimeType, dateAdded, size, relativePath, albumKey, albumName
+        mediaId, Uri.parse(uri), name, mimeType, dateAdded, size, relativePath, albumKey, albumName, duration
     )
 }

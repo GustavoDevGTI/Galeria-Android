@@ -2,6 +2,7 @@ package com.galeria.android
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -205,6 +206,12 @@ class AlbumRecyclerAdapter(
         holder.itemView.translationZ = if (selected) -Ui.dp(context, 2).toFloat() else 0f
         holder.check.visibility = if (selectionMode || selected) View.VISIBLE else View.GONE
         holder.check.text = if (selected) "\u2713" else ""
+        holder.check.setTextColor(if (selected) Ui.bg(context) else Color.WHITE)
+        holder.check.background = GradientDrawable().apply {
+            setColor(if (selected) Ui.accent(context) else 0x99000000.toInt())
+            setStroke(Ui.dp(context, if (selected) 0 else 1), if (selected) Color.TRANSPARENT else 0xCCFFFFFF.toInt())
+            cornerRadius = Ui.dp(context, 6).toFloat()
+        }
     }
 
     private fun bindCover(holder: Holder, album: AlbumItem) {

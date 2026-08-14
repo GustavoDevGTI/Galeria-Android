@@ -12,15 +12,21 @@ import android.os.Build
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.RadioButton
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import coil3.load
+import coil3.request.allowHardware
+import coil3.request.crossfade
+import coil3.size.Precision
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -149,6 +155,35 @@ class Ui private constructor() {
             }
 
         @JvmStatic
+        fun styleSelectionToggle(view: TextView, checked: Boolean) {
+            val context = view.context
+            view.text = if (checked) "✓" else ""
+            view.setTextColor(if (checked) bg(context) else text(context))
+            view.background = GradientDrawable().apply {
+                setColor(if (checked) accent(context) else Color.TRANSPARENT)
+                setStroke(dp(context, 2), if (checked) accent(context) else muted(context))
+                cornerRadius = dp(context, 6).toFloat()
+            }
+            view.contentDescription = if (checked) "Desmarcar todos" else "Selecionar todos"
+        }
+
+        @JvmStatic
+        fun applySidePanelStyle(dialog: AlertDialog, widthFraction: Float = 0.86f, fullHeight: Boolean = false) {
+            val window = dialog.window ?: return
+            val context = dialog.context
+            val screenWidth = context.resources.displayMetrics.widthPixels
+            val width = min(dp(context, 380), (screenWidth * widthFraction).roundToInt())
+            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window.setGravity(Gravity.END or Gravity.CENTER_VERTICAL)
+            window.setLayout(
+                width,
+                if (fullHeight) WindowManager.LayoutParams.MATCH_PARENT else WindowManager.LayoutParams.WRAP_CONTENT
+            )
+            window.attributes = window.attributes.apply { dimAmount = 0.32f }
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        }
+
+        @JvmStatic
         fun toast(context: Context, message: String) {
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
@@ -191,7 +226,7 @@ class Ui private constructor() {
             })
             dialog = AlertDialog.Builder(context).setView(body).create()
             dialog.setOnShowListener {
-                dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                applySidePanelStyle(dialog)
                 refreshRows()
             }
             dialog.show()
@@ -230,7 +265,7 @@ class Ui private constructor() {
             })
             dialog = AlertDialog.Builder(context).setView(body).create()
             dialog.setOnShowListener {
-                dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                applySidePanelStyle(dialog)
             }
             dialog.show()
             return dialog
@@ -274,7 +309,7 @@ class Ui private constructor() {
             )
             dialog = AlertDialog.Builder(context).setView(body).create()
             dialog.setOnShowListener {
-                dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                applySidePanelStyle(dialog)
                 input.requestFocus()
             }
             dialog.show()
@@ -336,6 +371,99 @@ class Ui private constructor() {
                 isOutsideTouchable = true
                 setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
                 elevation = dp(context, 10).toFloat()
+                setOnDismissListener {
+                    pendingSelection[0]?.let { selected ->
+                        pendingSelection[0] = null
+                        anchor.postDelayed({ onSelect(selected) }, POPUP_ACTION_DELAY_MS)
+                    }
+                }
+            }
+            localPopupRef[0] = popup
+            popup.showAsDropDown(anchor, anchor.width - width, dp(context, 6))
+            return popup
+        }
+
+        @JvmStatic
+        fun showAlbumTargets(
+            anchor: View,
+            title: String,
+            albums: List<AlbumItem>,
+            onSelect: (AlbumItem) -> Unit
+        ): PopupWindow {
+            val context = anchor.context
+            val scroll = ScrollView(context).apply {
+                isVerticalScrollBarEnabled = true
+                background = rounded(menuSurface(context), 10, context)
+            }
+            val content = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(context, 4), 0, dp(context, 6))
+                addView(
+                    TextView(context).apply {
+                        text = title
+                        textSize = 13f
+                        setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+                        setTextColor(menuText(context))
+                        alpha = 0.72f
+                        setPadding(dp(context, 16), dp(context, 12), dp(context, 16), dp(context, 8))
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                )
+            }
+            val pendingSelection = arrayOfNulls<AlbumItem>(1)
+            val localPopupRef = arrayOfNulls<PopupWindow>(1)
+            albums.forEach { album ->
+                val row = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    minimumHeight = dp(context, 60)
+                    setPadding(dp(context, 12), dp(context, 6), dp(context, 14), dp(context, 6))
+                    contentDescription = "Álbum ${album.name}"
+                }
+                val cover = ImageView(context).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    background = rounded(Color.BLACK, 6, context)
+                    clipToOutline = true
+                    album.cover?.let { media ->
+                        load(media.uri) {
+                            size(dp(context, 48), dp(context, 48))
+                            precision(Precision.INEXACT)
+                            memoryCacheKey("album-target:${media.uri}:48")
+                            diskCacheKey("album-target:${media.uri}")
+                            allowHardware(true)
+                            crossfade(160)
+                        }
+                    }
+                }
+                row.addView(cover, LinearLayout.LayoutParams(dp(context, 46), dp(context, 46)))
+                row.addView(
+                    TextView(context).apply {
+                        text = album.name
+                        textSize = 16f
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        setTextColor(menuText(context))
+                        setPadding(dp(context, 12), 0, 0, 0)
+                    },
+                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                )
+                row.setOnClickListener {
+                    pendingSelection[0] = album
+                    localPopupRef[0]?.dismiss()
+                }
+                content.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 60)))
+            }
+            scroll.addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            val width = min(dp(context, 320), context.resources.displayMetrics.widthPixels - dp(context, 24))
+            val location = IntArray(2)
+            anchor.getLocationOnScreen(location)
+            val top = location[1] + anchor.height + dp(context, 6)
+            val availableHeight = max(dp(context, 180), context.resources.displayMetrics.heightPixels - top - dp(context, 16))
+            val desiredHeight = dp(context, 50 + albums.size * 60)
+            val popup = PopupWindow(scroll, width, min(availableHeight, desiredHeight), true).apply {
+                isOutsideTouchable = true
+                setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                elevation = dp(context, 12).toFloat()
                 setOnDismissListener {
                     pendingSelection[0]?.let { selected ->
                         pendingSelection[0] = null

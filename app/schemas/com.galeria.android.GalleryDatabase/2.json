@@ -1,0 +1,193 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "30631fcc1c21e1011a1786f0996f1b83",
+    "entities": [
+      {
+        "tableName": "cached_media",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `uri` TEXT NOT NULL, `mediaId` INTEGER NOT NULL, `name` TEXT NOT NULL, `mimeType` TEXT NOT NULL, `dateAdded` INTEGER NOT NULL, `size` INTEGER NOT NULL, `relativePath` TEXT NOT NULL, `albumKey` TEXT NOT NULL, `albumName` TEXT NOT NULL, `duration` INTEGER NOT NULL, PRIMARY KEY(`scope`, `uri`))",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uri",
+            "columnName": "uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mediaId",
+            "columnName": "mediaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mimeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dateAdded",
+            "columnName": "dateAdded",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "size",
+            "columnName": "size",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relativePath",
+            "columnName": "relativePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "albumKey",
+            "columnName": "albumKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "albumName",
+            "columnName": "albumName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "duration",
+            "columnName": "duration",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "scope",
+            "uri"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_media_scope",
+            "unique": false,
+            "columnNames": [
+              "scope"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_media_scope` ON `${TABLE_NAME}` (`scope`)"
+          },
+          {
+            "name": "index_cached_media_albumKey",
+            "unique": false,
+            "columnNames": [
+              "albumKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_media_albumKey` ON `${TABLE_NAME}` (`albumKey`)"
+          },
+          {
+            "name": "index_cached_media_dateAdded",
+            "unique": false,
+            "columnNames": [
+              "dateAdded"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_media_dateAdded` ON `${TABLE_NAME}` (`dateAdded`)"
+          }
+        ]
+      },
+      {
+        "tableName": "catalog_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`scope` TEXT NOT NULL, `scannedAt` INTEGER NOT NULL, `allFilesAccess` INTEGER NOT NULL, PRIMARY KEY(`scope`))",
+        "fields": [
+          {
+            "fieldPath": "scope",
+            "columnName": "scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scannedAt",
+            "columnName": "scannedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "allFilesAccess",
+            "columnName": "allFilesAccess",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "scope"
+          ]
+        }
+      },
+      {
+        "tableName": "custom_media_order",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`albumKey` TEXT NOT NULL, `uri` TEXT NOT NULL, `position` INTEGER NOT NULL, PRIMARY KEY(`albumKey`, `uri`))",
+        "fields": [
+          {
+            "fieldPath": "albumKey",
+            "columnName": "albumKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uri",
+            "columnName": "uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "albumKey",
+            "uri"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_custom_media_order_albumKey",
+            "unique": false,
+            "columnNames": [
+              "albumKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_custom_media_order_albumKey` ON `${TABLE_NAME}` (`albumKey`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '30631fcc1c21e1011a1786f0996f1b83')"
+    ]
+  }
+}

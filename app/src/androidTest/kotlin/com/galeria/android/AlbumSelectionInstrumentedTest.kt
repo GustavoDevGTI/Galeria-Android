@@ -43,8 +43,11 @@ class AlbumSelectionInstrumentedTest {
         val albumPath = "Pictures/GaleriaSelectionTest-$suffix/"
         val firstName = "selecao-primeira-$suffix.png"
         val secondName = "selecao-segunda-$suffix.png"
+        val targetPath = "Pictures/GaleriaSelectionTarget-$suffix/"
+        val targetName = "destino-$suffix.png"
         val firstUri = insertImage(context, albumPath, firstName)
         val secondUri = insertImage(context, albumPath, secondName)
+        val targetUri = insertImage(context, targetPath, targetName)
         val dao = GalleryDatabase.get(context).galleryDao()
         val original = runBlocking { withContext(Dispatchers.IO) { dao.media(VISIBLE_SCOPE) } }
         val originalState = runBlocking { withContext(Dispatchers.IO) { dao.state(VISIBLE_SCOPE) } }
@@ -56,7 +59,8 @@ class AlbumSelectionInstrumentedTest {
                         VISIBLE_SCOPE,
                         listOf(
                             cached(firstUri, firstName, albumPath, suffix + 1),
-                            cached(secondUri, secondName, albumPath, suffix)
+                            cached(secondUri, secondName, albumPath, suffix),
+                            cached(targetUri, targetName, targetPath, suffix - 1, "Destino")
                         ),
                         CatalogStateEntity(VISIBLE_SCOPE, System.currentTimeMillis(), false)
                     )
@@ -72,10 +76,12 @@ class AlbumSelectionInstrumentedTest {
                 waitUntilDisplayed(firstName)
                 onView(withContentDescription(firstName)).perform(longClick())
                 waitUntilHint("1 selecionados")
+                onView(withContentDescription("Selecionar todos")).check(matches(isDisplayed()))
                 onView(withContentDescription(secondName)).perform(click())
 
                 waitUntilHint("2 selecionados")
-                onView(withContentDescription("Mover")).check(matches(isDisplayed()))
+                onView(withContentDescription("Mover")).check(matches(isDisplayed())).perform(click())
+                waitUntilDisplayed("Álbum Destino")
             }
         } finally {
             runBlocking {
@@ -89,11 +95,12 @@ class AlbumSelectionInstrumentedTest {
             }
             context.contentResolver.delete(firstUri, null, null)
             context.contentResolver.delete(secondUri, null, null)
+            context.contentResolver.delete(targetUri, null, null)
             MediaStoreRepository.invalidateCache()
         }
     }
 
-    private fun cached(uri: Uri, name: String, albumPath: String, date: Long) = CachedMediaEntity(
+    private fun cached(uri: Uri, name: String, albumPath: String, date: Long, albumName: String = "Seleção") = CachedMediaEntity(
         scope = VISIBLE_SCOPE,
         uri = uri.toString(),
         mediaId = date,
@@ -103,7 +110,7 @@ class AlbumSelectionInstrumentedTest {
         size = ONE_PIXEL_PNG.size.toLong(),
         relativePath = albumPath,
         albumKey = albumPath,
-        albumName = "Seleção"
+        albumName = albumName
     )
 
     private fun insertImage(context: Context, albumPath: String, name: String): Uri {

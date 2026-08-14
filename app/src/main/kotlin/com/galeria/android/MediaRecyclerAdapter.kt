@@ -2,6 +2,7 @@ package com.galeria.android
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -306,6 +307,37 @@ class MediaRecyclerAdapter(
         image.setBackgroundColor(Color.BLACK)
         thumb.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
+        val mediaNameOverlay = TextView(context).apply {
+            tag = TAG_MEDIA_NAME
+            setTextColor(Color.WHITE)
+            textSize = 10f
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            gravity = Gravity.CENTER_VERTICAL or Gravity.START
+        }
+        val mediaDurationOverlay = TextView(context).apply {
+            tag = TAG_MEDIA_DURATION
+            setTextColor(Color.WHITE)
+            textSize = 10f
+            maxLines = 1
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            setPadding(Ui.dp(context, 7), 0, 0, 0)
+        }
+        if (!asList) {
+            val metadataRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = Ui.rounded(0xA6000000.toInt(), 0, context)
+                setPadding(Ui.dp(context, 6), Ui.dp(context, 2), Ui.dp(context, 6), Ui.dp(context, 2))
+                addView(mediaNameOverlay, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+                addView(mediaDurationOverlay, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            }
+            thumb.addView(
+                metadataRow,
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(context, 24), Gravity.BOTTOM)
+            )
+        }
+
         val check = TextView(context).apply {
             setTextColor(Color.WHITE)
             textSize = 15f
@@ -337,7 +369,7 @@ class MediaRecyclerAdapter(
         if (asList) {
             item.addView(name, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
-        return Holder(item, image, name, check)
+        return Holder(item, image, name, check, mediaNameOverlay, mediaDurationOverlay)
     }
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
@@ -346,6 +378,8 @@ class MediaRecyclerAdapter(
             holder.image.setImageDrawable(null)
             holder.boundUri = null
             holder.name.text = ""
+            holder.mediaNameOverlay.text = ""
+            holder.mediaDurationOverlay.text = ""
             holder.itemView.contentDescription = null
             holder.check.visibility = View.GONE
             holder.itemView.setOnClickListener(null)
@@ -368,6 +402,9 @@ class MediaRecyclerAdapter(
     private fun bindItem(holder: Holder, item: MediaItem) {
         bindSelection(holder, item)
         holder.name.text = item.name
+        holder.mediaNameOverlay.text = item.name
+        holder.mediaDurationOverlay.text = if (item.isVideo()) formatDuration(item.duration) else ""
+        holder.mediaDurationOverlay.visibility = if (item.isVideo()) View.VISIBLE else View.GONE
         holder.itemView.contentDescription = item.name
         bindThumbnail(holder, item)
         holder.itemView.setOnClickListener {
@@ -388,6 +425,12 @@ class MediaRecyclerAdapter(
         holder.itemView.translationZ = if (selected) -Ui.dp(context, 2).toFloat() else 0f
         holder.check.visibility = if (selectionMode || selected) View.VISIBLE else View.GONE
         holder.check.text = if (selected) "\u2713" else ""
+        holder.check.setTextColor(if (selected) Ui.bg(context) else Color.WHITE)
+        holder.check.background = GradientDrawable().apply {
+            setColor(if (selected) Ui.accent(context) else 0x99000000.toInt())
+            setStroke(Ui.dp(context, if (selected) 0 else 1), if (selected) Color.TRANSPARENT else 0xCCFFFFFF.toInt())
+            cornerRadius = Ui.dp(context, 6).toFloat()
+        }
     }
 
     private fun bindThumbnail(holder: Holder, item: MediaItem) {
@@ -416,9 +459,24 @@ class MediaRecyclerAdapter(
         itemView: View,
         val image: ImageView,
         val name: TextView,
-        val check: TextView
+        val check: TextView,
+        val mediaNameOverlay: TextView,
+        val mediaDurationOverlay: TextView
     ) : RecyclerView.ViewHolder(itemView) {
         var boundUri: String? = null
+    }
+
+    private fun formatDuration(durationMs: Long): String {
+        if (durationMs <= 0L) return "–:–"
+        val totalSeconds = durationMs / 1000L
+        val hours = totalSeconds / 3600L
+        val minutes = (totalSeconds % 3600L) / 60L
+        val seconds = totalSeconds % 60L
+        return if (hours > 0L) {
+            String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds)
+        } else {
+            String.format(Locale.ROOT, "%d:%02d", minutes, seconds)
+        }
     }
 
     private companion object {
@@ -428,6 +486,8 @@ class MediaRecyclerAdapter(
         const val PAYLOAD_LAYOUT = "layout"
         const val FAST_SCROLL_PREVIEW_SIZE_PX = 128
         const val MEDIA_CORNER_RADIUS_DP = 5
+        const val TAG_MEDIA_NAME = "media_overlay_name"
+        const val TAG_MEDIA_DURATION = "media_overlay_duration"
     }
 
 }

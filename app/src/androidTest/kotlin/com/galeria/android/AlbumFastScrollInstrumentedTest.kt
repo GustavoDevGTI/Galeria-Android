@@ -24,6 +24,8 @@ import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
+import androidx.test.espresso.matcher.ViewMatchers.withTagValue
+import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.rule.GrantPermissionRule
@@ -39,6 +41,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.hamcrest.Matcher
+import org.hamcrest.Matchers.allOf
+import org.hamcrest.Matchers.equalTo
 import java.util.concurrent.atomic.AtomicBoolean
 
 @RunWith(AndroidJUnit4::class)
@@ -95,6 +99,10 @@ class AlbumFastScrollInstrumentedTest {
             }
             ActivityScenario.launch<AlbumMediaActivity>(intent).use { scenario ->
                 waitUntilDisplayed(FAST_SCROLL_DESCRIPTION)
+                onView(allOf(withTagValue(equalTo("media_overlay_name")), withText(mediaName(0))))
+                    .check(matches(isDisplayed()))
+                onView(allOf(withTagValue(equalTo("media_overlay_duration")), withText("2:05")))
+                    .check(matches(isDisplayed()))
                 val movedBeforeRelease = AtomicBoolean(false)
                 onView(withContentDescription(FAST_SCROLL_DESCRIPTION))
                     .check(matches(isDisplayed()))
@@ -152,12 +160,13 @@ class AlbumFastScrollInstrumentedTest {
         uri = "content://album-fast-scroll/$index",
         mediaId = index.toLong(),
         name = mediaName(index),
-        mimeType = "image/jpeg",
+        mimeType = if (index == 0) "video/mp4" else "image/jpeg",
         dateAdded = (TOTAL_MEDIA - index).toLong(),
         size = 100L,
         relativePath = albumKey,
         albumKey = albumKey,
-        albumName = "Álbum com fast scroll"
+        albumName = "Álbum com fast scroll",
+        duration = if (index == 0) 125_000L else 0L
     )
 
     private fun mediaName(index: Int): String = "midia-${index.toString().padStart(3, '0')}.jpg"

@@ -175,13 +175,17 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(top, topParams)
 
-        selectAllChip = Ui.title(this, "[ ]", 16).apply {
+        selectAllChip = Ui.title(this, "", 16).apply {
             gravity = Gravity.CENTER
             setTextColor(Ui.text(this@MainActivity))
             visibility = View.GONE
             setOnClickListener { toggleSelectAll() }
+            Ui.styleSelectionToggle(this, false)
         }
-        top.addView(selectAllChip, LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 38)))
+        top.addView(selectAllChip, LinearLayout.LayoutParams(Ui.dp(this, 30), Ui.dp(this, 30)).apply {
+            leftMargin = Ui.dp(this@MainActivity, 3)
+            rightMargin = Ui.dp(this@MainActivity, 3)
+        })
 
         searchIconButton = iconButton(R.drawable.ic_search).apply {
             setOnClickListener {
@@ -228,7 +232,7 @@ class MainActivity : ComponentActivity() {
             background = Ui.rounded(Ui.surface(this@MainActivity), 8, this@MainActivity)
             Ui.setPadding(this, 14, 8, 14, 8)
         }
-        selectAllText = Ui.title(this, "[ ] Selecionar tudo", 15).apply {
+        selectAllText = Ui.title(this, "Selecionar tudo", 15).apply {
             setOnClickListener { toggleSelectAll() }
         }
         selectionBar.addView(selectAllText, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -420,7 +424,7 @@ class MainActivity : ComponentActivity() {
         selectionActions.visibility = if (active) View.VISIBLE else View.GONE
         selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
         searchIconButton.visibility = if (active) View.GONE else View.VISIBLE
-        selectAllChip.text = if (adapter.allVisibleSelected()) "[x]" else "[ ]"
+        Ui.styleSelectionToggle(selectAllChip, adapter.allVisibleSelected())
         searchInput.hint = if (active) "${adapter.selectedCount()} selecionados" else "Pesquisar pastas"
         searchInput.isEnabled = !active
         moreButton.setImageResource(if (active) R.drawable.ic_back else R.drawable.ic_more_vertical)
@@ -514,13 +518,19 @@ class MainActivity : ComponentActivity() {
     private fun askMoveSelectedAlbums() {
         val albums = adapter.selectedAlbums()
         if (albums.isEmpty()) return
-        val targets = availableAlbumTargets(albums.mapTo(HashSet()) { it.key })
-        if (targets.isEmpty()) {
-            Ui.toast(this, "Nenhum álbum disponível para mover.")
-            return
-        }
-        Ui.showPopupOptions(moreButton, targets.keys.toList()) { selectedLabel ->
-            targets[selectedLabel]?.let { moveSelectedAlbums(albums, it) }
+        val excludedKeys = albums.mapTo(HashSet()) { it.key }
+        mediaLoader.execute {
+            val targets = availableAlbumTargets(excludedKeys)
+            runOnUiThread {
+                if (isFinishing || !moreButton.isAttachedToWindow) return@runOnUiThread
+                if (targets.isEmpty()) {
+                    Ui.toast(this, "Nenhum álbum disponível para mover.")
+                    return@runOnUiThread
+                }
+                Ui.showAlbumTargets(moreButton, "Mover para", targets) { album ->
+                    moveSelectedAlbums(albums, album.path.ifBlank { album.name })
+                }
+            }
         }
     }
 
@@ -567,16 +577,15 @@ class MainActivity : ComponentActivity() {
         return items
     }
 
-    private fun availableAlbumTargets(excludedKeys: Set<String>): LinkedHashMap<String, String> {
-        val targets = LinkedHashMap<String, String>()
+    private fun availableAlbumTargets(excludedKeys: Set<String>): List<AlbumItem> {
+        val targets = LinkedHashMap<String, AlbumItem>()
         for (album in MediaStoreRepository.loadAlbums(applicationContext, shouldIncludeHiddenFilesystem())) {
             if (album.key != "all_media" && !excludedKeys.contains(album.key) && album.name.isNotBlank()) {
-                val path = album.path.ifBlank { album.name }
-                val label = if (album.path.isNotBlank()) "${album.name} - ${album.path}" else album.name
-                if (!targets.containsKey(label)) targets[label] = path
+                val targetKey = album.path.ifBlank { album.key }
+                if (!targets.containsKey(targetKey)) targets[targetKey] = album
             }
         }
-        return targets
+        return targets.values.toList()
     }
 
     private fun loadAlbums() {
@@ -1250,7 +1259,7 @@ class MainActivity : ComponentActivity() {
             .setView(panel)
             .create()
         dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            Ui.applySidePanelStyle(dialog, fullHeight = true)
         }
         dialog.show()
     }

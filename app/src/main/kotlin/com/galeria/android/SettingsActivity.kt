@@ -245,6 +245,7 @@ class SettingsActivity : Activity() {
             .setView(panel)
             .setNegativeButton("Cancelar", null)
             .create()
+        dialogRef[0]?.setOnShowListener { dialogRef[0]?.let { dialog -> Ui.applySidePanelStyle(dialog) } }
         dialogRef[0]?.show()
     }
 
@@ -290,29 +291,19 @@ class SettingsActivity : Activity() {
         val values = arrayOf("pt", "en", "es")
         val current = prefs.getString("language", "pt")
         val checked = values.indexOf(current).takeIf { it >= 0 } ?: 0
-        AlertDialog.Builder(this)
-            .setTitle("Idioma")
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                prefs.edit().putString("language", values[which]).apply()
-                dialog.dismiss()
-                fillContent()
-            }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        Ui.showChoiceDialog(this, "Idioma", labels, checked) { which ->
+            prefs.edit().putString("language", values[which]).apply()
+            fillContent()
+        }
     }
 
     private fun chooseValue(title: String, key: String, values: Array<String>) {
         val current = prefs.getString(key, values[0])
         val checked = values.indexOf(current).takeIf { it >= 0 } ?: 0
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setSingleChoiceItems(values, checked) { dialog, which ->
-                prefs.edit().putString(key, values[which]).apply()
-                dialog.dismiss()
-                fillContent()
-            }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        Ui.showChoiceDialog(this, title, values, checked) { which ->
+            prefs.edit().putString(key, values[which]).apply()
+            fillContent()
+        }
     }
 
     private fun cacheLabel(): String {
