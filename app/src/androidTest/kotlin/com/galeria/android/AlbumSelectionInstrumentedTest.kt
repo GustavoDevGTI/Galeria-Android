@@ -4,10 +4,15 @@ import android.Manifest
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.view.View
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -28,6 +33,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -101,6 +107,16 @@ class AlbumSelectionInstrumentedTest {
                             icon.imageTintList?.defaultColor
                         )
                         assertEquals(action, view.findViewWithTag<TextView>("selection_action_label").text.toString())
+                        assertEquals(Color.TRANSPARENT, (view.background as ColorDrawable).color)
+                        if (action == "Compartilhar") {
+                            val dock = view.parent as LinearLayout
+                            assertEquals("A barra deve ter quatro ações e três divisórias.", 7, dock.childCount)
+                            assertTrue(
+                                "As quatro ações devem compartilhar uma única barra arredondada.",
+                                (dock.background as GradientDrawable).cornerRadius >= Ui.dp(context, 18)
+                            )
+                            assertTrue("A barra deve ficar afastada das bordas.", (dock.parent as View).paddingLeft >= Ui.dp(context, 10))
+                        }
                     }
                 }
                 onView(withContentDescription(secondName)).perform(click())

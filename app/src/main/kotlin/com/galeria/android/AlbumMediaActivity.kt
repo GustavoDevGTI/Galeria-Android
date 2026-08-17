@@ -80,6 +80,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private var draggedView: View? = null
     private lateinit var selectionBar: LinearLayout
     private lateinit var selectionActions: LinearLayout
+    private lateinit var selectionActionDock: LinearLayout
     private lateinit var selectAllText: TextView
     private var spacingDecoration: RecyclerView.ItemDecoration? = null
     private var dragMoved = false
@@ -535,10 +536,12 @@ class AlbumMediaActivity : ComponentActivity() {
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         selectionActions = LinearLayout(this).apply {
-            gravity = Gravity.CENTER
-            setBackgroundColor(Ui.surface(this@AlbumMediaActivity))
-            setPadding(Ui.dp(this@AlbumMediaActivity, 8), Ui.dp(this@AlbumMediaActivity, 4), Ui.dp(this@AlbumMediaActivity, 8), navigationBarHeight() + Ui.dp(this@AlbumMediaActivity, 4))
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Ui.bg(this@AlbumMediaActivity))
+            setPadding(Ui.dp(this@AlbumMediaActivity, 12), Ui.dp(this@AlbumMediaActivity, 6), Ui.dp(this@AlbumMediaActivity, 12), navigationBarHeight() + Ui.dp(this@AlbumMediaActivity, 8))
         }
+        selectionActionDock = Ui.selectionActionDock(this)
+        selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         addSelectionAction(R.drawable.ic_share, "Compartilhar") { shareSelected() }
         addSelectionAction(R.drawable.ic_star, "Favoritar") { favoriteSelected() }
         addSelectionAction(R.drawable.ic_trash, "Excluir") { confirmDeleteSelected() }
@@ -560,10 +563,7 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun addSelectionAction(icon: Int, label: String, listener: () -> Unit) {
-        selectionActions.addView(
-            Ui.selectionAction(this, icon, label, listener),
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        )
+        Ui.addSelectionActionToDock(selectionActionDock, Ui.selectionAction(this, icon, label, listener))
     }
 
     private fun showFolderMenu(anchor: View) {

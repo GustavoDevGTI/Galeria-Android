@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var moreButton: ImageButton
     private lateinit var selectionBar: LinearLayout
     private lateinit var selectionActions: LinearLayout
+    private lateinit var selectionActionDock: LinearLayout
     private lateinit var selectAllText: TextView
     private lateinit var prefs: SharedPreferences
     private lateinit var scaleDetector: ScaleGestureDetector
@@ -337,10 +338,12 @@ class MainActivity : ComponentActivity() {
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         selectionActions = LinearLayout(this).apply {
-            gravity = Gravity.CENTER
-            setBackgroundColor(Ui.surface(this@MainActivity))
-            setPadding(Ui.dp(this@MainActivity, 8), Ui.dp(this@MainActivity, 4), Ui.dp(this@MainActivity, 8), navigationBarHeight() + Ui.dp(this@MainActivity, 4))
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Ui.bg(this@MainActivity))
+            setPadding(Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 6), Ui.dp(this@MainActivity, 12), navigationBarHeight() + Ui.dp(this@MainActivity, 8))
         }
+        selectionActionDock = Ui.selectionActionDock(this)
+        selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         addSelectionAction(R.drawable.ic_share, "Compartilhar") { shareSelectedAlbums() }
         addSelectionAction(R.drawable.ic_star, "Favoritar") { favoriteSelectedAlbums() }
         addSelectionAction(R.drawable.ic_trash, "Excluir") { confirmDeleteSelectedAlbums() }
@@ -351,10 +354,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun addSelectionAction(icon: Int, label: String, listener: () -> Unit) {
-        selectionActions.addView(
-            Ui.selectionAction(this, icon, label, listener),
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        )
+        Ui.addSelectionActionToDock(selectionActionDock, Ui.selectionAction(this, icon, label, listener))
     }
 
     private fun iconButton(icon: Int): ImageButton =
@@ -769,11 +769,8 @@ class MainActivity : ComponentActivity() {
         }
         if (::selectionBar.isInitialized) selectionBar.background = Ui.rounded(Ui.surface(this), 8, this)
         if (::selectionActions.isInitialized) {
-            selectionActions.setBackgroundColor(Ui.surface(this))
-            for (i in 0 until selectionActions.childCount) {
-                val child = selectionActions.getChildAt(i)
-                Ui.restyleSelectionAction(child)
-            }
+            selectionActions.setBackgroundColor(Ui.bg(this))
+            Ui.restyleSelectionActionDock(selectionActionDock)
         }
         if (::adapter.isInitialized) {
             adapter.notifyDataSetChanged()
