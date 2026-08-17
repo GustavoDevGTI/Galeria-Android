@@ -172,21 +172,22 @@ class Ui private constructor() {
         }
 
         @JvmStatic
-        fun applySidePanelStyle(dialog: AlertDialog, widthFraction: Float = 0.86f, fullHeight: Boolean = false) {
+        fun applySidePanelStyle(dialog: AlertDialog, widthFraction: Float = SIDE_PANEL_WIDTH_FRACTION, fullHeight: Boolean = false) {
             val window = dialog.window ?: return
             val context = dialog.context
-            val screenWidth = context.resources.displayMetrics.widthPixels
-            val width = min(dp(context, 380), (screenWidth * widthFraction).roundToInt())
+            val metrics = context.resources.displayMetrics
+            val width = min(dp(context, SIDE_PANEL_MAX_WIDTH_DP), (metrics.widthPixels * widthFraction).roundToInt())
             window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             window.attributes = window.attributes.apply {
                 gravity = Gravity.END or Gravity.CENTER_VERTICAL
                 this.width = width
                 height = if (fullHeight) {
-                    WindowManager.LayoutParams.MATCH_PARENT
+                    metrics.heightPixels - dp(context, SIDE_PANEL_VERTICAL_MARGIN_DP * 2)
                 } else {
                     WindowManager.LayoutParams.WRAP_CONTENT
                 }
+                x = dp(context, SIDE_PANEL_END_MARGIN_DP)
                 dimAmount = 0.32f
                 windowAnimations = 0
             }
@@ -195,7 +196,7 @@ class Ui private constructor() {
         @JvmStatic
         fun showSidePanel(
             dialog: AlertDialog,
-            widthFraction: Float = 0.86f,
+            widthFraction: Float = SIDE_PANEL_WIDTH_FRACTION,
             fullHeight: Boolean = false,
             onShown: (() -> Unit)? = null
         ): AlertDialog {
@@ -250,7 +251,7 @@ class Ui private constructor() {
             val body = themedDialogBody(context, title, message)
             content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
             labels.forEachIndexed { index, label ->
-                val row = themedChoiceRow(context, label, index, true) {
+                val row = themedChoiceRow(context, label, true) {
                     selected = index
                     refreshRows()
                 }
@@ -287,7 +288,7 @@ class Ui private constructor() {
             val body = themedDialogBody(context, title, message)
             val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
             labels.forEachIndexed { index, label ->
-                val row = themedChoiceRow(context, label, index, false) {
+                val row = themedChoiceRow(context, label, false) {
                     selected[index] = !selected[index]
                     val check = it.findViewWithTag<CheckBox>("check")
                     check.isChecked = selected[index]
@@ -324,24 +325,25 @@ class Ui private constructor() {
                 setSingleLine(true)
                 this.hint = hint
                 textSize = 16f
-                setTextColor(text(context))
-                setHintTextColor(muted(context))
-                backgroundTintList = ColorStateList.valueOf(muted(context))
+                setTextColor(menuText(context))
+                setHintTextColor(blend(menuText(context), menuSurface(context), 0.45f))
+                backgroundTintList = ColorStateList.valueOf(blend(menuText(context), menuSurface(context), 0.45f))
                 setPadding(0, dp(context, 8), 0, dp(context, 4))
                 setText(initialValue)
                 setSelection(initialValue.length)
             }
-            body.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 58)))
+            body.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 58)).apply {
+                leftMargin = dp(context, 18)
+                rightMargin = dp(context, 18)
+            })
             body.addView(
                 LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL or Gravity.END
-                    setPadding(0, dp(context, 8), 0, 0)
-                    addView(themedDialogButton(context, "Cancelar") { dialog.dismiss() })
+                    orientation = LinearLayout.VERTICAL
+                    addView(themedDialogButton(context, "Cancelar") { dialog.dismiss() }, menuActionParams())
                     addView(themedDialogButton(context, positiveText, true) {
                         onConfirm(input.text.toString())
                         dialog.dismiss()
-                    })
+                    }, menuActionParams())
                 }
             )
             dialog = AlertDialog.Builder(context).setView(body).create()
@@ -362,10 +364,8 @@ class Ui private constructor() {
             val body = themedDialogBody(context, title, message)
             body.addView(
                 LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL or Gravity.END
-                    setPadding(0, dp(context, 8), 0, 0)
-                    addView(themedDialogButton(context, positiveText, true) { dialog.dismiss() })
+                    orientation = LinearLayout.VERTICAL
+                    addView(themedDialogButton(context, positiveText, true) { dialog.dismiss() }, menuActionParams())
                 }
             )
             dialog = AlertDialog.Builder(context).setView(body).create()
@@ -386,17 +386,15 @@ class Ui private constructor() {
             val body = themedDialogBody(context, title, message)
             body.addView(
                 LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL or Gravity.END
-                    setPadding(0, dp(context, 8), 0, 0)
+                    orientation = LinearLayout.VERTICAL
                     addView(themedDialogButton(context, negativeText) {
                         onNegative?.invoke()
                         dialog.dismiss()
-                    })
+                    }, menuActionParams())
                     addView(themedDialogButton(context, positiveText, true) {
                         onPositive()
                         dialog.dismiss()
-                    })
+                    }, menuActionParams())
                 }
             )
             dialog = AlertDialog.Builder(context).setView(body).create()
@@ -419,7 +417,8 @@ class Ui private constructor() {
             val context = anchor.context
             val scroll = ScrollView(context).apply {
                 isVerticalScrollBarEnabled = false
-                background = rounded(menuSurface(context), 10, context)
+                background = rounded(menuSurface(context), SIDE_PANEL_RADIUS_DP, context)
+                clipToOutline = true
             }
             val content = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -480,7 +479,8 @@ class Ui private constructor() {
             val context = anchor.context
             val scroll = ScrollView(context).apply {
                 isVerticalScrollBarEnabled = true
-                background = rounded(menuSurface(context), 10, context)
+                background = rounded(menuSurface(context), SIDE_PANEL_RADIUS_DP, context)
+                clipToOutline = true
             }
             val content = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -588,15 +588,16 @@ class Ui private constructor() {
         private fun themedDialogBody(context: Context, title: String, message: String?): LinearLayout {
             val body = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                background = rounded(surface(context), 4, context)
-                setPadding(dp(context, 24), dp(context, 20), dp(context, 24), dp(context, 8))
+                background = rounded(menuSurface(context), SIDE_PANEL_RADIUS_DP, context)
+                clipToOutline = true
             }
             body.addView(
                 TextView(context).apply {
                     text = title
-                    textSize = 20f
+                    textSize = 18f
                     setTypeface(Typeface.DEFAULT_BOLD)
-                    setTextColor(text(context))
+                    setTextColor(menuText(context))
+                    setPadding(dp(context, 18), dp(context, 18), dp(context, 18), dp(context, 10))
                 },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             )
@@ -605,9 +606,9 @@ class Ui private constructor() {
                     TextView(context).apply {
                         text = message
                         textSize = 14f
-                        setTextColor(text(context))
+                        setTextColor(menuText(context))
                         alpha = 0.78f
-                        setPadding(0, dp(context, 6), 0, dp(context, 10))
+                        setPadding(dp(context, 18), 0, dp(context, 18), dp(context, 12))
                     },
                     LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 )
@@ -618,16 +619,15 @@ class Ui private constructor() {
         private fun themedChoiceRow(
             context: Context,
             label: String,
-            index: Int,
             radio: Boolean,
             onClick: (LinearLayout) -> Unit
         ): LinearLayout =
             LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = dp(context, 48)
-                setPadding(dp(context, 6), dp(context, 4), dp(context, 6), dp(context, 4))
-                setBackgroundColor(if (index % 2 == 0) surface(context) else search(context))
+                minimumHeight = dp(context, 52)
+                setPadding(dp(context, 10), dp(context, 4), dp(context, 14), dp(context, 4))
+                setBackgroundColor(Color.TRANSPARENT)
                 if (radio) {
                     addView(
                         RadioButton(context).apply {
@@ -651,7 +651,7 @@ class Ui private constructor() {
                     TextView(context).apply {
                         text = label
                         textSize = 16f
-                        setTextColor(text(context))
+                        setTextColor(menuText(context))
                         gravity = Gravity.CENTER_VERTICAL
                     },
                     LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -669,31 +669,43 @@ class Ui private constructor() {
             onOk: () -> Unit
         ): LinearLayout =
             LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL or Gravity.END
-                setPadding(0, dp(context, 8), 0, 0)
+                orientation = LinearLayout.VERTICAL
                 if (neutralText != null && onNeutral != null) {
-                    addView(themedDialogButton(context, neutralText) { onNeutral() })
+                    addView(themedDialogButton(context, neutralText) { onNeutral() }, menuActionParams())
                 }
-                addView(themedDialogButton(context, "Cancelar") { onCancel() })
-                addView(themedDialogButton(context, "OK", true) { onOk() })
+                addView(themedDialogButton(context, "Cancelar") { onCancel() }, menuActionParams())
+                addView(themedDialogButton(context, "OK", true) { onOk() }, menuActionParams())
             }
 
         private fun themedDialogButton(context: Context, label: String, primary: Boolean = false, onClick: () -> Unit): TextView =
             TextView(context).apply {
                 text = label
-                textSize = 14f
-                setTextColor(text(context))
+                textSize = 15f
+                setTextColor(menuText(context))
                 if (primary) setTypeface(Typeface.DEFAULT_BOLD)
-                gravity = Gravity.CENTER
+                gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                minimumHeight = dp(context, 50)
                 isClickable = true
                 isFocusable = true
-                setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 12))
+                background = if (primary) {
+                    rounded(blend(menuSurface(context), menuText(context), 0.08f), 0, context)
+                } else {
+                    ColorDrawable(Color.TRANSPARENT)
+                }
+                setPadding(dp(context, 18), dp(context, 12), dp(context, 18), dp(context, 12))
                 setOnClickListener { onClick() }
             }
+
+        private fun menuActionParams(): LinearLayout.LayoutParams =
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
         private const val POPUP_ACTION_DELAY_MS = 48L
         private const val SIDE_PANEL_LAYOUT_DELAY_MS = 16L
         private const val SIDE_PANEL_FADE_MS = 90L
+        private const val SIDE_PANEL_MAX_WIDTH_DP = 300
+        private const val SIDE_PANEL_RADIUS_DP = 14
+        private const val SIDE_PANEL_END_MARGIN_DP = 8
+        private const val SIDE_PANEL_VERTICAL_MARGIN_DP = 12
+        private const val SIDE_PANEL_WIDTH_FRACTION = 0.68f
     }
 }

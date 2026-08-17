@@ -215,17 +215,28 @@ class SettingsActivity : Activity() {
     private fun showThemeColorDialog() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            Ui.setPadding(this, 16, 12, 16, 8)
+            background = Ui.rounded(Ui.menuSurface(this@SettingsActivity), 14, this@SettingsActivity)
+            clipToOutline = true
+            addView(
+                TextView(this@SettingsActivity).apply {
+                    text = "Escolher cor do tema"
+                    textSize = 18f
+                    setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+                    setTextColor(Ui.menuText(this@SettingsActivity))
+                    Ui.setPadding(this, 18, 18, 18, 10)
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            )
         }
         val colors = themeColors()
         var index = 0
         val dialogRef = arrayOfNulls<AlertDialog>(1)
-        repeat(4) {
+        repeat(8) {
             val row = LinearLayout(this).apply { gravity = Gravity.CENTER }
-            repeat(8) {
+            repeat(4) {
                 val color = colors[index++]
                 val swatch = TextView(this).apply {
-                    background = Ui.rounded(color, 4, this@SettingsActivity)
+                    background = Ui.rounded(color, 10, this@SettingsActivity)
                     setOnClickListener {
                         prefs.edit().putInt("theme_color", color).apply()
                         Ui.toast(this@SettingsActivity, "Cor aplicada.")
@@ -240,10 +251,21 @@ class SettingsActivity : Activity() {
             }
             panel.addView(row)
         }
+        panel.addView(
+            TextView(this).apply {
+                text = "Cancelar"
+                textSize = 15f
+                gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                setTextColor(Ui.menuText(this@SettingsActivity))
+                isClickable = true
+                isFocusable = true
+                Ui.setPadding(this, 18, 14, 18, 14)
+                setOnClickListener { dialogRef[0]?.dismiss() }
+            },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        )
         dialogRef[0] = AlertDialog.Builder(this)
-            .setTitle("Escolher cor tema")
             .setView(panel)
-            .setNegativeButton("Cancelar", null)
             .create()
         dialogRef[0]?.let { dialog -> Ui.showSidePanel(dialog) }
     }

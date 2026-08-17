@@ -677,7 +677,8 @@ class AlbumMediaActivity : ComponentActivity() {
         lateinit var dialog: AlertDialog
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = Ui.rounded(Ui.surface(this@AlbumMediaActivity), 4, this@AlbumMediaActivity)
+            background = Ui.rounded(Ui.menuSurface(this@AlbumMediaActivity), 14, this@AlbumMediaActivity)
+            clipToOutline = true
             setPadding(
                 Ui.dp(this@AlbumMediaActivity, 24),
                 Ui.dp(this@AlbumMediaActivity, 20),
@@ -690,14 +691,14 @@ class AlbumMediaActivity : ComponentActivity() {
                 text = "Espaçamento da grade"
                 textSize = 20f
                 setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-                setTextColor(Ui.text(this@AlbumMediaActivity))
+                setTextColor(Ui.menuText(this@AlbumMediaActivity))
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
         val hint = TextView(this).apply {
             text = "Vale para todas as pastas. Esquerda: mais espaço. Direita: sem espaço."
             textSize = 13f
-            setTextColor(Ui.text(this@AlbumMediaActivity))
+            setTextColor(Ui.menuText(this@AlbumMediaActivity))
             alpha = 0.78f
             gravity = Gravity.START
             setPadding(0, Ui.dp(this@AlbumMediaActivity, 6), 0, Ui.dp(this@AlbumMediaActivity, 12))
@@ -722,18 +723,23 @@ class AlbumMediaActivity : ComponentActivity() {
         panel.addView(seekBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48)))
         panel.addView(
             LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                orientation = LinearLayout.VERTICAL
                 setPadding(0, Ui.dp(this@AlbumMediaActivity, 8), 0, 0)
                 addView(
                     TextView(this@AlbumMediaActivity).apply {
                         text = "OK"
                         textSize = 14f
                         setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-                        setTextColor(Ui.text(this@AlbumMediaActivity))
-                        gravity = Gravity.CENTER
+                        setTextColor(Ui.menuText(this@AlbumMediaActivity))
+                        gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                        minimumHeight = Ui.dp(this@AlbumMediaActivity, 50)
                         isClickable = true
                         isFocusable = true
+                        background = Ui.rounded(
+                            Ui.blend(Ui.menuSurface(this@AlbumMediaActivity), Ui.menuText(this@AlbumMediaActivity), 0.08f),
+                            0,
+                            this@AlbumMediaActivity
+                        )
                         setPadding(
                             Ui.dp(this@AlbumMediaActivity, 14),
                             Ui.dp(this@AlbumMediaActivity, 12),
@@ -741,7 +747,8 @@ class AlbumMediaActivity : ComponentActivity() {
                             Ui.dp(this@AlbumMediaActivity, 12)
                         )
                         setOnClickListener { dialog.dismiss() }
-                    }
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 )
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)

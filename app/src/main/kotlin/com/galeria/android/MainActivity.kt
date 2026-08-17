@@ -1172,14 +1172,15 @@ class MainActivity : ComponentActivity() {
                 textSize = 14f
                 setTextColor(dialogText)
                 if (primary) setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-                gravity = Gravity.CENTER
+                gravity = Gravity.CENTER_VERTICAL or Gravity.START
+                minimumHeight = Ui.dp(this@MainActivity, 50)
                 isClickable = true
                 isFocusable = true
-                background = Ui.rounded(
-                    if (primary) Ui.blend(dialogBg, dialogText, 0.18f) else Ui.blend(dialogBg, dialogText, 0.10f),
-                    18,
-                    this@MainActivity
-                )
+                background = if (primary) {
+                    Ui.rounded(Ui.blend(dialogBg, dialogText, 0.10f), 0, this@MainActivity)
+                } else {
+                    Ui.rounded(Color.TRANSPARENT, 0, this@MainActivity)
+                }
                 setPadding(
                     Ui.dp(this@MainActivity, 14),
                     Ui.dp(this@MainActivity, 8),
@@ -1218,41 +1219,51 @@ class MainActivity : ComponentActivity() {
             )
             addView(
                 LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(Ui.dp(this@MainActivity, 2), Ui.dp(this@MainActivity, 3), 0, Ui.dp(this@MainActivity, 8))
-                    isClickable = true
-                    setOnClickListener { toggleShowHiddenSelection() }
-                    val checkbox = CheckBox(this@MainActivity).apply {
-                        buttonTintList = android.content.res.ColorStateList.valueOf(dialogText)
-                        isClickable = false
-                        isFocusable = false
-                    }
-                    showHiddenCheck = checkbox
-                    val label = TextView(this@MainActivity).apply {
-                        text = "Exibir ocultos"
-                        textSize = 15f
-                        setTextColor(dialogText)
-                        setPadding(Ui.dp(this@MainActivity, 8), 0, 0, 0)
-                    }
-                    showHiddenLabel = label
-                    addView(checkbox)
-                    addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                    addView(dialogButton("Carregar ocultos") { loadHiddenAlbums() })
+                    orientation = LinearLayout.VERTICAL
+                    addView(
+                        LinearLayout(this@MainActivity).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            gravity = Gravity.CENTER_VERTICAL
+                            isClickable = true
+                            setOnClickListener { toggleShowHiddenSelection() }
+                            val checkbox = CheckBox(this@MainActivity).apply {
+                                buttonTintList = android.content.res.ColorStateList.valueOf(dialogText)
+                                isClickable = false
+                                isFocusable = false
+                            }
+                            showHiddenCheck = checkbox
+                            val label = TextView(this@MainActivity).apply {
+                                text = "Exibir ocultos"
+                                textSize = 15f
+                                setTextColor(dialogText)
+                                setPadding(Ui.dp(this@MainActivity, 8), 0, 0, 0)
+                            }
+                            showHiddenLabel = label
+                            addView(checkbox)
+                            addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                        },
+                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this@MainActivity, 48))
+                    )
+                    addView(
+                        dialogButton("Carregar ocultos") { loadHiddenAlbums() },
+                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    )
                 },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             )
             addView(refresher, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         val buttonBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            orientation = LinearLayout.VERTICAL
             background = Ui.rounded(Ui.blend(dialogBg, Color.WHITE, 0.03f), 0, this@MainActivity)
-            setPadding(Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 6), Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 6))
-            addView(dialogButton("OK", primary = true) { applyFolderVisibility() })
+            addView(
+                dialogButton("OK", primary = true) { applyFolderVisibility() },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            )
         }
         val panel = FrameLayout(this).apply {
-            background = Ui.rounded(dialogBg, 4, this@MainActivity)
+            background = Ui.rounded(dialogBg, 14, this@MainActivity)
+            clipToOutline = true
             addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(
                 buttonBar,

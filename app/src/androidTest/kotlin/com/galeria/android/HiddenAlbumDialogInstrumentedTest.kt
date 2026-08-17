@@ -98,9 +98,11 @@ class HiddenAlbumDialogInstrumentedTest {
                     root.getLocationOnScreen(location)
                     val screenWidth = view.resources.displayMetrics.widthPixels
                     assertTrue("O painel deve nascer afastado da borda esquerda.", location[0] > 0)
+                    assertTrue("O painel deve manter formato vertical e compacto.", root.width <= screenWidth * 0.72f)
+                    val rightGap = screenWidth - (location[0] + root.width)
                     assertTrue(
-                        "O painel deve estar alinhado à borda direita.",
-                        kotlin.math.abs(screenWidth - (location[0] + root.width)) <= 2
+                        "O painel deve ficar junto à lateral direita com uma pequena margem.",
+                        rightGap in 0..Ui.dp(view.context, 16)
                     )
                 }
                 onView(withText(containsString("Câmera"))).check(matches(isDisplayed()))

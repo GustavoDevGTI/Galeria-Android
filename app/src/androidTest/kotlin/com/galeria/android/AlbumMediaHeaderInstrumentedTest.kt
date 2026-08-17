@@ -3,6 +3,7 @@ package com.galeria.android
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.view.View
 import androidx.test.core.app.ActivityScenario
@@ -77,6 +78,26 @@ class AlbumMediaHeaderInstrumentedTest {
                     assertRightAligned(view)
                 }
             }
+            val cancelLocation = IntArray(2)
+            onView(withText("Cancelar")).check { view, exception ->
+                if (exception != null) throw exception
+                view.getLocationOnScreen(cancelLocation)
+            }
+            onView(withText("OK")).check { view, exception ->
+                if (exception != null) throw exception
+                val okLocation = IntArray(2)
+                view.getLocationOnScreen(okLocation)
+                assertTrue("As ações do painel devem ficar empilhadas verticalmente.", okLocation[1] > cancelLocation[1])
+            }
+            onView(withText("Ordenar por")).check { view, exception ->
+                if (exception != null) throw exception
+                val panel = view.parent as View
+                val background = panel.background as GradientDrawable
+                assertTrue(
+                    "O painel deve ter cantos arredondados.",
+                    background.cornerRadius >= Ui.dp(view.context, 12).toFloat()
+                )
+            }
 
             androidx.test.espresso.Espresso.pressBack()
             onView(withContentDescription("Mais opções")).perform(click())
@@ -96,9 +117,11 @@ class AlbumMediaHeaderInstrumentedTest {
         root.getLocationOnScreen(location)
         val screenWidth = view.resources.displayMetrics.widthPixels
         assertTrue("O painel lateral deve começar afastado da borda esquerda.", location[0] > 0)
+        assertTrue("O painel lateral deve ser estreito e vertical.", root.width <= screenWidth * 0.72f)
+        val rightGap = screenWidth - (location[0] + root.width)
         assertTrue(
-            "O painel lateral deve estar alinhado à borda direita.",
-            kotlin.math.abs(screenWidth - (location[0] + root.width)) <= 2
+            "O painel lateral deve ficar junto à borda direita com uma pequena margem.",
+            rightGap in 0..Ui.dp(view.context, 16)
         )
     }
 
