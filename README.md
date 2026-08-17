@@ -34,7 +34,7 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - Reprodução aleatória dentro do álbum
 - Favoritar, compartilhar, ocultar, copiar, mover e excluir arquivos
 - Movimentação entre álbuns pelo caminho real da pasta, incluindo destinos em `DCIM`, `Pictures`, `Movies` e pastas de aplicativos
-- Criação de novas pastas
+- Criação de novas pastas por submenus internos, com escolha entre armazenamento interno e cartões SD montados e navegação pelo local de destino
 - Reordenação personalizada de mídias por arrastar e soltar
 - Seleção múltipla de mídias e álbuns
 - Toques no modo de seleção apenas marcam ou desmarcam mídias, sem abrir fotos ou reproduzir vídeos
@@ -73,9 +73,9 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 
 ## Testes automatizados
 
-A suíte atual possui 40 testes:
+A suíte atual possui 48 testes:
 
-- 26 testes unitários locais para filtros de mídia, abertura externa, identificação e histórico de pastas ocultas, colunas da grade, identidade de URIs do MediaStore, ordenação de álbuns, regras de gestos, estado e menus do visualizador
+- 31 testes unitários locais para filtros de mídia, abertura externa, identificação e histórico de pastas ocultas, colunas da grade, identidade de URIs do MediaStore, ordenação de álbuns, regras de gestos, estado e menus do visualizador
 - 3 testes instrumentados do Room para resumos de álbuns, isolamento dos catálogos e paginação com ordem personalizada
 - 1 teste instrumentado de abertura da tela principal e disponibilidade da pesquisa
 - 1 teste instrumentado que cria uma mídia, move para outro álbum e confirma o caminho final no MediaStore
@@ -88,6 +88,7 @@ A suíte atual possui 40 testes:
 - 1 teste instrumentado que garante que o submenu não carregue álbuns ocultos nunca exibidos antes da ação `Carregar ocultos`
 - 1 teste instrumentado que executa a pinça horizontal nas duas direções e confirma a alteração do número de colunas
 - 1 teste instrumentado que arrasta o fast scroll lateral em um álbum com 260 mídias e confirma o salto até o último item
+- 1 teste instrumentado que confirma os submenus de armazenamento e navegação interna usados para criar uma pasta
 
 Executar apenas os testes unitários rápidos:
 
@@ -133,9 +134,15 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.47
+### Validação da versão 0.8.48
 
-- 31 testes unitários e 16 testes instrumentados aprovados, todos os testes instrumentados concluídos na mesma execução no Android 16
+- 31 testes unitários e 17 testes instrumentados aprovados, todos os testes instrumentados concluídos na mesma execução no Android 16
+- Atalho redundante `Exibir ocultos` removido do menu principal; toda a gestão permanece concentrada em `Exibir/ocultar pastas`
+- Controles `Exibir ocultos` e `Carregar ocultos` reorganizados na mesma linha dentro do gerenciador
+- `Criar nova pasta` agora abre um submenu da Galeria para escolher armazenamento interno ou cartão SD, seguido por um navegador de pastas do volume escolhido
+- O navegador permite entrar e voltar pelas subpastas, trocar de armazenamento e criar a pasta no local atual sem sair para uma tela externa
+- Cartões SD montados são detectados pelos volumes reais do Android; quando não existe cartão disponível, o submenu informa isso sem apresentar uma tela vazia
+- Testes de interface confirmam a remoção do atalho duplicado, o alinhamento dos controles de ocultos e o fluxo interno de criação de pasta
 - Novo design de seleção aplicado nas telas de mídias e álbuns: uma única barra flutuante arredondada, elevada e afastada das bordas
 - Compartilhar, Favoritar, Excluir e Mover são ações internas sem cartões individuais, com ícone sobre o rótulo e três divisórias discretas
 - Teste de interface confirma a composição única do dock, os cantos de 20 dp, o afastamento lateral e a ausência de fundo próprio nos quatro comandos
@@ -204,9 +211,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.47**: são **48 commits** na linha 0.8, ou **47 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.48**: são **49 commits** na linha 0.8, ou **48 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.47 usa o código `8047`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.48 usa o código `8048`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -258,6 +265,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.45`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.45) | 17/08/2026 | Menus laterais corrigidos e ações de seleção identificadas |
 | [`v0.8.46`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.46) | 17/08/2026 | Restauração das cores temáticas nos menus e painéis |
 | [`v0.8.47`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.47) | 17/08/2026 | Dock flutuante para as ações de seleção |
+| [`v0.8.48`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.48) | 17/08/2026 | Submenus de armazenamento para criação de pastas e gestão de ocultos simplificada |
 
 ## Relatório comparativo de desempenho
 
@@ -273,7 +281,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.47](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.47.apk)
+[Baixar Galeria Android - versão 0.8.48](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.48.apk)
 
 Build padrão do Gradle:
 
@@ -284,10 +292,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.47.apk
+Galeria-Android-versao-0.8.48.apk
 ```
 
-O APK 0.8.47 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.48 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 

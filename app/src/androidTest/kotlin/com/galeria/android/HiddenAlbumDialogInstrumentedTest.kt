@@ -89,6 +89,7 @@ class HiddenAlbumDialogInstrumentedTest {
                 waitUntilDisplayedContaining("Câmera")
                 onView(withContentDescription("Mais opções")).perform(click())
                 waitUntilDisplayed("Exibir/ocultar pastas")
+                onView(withText("Exibir ocultos")).check(doesNotExist())
                 onView(withText("Exibir/ocultar pastas")).perform(click())
 
                 waitUntilDialogDisplayedContaining("Oculto conhecido")
@@ -112,6 +113,20 @@ class HiddenAlbumDialogInstrumentedTest {
                 onView(withText(containsString("Câmera"))).inRoot(isDialog()).check(matches(isDisplayed()))
                 onView(withText(containsString("Oculto nunca exibido"))).inRoot(isDialog()).check(doesNotExist())
                 onView(withText("Carregar ocultos")).inRoot(isDialog()).check(matches(isDisplayed()))
+                val hiddenControlLocation = IntArray(2)
+                val loadControlLocation = IntArray(2)
+                onView(withText("Exibir ocultos")).inRoot(isDialog()).check { view, exception ->
+                    if (exception != null) throw exception
+                    view.getLocationOnScreen(hiddenControlLocation)
+                }
+                onView(withText("Carregar ocultos")).inRoot(isDialog()).check { view, exception ->
+                    if (exception != null) throw exception
+                    view.getLocationOnScreen(loadControlLocation)
+                }
+                assertTrue(
+                    "Exibir ocultos e Carregar ocultos devem ficar na mesma linha.",
+                    kotlin.math.abs(hiddenControlLocation[1] - loadControlLocation[1]) <= Ui.dp(context, 8)
+                )
             }
         } finally {
             io {

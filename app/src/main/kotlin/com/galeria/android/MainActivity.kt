@@ -367,7 +367,6 @@ class MainActivity : ComponentActivity() {
         }
 
     private fun showMenu(anchor: View) {
-        val showHiddenOption = if (showHiddenFolders) "Ocultar ocultos" else "Exibir ocultos"
         Ui.showPopupOptions(
             anchor,
             listOf(
@@ -377,7 +376,6 @@ class MainActivity : ComponentActivity() {
                 "Exibir/ocultar pastas",
                 "Criar nova pasta",
                 "Configurações",
-                showHiddenOption,
                 "Atualizar"
             )
         ) { selected ->
@@ -386,21 +384,8 @@ class MainActivity : ComponentActivity() {
                 "Filtrar mídia" -> showMediaFilterDialog()
                 "Organização de pastas" -> showFolderOrganizationDialog()
                 "Exibir/ocultar pastas" -> showFolderVisibilityDialog()
-                "Criar nova pasta" -> startActivity(Intent(this, FolderPickerActivity::class.java))
+                "Criar nova pasta" -> FolderCreationMenu(this) { loadAlbums() }.show()
                 "Configurações" -> startActivity(Intent(this, SettingsActivity::class.java))
-                "Exibir ocultos" -> {
-                    showHiddenFolders = true
-                    prefs.edit().putBoolean("show_hidden_folders", true).apply()
-                    loadAlbums()
-                }
-                "Ocultar ocultos" -> {
-                    showHiddenFolders = false
-                    prefs.edit()
-                        .putBoolean("show_hidden_folders", false)
-                        .putBoolean("always_show_hidden", false)
-                        .apply()
-                    loadAlbums()
-                }
                 else -> loadAlbums()
             }
         }
@@ -1200,7 +1185,8 @@ class MainActivity : ComponentActivity() {
             )
             addView(
                 LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.VERTICAL
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
                     addView(
                         LinearLayout(this@MainActivity).apply {
                             orientation = LinearLayout.HORIZONTAL
@@ -1223,11 +1209,19 @@ class MainActivity : ComponentActivity() {
                             addView(checkbox)
                             addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                         },
-                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this@MainActivity, 48))
+                        LinearLayout.LayoutParams(0, Ui.dp(this@MainActivity, 48), 1f)
                     )
                     addView(
-                        dialogButton("Carregar ocultos") { loadHiddenAlbums() },
-                        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                        dialogButton("Carregar ocultos") { loadHiddenAlbums() }.apply {
+                            textSize = 13f
+                            setPadding(
+                                Ui.dp(this@MainActivity, 8),
+                                Ui.dp(this@MainActivity, 8),
+                                Ui.dp(this@MainActivity, 8),
+                                Ui.dp(this@MainActivity, 8)
+                            )
+                        },
+                        LinearLayout.LayoutParams(0, Ui.dp(this@MainActivity, 48), 1f)
                     )
                 },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
