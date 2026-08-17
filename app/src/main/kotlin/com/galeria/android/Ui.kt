@@ -188,7 +188,36 @@ class Ui private constructor() {
                     WindowManager.LayoutParams.WRAP_CONTENT
                 }
                 dimAmount = 0.32f
+                windowAnimations = 0
             }
+        }
+
+        @JvmStatic
+        fun showSidePanel(
+            dialog: AlertDialog,
+            widthFraction: Float = 0.86f,
+            fullHeight: Boolean = false,
+            onShown: (() -> Unit)? = null
+        ): AlertDialog {
+            val initialDecor = dialog.window?.decorView
+            initialDecor?.alpha = 0f
+            applySidePanelStyle(dialog, widthFraction, fullHeight)
+            dialog.setOnShowListener {
+                applySidePanelStyle(dialog, widthFraction, fullHeight)
+                val decor = dialog.window?.decorView ?: return@setOnShowListener
+                decor.alpha = 0f
+                decor.postDelayed({
+                    if (!dialog.isShowing) return@postDelayed
+                    applySidePanelStyle(dialog, widthFraction, fullHeight)
+                    decor.animate()
+                        .alpha(1f)
+                        .setDuration(SIDE_PANEL_FADE_MS)
+                        .withEndAction { onShown?.invoke() }
+                        .start()
+                }, SIDE_PANEL_LAYOUT_DELAY_MS)
+            }
+            dialog.show()
+            return dialog
         }
 
         @JvmStatic
@@ -228,17 +257,19 @@ class Ui private constructor() {
                 content.addView(row)
             }
             body.addView(content)
-            body.addView(themedDialogButtons(context, neutralText, onNeutral, { dialog.dismiss() }) {
+            body.addView(themedDialogButtons(context, neutralText, onNeutral?.let { action ->
+                {
+                    action()
+                    dialog.dismiss()
+                }
+            }, { dialog.dismiss() }) {
                 onConfirm(selected)
                 dialog.dismiss()
             })
             dialog = AlertDialog.Builder(context).setView(body).create()
-            applySidePanelStyle(dialog)
-            dialog.setOnShowListener {
-                applySidePanelStyle(dialog)
+            showSidePanel(dialog) {
                 refreshRows()
             }
-            dialog.show()
             return dialog
         }
 
@@ -273,11 +304,7 @@ class Ui private constructor() {
                 dialog.dismiss()
             })
             dialog = AlertDialog.Builder(context).setView(body).create()
-            applySidePanelStyle(dialog)
-            dialog.setOnShowListener {
-                applySidePanelStyle(dialog)
-            }
-            dialog.show()
+            showSidePanel(dialog)
             return dialog
         }
 
@@ -318,13 +345,62 @@ class Ui private constructor() {
                 }
             )
             dialog = AlertDialog.Builder(context).setView(body).create()
-            applySidePanelStyle(dialog)
-            dialog.setOnShowListener {
-                applySidePanelStyle(dialog)
+            showSidePanel(dialog) {
                 input.requestFocus()
             }
-            dialog.show()
             return dialog
+        }
+
+        @JvmStatic
+        fun showMessageDialog(
+            context: Context,
+            title: String,
+            message: String,
+            positiveText: String = "Fechar"
+        ): AlertDialog {
+            lateinit var dialog: AlertDialog
+            val body = themedDialogBody(context, title, message)
+            body.addView(
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                    setPadding(0, dp(context, 8), 0, 0)
+                    addView(themedDialogButton(context, positiveText, true) { dialog.dismiss() })
+                }
+            )
+            dialog = AlertDialog.Builder(context).setView(body).create()
+            return showSidePanel(dialog)
+        }
+
+        @JvmStatic
+        fun showConfirmationDialog(
+            context: Context,
+            title: String,
+            message: String,
+            positiveText: String,
+            negativeText: String = "Cancelar",
+            onNegative: (() -> Unit)? = null,
+            onPositive: () -> Unit
+        ): AlertDialog {
+            lateinit var dialog: AlertDialog
+            val body = themedDialogBody(context, title, message)
+            body.addView(
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                    setPadding(0, dp(context, 8), 0, 0)
+                    addView(themedDialogButton(context, negativeText) {
+                        onNegative?.invoke()
+                        dialog.dismiss()
+                    })
+                    addView(themedDialogButton(context, positiveText, true) {
+                        onPositive()
+                        dialog.dismiss()
+                    })
+                }
+            )
+            dialog = AlertDialog.Builder(context).setView(body).create()
+            return showSidePanel(dialog)
         }
 
         @JvmStatic
@@ -617,5 +693,7 @@ class Ui private constructor() {
             }
 
         private const val POPUP_ACTION_DELAY_MS = 48L
+        private const val SIDE_PANEL_LAYOUT_DELAY_MS = 16L
+        private const val SIDE_PANEL_FADE_MS = 90L
     }
 }

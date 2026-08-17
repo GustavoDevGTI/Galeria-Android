@@ -133,9 +133,15 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.42
+### Validação da versão 0.8.43
 
-- 28 testes unitários e 14 testes instrumentados aprovados, todos os testes instrumentados concluídos na mesma execução no Android 16
+- 31 testes unitários e 16 testes instrumentados aprovados, todos os testes instrumentados concluídos na mesma execução no Android 16
+- Organizador independente do agrupamento dentro dos álbuns, com ordenação personalizada, por data de adição/download, nome, tamanho, duração ou tipo/formato
+- Ordem crescente ou decrescente persistida individualmente para cada pasta; uma movimentação manual volta automaticamente ao modo personalizado
+- Consultas paginadas do catálogo respeitam os mesmos critérios de ordenação, preservando desempenho também no álbum de todas as mídias
+- Todos os diálogos de informação, confirmação, permissão e entrada de texto foram padronizados como painéis laterais
+- O painel é mantido transparente durante o primeiro cálculo de layout, ancorado à direita e revelado por um fade curto, sem deslocamento visível entre as laterais
+- Teste de interface confirma que “Ordenar por” e “Criar nova pasta” abrem diretamente alinhados à direita
 - Painéis laterais recebem posição, largura, altura e escurecimento em uma única atualização antes da primeira exibição, eliminando o salto visual da esquerda para a direita
 - Teste de interface confirma que o painel de exibir/ocultar pastas já nasce afastado da borda esquerda e alinhado à borda direita
 - Nome e duração permanecem discretos na parte inferior da miniatura, agora sem faixa preta e com sombra leve para legibilidade
@@ -184,9 +190,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.42**: são **43 commits** na linha 0.8, ou **42 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.43**: são **44 commits** na linha 0.8, ou **43 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.42 usa o código `8042`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.43 usa o código `8043`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -233,6 +239,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.40`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.40) | 17/08/2026 | Ícones de seleção com contraste branco ou preto |
 | [`v0.8.41`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.41) | 17/08/2026 | Movimentação limitada aos álbuns expostos |
 | [`v0.8.42`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.42) | 17/08/2026 | Painel de pastas ocultas ancorado à direita desde o primeiro quadro |
+| [`v0.8.43`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.43) | 17/08/2026 | Ordenação de mídias e padronização definitiva dos painéis laterais |
 
 ## Relatório comparativo de desempenho
 
@@ -248,7 +255,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.42](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.42.apk)
+[Baixar Galeria Android - versão 0.8.43](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.43.apk)
 
 Build padrão do Gradle:
 
@@ -259,10 +266,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.42.apk
+Galeria-Android-versao-0.8.43.apk
 ```
 
-O APK 0.8.42 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.43 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 

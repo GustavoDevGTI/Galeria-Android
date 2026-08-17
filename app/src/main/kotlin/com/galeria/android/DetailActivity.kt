@@ -639,11 +639,7 @@ class DetailActivity : ComponentActivity() {
             val information = buildVideoInformation(item, playerDuration)
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                AlertDialog.Builder(this)
-                    .setTitle("Informações do vídeo")
-                    .setMessage(information)
-                    .setPositiveButton("Fechar", null)
-                    .show()
+                Ui.showMessageDialog(this, "Informações do vídeo", information)
             }
         }
     }
@@ -667,11 +663,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun showImageInformationDialog(item: MediaItem, metadata: ImageMetadata) {
         if (isFinishing || isDestroyed) return
-        AlertDialog.Builder(this)
-            .setTitle("Informações da imagem")
-            .setMessage(buildImageInformation(item, metadata))
-            .setPositiveButton("Fechar", null)
-            .show()
+        Ui.showMessageDialog(this, "Informações da imagem", buildImageInformation(item, metadata))
     }
 
     private fun buildImageInformation(item: MediaItem, metadata: ImageMetadata): String = buildString {
@@ -1812,12 +1804,12 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun confirmHideCurrent() {
-        AlertDialog.Builder(this)
-            .setTitle("Ocultar arquivo")
-            .setMessage("O arquivo será copiado para a área oculta do app e removido da galeria pública.")
-            .setPositiveButton("Ocultar") { _, _ -> hideCurrent() }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        Ui.showConfirmationDialog(
+            this,
+            "Ocultar arquivo",
+            "O arquivo será copiado para a área oculta do app e removido da galeria pública.",
+            "Ocultar"
+        ) { hideCurrent() }
     }
 
     private fun hideCurrent() {
@@ -2004,12 +1996,12 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun confirmDeleteCurrent() {
-        AlertDialog.Builder(this)
-            .setTitle("Excluir arquivo")
-            .setMessage("Tem certeza que deseja excluir este arquivo?")
-            .setPositiveButton("Excluir") { _, _ -> deleteCurrent() }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        Ui.showConfirmationDialog(
+            this,
+            "Excluir arquivo",
+            "Tem certeza que deseja excluir este arquivo?",
+            "Excluir"
+        ) { deleteCurrent() }
     }
 
     private fun deleteCurrent() {
@@ -2027,12 +2019,12 @@ class DetailActivity : ComponentActivity() {
 
     private fun requestFileManagementAccess() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
-            AlertDialog.Builder(this)
-                .setTitle("Permitir gerenciamento de arquivos")
-                .setMessage("Para excluir, mover, copiar e criar arquivos no celular, ative o acesso total a arquivos para a Galeria.")
-                .setPositiveButton("Permitir") { _, _ -> MediaActions.requestAllFilesAccess(this) }
-                .setNegativeButton("Cancelar", null)
-                .show()
+            Ui.showConfirmationDialog(
+                this,
+                "Permitir gerenciamento de arquivos",
+                "Para excluir, mover, copiar e criar arquivos no celular, ative o acesso total a arquivos para a Galeria.",
+                "Permitir"
+            ) { MediaActions.requestAllFilesAccess(this) }
         } else {
             Ui.toast(this, "Não foi possível concluir a operação.")
         }

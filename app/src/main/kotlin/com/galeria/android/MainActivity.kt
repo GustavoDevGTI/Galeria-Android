@@ -495,12 +495,12 @@ class MainActivity : ComponentActivity() {
         val albums = adapter.selectedAlbums()
         if (albums.isEmpty()) return
         val visibleCount = albums.sumOf { it.count }
-        AlertDialog.Builder(this)
-            .setTitle("Excluir álbuns")
-            .setMessage("Tem certeza que deseja excluir as mídias de ${albums.size} álbum(ns)? Cerca de $visibleCount item(ns) serão removidos.")
-            .setPositiveButton("Excluir") { _, _ -> deleteSelectedAlbums(albums) }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        Ui.showConfirmationDialog(
+            this,
+            "Excluir álbuns",
+            "Tem certeza que deseja excluir as mídias de ${albums.size} álbum(ns)? Cerca de $visibleCount item(ns) serão removidos.",
+            "Excluir"
+        ) { deleteSelectedAlbums(albums) }
     }
 
     private fun deleteSelectedAlbums(albums: List<AlbumItem>) {
@@ -1263,11 +1263,7 @@ class MainActivity : ComponentActivity() {
         dialog = AlertDialog.Builder(this)
             .setView(panel)
             .create()
-        Ui.applySidePanelStyle(dialog, fullHeight = true)
-        dialog.setOnShowListener {
-            Ui.applySidePanelStyle(dialog, fullHeight = true)
-        }
-        dialog.show()
+        Ui.showSidePanel(dialog, fullHeight = true)
     }
 
     private fun setColumnCount(nextCount: Int) {
@@ -1412,17 +1408,19 @@ class MainActivity : ComponentActivity() {
     private fun ensureFileManagementAccess(force: Boolean) {
         if (MediaActions.hasAllFilesAccess(this)) return
         if (!force && prefs.getBoolean(PREF_ALL_FILES_PROMPTED, false)) return
-        AlertDialog.Builder(this)
-            .setTitle("Permitir gerenciamento de arquivos")
-            .setMessage("Para excluir, mover, copiar e criar pastas no celular, ative o acesso total a arquivos para a Galeria.")
-            .setPositiveButton("Permitir") { _, _ ->
+        Ui.showConfirmationDialog(
+            this,
+            "Permitir gerenciamento de arquivos",
+            "Para excluir, mover, copiar e criar pastas no celular, ative o acesso total a arquivos para a Galeria.",
+            "Permitir",
+            negativeText = "Agora não",
+            onNegative = {
+                prefs.edit().putBoolean(PREF_ALL_FILES_PROMPTED, true).apply()
+            }
+        ) {
                 prefs.edit().putBoolean(PREF_ALL_FILES_PROMPTED, true).apply()
                 MediaActions.requestAllFilesAccess(this)
-            }
-            .setNegativeButton("Agora não") { _, _ ->
-                prefs.edit().putBoolean(PREF_ALL_FILES_PROMPTED, true).apply()
-            }
-            .show()
+        }
     }
 
     private fun statusBarHeight(): Int {

@@ -90,6 +90,8 @@ class AlbumMediaActivity : ComponentActivity() {
     private var showSvgs = true
     private var listMode = false
     private var groupMode = GROUP_NONE
+    private var mediaSortMode = MediaSortRules.SORT_CUSTOM
+    private var mediaSortDescending = true
     private val mediaLoader = Executors.newSingleThreadExecutor()
     private var loadGeneration = 0
     private var pagingJob: Job? = null
@@ -581,6 +583,7 @@ class AlbumMediaActivity : ComponentActivity() {
             listOf(
                 "Filtrar mídia",
                 "Agrupar por",
+                "Ordenar por",
                 "Modo de visualização",
                 "Criar nova pasta",
                 "Aleatório",
@@ -590,6 +593,7 @@ class AlbumMediaActivity : ComponentActivity() {
             when (selected) {
                 "Filtrar mídia" -> showMediaFilterDialog()
                 "Agrupar por" -> showGroupDialog()
+                "Ordenar por" -> showMediaSortDialog()
                 "Modo de visualização" -> showViewModeDialog()
                 "Criar nova pasta" -> showCreateFolderDialog()
                 "Aleatório" -> startRandomPlayback()
@@ -610,6 +614,9 @@ class AlbumMediaActivity : ComponentActivity() {
             mediaSpanCount()
         )
         groupMode = prefs.getString(optionKey("group_mode"), GROUP_NONE) ?: GROUP_NONE
+        mediaSortMode = prefs.getString(optionKey("sort_mode"), MediaSortRules.SORT_CUSTOM)
+            ?: MediaSortRules.SORT_CUSTOM
+        mediaSortDescending = prefs.getBoolean(optionKey("sort_desc"), true)
     }
 
     private fun showMediaFilterDialog() {
@@ -740,11 +747,7 @@ class AlbumMediaActivity : ComponentActivity() {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
         dialog = AlertDialog.Builder(this).setView(panel).create()
-        Ui.applySidePanelStyle(dialog)
-        dialog.setOnShowListener {
-            Ui.applySidePanelStyle(dialog)
-        }
-        dialog.show()
+        Ui.showSidePanel(dialog)
     }
 
     private fun applyGridSpacing() {
@@ -874,12 +877,12 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun confirmDeleteSelected() {
         val selected = adapter.selectedItems()
         if (selected.isEmpty()) return
-        AlertDialog.Builder(this)
-            .setTitle("Excluir selecionados")
-            .setMessage("Tem certeza que deseja excluir ${selected.size} arquivo(s)?")
-            .setPositiveButton("Excluir") { _, _ -> deleteSelected(selected) }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        Ui.showConfirmationDialog(
+            this,
+            "Excluir selecionados",
+            "Tem certeza que deseja excluir ${selected.size} arquivo(s)?",
+            "Excluir"
+        ) { deleteSelected(selected) }
     }
 
     private fun deleteSelected(selected: List<MediaItem>) {
@@ -913,6 +916,58 @@ class AlbumMediaActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun showMediaSortDialog() {
+        val labels = arrayOf(
+            "Ordem personalizada",
+            "Data de adição/download",
+            "Nome alfabético",
+            "Tamanho",
+            "Duração",
+            "Tipo e formato"
+        )
+        val values = arrayOf(
+            MediaSortRules.SORT_CUSTOM,
+            MediaSortRules.SORT_DATE,
+            MediaSortRules.SORT_NAME,
+            MediaSortRules.SORT_SIZE,
+            MediaSortRules.SORT_DURATION,
+            MediaSortRules.SORT_TYPE
+        )
+        val selected = values.indexOf(mediaSortMode).takeIf { it >= 0 } ?: 0
+        Ui.showChoiceDialog(
+            this,
+            "Ordenar por",
+            labels,
+            selected,
+            message = "A ordenação funciona junto com o agrupamento atual.",
+            neutralText = if (mediaSortMode == MediaSortRules.SORT_CUSTOM) {
+                null
+            } else if (mediaSortDescending) {
+                "Decrescente"
+            } else {
+                "Crescente"
+            },
+            onNeutral = if (mediaSortMode == MediaSortRules.SORT_CUSTOM) null else {
+                {
+                    mediaSortDescending = !mediaSortDescending
+                    saveMediaSortOptions()
+                    loadMedia(true)
+                }
+            }
+        ) { which ->
+            mediaSortMode = values[which]
+            saveMediaSortOptions()
+            loadMedia(true)
+        }
+    }
+
+    private fun saveMediaSortOptions() {
+        prefs.edit()
+            .putString(optionKey("sort_mode"), mediaSortMode)
+            .putBoolean(optionKey("sort_desc"), mediaSortDescending)
+            .apply()
     }
 
     private fun moveSelected(selected: List<MediaItem>, folder: String) {
@@ -985,6 +1040,8 @@ class AlbumMediaActivity : ComponentActivity() {
                 shouldIncludeHiddenFilesystem(),
                 albumKey,
                 query,
+                mediaSortMode,
+                mediaSortDescending,
                 PagingConfig(
                     pageSize = 30,
                     initialLoadSize = 45,
@@ -1024,38 +1081,14 @@ class AlbumMediaActivity : ComponentActivity() {
         }
     }
 
-    private fun applyCustomOrder(items: List<MediaItem>): List<MediaItem> {
-        val saved = GalleryCatalogStore.migrateLegacyOrder(applicationContext, albumKey ?: "all")
-        if (saved.isEmpty()) return items
-        val byUri = HashMap<String, MediaItem>()
-        for (item in items) {
-            byUri[item.uri.toString()] = item
-        }
-        val ordered = ArrayList<MediaItem>()
-        val used = HashSet<String>()
-        for (line in saved) {
-            val item = byUri[line]
-            if (item != null) {
-                ordered.add(item)
-                used.add(line)
-            }
-        }
-        for (item in items) {
-            if (!used.contains(item.uri.toString())) {
-                ordered.add(item)
-            }
-        }
-        return ordered
-    }
-
     private fun prepareAlbumMedia(source: List<MediaItem>): List<MediaItem> {
         val filtered = ArrayList<MediaItem>()
-        for (item in applyCustomOrder(source)) {
+        for (item in source) {
             if (matchesMediaFilter(item)) {
                 filtered.add(item)
             }
         }
-        applyGrouping(filtered)
+        applySortingAndGrouping(filtered)
         return filtered
     }
 
@@ -1065,13 +1098,32 @@ class AlbumMediaActivity : ComponentActivity() {
         MediaFilterOptions(showImages, showVideos, showGifs, showRaw, showSvgs)
     )
 
-    private fun applyGrouping(items: MutableList<MediaItem>) {
-        if (groupMode == GROUP_NONE) return
+    private fun applySortingAndGrouping(items: MutableList<MediaItem>) {
+        val customOrder = GalleryCatalogStore.migrateLegacyOrder(applicationContext, albumKey ?: "all")
+        val mediaComparator = MediaSortRules.comparator(
+            mediaSortMode,
+            mediaSortDescending,
+            customOrder,
+            ::mediaSortKey
+        )
+        if (groupMode == GROUP_NONE) {
+            items.sortWith(mediaComparator)
+            return
+        }
         items.sortWith { first, second ->
-            val group = groupValue(first).compareTo(groupValue(second))
-            if (group != 0) group else second.dateAdded.compareTo(first.dateAdded)
+            val groupComparison = groupValue(first).compareTo(groupValue(second))
+            if (groupComparison != 0) groupComparison else mediaComparator.compare(first, second)
         }
     }
+
+    private fun mediaSortKey(item: MediaItem): MediaSortRules.Key = MediaSortRules.Key(
+        item.uri.toString(),
+        item.name,
+        item.dateAdded,
+        item.size,
+        item.duration,
+        item.mimeType
+    )
 
     private fun groupValue(item: MediaItem): String =
         when (groupMode) {
@@ -1098,6 +1150,8 @@ class AlbumMediaActivity : ComponentActivity() {
 
     private fun saveCustomOrder() {
         val order = adapter.currentOrder()
+        mediaSortMode = MediaSortRules.SORT_CUSTOM
+        saveMediaSortOptions()
         mediaLoader.execute {
             GalleryCatalogStore.saveCustomOrder(applicationContext, albumKey ?: "all", order)
             runOnUiThread {
@@ -1302,12 +1356,12 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun requestFileManagementAccess() {
-        AlertDialog.Builder(this)
-            .setTitle("Permitir gerenciamento de arquivos")
-            .setMessage("Para criar pastas, mover e excluir arquivos no celular, ative o acesso total a arquivos para a Galeria.")
-            .setPositiveButton("Permitir") { _, _ -> MediaActions.requestAllFilesAccess(this) }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        Ui.showConfirmationDialog(
+            this,
+            "Permitir gerenciamento de arquivos",
+            "Para criar pastas, mover e excluir arquivos no celular, ative o acesso total a arquivos para a Galeria.",
+            "Permitir"
+        ) { MediaActions.requestAllFilesAccess(this) }
     }
 
     private fun availableAlbumTargets(): List<AlbumItem> {

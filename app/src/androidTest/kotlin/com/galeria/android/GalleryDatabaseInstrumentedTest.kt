@@ -83,7 +83,14 @@ class GalleryDatabaseInstrumentedTest {
         )
         dao.replaceCustomOrder("camera", listOf("content://media/c", "content://media/a"))
 
-        val result = dao.pagedMedia("visible", "camera", "camera", "").load(
+        val result = dao.pagedMedia(
+            "visible",
+            "camera",
+            "camera",
+            "",
+            MediaSortRules.SORT_CUSTOM,
+            1
+        ).load(
             PagingSource.LoadParams.Refresh(key = null, loadSize = 10, placeholdersEnabled = false)
         )
         val page = result as PagingSource.LoadResult.Page<Int, CachedMediaEntity>
@@ -92,6 +99,32 @@ class GalleryDatabaseInstrumentedTest {
             listOf("content://media/c", "content://media/a", "content://media/b"),
             page.data.map { it.uri }
         )
+    }
+
+    @Test
+    fun pagedQuerySupportsAlphabeticalAndSizeOrdering() = runBlocking {
+        dao.replaceMedia(
+            "visible",
+            listOf(
+                media("content://media/zeta", "camera", "Camera", 30, 100),
+                media("content://media/alpha", "camera", "Camera", 20, 500),
+                media("content://media/beta", "camera", "Camera", 10, 300)
+            ),
+            CatalogStateEntity("visible", 1, false)
+        )
+
+        val alphabetic = page(MediaSortRules.SORT_NAME, 0)
+        assertEquals(listOf("alpha", "beta", "zeta"), alphabetic.map { it.name })
+
+        val largest = page(MediaSortRules.SORT_SIZE, 1)
+        assertEquals(listOf(500L, 300L, 100L), largest.map { it.size })
+    }
+
+    private suspend fun page(sortMode: String, descending: Int): List<CachedMediaEntity> {
+        val result = dao.pagedMedia("visible", "camera", "camera", "", sortMode, descending).load(
+            PagingSource.LoadParams.Refresh(key = null, loadSize = 10, placeholdersEnabled = false)
+        )
+        return (result as PagingSource.LoadResult.Page<Int, CachedMediaEntity>).data
     }
 
     private fun media(

@@ -132,16 +132,29 @@ abstract class GalleryDao {
                 OR cached_media.relativePath LIKE '%' || :query || '%'
             )
         ORDER BY
-            CASE WHEN custom_media_order.position IS NULL THEN 1 ELSE 0 END,
-            custom_media_order.position ASC,
-            cached_media.dateAdded DESC
+            CASE WHEN :sortMode = 'custom' AND custom_media_order.position IS NULL THEN 1 ELSE 0 END ASC,
+            CASE WHEN :sortMode = 'custom' THEN custom_media_order.position END ASC,
+            CASE WHEN :sortMode = 'date' AND :sortDescending = 0 THEN cached_media.dateAdded END ASC,
+            CASE WHEN :sortMode = 'date' AND :sortDescending = 1 THEN cached_media.dateAdded END DESC,
+            CASE WHEN :sortMode = 'name' AND :sortDescending = 0 THEN LOWER(cached_media.name) END ASC,
+            CASE WHEN :sortMode = 'name' AND :sortDescending = 1 THEN LOWER(cached_media.name) END DESC,
+            CASE WHEN :sortMode = 'size' AND :sortDescending = 0 THEN cached_media.size END ASC,
+            CASE WHEN :sortMode = 'size' AND :sortDescending = 1 THEN cached_media.size END DESC,
+            CASE WHEN :sortMode = 'duration' AND :sortDescending = 0 THEN cached_media.duration END ASC,
+            CASE WHEN :sortMode = 'duration' AND :sortDescending = 1 THEN cached_media.duration END DESC,
+            CASE WHEN :sortMode = 'type' AND :sortDescending = 0 THEN LOWER(cached_media.mimeType) END ASC,
+            CASE WHEN :sortMode = 'type' AND :sortDescending = 1 THEN LOWER(cached_media.mimeType) END DESC,
+            cached_media.dateAdded DESC,
+            LOWER(cached_media.name) ASC
         """
     )
     abstract fun pagedMedia(
         scope: String,
         albumKey: String,
         customOrderAlbumKey: String,
-        query: String
+        query: String,
+        sortMode: String,
+        sortDescending: Int
     ): PagingSource<Int, CachedMediaEntity>
 
     @Query("DELETE FROM cached_media WHERE scope = :scope")
@@ -286,13 +299,22 @@ object GalleryCatalogStore {
         includeHidden: Boolean,
         albumKey: String?,
         query: String,
+        sortMode: String,
+        sortDescending: Boolean,
         config: PagingConfig
     ): Flow<PagingData<MediaItem>> {
         val dao = GalleryDatabase.get(context).galleryDao()
         val requestedAlbum = if (albumKey == null || albumKey == "all_media") "__all__" else albumKey
         val customOrderAlbum = albumKey ?: "all"
         return Pager(config) {
-            dao.pagedMedia(scope(includeHidden), requestedAlbum, customOrderAlbum, query.trim())
+            dao.pagedMedia(
+                scope(includeHidden),
+                requestedAlbum,
+                customOrderAlbum,
+                query.trim(),
+                sortMode,
+                if (sortDescending) 1 else 0
+            )
         }.flow.map { page -> page.map { it.toMediaItem() } }
     }
 

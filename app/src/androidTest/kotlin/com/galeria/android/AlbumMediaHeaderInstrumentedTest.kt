@@ -12,11 +12,13 @@ import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withHint
+import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.rule.GrantPermissionRule
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,5 +57,63 @@ class AlbumMediaHeaderInstrumentedTest {
                 .perform(click())
                 .check(matches(withHint("Pesquisar nesta pasta")))
         }
+    }
+
+    @Test
+    fun sortAndNewFolderOpenAsRightSidePanels() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val intent = Intent(context, AlbumMediaActivity::class.java).apply {
+            putExtra("album_key", "Pictures/AlbumMenuTest-${System.currentTimeMillis()}/")
+            putExtra("album_name", "Álbum de menu")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        ActivityScenario.launch<AlbumMediaActivity>(intent).use {
+            onView(withContentDescription("Mais opções")).perform(click())
+            onView(withText("Ordenar por")).perform(click())
+            waitForView {
+                onView(withText("Nome alfabético")).check { view, exception ->
+                    if (exception != null) throw exception
+                    assertRightAligned(view)
+                }
+            }
+
+            androidx.test.espresso.Espresso.pressBack()
+            onView(withContentDescription("Mais opções")).perform(click())
+            onView(withText("Criar nova pasta")).perform(click())
+            waitForView {
+                onView(withHint("Título")).check { view, exception ->
+                    if (exception != null) throw exception
+                    assertRightAligned(view)
+                }
+            }
+        }
+    }
+
+    private fun assertRightAligned(view: View) {
+        val root = view.rootView
+        val location = IntArray(2)
+        root.getLocationOnScreen(location)
+        val screenWidth = view.resources.displayMetrics.widthPixels
+        assertTrue("O painel lateral deve começar afastado da borda esquerda.", location[0] > 0)
+        assertTrue(
+            "O painel lateral deve estar alinhado à borda direita.",
+            kotlin.math.abs(screenWidth - (location[0] + root.width)) <= 2
+        )
+    }
+
+    private fun waitForView(assertion: () -> Unit) {
+        val deadline = System.currentTimeMillis() + 10_000L
+        var lastFailure: Throwable? = null
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                assertion()
+                return
+            } catch (failure: Throwable) {
+                lastFailure = failure
+                Thread.sleep(100L)
+            }
+        }
+        throw AssertionError("Painel esperado não exibido.", lastFailure)
     }
 }

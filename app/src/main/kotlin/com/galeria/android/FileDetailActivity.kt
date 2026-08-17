@@ -128,16 +128,16 @@ class FileDetailActivity : Activity() {
     }
 
     private fun confirmDelete() {
-        AlertDialog.Builder(this)
-            .setTitle("Excluir oculto")
-            .setMessage("Este arquivo oculto será apagado definitivamente.")
-            .setPositiveButton("Excluir") { _, _ ->
+        Ui.showConfirmationDialog(
+            this,
+            "Excluir oculto",
+            "Este arquivo oculto será apagado definitivamente.",
+            "Excluir"
+        ) {
                 val deleted = file.delete()
                 Ui.toast(this, if (deleted) "Item excluído." else "Não foi possível excluir.")
                 if (deleted) finish()
-            }
-            .setNegativeButton("Cancelar", null)
-            .show()
+        }
     }
 
     companion object {

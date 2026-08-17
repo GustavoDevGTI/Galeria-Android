@@ -136,12 +136,12 @@ class FolderPickerActivity : Activity() {
         }
         val target = File(currentDir, clean)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
-            AlertDialog.Builder(this)
-                .setTitle("Permitir gerenciamento de arquivos")
-                .setMessage("Para criar pastas no celular, ative o acesso total a arquivos para a Galeria.")
-                .setPositiveButton("Permitir") { _, _ -> MediaActions.requestAllFilesAccess(this) }
-                .setNegativeButton("Cancelar", null)
-                .show()
+            Ui.showConfirmationDialog(
+                this,
+                "Permitir gerenciamento de arquivos",
+                "Para criar pastas no celular, ative o acesso total a arquivos para a Galeria.",
+                "Permitir"
+            ) { MediaActions.requestAllFilesAccess(this) }
             return
         }
         if (target.exists()) {
