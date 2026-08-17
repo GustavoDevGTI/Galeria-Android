@@ -116,8 +116,11 @@ class AlbumMediaHeaderInstrumentedTest {
         val location = IntArray(2)
         root.getLocationOnScreen(location)
         val screenWidth = view.resources.displayMetrics.widthPixels
+        val screenHeight = view.resources.displayMetrics.heightPixels
         assertTrue("O painel lateral deve começar afastado da borda esquerda.", location[0] > 0)
         assertTrue("O painel lateral deve ser estreito e vertical.", root.width <= screenWidth * 0.72f)
+        assertTrue("O painel lateral deve nascer abaixo da barra superior.", location[1] >= Ui.dp(view.context, 56))
+        assertTrue("O painel lateral não deve ocupar a tela inteira.", root.height < screenHeight * 0.90f)
         val rightGap = screenWidth - (location[0] + root.width)
         assertTrue(
             "O painel lateral deve ficar junto à borda direita com uma pequena margem.",

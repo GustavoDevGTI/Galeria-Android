@@ -7,7 +7,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
@@ -94,10 +95,12 @@ class AlbumSelectionInstrumentedTest {
                 listOf("Compartilhar", "Favoritar", "Excluir", "Mover").forEach { action ->
                     onView(withContentDescription(action)).check { view, noViewFoundException ->
                         if (noViewFoundException != null) throw noViewFoundException
+                        val icon = view.findViewWithTag<ImageView>("selection_action_icon")
                         assertEquals(
                             Ui.selectionActionIcon(context),
-                            (view as ImageButton).imageTintList?.defaultColor
+                            icon.imageTintList?.defaultColor
                         )
+                        assertEquals(action, view.findViewWithTag<TextView>("selection_action_label").text.toString())
                     }
                 }
                 onView(withContentDescription(secondName)).perform(click())

@@ -97,8 +97,11 @@ class HiddenAlbumDialogInstrumentedTest {
                     val location = IntArray(2)
                     root.getLocationOnScreen(location)
                     val screenWidth = view.resources.displayMetrics.widthPixels
+                    val screenHeight = view.resources.displayMetrics.heightPixels
                     assertTrue("O painel deve nascer afastado da borda esquerda.", location[0] > 0)
                     assertTrue("O painel deve manter formato vertical e compacto.", root.width <= screenWidth * 0.72f)
+                    assertTrue("O painel deve começar abaixo da barra superior.", location[1] >= Ui.dp(view.context, 56))
+                    assertTrue("O painel deve preservar margem inferior.", root.height < screenHeight * 0.90f)
                     val rightGap = screenWidth - (location[0] + root.width)
                     assertTrue(
                         "O painel deve ficar junto à lateral direita com uma pequena margem.",

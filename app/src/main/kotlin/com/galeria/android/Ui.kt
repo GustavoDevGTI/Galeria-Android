@@ -64,13 +64,11 @@ class Ui private constructor() {
 
         @JvmStatic
         fun menuSurface(context: Context): Int {
-            val seed = themeSeed(context)
-            return if (darkMode(context)) blend(seed, Color.BLACK, 0.74f) else blend(seed, Color.BLACK, 0.58f)
+            return if (darkMode(context)) Color.rgb(18, 18, 18) else Color.rgb(24, 24, 24)
         }
 
         @JvmStatic
-        fun menuText(context: Context): Int =
-            if (darkMode(context)) TEXT else blend(Color.WHITE, themeSeed(context), 0.10f)
+        fun menuText(context: Context): Int = if (darkMode(context)) TEXT else Color.rgb(248, 248, 248)
 
         @JvmStatic
         fun text(context: Context): Int = if (darkMode(context)) TEXT else Color.rgb(18, 18, 18)
@@ -172,6 +170,55 @@ class Ui private constructor() {
         }
 
         @JvmStatic
+        fun selectionAction(context: Context, icon: Int, label: String, listener: () -> Unit): LinearLayout =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                minimumHeight = dp(context, 56)
+                contentDescription = label
+                isClickable = true
+                isFocusable = true
+                background = ColorDrawable(Color.TRANSPARENT)
+                setPadding(dp(context, 3), dp(context, 4), dp(context, 3), dp(context, 3))
+                addView(
+                    ImageView(context).apply {
+                        tag = SELECTION_ACTION_ICON_TAG
+                        setImageResource(icon)
+                        imageTintList = ColorStateList.valueOf(selectionActionIcon(context))
+                        scaleType = ImageView.ScaleType.CENTER_INSIDE
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    },
+                    LinearLayout.LayoutParams(dp(context, 25), dp(context, 25))
+                )
+                addView(
+                    TextView(context).apply {
+                        tag = SELECTION_ACTION_LABEL_TAG
+                        text = label
+                        textSize = 11f
+                        setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+                        setTextColor(text(context))
+                        gravity = Gravity.CENTER
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    },
+                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                        topMargin = dp(context, 2)
+                    }
+                )
+                setOnClickListener { listener() }
+            }
+
+        @JvmStatic
+        fun restyleSelectionAction(view: View) {
+            val context = view.context
+            view.background = ColorDrawable(Color.TRANSPARENT)
+            view.findViewWithTag<ImageView>(SELECTION_ACTION_ICON_TAG)?.imageTintList =
+                ColorStateList.valueOf(selectionActionIcon(context))
+            view.findViewWithTag<TextView>(SELECTION_ACTION_LABEL_TAG)?.setTextColor(text(context))
+        }
+
+        @JvmStatic
         fun applySidePanelStyle(dialog: AlertDialog, widthFraction: Float = SIDE_PANEL_WIDTH_FRACTION, fullHeight: Boolean = false) {
             val window = dialog.window ?: return
             val context = dialog.context
@@ -180,14 +227,18 @@ class Ui private constructor() {
             window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             window.attributes = window.attributes.apply {
-                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                gravity = Gravity.END or Gravity.TOP
                 this.width = width
                 height = if (fullHeight) {
-                    metrics.heightPixels - dp(context, SIDE_PANEL_VERTICAL_MARGIN_DP * 2)
+                    min(
+                        metrics.heightPixels - dp(context, SIDE_PANEL_TOP_MARGIN_DP + SIDE_PANEL_BOTTOM_MARGIN_DP),
+                        (metrics.heightPixels * SIDE_PANEL_MAX_HEIGHT_FRACTION).roundToInt()
+                    )
                 } else {
                     WindowManager.LayoutParams.WRAP_CONTENT
                 }
                 x = dp(context, SIDE_PANEL_END_MARGIN_DP)
+                y = dp(context, SIDE_PANEL_TOP_MARGIN_DP)
                 dimAmount = 0.32f
                 windowAnimations = 0
             }
@@ -702,10 +753,14 @@ class Ui private constructor() {
         private const val POPUP_ACTION_DELAY_MS = 48L
         private const val SIDE_PANEL_LAYOUT_DELAY_MS = 16L
         private const val SIDE_PANEL_FADE_MS = 90L
-        private const val SIDE_PANEL_MAX_WIDTH_DP = 300
+        private const val SELECTION_ACTION_ICON_TAG = "selection_action_icon"
+        private const val SELECTION_ACTION_LABEL_TAG = "selection_action_label"
+        private const val SIDE_PANEL_MAX_WIDTH_DP = 280
         private const val SIDE_PANEL_RADIUS_DP = 14
         private const val SIDE_PANEL_END_MARGIN_DP = 8
-        private const val SIDE_PANEL_VERTICAL_MARGIN_DP = 12
-        private const val SIDE_PANEL_WIDTH_FRACTION = 0.68f
+        private const val SIDE_PANEL_TOP_MARGIN_DP = 72
+        private const val SIDE_PANEL_BOTTOM_MARGIN_DP = 28
+        private const val SIDE_PANEL_WIDTH_FRACTION = 0.60f
+        private const val SIDE_PANEL_MAX_HEIGHT_FRACTION = 0.82f
     }
 }

@@ -536,8 +536,8 @@ class AlbumMediaActivity : ComponentActivity() {
 
         selectionActions = LinearLayout(this).apply {
             gravity = Gravity.CENTER
-            setBackgroundColor(Ui.bg(this@AlbumMediaActivity))
-            setPadding(Ui.dp(this@AlbumMediaActivity, 10), Ui.dp(this@AlbumMediaActivity, 8), Ui.dp(this@AlbumMediaActivity, 10), navigationBarHeight() + Ui.dp(this@AlbumMediaActivity, 8))
+            setBackgroundColor(Ui.surface(this@AlbumMediaActivity))
+            setPadding(Ui.dp(this@AlbumMediaActivity, 8), Ui.dp(this@AlbumMediaActivity, 4), Ui.dp(this@AlbumMediaActivity, 8), navigationBarHeight() + Ui.dp(this@AlbumMediaActivity, 4))
         }
         addSelectionAction(R.drawable.ic_share, "Compartilhar") { shareSelected() }
         addSelectionAction(R.drawable.ic_star, "Favoritar") { favoriteSelected() }
@@ -560,21 +560,10 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun addSelectionAction(icon: Int, label: String, listener: () -> Unit) {
-        val button = ImageButton(this).apply {
-            setImageResource(icon)
-            imageTintList = android.content.res.ColorStateList.valueOf(
-                Ui.selectionActionIcon(this@AlbumMediaActivity)
-            )
-            contentDescription = label
-            scaleType = ImageView.ScaleType.CENTER
-            setPadding(Ui.dp(this@AlbumMediaActivity, 10), Ui.dp(this@AlbumMediaActivity, 10), Ui.dp(this@AlbumMediaActivity, 10), Ui.dp(this@AlbumMediaActivity, 10))
-            background = Ui.rounded(Ui.surface(this@AlbumMediaActivity), 8, this@AlbumMediaActivity)
-            setOnClickListener { listener() }
-        }
-        val params = LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1f).apply {
-            setMargins(Ui.dp(this@AlbumMediaActivity, 6), 0, Ui.dp(this@AlbumMediaActivity, 6), 0)
-        }
-        selectionActions.addView(button, params)
+        selectionActions.addView(
+            Ui.selectionAction(this, icon, label, listener),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
     }
 
     private fun showFolderMenu(anchor: View) {
@@ -689,7 +678,7 @@ class AlbumMediaActivity : ComponentActivity() {
         panel.addView(
             TextView(this).apply {
                 text = "Espaçamento da grade"
-                textSize = 20f
+                textSize = 18f
                 setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
                 setTextColor(Ui.menuText(this@AlbumMediaActivity))
             },
