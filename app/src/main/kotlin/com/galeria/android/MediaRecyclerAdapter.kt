@@ -311,6 +311,7 @@ class MediaRecyclerAdapter(
             tag = TAG_MEDIA_NAME
             setTextColor(Color.WHITE)
             textSize = 10f
+            setShadowLayer(Ui.dp(context, 2).toFloat(), 0f, Ui.dp(context, 1).toFloat(), 0xE6000000.toInt())
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
@@ -319,15 +320,16 @@ class MediaRecyclerAdapter(
             tag = TAG_MEDIA_DURATION
             setTextColor(Color.WHITE)
             textSize = 10f
+            setShadowLayer(Ui.dp(context, 2).toFloat(), 0f, Ui.dp(context, 1).toFloat(), 0xE6000000.toInt())
             maxLines = 1
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
             setPadding(Ui.dp(context, 7), 0, 0, 0)
         }
         if (!asList) {
             val metadataRow = LinearLayout(context).apply {
+                tag = TAG_MEDIA_METADATA_ROW
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                background = Ui.rounded(0xA6000000.toInt(), 0, context)
                 setPadding(Ui.dp(context, 6), Ui.dp(context, 2), Ui.dp(context, 6), Ui.dp(context, 2))
                 addView(mediaNameOverlay, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
                 addView(mediaDurationOverlay, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -488,6 +490,7 @@ class MediaRecyclerAdapter(
         const val MEDIA_CORNER_RADIUS_DP = 5
         const val TAG_MEDIA_NAME = "media_overlay_name"
         const val TAG_MEDIA_DURATION = "media_overlay_duration"
+        const val TAG_MEDIA_METADATA_ROW = "media_metadata_row"
     }
 
 }

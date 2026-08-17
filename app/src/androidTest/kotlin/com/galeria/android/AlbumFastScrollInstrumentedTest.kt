@@ -36,6 +36,7 @@ import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -131,6 +132,9 @@ class AlbumFastScrollInstrumentedTest {
                     assertTrue(requireNotNull(thumbnail).clipToOutline)
                     val image = findViewOfType(recycler.getChildAt(0), ImageView::class.java)
                     assertNotNull(image?.background)
+                    val metadataRow = recycler.getChildAt(0).findViewWithTag<View>("media_metadata_row")
+                    assertNotNull(metadataRow)
+                    assertNull("A faixa preta ainda está atrás do nome da mídia.", metadataRow.background)
                 }
             }
         } finally {
