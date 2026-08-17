@@ -64,11 +64,13 @@ class Ui private constructor() {
 
         @JvmStatic
         fun menuSurface(context: Context): Int {
-            return if (darkMode(context)) Color.rgb(18, 18, 18) else Color.rgb(24, 24, 24)
+            val seed = themeSeed(context)
+            return if (darkMode(context)) blend(seed, Color.BLACK, 0.74f) else blend(seed, Color.BLACK, 0.58f)
         }
 
         @JvmStatic
-        fun menuText(context: Context): Int = if (darkMode(context)) TEXT else Color.rgb(248, 248, 248)
+        fun menuText(context: Context): Int =
+            if (darkMode(context)) TEXT else blend(Color.WHITE, themeSeed(context), 0.10f)
 
         @JvmStatic
         fun text(context: Context): Int = if (darkMode(context)) TEXT else Color.rgb(18, 18, 18)

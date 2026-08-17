@@ -6,6 +6,7 @@ import android.provider.MediaStore
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
@@ -90,8 +91,8 @@ class HiddenAlbumDialogInstrumentedTest {
                 waitUntilDisplayed("Exibir/ocultar pastas")
                 onView(withText("Exibir/ocultar pastas")).perform(click())
 
-                waitUntilDisplayedContaining("Oculto conhecido")
-                onView(withText("Exibir/ocultar pastas")).check { view, noViewFoundException ->
+                waitUntilDialogDisplayedContaining("Oculto conhecido")
+                onView(withText("Exibir/ocultar pastas")).inRoot(isDialog()).check { view, noViewFoundException ->
                     if (noViewFoundException != null) throw noViewFoundException
                     val root = view.rootView
                     val location = IntArray(2)
@@ -108,9 +109,9 @@ class HiddenAlbumDialogInstrumentedTest {
                         rightGap in 0..Ui.dp(view.context, 16)
                     )
                 }
-                onView(withText(containsString("Câmera"))).check(matches(isDisplayed()))
-                onView(withText(containsString("Oculto nunca exibido"))).check(doesNotExist())
-                onView(withText("Carregar ocultos")).check(matches(isDisplayed()))
+                onView(withText(containsString("Câmera"))).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText(containsString("Oculto nunca exibido"))).inRoot(isDialog()).check(doesNotExist())
+                onView(withText("Carregar ocultos")).inRoot(isDialog()).check(matches(isDisplayed()))
             }
         } finally {
             io {
@@ -161,6 +162,10 @@ class HiddenAlbumDialogInstrumentedTest {
 
     private fun waitUntilDisplayedContaining(text: String) = waitForView {
         onView(withText(containsString(text))).check(matches(isDisplayed()))
+    }
+
+    private fun waitUntilDialogDisplayedContaining(text: String) = waitForView {
+        onView(withText(containsString(text))).inRoot(isDialog()).check(matches(isDisplayed()))
     }
 
     private fun waitForView(assertion: () -> Unit) {

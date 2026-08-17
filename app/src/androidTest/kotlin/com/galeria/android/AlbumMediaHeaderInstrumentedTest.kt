@@ -9,8 +9,10 @@ import android.view.View
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withHint
 import androidx.test.espresso.matcher.ViewMatchers.withText
@@ -73,23 +75,23 @@ class AlbumMediaHeaderInstrumentedTest {
             onView(withContentDescription("Mais opções")).perform(click())
             onView(withText("Ordenar por")).perform(click())
             waitForView {
-                onView(withText("Nome alfabético")).check { view, exception ->
+                onView(withText("Nome alfabético")).inRoot(isDialog()).check { view, exception ->
                     if (exception != null) throw exception
                     assertRightAligned(view)
                 }
             }
             val cancelLocation = IntArray(2)
-            onView(withText("Cancelar")).check { view, exception ->
+            onView(withText("Cancelar")).inRoot(isDialog()).check { view, exception ->
                 if (exception != null) throw exception
                 view.getLocationOnScreen(cancelLocation)
             }
-            onView(withText("OK")).check { view, exception ->
+            onView(withText("OK")).inRoot(isDialog()).check { view, exception ->
                 if (exception != null) throw exception
                 val okLocation = IntArray(2)
                 view.getLocationOnScreen(okLocation)
                 assertTrue("As ações do painel devem ficar empilhadas verticalmente.", okLocation[1] > cancelLocation[1])
             }
-            onView(withText("Ordenar por")).check { view, exception ->
+            onView(withText("Ordenar por")).inRoot(isDialog()).check { view, exception ->
                 if (exception != null) throw exception
                 val panel = view.parent as View
                 val background = panel.background as GradientDrawable
@@ -100,10 +102,13 @@ class AlbumMediaHeaderInstrumentedTest {
             }
 
             androidx.test.espresso.Espresso.pressBack()
+            waitForView {
+                onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
+            }
             onView(withContentDescription("Mais opções")).perform(click())
             onView(withText("Criar nova pasta")).perform(click())
             waitForView {
-                onView(withHint("Título")).check { view, exception ->
+                onView(withHint("Título")).inRoot(isDialog()).check { view, exception ->
                     if (exception != null) throw exception
                     assertRightAligned(view)
                 }
