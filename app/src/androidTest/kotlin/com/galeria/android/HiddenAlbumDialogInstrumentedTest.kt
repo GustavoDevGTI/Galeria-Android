@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.hamcrest.Matchers.containsString
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -90,6 +91,18 @@ class HiddenAlbumDialogInstrumentedTest {
                 onView(withText("Exibir/ocultar pastas")).perform(click())
 
                 waitUntilDisplayedContaining("Oculto conhecido")
+                onView(withText("Exibir/ocultar pastas")).check { view, noViewFoundException ->
+                    if (noViewFoundException != null) throw noViewFoundException
+                    val root = view.rootView
+                    val location = IntArray(2)
+                    root.getLocationOnScreen(location)
+                    val screenWidth = view.resources.displayMetrics.widthPixels
+                    assertTrue("O painel deve nascer afastado da borda esquerda.", location[0] > 0)
+                    assertTrue(
+                        "O painel deve estar alinhado à borda direita.",
+                        kotlin.math.abs(screenWidth - (location[0] + root.width)) <= 2
+                    )
+                }
                 onView(withText(containsString("Câmera"))).check(matches(isDisplayed()))
                 onView(withText(containsString("Oculto nunca exibido"))).check(doesNotExist())
                 onView(withText("Carregar ocultos")).check(matches(isDisplayed()))

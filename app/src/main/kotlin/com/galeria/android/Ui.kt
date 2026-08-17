@@ -178,13 +178,17 @@ class Ui private constructor() {
             val screenWidth = context.resources.displayMetrics.widthPixels
             val width = min(dp(context, 380), (screenWidth * widthFraction).roundToInt())
             window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            window.setGravity(Gravity.END or Gravity.CENTER_VERTICAL)
-            window.setLayout(
-                width,
-                if (fullHeight) WindowManager.LayoutParams.MATCH_PARENT else WindowManager.LayoutParams.WRAP_CONTENT
-            )
-            window.attributes = window.attributes.apply { dimAmount = 0.32f }
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            window.attributes = window.attributes.apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                this.width = width
+                height = if (fullHeight) {
+                    WindowManager.LayoutParams.MATCH_PARENT
+                } else {
+                    WindowManager.LayoutParams.WRAP_CONTENT
+                }
+                dimAmount = 0.32f
+            }
         }
 
         @JvmStatic
@@ -229,6 +233,7 @@ class Ui private constructor() {
                 dialog.dismiss()
             })
             dialog = AlertDialog.Builder(context).setView(body).create()
+            applySidePanelStyle(dialog)
             dialog.setOnShowListener {
                 applySidePanelStyle(dialog)
                 refreshRows()
@@ -268,6 +273,7 @@ class Ui private constructor() {
                 dialog.dismiss()
             })
             dialog = AlertDialog.Builder(context).setView(body).create()
+            applySidePanelStyle(dialog)
             dialog.setOnShowListener {
                 applySidePanelStyle(dialog)
             }
@@ -312,6 +318,7 @@ class Ui private constructor() {
                 }
             )
             dialog = AlertDialog.Builder(context).setView(body).create()
+            applySidePanelStyle(dialog)
             dialog.setOnShowListener {
                 applySidePanelStyle(dialog)
                 input.requestFocus()

@@ -1263,6 +1263,7 @@ class MainActivity : ComponentActivity() {
         dialog = AlertDialog.Builder(this)
             .setView(panel)
             .create()
+        Ui.applySidePanelStyle(dialog, fullHeight = true)
         dialog.setOnShowListener {
             Ui.applySidePanelStyle(dialog, fullHeight = true)
         }

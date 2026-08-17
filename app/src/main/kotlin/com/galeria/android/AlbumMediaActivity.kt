@@ -740,6 +740,7 @@ class AlbumMediaActivity : ComponentActivity() {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
         dialog = AlertDialog.Builder(this).setView(panel).create()
+        Ui.applySidePanelStyle(dialog)
         dialog.setOnShowListener {
             Ui.applySidePanelStyle(dialog)
         }

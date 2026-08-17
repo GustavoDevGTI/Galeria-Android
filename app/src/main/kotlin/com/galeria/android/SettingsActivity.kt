@@ -245,6 +245,7 @@ class SettingsActivity : Activity() {
             .setView(panel)
             .setNegativeButton("Cancelar", null)
             .create()
+        dialogRef[0]?.let { dialog -> Ui.applySidePanelStyle(dialog) }
         dialogRef[0]?.setOnShowListener { dialogRef[0]?.let { dialog -> Ui.applySidePanelStyle(dialog) } }
         dialogRef[0]?.show()
     }
