@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.widget.ImageButton
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
@@ -16,6 +17,7 @@ import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withHint
+import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.rule.GrantPermissionRule
@@ -23,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -77,11 +80,20 @@ class AlbumSelectionInstrumentedTest {
                 onView(withContentDescription(firstName)).perform(longClick())
                 waitUntilHint("1 selecionados")
                 onView(withContentDescription("Selecionar todos")).check(matches(isDisplayed()))
+                listOf("Compartilhar", "Favoritar", "Excluir", "Mover").forEach { action ->
+                    onView(withContentDescription(action)).check { view, noViewFoundException ->
+                        if (noViewFoundException != null) throw noViewFoundException
+                        assertEquals(
+                            Ui.selectionActionIcon(context),
+                            (view as ImageButton).imageTintList?.defaultColor
+                        )
+                    }
+                }
                 onView(withContentDescription(secondName)).perform(click())
 
                 waitUntilHint("2 selecionados")
                 onView(withContentDescription("Mover")).check(matches(isDisplayed())).perform(click())
-                waitUntilDisplayed("Álbum Destino")
+                waitUntilText("Mover para")
             }
         } finally {
             runBlocking {
@@ -141,6 +153,10 @@ class AlbumSelectionInstrumentedTest {
 
     private fun waitUntilHint(hint: String) = waitForView {
         onView(withContentDescription("Pesquisar nesta pasta")).check(matches(withHint(hint)))
+    }
+
+    private fun waitUntilText(text: String) = waitForView {
+        onView(withText(text)).check(matches(isDisplayed()))
     }
 
     private fun waitForView(assertion: () -> Unit) {

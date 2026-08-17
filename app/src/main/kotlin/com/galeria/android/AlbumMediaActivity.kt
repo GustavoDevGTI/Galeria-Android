@@ -560,7 +560,9 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun addSelectionAction(icon: Int, label: String, listener: () -> Unit) {
         val button = ImageButton(this).apply {
             setImageResource(icon)
-            setColorFilter(Ui.accent(this@AlbumMediaActivity))
+            imageTintList = android.content.res.ColorStateList.valueOf(
+                Ui.selectionActionIcon(this@AlbumMediaActivity)
+            )
             contentDescription = label
             scaleType = ImageView.ScaleType.CENTER
             setPadding(Ui.dp(this@AlbumMediaActivity, 10), Ui.dp(this@AlbumMediaActivity, 10), Ui.dp(this@AlbumMediaActivity, 10), Ui.dp(this@AlbumMediaActivity, 10))

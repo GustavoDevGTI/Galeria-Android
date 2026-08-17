@@ -347,7 +347,9 @@ class MainActivity : ComponentActivity() {
     private fun addSelectionAction(icon: Int, label: String, listener: () -> Unit) {
         val button = ImageButton(this).apply {
             setImageResource(icon)
-            setColorFilter(Ui.accent(this@MainActivity))
+            imageTintList = android.content.res.ColorStateList.valueOf(
+                Ui.selectionActionIcon(this@MainActivity)
+            )
             contentDescription = label
             scaleType = ImageView.ScaleType.CENTER
             setPadding(Ui.dp(this@MainActivity, 10), Ui.dp(this@MainActivity, 10), Ui.dp(this@MainActivity, 10), Ui.dp(this@MainActivity, 10))
@@ -782,7 +784,9 @@ class MainActivity : ComponentActivity() {
                 val child = selectionActions.getChildAt(i)
                 child.background = Ui.rounded(Ui.surface(this), 8, this)
                 if (child is ImageButton) {
-                    child.setColorFilter(Ui.accent(this))
+                    child.imageTintList = android.content.res.ColorStateList.valueOf(
+                        Ui.selectionActionIcon(this)
+                    )
                 }
             }
         }

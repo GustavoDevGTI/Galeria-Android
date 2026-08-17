@@ -76,6 +76,10 @@ class Ui private constructor() {
         fun text(context: Context): Int = if (darkMode(context)) TEXT else Color.rgb(18, 18, 18)
 
         @JvmStatic
+        fun selectionActionIcon(context: Context): Int =
+            if (luminance(text(context)) >= 0.5) Color.WHITE else Color.BLACK
+
+        @JvmStatic
         fun muted(context: Context): Int {
             val base = text(context)
             return if (darkMode(context)) blend(base, bg(context), 0.36f) else blend(base, bg(context), 0.46f)
