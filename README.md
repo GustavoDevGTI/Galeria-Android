@@ -133,14 +133,17 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.40
+### Validação da versão 0.8.41
 
-- 26 testes unitários e 14 testes instrumentados aprovados, todos os testes instrumentados concluídos na mesma execução no Android 16
+- 28 testes unitários e 14 testes instrumentados aprovados, todos os testes instrumentados concluídos na mesma execução no Android 16
 - Nome e duração permanecem discretos na parte inferior da miniatura, agora sem faixa preta e com sombra leve para legibilidade
 - Controle de selecionar tudo substituído por um quadrado contornado, com preenchimento e marca de confirmação somente quando toda a grade está selecionada
 - Ícones de compartilhar, favoritar, excluir e mover usam branco ou preto puro conforme a cor de texto ativa, tanto na seleção de mídias quanto na seleção de álbuns
 - Teste de interface confirma a cor de contraste dos quatro botões de ação e a abertura independente do painel de movimentação
 - Destinos de movimentação e cópia apresentados em painel lateral com capa quadrada e somente o nome do álbum; os caminhos continuam restritos à lógica interna
+- Destinos de movimentação limitados à lista exata de álbuns expostos na tela principal, sem revelar álbuns ocultos carregados pelo catálogo completo
+- A lista de álbuns expostos acompanha a navegação do álbum até o visualizador, mantendo a mesma restrição nos menus de imagem e vídeo
+- Testes unitários e de interface confirmam a exclusão de pastas ocultas pelo usuário e de diretórios `Private`, `Hidden` ou iniciados por ponto
 - Carregamento dos destinos executado fora da thread principal, evitando travamento ao abrir o painel de movimentação
 - Menus de opções, submenus de escolha, entrada de texto, configuração de grade, cores e gerenciamento de ocultos padronizados como painéis laterais
 - Nome da mídia exibido discretamente no canto inferior esquerdo da miniatura, com abreviação automática, e duração do vídeo isolada à direita sem sobreposição
@@ -179,9 +182,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.40**: são **41 commits** na linha 0.8, ou **40 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.41**: são **42 commits** na linha 0.8, ou **41 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.40 usa o código `8040`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.41 usa o código `8041`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -226,6 +229,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.38`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.38) | 17/08/2026 | Metadados discretos sem faixa preta nas miniaturas |
 | [`v0.8.39`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.39) | 17/08/2026 | Recuperação assíncrona da duração real dos vídeos |
 | [`v0.8.40`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.40) | 17/08/2026 | Ícones de seleção com contraste branco ou preto |
+| [`v0.8.41`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.41) | 17/08/2026 | Movimentação limitada aos álbuns expostos |
 
 ## Relatório comparativo de desempenho
 
@@ -241,7 +245,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.40](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.40.apk)
+[Baixar Galeria Android - versão 0.8.41](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.41.apk)
 
 Build padrão do Gradle:
 
@@ -252,10 +256,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.40.apk
+Galeria-Android-versao-0.8.41.apk
 ```
 
-O APK 0.8.40 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.41 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 

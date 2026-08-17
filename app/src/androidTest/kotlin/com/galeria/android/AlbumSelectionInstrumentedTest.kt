@@ -13,6 +13,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.longClick
+import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
@@ -48,9 +49,18 @@ class AlbumSelectionInstrumentedTest {
         val secondName = "selecao-segunda-$suffix.png"
         val targetPath = "Pictures/GaleriaSelectionTarget-$suffix/"
         val targetName = "destino-$suffix.png"
+        val hiddenPath = "Pictures/GaleriaSelectionHidden-$suffix/"
+        val hiddenName = "oculto-$suffix.png"
         val firstUri = insertImage(context, albumPath, firstName)
         val secondUri = insertImage(context, albumPath, secondName)
         val targetUri = insertImage(context, targetPath, targetName)
+        val hiddenUri = insertImage(context, hiddenPath, hiddenName)
+        val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val originalHiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty())
+        prefs.edit().putStringSet(
+            "hidden_folder_keys",
+            HashSet(originalHiddenKeys).apply { add(hiddenPath) }
+        ).commit()
         val dao = GalleryDatabase.get(context).galleryDao()
         val original = runBlocking { withContext(Dispatchers.IO) { dao.media(VISIBLE_SCOPE) } }
         val originalState = runBlocking { withContext(Dispatchers.IO) { dao.state(VISIBLE_SCOPE) } }
@@ -63,7 +73,8 @@ class AlbumSelectionInstrumentedTest {
                         listOf(
                             cached(firstUri, firstName, albumPath, suffix + 1),
                             cached(secondUri, secondName, albumPath, suffix),
-                            cached(targetUri, targetName, targetPath, suffix - 1, "Destino")
+                            cached(targetUri, targetName, targetPath, suffix - 1, "Destino"),
+                            cached(hiddenUri, hiddenName, hiddenPath, suffix - 2, "Oculto")
                         ),
                         CatalogStateEntity(VISIBLE_SCOPE, System.currentTimeMillis(), false)
                     )
@@ -94,6 +105,8 @@ class AlbumSelectionInstrumentedTest {
                 waitUntilHint("2 selecionados")
                 onView(withContentDescription("Mover")).check(matches(isDisplayed())).perform(click())
                 waitUntilText("Mover para")
+                onView(withContentDescription("Álbum Oculto")).check(doesNotExist())
+                onView(withContentDescription("Álbum GaleriaSelectionHidden-$suffix")).check(doesNotExist())
             }
         } finally {
             runBlocking {
@@ -108,6 +121,8 @@ class AlbumSelectionInstrumentedTest {
             context.contentResolver.delete(firstUri, null, null)
             context.contentResolver.delete(secondUri, null, null)
             context.contentResolver.delete(targetUri, null, null)
+            context.contentResolver.delete(hiddenUri, null, null)
+            prefs.edit().putStringSet("hidden_folder_keys", originalHiddenKeys).commit()
             MediaStoreRepository.invalidateCache()
         }
     }

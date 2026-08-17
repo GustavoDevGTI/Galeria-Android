@@ -262,11 +262,17 @@ class MainActivity : ComponentActivity() {
                     return
                 }
                 val album = adapter.getItem(position)
+                val exposedAlbumKeys = adapter.allAlbumsSnapshot()
+                    .asSequence()
+                    .map { it.key }
+                    .filter { it != "all_media" }
+                    .toCollection(ArrayList())
                 MediaScanScheduler.cancelMaintenance(applicationContext)
                 val intent = Intent(this@MainActivity, AlbumMediaActivity::class.java).apply {
                     putExtra("album_key", album.key)
                     putExtra("album_name", album.name)
                     putExtra("include_hidden_filesystem", shouldIncludeHiddenFilesystem())
+                    putStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS, exposedAlbumKeys)
                 }
                 startActivity(intent)
             }
@@ -521,8 +527,14 @@ class MainActivity : ComponentActivity() {
         val albums = adapter.selectedAlbums()
         if (albums.isEmpty()) return
         val excludedKeys = albums.mapTo(HashSet()) { it.key }
+        val exposedAlbums = adapter.allAlbumsSnapshot()
         mediaLoader.execute {
-            val targets = availableAlbumTargets(excludedKeys)
+            val targets = AlbumTargetRules.exposedTargets(
+                exposedAlbums,
+                exposedAlbums.mapTo(HashSet()) { it.key },
+                emptySet(),
+                excludedKeys
+            )
             runOnUiThread {
                 if (isFinishing || !moreButton.isAttachedToWindow) return@runOnUiThread
                 if (targets.isEmpty()) {
@@ -577,17 +589,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         return items
-    }
-
-    private fun availableAlbumTargets(excludedKeys: Set<String>): List<AlbumItem> {
-        val targets = LinkedHashMap<String, AlbumItem>()
-        for (album in MediaStoreRepository.loadAlbums(applicationContext, shouldIncludeHiddenFilesystem())) {
-            if (album.key != "all_media" && !excludedKeys.contains(album.key) && album.name.isNotBlank()) {
-                val targetKey = album.path.ifBlank { album.key }
-                if (!targets.containsKey(targetKey)) targets[targetKey] = album
-            }
-        }
-        return targets.values.toList()
     }
 
     private fun loadAlbums() {

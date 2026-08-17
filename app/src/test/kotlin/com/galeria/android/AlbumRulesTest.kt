@@ -74,6 +74,42 @@ class AlbumRulesTest {
     }
 
     @Test
+    fun moveTargetsAreLimitedToTheAlbumsExposedOnTheMainScreen() {
+        val source = listOf(
+            album("camera", "Camera", "DCIM/Camera/"),
+            album("private", "Private", "Pictures/Private/"),
+            album("screenshots", "Screenshots", "Pictures/Screenshots/")
+        )
+
+        val targets = AlbumTargetRules.exposedTargets(
+            source,
+            exposedKeys = setOf("camera", "screenshots"),
+            hiddenKeys = emptySet(),
+            excludedKeys = setOf("camera")
+        )
+
+        assertEquals(listOf("screenshots"), targets.map { it.key })
+    }
+
+    @Test
+    fun moveTargetsWithoutScreenStateRejectExplicitAndFilesystemHiddenAlbums() {
+        val source = listOf(
+            album("camera", "Camera", "DCIM/Camera/"),
+            album("private", "Private", "Pictures/Private/"),
+            album("screenshots", "Screenshots", "Pictures/Screenshots/")
+        )
+
+        val targets = AlbumTargetRules.exposedTargets(
+            source,
+            exposedKeys = null,
+            hiddenKeys = setOf("screenshots"),
+            excludedKeys = emptySet()
+        )
+
+        assertEquals(listOf("camera"), targets.map { it.key })
+    }
+
+    @Test
     fun horizontalPinchChangesTheNumberOfGridColumns() {
         assertEquals(-1, GridColumnRules.columnDelta(GridColumnRules.SCALE_STEP))
         assertEquals(1, GridColumnRules.columnDelta(1f / GridColumnRules.SCALE_STEP))
@@ -109,4 +145,7 @@ class AlbumRulesTest {
         AlbumItem("a", "Alpha", 1, null, 10, 5, 100, "A/Alpha"),
         AlbumItem("b", "Beta", 2, null, 30, 2, 500, "B/Beta")
     )
+
+    private fun album(key: String, name: String, path: String): AlbumItem =
+        AlbumItem(key, name, 1, null, 1, 1, 1, path)
 }

@@ -1888,14 +1888,15 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun availableAlbumNames(item: MediaItem): List<AlbumItem> {
-        val names = LinkedHashMap<String, AlbumItem>()
-        val includeHiddenFilesystem = intent.getBooleanExtra("include_hidden_filesystem", false)
-        for (album in MediaStoreRepository.loadAlbums(this, includeHiddenFilesystem)) {
-            if (album.key == "all_media" || album.key == item.albumKey || album.name.isBlank()) continue
-            val targetKey = album.path.ifBlank { album.key }
-            if (!names.containsKey(targetKey)) names[targetKey] = album
-        }
-        return names.values.toList()
+        val exposedKeys = intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)?.toSet()
+        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
+        val includeHidden = exposedKeys != null && intent.getBooleanExtra("include_hidden_filesystem", false)
+        return AlbumTargetRules.exposedTargets(
+            MediaStoreRepository.loadAlbums(this, includeHidden),
+            exposedKeys,
+            hiddenKeys,
+            setOfNotNull(item.albumKey, intent.getStringExtra("album_key"))
+        )
     }
 
     private fun setCurrentAsWallpaper() {

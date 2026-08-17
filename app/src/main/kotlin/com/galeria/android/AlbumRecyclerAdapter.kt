@@ -129,6 +129,8 @@ class AlbumRecyclerAdapter(
 
     fun visibleAlbumsSnapshot(): List<AlbumItem> = ArrayList(visibleAlbums)
 
+    fun allAlbumsSnapshot(): List<AlbumItem> = ArrayList(allAlbums)
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         val item = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL

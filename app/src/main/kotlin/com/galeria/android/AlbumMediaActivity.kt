@@ -1310,14 +1310,16 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun availableAlbumTargets(): List<AlbumItem> {
-        val targets = LinkedHashMap<String, AlbumItem>()
-        for (album in MediaStoreRepository.loadAlbums(applicationContext, shouldIncludeHiddenFilesystem())) {
-            if (album.key != "all_media" && album.key != albumKey && album.name.isNotBlank()) {
-                val targetKey = album.path.ifBlank { album.key }
-                if (!targets.containsKey(targetKey)) targets[targetKey] = album
-            }
-        }
-        return targets.values.toList()
+        val exposedKeys = intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)?.toSet()
+        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
+        val includeHidden = exposedKeys != null && shouldIncludeHiddenFilesystem()
+        val source = MediaStoreRepository.loadAlbums(applicationContext, includeHidden)
+        return AlbumTargetRules.exposedTargets(
+            source,
+            exposedKeys,
+            hiddenKeys,
+            setOfNotNull(albumKey)
+        )
     }
 
     private fun shouldIncludeHiddenFilesystem(): Boolean =
@@ -1339,6 +1341,9 @@ class AlbumMediaActivity : ComponentActivity() {
             putExtra("position", position)
             putExtra("shuffle_mode", shuffleMode)
             putExtra("include_hidden_filesystem", shouldIncludeHiddenFilesystem())
+            this@AlbumMediaActivity.intent
+                .getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)
+                ?.let { putStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS, it) }
         }
         startActivity(intent)
     }

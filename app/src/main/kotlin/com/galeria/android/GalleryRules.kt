@@ -180,6 +180,36 @@ object AlbumRules {
     }
 }
 
+object AlbumTargetRules {
+    const val EXTRA_EXPOSED_ALBUM_KEYS = "exposed_album_keys"
+
+    fun exposedTargets(
+        source: List<AlbumItem>,
+        exposedKeys: Set<String>?,
+        hiddenKeys: Set<String>,
+        excludedKeys: Set<String>
+    ): List<AlbumItem> {
+        val targets = LinkedHashMap<String, AlbumItem>()
+        for (album in source) {
+            val exposed = if (exposedKeys != null) {
+                exposedKeys.contains(album.key)
+            } else {
+                !hiddenKeys.contains(album.key) && !AlbumRules.isHidden(album.path, album.key)
+            }
+            if (
+                exposed &&
+                album.key != "all_media" &&
+                !excludedKeys.contains(album.key) &&
+                album.name.isNotBlank()
+            ) {
+                val targetKey = album.path.ifBlank { album.key }
+                if (!targets.containsKey(targetKey)) targets[targetKey] = album
+            }
+        }
+        return targets.values.toList()
+    }
+}
+
 object ViewerStateRules {
     fun shuffledFromCurrent(availableUris: List<String>, currentUri: String, seed: Long): List<String> {
         if (availableUris.isEmpty()) return emptyList()
