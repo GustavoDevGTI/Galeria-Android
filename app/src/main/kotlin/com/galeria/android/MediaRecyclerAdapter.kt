@@ -3,6 +3,8 @@ package com.galeria.android
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.media.MediaMetadataRetriever
+import android.provider.MediaStore
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -23,6 +25,8 @@ import coil3.request.crossfade
 import coil3.size.Precision
 import kotlinx.coroutines.Dispatchers
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 
 class MediaRecyclerAdapter(
     private val context: Context,
@@ -382,6 +386,7 @@ class MediaRecyclerAdapter(
             holder.name.text = ""
             holder.mediaNameOverlay.text = ""
             holder.mediaDurationOverlay.text = ""
+            holder.mediaDurationOverlay.visibility = View.GONE
             holder.itemView.contentDescription = null
             holder.check.visibility = View.GONE
             holder.itemView.setOnClickListener(null)
@@ -398,17 +403,19 @@ class MediaRecyclerAdapter(
         }
         val item = itemOrNull(position) ?: return
         if (payloads.contains(PAYLOAD_SELECTION)) bindSelection(holder, item)
-        if (payloads.contains(PAYLOAD_THUMBNAIL_SIZE)) bindThumbnail(holder, item)
+        if (payloads.contains(PAYLOAD_THUMBNAIL_SIZE)) {
+            bindThumbnail(holder, item)
+            bindVideoDuration(holder, item)
+        }
     }
 
     private fun bindItem(holder: Holder, item: MediaItem) {
         bindSelection(holder, item)
         holder.name.text = item.name
         holder.mediaNameOverlay.text = item.name
-        holder.mediaDurationOverlay.text = if (item.isVideo()) formatDuration(item.duration) else ""
-        holder.mediaDurationOverlay.visibility = if (item.isVideo()) View.VISIBLE else View.GONE
         holder.itemView.contentDescription = item.name
         bindThumbnail(holder, item)
+        bindVideoDuration(holder, item)
         holder.itemView.setOnClickListener {
             val currentPosition = holder.bindingAdapterPosition
             if (currentPosition != RecyclerView.NO_POSITION) callbacks.onMediaClick(currentPosition)
@@ -455,6 +462,68 @@ class MediaRecyclerAdapter(
         }
     }
 
+    private fun bindVideoDuration(holder: Holder, item: MediaItem) {
+        if (!item.isVideo()) {
+            holder.mediaDurationOverlay.text = ""
+            holder.mediaDurationOverlay.visibility = View.GONE
+            return
+        }
+        holder.mediaDurationOverlay.visibility = View.VISIBLE
+        val key = item.uri.toString()
+        val knownDuration = item.duration.takeIf { it > 0L }
+            ?: resolvedDurationCache[key]?.takeIf { it > 0L }
+        if (knownDuration != null) {
+            resolvedDurationCache[key] = knownDuration
+            holder.mediaDurationOverlay.text = formatDuration(knownDuration)
+            return
+        }
+        holder.mediaDurationOverlay.text = ""
+        if (
+            fastScrollPreview ||
+            resolvedDurationCache.containsKey(key) ||
+            pendingDurationRequests.putIfAbsent(key, true) != null
+        ) return
+        val appContext = context.applicationContext
+        durationExecutor.execute {
+            val resolved = resolveVideoDuration(appContext, item)
+            resolvedDurationCache[key] = resolved
+            if (resolved > 0L) {
+                runCatching { GalleryCatalogStore.saveResolvedDuration(appContext, key, resolved) }
+            }
+            pendingDurationRequests.remove(key)
+            holder.itemView.post {
+                if (holder.boundUri == key) {
+                    holder.mediaDurationOverlay.text = if (resolved > 0L) formatDuration(resolved) else ""
+                }
+            }
+        }
+    }
+
+    private fun resolveVideoDuration(context: Context, item: MediaItem): Long {
+        val queried = runCatching {
+            context.contentResolver.query(
+                item.uri,
+                arrayOf(MediaStore.Video.VideoColumns.DURATION),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val index = cursor.getColumnIndex(MediaStore.Video.VideoColumns.DURATION)
+                if (index >= 0 && cursor.moveToFirst() && !cursor.isNull(index)) cursor.getLong(index) else 0L
+            } ?: 0L
+        }.getOrDefault(0L)
+        if (queried > 0L) return queried
+        return runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, item.uri)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } finally {
+                retriever.release()
+            }
+        }.getOrDefault(0L)
+    }
+
     override fun getItemCount(): Int = if (pagingMode) pagingDiffer.itemCount else visibleItems.size
 
     class Holder(
@@ -469,7 +538,7 @@ class MediaRecyclerAdapter(
     }
 
     private fun formatDuration(durationMs: Long): String {
-        if (durationMs <= 0L) return "–:–"
+        if (durationMs <= 0L) return ""
         val totalSeconds = durationMs / 1000L
         val hours = totalSeconds / 3600L
         val minutes = (totalSeconds % 3600L) / 60L
@@ -491,6 +560,9 @@ class MediaRecyclerAdapter(
         const val TAG_MEDIA_NAME = "media_overlay_name"
         const val TAG_MEDIA_DURATION = "media_overlay_duration"
         const val TAG_MEDIA_METADATA_ROW = "media_metadata_row"
+        val resolvedDurationCache = ConcurrentHashMap<String, Long>()
+        val pendingDurationRequests = ConcurrentHashMap<String, Boolean>()
+        val durationExecutor = Executors.newFixedThreadPool(2)
     }
 
 }

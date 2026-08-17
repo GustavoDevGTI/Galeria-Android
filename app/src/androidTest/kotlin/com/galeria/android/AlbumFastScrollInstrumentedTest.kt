@@ -20,6 +20,7 @@ import androidx.test.espresso.action.GeneralLocation
 import androidx.test.espresso.action.GeneralSwipeAction
 import androidx.test.espresso.action.Press
 import androidx.test.espresso.action.Swipe
+import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
@@ -104,6 +105,8 @@ class AlbumFastScrollInstrumentedTest {
                     .check(matches(isDisplayed()))
                 onView(allOf(withTagValue(equalTo("media_overlay_duration")), withText("2:05")))
                     .check(matches(isDisplayed()))
+                onView(allOf(withTagValue(equalTo("media_overlay_duration")), withText("–:–")))
+                    .check(doesNotExist())
                 val movedBeforeRelease = AtomicBoolean(false)
                 onView(withContentDescription(FAST_SCROLL_DESCRIPTION))
                     .check(matches(isDisplayed()))
@@ -164,7 +167,7 @@ class AlbumFastScrollInstrumentedTest {
         uri = "content://album-fast-scroll/$index",
         mediaId = index.toLong(),
         name = mediaName(index),
-        mimeType = if (index == 0) "video/mp4" else "image/jpeg",
+        mimeType = if (index <= 1) "video/mp4" else "image/jpeg",
         dateAdded = (TOTAL_MEDIA - index).toLong(),
         size = 100L,
         relativePath = albumKey,

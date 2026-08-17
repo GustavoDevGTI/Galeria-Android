@@ -153,6 +153,9 @@ abstract class GalleryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract fun saveState(state: CatalogStateEntity)
 
+    @Query("UPDATE cached_media SET duration = :duration WHERE uri = :uri AND duration <= 0")
+    abstract fun updateMediaDuration(uri: String, duration: Long)
+
     @Query("SELECT * FROM catalog_state WHERE scope = :scope LIMIT 1")
     abstract fun state(scope: String): CatalogStateEntity?
 
@@ -213,6 +216,8 @@ object GalleryCatalogStore {
     private const val COMPLETE_SCOPE = "complete"
     private const val CATALOG_META_PREFS = "gallery_catalog_meta"
     private const val PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION = "catalog_dirty_after_media_action"
+    private const val PREF_CATALOG_MODEL_VERSION_PREFIX = "catalog_model_version_"
+    private const val CATALOG_MODEL_VERSION = 2
     @Volatile private var visibleSnapshot: List<MediaItem> = emptyList()
     @Volatile private var completeSnapshot: List<MediaItem> = emptyList()
 
@@ -303,6 +308,7 @@ object GalleryCatalogStore {
             dao.saveState(state)
             preferences.edit()
                 .putString(versionKey(includeHidden), currentMediaStoreVersion(context))
+                .putInt(modelVersionKey(includeHidden), CATALOG_MODEL_VERSION)
                 .apply()
             updateSnapshot(includeHidden, items)
             return
@@ -317,6 +323,7 @@ object GalleryCatalogStore {
         preferences.edit()
             .putLong(fingerprintKey(includeHidden), fingerprint)
             .putString(versionKey(includeHidden), currentMediaStoreVersion(context))
+            .putInt(modelVersionKey(includeHidden), CATALOG_MODEL_VERSION)
             .apply()
         updateSnapshot(includeHidden, items)
     }
@@ -335,23 +342,32 @@ object GalleryCatalogStore {
     private fun fingerprintKey(includeHidden: Boolean): String =
         "catalog_fingerprint_${if (includeHidden) "complete" else "visible"}"
 
+    private fun modelVersionKey(includeHidden: Boolean): String =
+        "$PREF_CATALOG_MODEL_VERSION_PREFIX${scope(includeHidden)}"
+
     fun customOrder(context: Context, albumKey: String): List<String> =
         GalleryDatabase.get(context).galleryDao().customOrder(albumKey)
 
     fun hasFreshCatalog(context: Context, includeHidden: Boolean, allFilesAccess: Boolean, maxAgeMs: Long): Boolean {
+        val preferences = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
+        if (preferences.getInt(modelVersionKey(includeHidden), 0) < CATALOG_MODEL_VERSION) return false
         val state = GalleryDatabase.get(context).galleryDao().state(scope(includeHidden)) ?: return false
         if (state.allFilesAccess != allFilesAccess) return false
         val age = System.currentTimeMillis() - state.scannedAt
         if (includeHidden) return age <= maxAgeMs
         val currentVersion = currentMediaStoreVersion(context)
-        val storedVersion = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
-            .getString(versionKey(false), "")
+        val storedVersion = preferences.getString(versionKey(false), "")
             .orEmpty()
         return if (currentVersion.isNotEmpty() && storedVersion.isNotEmpty()) {
             currentVersion == storedVersion
         } else {
             age <= maxAgeMs
         }
+    }
+
+    fun saveResolvedDuration(context: Context, uri: String, duration: Long) {
+        if (duration <= 0L) return
+        GalleryDatabase.get(context).galleryDao().updateMediaDuration(uri, duration)
     }
 
     fun saveCustomOrder(context: Context, albumKey: String, items: List<MediaItem>) {
