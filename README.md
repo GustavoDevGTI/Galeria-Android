@@ -37,6 +37,7 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - Criação de novas pastas por submenus internos, com escolha entre armazenamento interno e cartões SD montados e navegação pelo local de destino
 - Reordenação personalizada de mídias por arrastar e soltar
 - Seleção múltipla de mídias e álbuns
+- Barra inferior de seleção contínua em toda a largura, com quatro ações igualmente distribuídas e sem recortes laterais
 - Toques no modo de seleção apenas marcam ou desmarcam mídias, sem abrir fotos ou reproduzir vídeos
 - Filtro de mídia dentro dos álbuns
 - Barra única de pesquisa no álbum, identificada por formato, lupa e texto com o nome da pasta
@@ -134,23 +135,27 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.48
+### Validação da versão 0.8.49
 
-- 31 testes unitários e 17 testes instrumentados aprovados, todos os testes instrumentados concluídos na mesma execução no Android 16
+- 31 testes unitários aprovados; o teste instrumentado específico da barra inferior foi aprovado no Android 16
+- Barra de seleção refeita como uma superfície contínua que ocupa toda a largura e também cobre a área inferior reservada à navegação do sistema
+- Removidos elevação, margens laterais e cantos do antigo dock flutuante que davam a impressão de elementos cortados ou inacabados
+- Compartilhar, Favoritar, Excluir e Mover permanecem identificados por ícone e texto, agora distribuídos igualmente em quatro regiões com divisórias discretas
+- Teste de interface confirma largura integral, preenchimento lateral zero e continuidade da mesma cor de superfície entre a barra e as ações
 - Atalho redundante `Exibir ocultos` removido do menu principal; toda a gestão permanece concentrada em `Exibir/ocultar pastas`
 - Controles `Exibir ocultos` e `Carregar ocultos` reorganizados na mesma linha dentro do gerenciador
 - `Criar nova pasta` agora abre um submenu da Galeria para escolher armazenamento interno ou cartão SD, seguido por um navegador de pastas do volume escolhido
 - O navegador permite entrar e voltar pelas subpastas, trocar de armazenamento e criar a pasta no local atual sem sair para uma tela externa
 - Cartões SD montados são detectados pelos volumes reais do Android; quando não existe cartão disponível, o submenu informa isso sem apresentar uma tela vazia
 - Testes de interface confirmam a remoção do atalho duplicado, o alinhamento dos controles de ocultos e o fluxo interno de criação de pasta
-- Novo design de seleção aplicado nas telas de mídias e álbuns: uma única barra flutuante arredondada, elevada e afastada das bordas
+- Novo design de seleção aplicado nas telas de mídias e álbuns: uma única barra contínua ocupando toda a largura inferior
 - Compartilhar, Favoritar, Excluir e Mover são ações internas sem cartões individuais, com ícone sobre o rótulo e três divisórias discretas
-- Teste de interface confirma a composição única do dock, os cantos de 20 dp, o afastamento lateral e a ausência de fundo próprio nos quatro comandos
+- Teste de interface confirma a composição única da barra, sua largura integral e a ausência de fundo próprio nos quatro comandos
 - Cores temáticas originais restauradas em todos os menus e painéis; a referência principal é aplicada somente à tipografia, organização, espaçamento, posição e estrutura
 - Menus e painéis compartilham tipografia, espaçamento vertical e cantos de 14 dp da referência principal sem substituir a cor escolhida pelo usuário
 - Painéis laterais nascem diretamente no topo direito, com 60% da largura e altura máxima de 82% da tela; conteúdos extensos preservam a rolagem interna e as margens superior e inferior
-- Barra inferior de seleção redesenhada sem cartões individuais: cada ação agora combina ícone de alto contraste e rótulo — Compartilhar, Favoritar, Excluir e Mover
-- Testes de interface confirmam a posição abaixo da barra superior, a margem inferior, a largura compacta e os rótulos dos quatro comandos de seleção
+- Barra inferior de seleção redesenhada sem cartões individuais: cada ação combina ícone de alto contraste e rótulo — Compartilhar, Favoritar, Excluir e Mover
+- Testes de interface confirmam o preenchimento total da barra inferior e os rótulos dos quatro comandos de seleção
 - Painéis laterais redesenhados no mesmo formato vertical do menu de opções, ocupando aproximadamente dois terços da largura e mantendo uma pequena margem da lateral direita
 - Ações de confirmar, cancelar, permitir e fechar empilhadas como linhas verticais, substituindo as caixas largas com botões horizontais
 - Cantos de 14 dp e recorte do conteúdo aplicados aos menus, diálogos e painéis personalizados para preservar o arredondamento em todas as extremidades
@@ -211,9 +216,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.48**: são **49 commits** na linha 0.8, ou **48 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.49**: são **50 commits** na linha 0.8, ou **49 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.48 usa o código `8048`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.49 usa o código `8049`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -266,6 +271,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.46`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.46) | 17/08/2026 | Restauração das cores temáticas nos menus e painéis |
 | [`v0.8.47`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.47) | 17/08/2026 | Dock flutuante para as ações de seleção |
 | [`v0.8.48`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.48) | 17/08/2026 | Submenus de armazenamento para criação de pastas e gestão de ocultos simplificada |
+| [`v0.8.49`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.49) | 18/08/2026 | Barra inferior de seleção contínua e instalação no emulador |
 
 ## Relatório comparativo de desempenho
 
@@ -281,7 +287,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.48](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.48.apk)
+[Baixar Galeria Android - versão 0.8.49](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.49.apk)
 
 Build padrão do Gradle:
 
@@ -292,10 +298,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.48.apk
+Galeria-Android-versao-0.8.49.apk
 ```
 
-O APK 0.8.48 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.49 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 

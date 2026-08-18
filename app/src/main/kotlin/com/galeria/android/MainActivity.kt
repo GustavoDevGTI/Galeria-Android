@@ -339,8 +339,8 @@ class MainActivity : ComponentActivity() {
 
         selectionActions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Ui.bg(this@MainActivity))
-            setPadding(Ui.dp(this@MainActivity, 12), Ui.dp(this@MainActivity, 6), Ui.dp(this@MainActivity, 12), navigationBarHeight() + Ui.dp(this@MainActivity, 8))
+            setBackgroundColor(Ui.surface(this@MainActivity))
+            setPadding(0, Ui.dp(this@MainActivity, 1), 0, navigationBarHeight())
         }
         selectionActionDock = Ui.selectionActionDock(this)
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -754,7 +754,7 @@ class MainActivity : ComponentActivity() {
         }
         if (::selectionBar.isInitialized) selectionBar.background = Ui.rounded(Ui.surface(this), 8, this)
         if (::selectionActions.isInitialized) {
-            selectionActions.setBackgroundColor(Ui.bg(this))
+            selectionActions.setBackgroundColor(Ui.surface(this))
             Ui.restyleSelectionActionDock(selectionActionDock)
         }
         if (::adapter.isInitialized) {

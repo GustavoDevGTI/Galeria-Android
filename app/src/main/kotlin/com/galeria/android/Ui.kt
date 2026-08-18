@@ -218,11 +218,11 @@ class Ui private constructor() {
                 tag = SELECTION_ACTION_DOCK_TAG
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = dp(context, 62)
-                background = rounded(surface(context), 20, context)
-                elevation = dp(context, 8).toFloat()
-                clipToOutline = true
-                setPadding(dp(context, 4), dp(context, 2), dp(context, 4), dp(context, 2))
+                minimumHeight = dp(context, 64)
+                background = ColorDrawable(surface(context))
+                elevation = 0f
+                clipToOutline = false
+                setPadding(0, dp(context, 2), 0, dp(context, 2))
             }
 
         @JvmStatic
@@ -254,7 +254,7 @@ class Ui private constructor() {
         @JvmStatic
         fun restyleSelectionActionDock(dock: LinearLayout) {
             val context = dock.context
-            dock.background = rounded(surface(context), 20, context)
+            dock.background = ColorDrawable(surface(context))
             for (index in 0 until dock.childCount) {
                 val child = dock.getChildAt(index)
                 if (child.tag == SELECTION_ACTION_DIVIDER_TAG) {

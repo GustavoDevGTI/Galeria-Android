@@ -537,8 +537,8 @@ class AlbumMediaActivity : ComponentActivity() {
 
         selectionActions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Ui.bg(this@AlbumMediaActivity))
-            setPadding(Ui.dp(this@AlbumMediaActivity, 12), Ui.dp(this@AlbumMediaActivity, 6), Ui.dp(this@AlbumMediaActivity, 12), navigationBarHeight() + Ui.dp(this@AlbumMediaActivity, 8))
+            setBackgroundColor(Ui.surface(this@AlbumMediaActivity))
+            setPadding(0, Ui.dp(this@AlbumMediaActivity, 1), 0, navigationBarHeight())
         }
         selectionActionDock = Ui.selectionActionDock(this)
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
