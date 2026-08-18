@@ -51,12 +51,12 @@ class MainActivitySmokeTest {
     fun createFolderUsesInternalStorageSubmenus() {
         ActivityScenario.launch(MainActivity::class.java).use {
             onView(withContentDescription("Mais opções")).perform(click())
-            onView(withText("Criar nova pasta")).perform(click())
+            onView(withText("Criar nova pasta")).perform(clickClickableAncestor())
             waitForView {
                 onView(withText("Armazenamento interno")).inRoot(isDialog()).check(matches(isDisplayed()))
                 onView(withText("Cartão SD")).inRoot(isDialog()).check(matches(isDisplayed()))
             }
-            onView(withText("Armazenamento interno")).inRoot(isDialog()).perform(click())
+            onView(withText("Armazenamento interno")).inRoot(isDialog()).perform(clickClickableAncestor())
             waitForView {
                 onView(withText("Criar pasta aqui")).inRoot(isDialog()).check(matches(isDisplayed()))
                 onView(withText("Escolher armazenamento")).inRoot(isDialog()).check(matches(isDisplayed()))

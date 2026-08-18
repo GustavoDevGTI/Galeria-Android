@@ -90,7 +90,7 @@ class HiddenAlbumDialogInstrumentedTest {
                 onView(withContentDescription("Mais opções")).perform(click())
                 waitUntilDisplayed("Exibir/ocultar pastas")
                 onView(withText("Exibir ocultos")).check(doesNotExist())
-                onView(withText("Exibir/ocultar pastas")).perform(click())
+                onView(withText("Exibir/ocultar pastas")).perform(clickClickableAncestor())
 
                 waitUntilDialogDisplayedContaining("Oculto conhecido")
                 onView(withText("Exibir/ocultar pastas")).inRoot(isDialog()).check { view, noViewFoundException ->

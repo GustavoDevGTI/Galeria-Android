@@ -59,14 +59,14 @@ class VideoMenuInstrumentedTest {
                 onView(withText(ViewerMenuRules.OPEN_WITH)).check(matches(isDisplayed()))
                 onView(withText(ViewerMenuRules.INFORMATION)).check(matches(isDisplayed()))
                 onView(withText(ViewerMenuRules.SET_AS)).check(doesNotExist())
-                onView(withText(ViewerMenuRules.ENABLE_LOOP)).perform(click())
+                onView(withText(ViewerMenuRules.ENABLE_LOOP)).perform(clickClickableAncestor())
 
                 onView(withContentDescription("Mais opções")).perform(click())
                 onView(withText(ViewerMenuRules.DISABLE_LOOP)).check(matches(isDisplayed()))
                 pressBack()
 
                 onView(withContentDescription("Mais opções")).perform(click())
-                onView(withText(ViewerMenuRules.INFORMATION)).perform(click())
+                onView(withText(ViewerMenuRules.INFORMATION)).perform(clickClickableAncestor())
                 waitUntilDisplayedInDialog("Informações do vídeo")
                 onView(withText(containsString("Formato: video/mp4")))
                     .inRoot(isDialog())

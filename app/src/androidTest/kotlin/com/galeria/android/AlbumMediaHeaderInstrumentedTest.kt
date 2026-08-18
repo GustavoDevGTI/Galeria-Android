@@ -73,7 +73,7 @@ class AlbumMediaHeaderInstrumentedTest {
 
         ActivityScenario.launch<AlbumMediaActivity>(intent).use {
             onView(withContentDescription("Mais opções")).perform(click())
-            onView(withText("Ordenar por")).perform(click())
+            onView(withText("Ordenar por")).perform(clickClickableAncestor())
             waitForView {
                 onView(withText("Nome alfabético")).inRoot(isDialog()).check { view, exception ->
                     if (exception != null) throw exception
@@ -106,7 +106,7 @@ class AlbumMediaHeaderInstrumentedTest {
                 onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
             }
             onView(withContentDescription("Mais opções")).perform(click())
-            onView(withText("Criar nova pasta")).perform(click())
+            onView(withText("Criar nova pasta")).perform(clickClickableAncestor())
             waitForView {
                 onView(withHint("Título")).inRoot(isDialog()).check { view, exception ->
                     if (exception != null) throw exception

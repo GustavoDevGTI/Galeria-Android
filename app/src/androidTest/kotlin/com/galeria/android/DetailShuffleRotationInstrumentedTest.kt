@@ -42,6 +42,7 @@ class DetailShuffleRotationInstrumentedTest {
         val secondName = "rotation-second-$suffix.png"
         val firstUri = insertImage(context, albumPath, firstName)
         val secondUri = insertImage(context, albumPath, secondName)
+        MediaStoreRepository.invalidateCache()
 
         try {
             val intent = Intent(context, DetailActivity::class.java).apply {
@@ -62,11 +63,12 @@ class DetailShuffleRotationInstrumentedTest {
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                 Thread.sleep(600L)
 
-                onView(withText(secondName)).check(matches(isDisplayed()))
+                waitUntilDisplayed(secondName)
             }
         } finally {
             resolver.delete(firstUri, null, null)
             resolver.delete(secondUri, null, null)
+            MediaStoreRepository.invalidateCache()
         }
     }
 

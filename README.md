@@ -135,9 +135,12 @@ gradlew.bat :benchmark:connectedBenchmarkAndroidTest "-Pandroid.testInstrumentat
 
 O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Medições finais devem ser feitas em aparelho físico; o emulador é útil para detectar regressões e inspecionar traces, mas não representa o desempenho absoluto do celular.
 
-### Validação da versão 0.8.49
+### Validação da versão 0.8.50
 
-- 31 testes unitários aprovados; o teste instrumentado específico da barra inferior foi aprovado no Android 16
+- 31 testes unitários e 17 testes instrumentados aprovados; todos os instrumentados concluídos na mesma execução no Android 16
+- Testes dos menus e painéis laterais atualizados para acionar semanticamente a linha clicável real, sem depender de coordenadas de janela bloqueadas pelo Android 16
+- Teste de criação de pasta alinhado ao fluxo atual de armazenamento da tela principal e ao destino direto do álbum aberto
+- Teste de rotação agora invalida o cache do MediaStore criado pela própria execução antes de validar a continuidade do fluxo aleatório
 - Barra de seleção refeita como uma superfície contínua que ocupa toda a largura e também cobre a área inferior reservada à navegação do sistema
 - Removidos elevação, margens laterais e cantos do antigo dock flutuante que davam a impressão de elementos cortados ou inacabados
 - Compartilhar, Favoritar, Excluir e Mover permanecem identificados por ícone e texto, agora distribuídos igualmente em quatro regiões com divisórias discretas
@@ -216,9 +219,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.49**: são **50 commits** na linha 0.8, ou **49 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.50**: são **51 commits** na linha 0.8, ou **50 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.49 usa o código `8049`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.50 usa o código `8050`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -272,6 +275,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.47`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.47) | 17/08/2026 | Dock flutuante para as ações de seleção |
 | [`v0.8.48`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.48) | 17/08/2026 | Submenus de armazenamento para criação de pastas e gestão de ocultos simplificada |
 | [`v0.8.49`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.49) | 18/08/2026 | Barra inferior de seleção contínua e instalação no emulador |
+| [`v0.8.50`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.50) | 18/08/2026 | Atualização e estabilização da suíte de interface |
 
 ## Relatório comparativo de desempenho
 
@@ -287,7 +291,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.49](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.49.apk)
+[Baixar Galeria Android - versão 0.8.50](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.50.apk)
 
 Build padrão do Gradle:
 
@@ -298,10 +302,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.49.apk
+Galeria-Android-versao-0.8.50.apk
 ```
 
-O APK 0.8.49 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.50 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 
