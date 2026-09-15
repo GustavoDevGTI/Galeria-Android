@@ -94,7 +94,7 @@ class AlbumSelectionInstrumentedTest {
             ActivityScenario.launch<AlbumMediaActivity>(intent).use {
                 waitUntilDisplayed(firstName)
                 onView(withContentDescription(firstName)).perform(longClick())
-                waitUntilHint("1 selecionados")
+                waitUntilHint(context.resources.getQuantityString(R.plurals.selected_count, 1, 1))
                 onView(withContentDescription("Selecionar todos")).check(matches(isDisplayed()))
                 listOf("Compartilhar", "Favoritar", "Excluir", "Mover").forEach { action ->
                     onView(withContentDescription(action)).check { view, noViewFoundException ->

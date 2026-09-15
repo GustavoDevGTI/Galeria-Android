@@ -101,13 +101,13 @@ class HiddenAlbumDialogInstrumentedTest {
                     val screenWidth = view.resources.displayMetrics.widthPixels
                     val screenHeight = view.resources.displayMetrics.heightPixels
                     assertTrue("O painel deve nascer afastado da borda esquerda.", location[0] > 0)
-                    assertTrue("O painel deve manter formato vertical e compacto.", root.width <= screenWidth * 0.72f)
+                    assertTrue("O painel central deve preservar margens laterais.", root.width <= screenWidth * 0.94f)
                     assertTrue("O painel deve começar abaixo da barra superior.", location[1] >= Ui.dp(view.context, 56))
                     assertTrue("O painel deve preservar margem inferior.", root.height < screenHeight * 0.90f)
                     val rightGap = screenWidth - (location[0] + root.width)
                     assertTrue(
-                        "O painel deve ficar junto à lateral direita com uma pequena margem.",
-                        rightGap in 0..Ui.dp(view.context, 16)
+                        "O gerenciador de ocultos deve ficar centralizado, com margens equivalentes.",
+                        kotlin.math.abs(location[0] - rightGap) <= Ui.dp(view.context, 8)
                     )
                 }
                 onView(withText(containsString("Câmera"))).inRoot(isDialog()).check(matches(isDisplayed()))
@@ -118,13 +118,15 @@ class HiddenAlbumDialogInstrumentedTest {
                 onView(withText("Exibir ocultos")).inRoot(isDialog()).check { view, exception ->
                     if (exception != null) throw exception
                     view.getLocationOnScreen(hiddenControlLocation)
+                    hiddenControlLocation[1] += view.height / 2
                 }
                 onView(withText("Carregar ocultos")).inRoot(isDialog()).check { view, exception ->
                     if (exception != null) throw exception
                     view.getLocationOnScreen(loadControlLocation)
+                    loadControlLocation[1] += view.height / 2
                 }
                 assertTrue(
-                    "Exibir ocultos e Carregar ocultos devem ficar na mesma linha.",
+                    "Os centros de Exibir ocultos e Carregar ocultos devem ficar na mesma linha.",
                     kotlin.math.abs(hiddenControlLocation[1] - loadControlLocation[1]) <= Ui.dp(context, 8)
                 )
             }

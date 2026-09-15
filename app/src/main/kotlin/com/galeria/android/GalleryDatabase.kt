@@ -216,7 +216,7 @@ abstract class GalleryDatabase : RoomDatabase() {
             ).addMigrations(MIGRATION_1_2).build().also { instance = it }
         }
 
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
+        internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE cached_media ADD COLUMN duration INTEGER NOT NULL DEFAULT 0")
             }
@@ -229,8 +229,10 @@ object GalleryCatalogStore {
     private const val COMPLETE_SCOPE = "complete"
     private const val CATALOG_META_PREFS = "gallery_catalog_meta"
     private const val PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION = "catalog_dirty_after_media_action"
+    private val mutationLock = Any()
+    private var mutationRevision = 0L
     private const val PREF_CATALOG_MODEL_VERSION_PREFIX = "catalog_model_version_"
-    private const val CATALOG_MODEL_VERSION = 2
+    private const val CATALOG_MODEL_VERSION = 3
     @Volatile private var visibleSnapshot: List<MediaItem> = emptyList()
     @Volatile private var completeSnapshot: List<MediaItem> = emptyList()
 
@@ -277,21 +279,40 @@ object GalleryCatalogStore {
         ArrayList(if (includeHidden) completeSnapshot else visibleSnapshot)
 
     fun markCatalogDirty(context: Context) {
-        context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION, true)
-            .apply()
+        synchronized(mutationLock) {
+            mutationRevision++
+            context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE).edit()
+                .putBoolean("${PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION}_visible", true)
+                .putBoolean("${PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION}_complete", true)
+                .remove(PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION)
+                .apply()
+        }
     }
 
-    fun isCatalogDirty(context: Context): Boolean =
-        context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
-            .getBoolean(PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION, false)
+    fun isCatalogDirty(context: Context, includeHidden: Boolean? = null): Boolean {
+        val preferences = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
+        return preferences.getBoolean(PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION, false) ||
+            listOf(false, true).filter { includeHidden == null || it == includeHidden }.any {
+                preferences.getBoolean("${PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION}_${scope(it)}", false)
+            }
+    }
 
-    fun clearCatalogDirty(context: Context) {
-        context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .remove(PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION)
-            .apply()
+    fun currentMutationRevision(): Long = synchronized(mutationLock) { mutationRevision }
+
+    fun clearCatalogDirty(context: Context, includeHidden: Boolean? = null, expectedRevision: Long? = null) {
+        synchronized(mutationLock) {
+            if (expectedRevision != null && mutationRevision != expectedRevision) return
+            val preferences = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
+            preferences.edit().apply {
+                if (includeHidden != null && preferences.getBoolean(PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION, false)) {
+                    putBoolean("${PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION}_${scope(!includeHidden)}", true)
+                }
+                remove(PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION)
+                listOf(false, true).filter { includeHidden == null || it == includeHidden }.forEach {
+                    remove("${PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION}_${scope(it)}")
+                }
+            }.apply()
+        }
     }
 
     fun pagedMedia(
@@ -354,6 +375,12 @@ object GalleryCatalogStore {
         var fingerprint = 1125899906842597L
         for (item in items) {
             fingerprint = fingerprint * 31 + item.uri.toString().hashCode()
+            fingerprint = fingerprint * 31 + item.id
+            fingerprint = fingerprint * 31 + item.name.hashCode()
+            fingerprint = fingerprint * 31 + item.mimeType.hashCode()
+            fingerprint = fingerprint * 31 + item.relativePath.hashCode()
+            fingerprint = fingerprint * 31 + item.albumKey.hashCode()
+            fingerprint = fingerprint * 31 + item.albumName.hashCode()
             fingerprint = fingerprint * 31 + item.dateAdded
             fingerprint = fingerprint * 31 + item.size
             fingerprint = fingerprint * 31 + item.duration
@@ -371,6 +398,7 @@ object GalleryCatalogStore {
         GalleryDatabase.get(context).galleryDao().customOrder(albumKey)
 
     fun hasFreshCatalog(context: Context, includeHidden: Boolean, allFilesAccess: Boolean, maxAgeMs: Long): Boolean {
+        if (isCatalogDirty(context, includeHidden)) return false
         val preferences = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
         if (preferences.getInt(modelVersionKey(includeHidden), 0) < CATALOG_MODEL_VERSION) return false
         val state = GalleryDatabase.get(context).galleryDao().state(scope(includeHidden)) ?: return false

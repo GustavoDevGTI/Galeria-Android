@@ -29,8 +29,8 @@ android {
         applicationId = "com.galeria.android"
         minSdk 23
         targetSdk 37
-        versionCode = 8050
-        versionName = "0.8.50"
+        versionCode = 8051
+        versionName = "0.8.51"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -73,6 +73,12 @@ room {
 }
 
 dependencies {
+    constraints {
+        implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1") {
+            because "Align the app runtime with Room migration testing's serialization JSON 1.8.1"
+        }
+    }
+
     implementation "androidx.appcompat:appcompat:1.7.1"
     implementation "androidx.exifinterface:exifinterface:1.4.2"
     implementation "androidx.activity:activity-ktx:1.13.0"
@@ -80,23 +86,23 @@ dependencies {
     implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.2.0"
     implementation "androidx.media3:media3-exoplayer:1.10.1"
     implementation "androidx.media3:media3-ui:1.10.1"
-    implementation "io.coil-kt.coil3:coil:3.5.0"
-    implementation "io.coil-kt.coil3:coil-video:3.5.0"
+    implementation "io.coil-kt.coil3:coil:3.6.2"
+    implementation "io.coil-kt.coil3:coil-video:3.6.2"
     implementation "io.github.panpf.zoomimage:zoomimage-view-coil3:1.6.0"
-    implementation "androidx.room:room-runtime:2.8.4"
-    implementation "androidx.room:room-paging:2.8.4"
-    implementation "androidx.paging:paging-runtime:3.5.0"
+    implementation "androidx.room:room-runtime:2.8.5"
+    implementation "androidx.room:room-paging:2.8.5"
+    implementation "androidx.paging:paging-runtime:3.5.1"
     implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.11.0"
-    ksp "androidx.room:room-compiler:2.8.4"
+    ksp "androidx.room:room-compiler:2.8.5"
     implementation "androidx.work:work-runtime:2.11.2"
     implementation "androidx.profileinstaller:profileinstaller:1.4.1"
 
     testImplementation "junit:junit:4.13.2"
 
-    androidTestImplementation "androidx.test:core-ktx:1.6.1"
-    androidTestImplementation "androidx.test:runner:1.6.1"
-    androidTestImplementation "androidx.test:rules:1.6.1"
-    androidTestImplementation "androidx.test.ext:junit-ktx:1.2.1"
-    androidTestImplementation "androidx.test.espresso:espresso-core:3.6.1"
-    androidTestImplementation "androidx.room:room-testing:2.8.4"
+    androidTestImplementation "androidx.test:core-ktx:1.7.0"
+    androidTestImplementation "androidx.test:runner:1.7.0"
+    androidTestImplementation "androidx.test:rules:1.7.0"
+    androidTestImplementation "androidx.test.ext:junit-ktx:1.3.0"
+    androidTestImplementation "androidx.test.espresso:espresso-core:3.7.0"
+    androidTestImplementation "androidx.room:room-testing:2.8.5"
 }

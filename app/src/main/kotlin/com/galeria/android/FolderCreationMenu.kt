@@ -35,8 +35,8 @@ class FolderCreationMenu(
         lateinit var dialog: AlertDialog
         val locations = storageLocations()
         val panel = panel().apply {
-            addView(title("Criar nova pasta"))
-            addView(description("Escolha onde a nova pasta será criada."))
+            addView(title(activity.getString(R.string.action_create_folder)))
+            addView(description(activity.getString(R.string.folder_choose_location)))
             locations.forEach { location ->
                 addView(storageRow(location.label, location.root.absolutePath, true) {
                     dialog.dismiss()
@@ -44,7 +44,12 @@ class FolderCreationMenu(
                 })
             }
             if (locations.none { it.removable }) {
-                addView(storageRow("Cartão SD", "Nenhum cartão montado", false, null))
+                addView(storageRow(
+                    activity.getString(R.string.folder_sd_card),
+                    activity.getString(R.string.folder_no_sd_card),
+                    false,
+                    null
+                ))
             }
         }
         dialog = AlertDialog.Builder(activity).setView(panel).create()
@@ -83,7 +88,7 @@ class FolderCreationMenu(
                     )
                     addView(
                         TextView(activity).apply {
-                            text = folder?.name ?: "Pasta anterior"
+                            text = folder?.name ?: activity.getString(R.string.folder_previous)
                             textSize = 15f
                             maxLines = 1
                             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -119,7 +124,7 @@ class FolderCreationMenu(
             adapter.notifyDataSetChanged()
         }
         val panel = panel().apply {
-            addView(title("Criar nova pasta"))
+            addView(title(activity.getString(R.string.action_create_folder)))
             addView(
                 TextView(activity).apply {
                     text = location.label
@@ -137,11 +142,11 @@ class FolderCreationMenu(
                     minOf(Ui.dp(activity, 350), (activity.resources.displayMetrics.heightPixels * 0.44f).toInt())
                 )
             )
-            addView(actionRow("Escolher armazenamento") {
+            addView(actionRow(activity.getString(R.string.folder_choose_storage)) {
                 dialog.dismiss()
                 openAfterDismiss { showStorageChoices() }
             })
-            addView(actionRow("Criar pasta aqui", primary = true) {
+            addView(actionRow(activity.getString(R.string.folder_create_here), primary = true) {
                 val parent = currentDirectory
                 dialog.dismiss()
                 openAfterDismiss { askFolderName(parent) }
@@ -155,38 +160,38 @@ class FolderCreationMenu(
     private fun askFolderName(parent: File) {
         Ui.showTextInputDialog(
             activity,
-            "Criar nova pasta",
-            "Nome da pasta",
+            activity.getString(R.string.action_create_folder),
+            activity.getString(R.string.folder_name),
             message = parent.absolutePath,
-            positiveText = "Criar"
+            positiveText = activity.getString(R.string.folder_create)
         ) { rawName -> createFolder(parent, rawName) }
     }
 
     private fun createFolder(parent: File, rawName: String) {
         val name = MediaActions.cleanFolderName(rawName)
         if (name.isBlank()) {
-            Ui.toast(activity, "Digite um nome válido.")
+            Ui.toast(activity, activity.getString(R.string.folder_invalid_name))
             return
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(activity)) {
             Ui.showConfirmationDialog(
                 activity,
-                "Permitir gerenciamento de arquivos",
-                "Ative o acesso total a arquivos para criar a pasta no local escolhido.",
-                "Permitir"
+                activity.getString(R.string.access_full_title),
+                activity.getString(R.string.folder_access_explanation),
+                activity.getString(R.string.action_allow)
             ) { MediaActions.requestAllFilesAccess(activity) }
             return
         }
         val target = File(parent, name)
         if (target.exists()) {
-            Ui.toast(activity, "A pasta já existe neste local.")
+            Ui.toast(activity, activity.getString(R.string.folder_exists_at_location))
             return
         }
         if (MediaActions.createFolder(activity, target)) {
-            Ui.toast(activity, "Pasta criada em ${displayParent(parent)}.")
+            Ui.toast(activity, activity.getString(R.string.folder_created_at, displayParent(parent)))
             onFolderCreated(target)
         } else {
-            Ui.toast(activity, "Não foi possível criar a pasta neste local.")
+            Ui.toast(activity, activity.getString(R.string.folder_create_at_location_failed))
         }
     }
 
@@ -194,7 +199,7 @@ class FolderCreationMenu(
         val locations = ArrayList<StorageLocation>()
         val knownPaths = HashSet<String>()
         val internal = Environment.getExternalStorageDirectory()
-        addLocation(locations, knownPaths, "Armazenamento interno", internal, false)
+        addLocation(locations, knownPaths, activity.getString(R.string.album_internal_storage), internal, false)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val manager = activity.getSystemService(Context.STORAGE_SERVICE) as StorageManager
@@ -205,13 +210,21 @@ class FolderCreationMenu(
                 }
                 val directory = volume.directory ?: return@forEach
                 cardNumber++
-                val label = if (cardNumber == 1) "Cartão SD" else "Cartão SD $cardNumber"
+                val label = if (cardNumber == 1) {
+                    activity.getString(R.string.folder_sd_card)
+                } else {
+                    activity.getString(R.string.folder_sd_card_numbered, cardNumber)
+                }
                 addLocation(locations, knownPaths, label, directory, true)
             }
         } else {
             activity.getExternalFilesDirs(null).drop(1).forEachIndexed { index, appDirectory ->
                 val root = storageRootFromAppDirectory(appDirectory) ?: return@forEachIndexed
-                val label = if (index == 0) "Cartão SD" else "Cartão SD ${index + 1}"
+                val label = if (index == 0) {
+                    activity.getString(R.string.folder_sd_card)
+                } else {
+                    activity.getString(R.string.folder_sd_card_numbered, index + 1)
+                }
                 addLocation(locations, knownPaths, label, root, true)
             }
         }
@@ -258,7 +271,11 @@ class FolderCreationMenu(
         val root = canonicalPath(location.root).trimEnd(File.separatorChar)
         val current = canonicalPath(directory)
         val relative = current.removePrefix(root).trim(File.separatorChar)
-        return if (relative.isBlank()) "Raiz do armazenamento" else relative.replace(File.separator, " › ")
+        return if (relative.isBlank()) {
+            activity.getString(R.string.folder_storage_root)
+        } else {
+            relative.replace(File.separator, " › ")
+        }
     }
 
     private fun displayParent(parent: File): String = parent.name.ifBlank { parent.absolutePath }

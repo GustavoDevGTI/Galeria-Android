@@ -28,7 +28,7 @@ internal fun MacrobenchmarkScope.openFirstAlbum() {
         .firstOrNull { it.isClickable }
         ?.click()
         ?: albumLabel.click()
-    check(device.wait(Until.hasObject(By.text("Pesquisar nesta pasta")), 20_000)) {
+    check(device.wait(Until.hasObject(By.desc("Pesquisar nesta pasta")), 20_000)) {
         "A grade de midias nao abriu durante o benchmark"
     }
     device.waitForIdle()

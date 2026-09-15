@@ -1,6 +1,7 @@
 package com.galeria.android
 
 import java.util.Collections
+import java.util.Calendar
 import java.util.Locale
 import java.util.Random
 import kotlin.math.abs
@@ -132,6 +133,8 @@ object GridColumnRules {
 }
 
 object MediaIdentityRules {
+    fun canonicalKey(uri: String): String = mediaStoreId(uri)?.let { "media-id:$it" } ?: "uri:$uri"
+
     fun sameUri(first: String, second: String): Boolean {
         if (first == second) return true
         val firstId = mediaStoreId(first) ?: return false
@@ -180,6 +183,118 @@ object AlbumRules {
     }
 }
 
+object AlbumCatalogRules {
+    fun prepare(
+        source: List<AlbumItem>,
+        hiddenKeys: Set<String>,
+        includeHidden: Boolean,
+        searchAllFiles: Boolean
+    ): List<AlbumItem> {
+        val visible = source.filter { album ->
+            !hiddenKeys.contains(album.key) &&
+                (includeHidden || !AlbumRules.isHidden(album.path, album.key))
+        }
+        if (!searchAllFiles) return visible
+        if (visible.isEmpty()) return emptyList()
+
+        val latestAlbum = visible.maxByOrNull { it.latestDate }
+        val latest = latestAlbum?.latestDate ?: 0L
+        val first = visible.asSequence().map { it.firstDate }.filter { it > 0L }.minOrNull() ?: latest
+        return listOf(
+            AlbumItem(
+                "all_media",
+                "Todos os arquivos",
+                visible.sumOf { it.count },
+                latestAlbum?.cover,
+                latest,
+                first,
+                visible.sumOf { max(0L, it.totalSize) },
+                ""
+            )
+        )
+    }
+}
+
+data class AlbumMediaPreparationOptions(
+    val filterOptions: MediaFilterOptions,
+    val groupMode: String,
+    val sortMode: String,
+    val sortDescending: Boolean
+)
+
+object AlbumMediaRules {
+    const val GROUP_NONE = "none"
+    const val GROUP_TYPE = "type"
+    const val GROUP_EXTENSION = "extension"
+    const val GROUP_DAY = "day"
+    const val GROUP_MONTH = "month"
+
+    fun shouldUsePaging(albumKey: String?, groupMode: String, selectionMode: Boolean): Boolean =
+        (albumKey.isNullOrEmpty() || albumKey == "all_media") &&
+            groupMode == GROUP_NONE &&
+            !selectionMode
+
+    fun scrollTarget(preserveScroll: Boolean, firstVisible: Int, savedFirstVisible: Int): Int =
+        if (preserveScroll) firstVisible else savedFirstVisible
+
+    fun requiresFileManagement(isAndroid11OrNewer: Boolean, hasAllFilesAccess: Boolean): Boolean =
+        isAndroid11OrNewer && !hasAllFilesAccess
+
+    fun prepare(
+        source: List<MediaItem>,
+        options: AlbumMediaPreparationOptions,
+        customOrder: List<String>
+    ): List<MediaItem> {
+        val items = source.filterTo(ArrayList()) { item ->
+            MediaFilterRules.matches(item.name, item.mimeType, options.filterOptions)
+        }
+        val mediaComparator = MediaSortRules.comparator(
+            options.sortMode,
+            options.sortDescending,
+            customOrder,
+            ::sortKey
+        )
+        if (options.groupMode == GROUP_NONE) {
+            items.sortWith(mediaComparator)
+        } else {
+            items.sortWith { first, second ->
+                val groupComparison = groupValue(first, options.groupMode).compareTo(groupValue(second, options.groupMode))
+                if (groupComparison != 0) groupComparison else mediaComparator.compare(first, second)
+            }
+        }
+        return items
+    }
+
+    private fun sortKey(item: MediaItem): MediaSortRules.Key = MediaSortRules.Key(
+        item.uri.toString(),
+        item.name,
+        item.dateAdded,
+        item.size,
+        item.duration,
+        item.mimeType
+    )
+
+    private fun groupValue(item: MediaItem, groupMode: String): String = when (groupMode) {
+        GROUP_TYPE -> if (item.isVideo()) "2_video" else "1_image"
+        GROUP_EXTENSION -> item.name.substringAfterLast('.', "").lowercase(Locale.US)
+        GROUP_DAY -> dateGroup(item.dateAdded, includeDay = true)
+        GROUP_MONTH -> dateGroup(item.dateAdded, includeDay = false)
+        else -> ""
+    }
+
+    private fun dateGroup(seconds: Long, includeDay: Boolean): String {
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = max(0L, seconds) * 1000L
+        return String.format(
+            Locale.US,
+            "%04d-%02d-%02d",
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH) + 1,
+            if (includeDay) calendar.get(Calendar.DAY_OF_MONTH) else 0
+        )
+    }
+}
+
 object AlbumTargetRules {
     const val EXTRA_EXPOSED_ALBUM_KEYS = "exposed_album_keys"
 
@@ -219,6 +334,29 @@ object ViewerStateRules {
         if (currentIndex <= 0) return shuffled
         return shuffled.drop(currentIndex) + shuffled.take(currentIndex)
     }
+
+    fun wrappedIndex(index: Int, size: Int): Int {
+        if (size <= 0) return 0
+        val remainder = index % size
+        return if (remainder < 0) remainder + size else remainder
+    }
+
+    fun advancedIndex(currentIndex: Int, direction: Int, size: Int): Int =
+        wrappedIndex(currentIndex + direction, size)
+
+    fun indexAfterRemoval(removedIndex: Int, remainingSize: Int): Int? = when {
+        remainingSize <= 0 -> null
+        removedIndex >= remainingSize -> remainingSize - 1
+        else -> removedIndex
+    }
+
+    fun orderedUris(availableUris: List<String>, customOrder: List<String>): List<String> {
+        val available = availableUris.toSet()
+        return customOrder.filter { available.contains(it) }.distinct()
+    }
+
+    fun shouldLoopVideo(shuffleMode: Boolean, presentationMode: Boolean, loopPreference: Boolean): Boolean =
+        !shuffleMode && !presentationMode && loopPreference
 }
 
 object ViewerMenuRules {
@@ -304,4 +442,27 @@ object SwipeGestureRules {
 
     fun shouldCommit(distance: Float, touchSlop: Float): Boolean =
         distance >= touchSlop * 1.35f
+}
+
+object StorageAccessRules {
+    fun includeHiddenFilesystem(requested: Boolean, hasAllFilesAccess: Boolean): Boolean =
+        requested && hasAllFilesAccess
+}
+
+enum class MainAccessStartupAction {
+    LOAD_LIBRARY,
+    SHOW_INITIAL_CHOICE,
+    REQUEST_MEDIA_LIBRARY
+}
+
+object MainAccessRules {
+    fun startupAction(
+        hasMediaLibraryAccess: Boolean,
+        supportsFullAccessChoice: Boolean,
+        initialChoiceMade: Boolean
+    ): MainAccessStartupAction = when {
+        hasMediaLibraryAccess -> MainAccessStartupAction.LOAD_LIBRARY
+        supportsFullAccessChoice && !initialChoiceMade -> MainAccessStartupAction.SHOW_INITIAL_CHOICE
+        else -> MainAccessStartupAction.REQUEST_MEDIA_LIBRARY
+    }
 }

@@ -320,6 +320,30 @@ class Ui private constructor() {
         }
 
         @JvmStatic
+        fun showCenteredPanel(dialog: AlertDialog, fullHeight: Boolean = false): AlertDialog {
+            fun position() {
+                val window = dialog.window ?: return
+                val metrics = dialog.context.resources.displayMetrics
+                window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                window.attributes = window.attributes.apply {
+                    gravity = Gravity.CENTER
+                    width = min(dp(dialog.context, 440), (metrics.widthPixels * 0.90f).roundToInt())
+                    height = if (fullHeight) (metrics.heightPixels * 0.78f).roundToInt()
+                        else WindowManager.LayoutParams.WRAP_CONTENT
+                    x = 0
+                    y = 0
+                    dimAmount = 0.32f
+                    windowAnimations = 0
+                }
+            }
+            position()
+            dialog.setOnShowListener { position() }
+            dialog.show()
+            return dialog
+        }
+
+        @JvmStatic
         fun toast(context: Context, message: String) {
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
@@ -431,8 +455,8 @@ class Ui private constructor() {
                 setSelection(initialValue.length)
             }
             body.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 58)).apply {
-                leftMargin = dp(context, 18)
-                rightMargin = dp(context, 18)
+                marginStart = dp(context, 18)
+                marginEnd = dp(context, 18)
             })
             body.addView(
                 LinearLayout(context).apply {
@@ -467,7 +491,7 @@ class Ui private constructor() {
                 }
             )
             dialog = AlertDialog.Builder(context).setView(body).create()
-            return showSidePanel(dialog)
+            return showCenteredPanel(dialog)
         }
 
         @JvmStatic
@@ -496,7 +520,7 @@ class Ui private constructor() {
                 }
             )
             dialog = AlertDialog.Builder(context).setView(body).create()
-            return showSidePanel(dialog)
+            return showCenteredPanel(dialog)
         }
 
         @JvmStatic

@@ -28,31 +28,35 @@ object MediaStoreRepository {
     @JvmStatic
     fun loadMedia(context: Context, includeHiddenFilesystem: Boolean = false): List<MediaItem> {
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
+        val includeHidden = StorageAccessRules.includeHiddenFilesystem(includeHiddenFilesystem, allFilesAccess)
+        if (GalleryCatalogStore.isCatalogDirty(context, includeHidden)) {
+            return refreshMedia(context, includeHidden, force = true)
+        }
         val now = System.currentTimeMillis()
         synchronized(cacheLock) {
-            val cache = if (includeHiddenFilesystem) cachedHiddenMedia else cachedVisibleMedia
-            val cachedAt = if (includeHiddenFilesystem) cachedHiddenAtMs else cachedVisibleAtMs
+            val cache = if (includeHidden) cachedHiddenMedia else cachedVisibleMedia
+            val cachedAt = if (includeHidden) cachedHiddenAtMs else cachedVisibleAtMs
             if (!cacheInvalidated && cache != null && cachedWithAllFilesAccess == allFilesAccess && now - cachedAt < CACHE_TTL_MS) {
                 return ArrayList(cache)
             }
         }
 
         if (!cacheInvalidated) {
-            val memorySnapshot = GalleryCatalogStore.snapshot(includeHiddenFilesystem)
+            val memorySnapshot = GalleryCatalogStore.snapshot(includeHidden)
             if (memorySnapshot.isNotEmpty()) {
-                cacheResult(memorySnapshot, includeHiddenFilesystem, allFilesAccess)
+                cacheResult(memorySnapshot, includeHidden, allFilesAccess)
                 return memorySnapshot
             }
             if (Looper.myLooper() != Looper.getMainLooper()) {
-                val stored = GalleryCatalogStore.readMedia(context.applicationContext, includeHiddenFilesystem)
+                val stored = GalleryCatalogStore.readMedia(context.applicationContext, includeHidden)
                 if (stored.isNotEmpty()) {
-                    cacheResult(stored, includeHiddenFilesystem, allFilesAccess)
+                    cacheResult(stored, includeHidden, allFilesAccess)
                     return stored
                 }
             }
         }
 
-        return refreshMedia(context, includeHiddenFilesystem)
+        return refreshMedia(context, includeHidden)
     }
 
     @JvmStatic
@@ -62,25 +66,28 @@ object MediaStoreRepository {
         force: Boolean = false
     ): List<MediaItem> = synchronized(scanLock) {
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
-        if (!force && GalleryCatalogStore.hasFreshCatalog(
+        val includeHidden = StorageAccessRules.includeHiddenFilesystem(includeHiddenFilesystem, allFilesAccess)
+        if (!force && !cacheInvalidated && GalleryCatalogStore.hasFreshCatalog(
                 context.applicationContext,
-                includeHiddenFilesystem,
+                includeHidden,
                 allFilesAccess,
                 30_000L
             )
         ) {
-            val stored = GalleryCatalogStore.readMedia(context.applicationContext, includeHiddenFilesystem)
-            cacheResult(stored, includeHiddenFilesystem, allFilesAccess)
+            val stored = GalleryCatalogStore.readMedia(context.applicationContext, includeHidden)
+            cacheResult(stored, includeHidden, allFilesAccess)
             return@synchronized stored
         }
+        val revision = GalleryCatalogStore.currentMutationRevision()
         val items = ArrayList<MediaItem>()
         loadFromFilesCollection(context, items)
-        if (includeHiddenFilesystem) {
+        if (includeHidden) {
             loadFromHiddenFilesystem(items, allFilesAccess)
         }
         items.sortByDescending { it.dateAdded }
-        GalleryCatalogStore.writeMedia(context.applicationContext, items, includeHiddenFilesystem, allFilesAccess)
-        cacheResult(items, includeHiddenFilesystem, allFilesAccess)
+        GalleryCatalogStore.writeMedia(context.applicationContext, items, includeHidden, allFilesAccess)
+        cacheResult(items, includeHidden, allFilesAccess)
+        GalleryCatalogStore.clearCatalogDirty(context, includeHidden, revision)
         items
     }
 
@@ -124,14 +131,19 @@ object MediaStoreRepository {
 
     @JvmStatic
     fun loadMediaForAlbum(context: Context, albumKey: String?, includeHiddenFilesystem: Boolean = false): List<MediaItem> {
-        if (albumKey == "all_media") {
-            return loadMedia(context, includeHiddenFilesystem)
-        }
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
+        val includeHidden = StorageAccessRules.includeHiddenFilesystem(includeHiddenFilesystem, allFilesAccess)
+        if (GalleryCatalogStore.isCatalogDirty(context, includeHidden)) {
+            val items = refreshMedia(context, includeHidden, force = true)
+            return if (albumKey == "all_media") items else items.filter { it.albumKey == albumKey }
+        }
+        if (albumKey == "all_media") {
+            return loadMedia(context, includeHidden)
+        }
         val now = System.currentTimeMillis()
         synchronized(cacheLock) {
-            val cache = if (includeHiddenFilesystem) cachedHiddenMedia else cachedVisibleMedia
-            val cachedAt = if (includeHiddenFilesystem) cachedHiddenAtMs else cachedVisibleAtMs
+            val cache = if (includeHidden) cachedHiddenMedia else cachedVisibleMedia
+            val cachedAt = if (includeHidden) cachedHiddenAtMs else cachedVisibleAtMs
             if (cache != null && cachedWithAllFilesAccess == allFilesAccess && now - cachedAt < CACHE_TTL_MS) {
                 return cache.filterTo(ArrayList()) { it.albumKey == albumKey }
             }
@@ -140,7 +152,7 @@ object MediaStoreRepository {
         if (!albumKey.isNullOrEmpty() && albumKey != "root") {
             val directItems = ArrayList<MediaItem>()
             loadFromFilesCollection(context, directItems, albumKey)
-            if (includeHiddenFilesystem) {
+            if (includeHidden) {
                 val hiddenItems = ArrayList<MediaItem>()
                 loadFromHiddenFilesystem(hiddenItems, allFilesAccess)
                 for (item in hiddenItems) {
@@ -156,7 +168,7 @@ object MediaStoreRepository {
         }
 
         val filtered = ArrayList<MediaItem>()
-        for (item in loadMedia(context, includeHiddenFilesystem)) {
+        for (item in loadMedia(context, includeHidden)) {
             if (item.albumKey == albumKey) {
                 filtered.add(item)
             }

@@ -103,7 +103,7 @@ class FileDetailActivity : Activity() {
             setOnClickListener { confirmDelete() }
         }
         val deleteParams = LinearLayout.LayoutParams(0, Ui.dp(this, 46), 1f).apply {
-            leftMargin = Ui.dp(this@FileDetailActivity, 8)
+            marginStart = Ui.dp(this@FileDetailActivity, 8)
         }
         actions.addView(delete, deleteParams)
         root.addView(actions)

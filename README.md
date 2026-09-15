@@ -16,6 +16,17 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - AndroidX Media3 / ExoPlayer para reprodução de vídeo
 - Macrobenchmark, Perfetto e Baseline Profile para medição e otimização de startup e rolagem
 
+## Níveis de acesso
+
+O app funciona em dois níveis independentes:
+
+- **Acesso a fotos e vídeos:** pode ser completo ou limitado às mídias escolhidas pelo usuário no Android 14 ou superior. A Galeria exibe e permite visualizar, reproduzir, compartilhar, favoritar, editar e copiar somente as mídias autorizadas. Alterações individuais usam a confirmação protegida do Android quando necessário.
+- **Gerenciamento completo de arquivos:** habilita a varredura direta de mídias ocultas ou não indexadas, navegação e criação de pastas em locais arbitrários e operações em lote. Esse nível usa `MANAGE_EXTERNAL_STORAGE` e é solicitado somente quando o usuário inicia um recurso que depende dele.
+
+Sem gerenciamento completo, deixam de funcionar a descoberta de mídias em pastas com `.nomedia`, a criação e navegação arbitrária de pastas e as ações de exclusão ou movimentação em lote. As funções normais da galeria permanecem disponíveis para o conjunto de mídias autorizado.
+
+Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso padrão. O acesso completo só abre a configuração especial do Android após uma escolha explícita do usuário. A decisão pode ser alterada posteriormente na seção `Acesso` das configurações do app.
+
 ## Funções já disponíveis
 
 - Leitura automática das mídias internas do aparelho
@@ -58,11 +69,27 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 ## Estrutura importante
 
 - `app/src/main/kotlin/com/galeria/android/MainActivity.kt`
-  Tela principal de álbuns
+  Tela principal de álbuns e renderização dos estados da interface
+- `app/src/main/kotlin/com/galeria/android/MainMediaAccessCoordinator.kt`
+  Escolha inicial, permissões de mídia e gerenciamento completo de arquivos
+- `app/src/main/kotlin/com/galeria/android/AlbumCatalogController.kt`
+  Carregamento, cache, filtros, ordenação e atualização do catálogo principal
 - `app/src/main/kotlin/com/galeria/android/AlbumMediaActivity.kt`
-  Conteúdo interno de cada álbum
+  Interface, gestos, pesquisa, seleção e navegação dentro de cada álbum
+- `app/src/main/kotlin/com/galeria/android/AlbumMediaCatalogController.kt`
+  Cache, carga completa, paginação, ordenação e atualização das mídias do álbum
+- `app/src/main/kotlin/com/galeria/android/AlbumSelectionActions.kt`
+  Preparação e contagem das ações de compartilhar, favoritar, excluir e mover em lote
 - `app/src/main/kotlin/com/galeria/android/DetailActivity.kt`
-  Visualizador de foto e player de vídeo
+  Interface, gestos, zoom e player do visualizador
+- `app/src/main/kotlin/com/galeria/android/DetailMediaQueueController.kt`
+  Fila do visualizador, posição atual, ordem personalizada, modo aleatório e remoção
+- `app/src/main/kotlin/com/galeria/android/DetailMediaActions.kt`
+  Preparação e execução das ações de compartilhar, favoritar, renomear, excluir, copiar e mover
+- `app/src/main/kotlin/com/galeria/android/DetailPlaybackController.kt`
+  Ciclo de vida, posição, velocidade, áudio e repetição da reprodução
+- `app/src/main/kotlin/com/galeria/android/DetailMetadataRepository.kt`
+  Leitura assíncrona de metadados; formatação isolada em `DetailMetadataFormatter.kt`
 - `app/src/main/kotlin/com/galeria/android/MediaStoreRepository.kt`
   Carregamento e indexação das mídias
 - `app/src/main/kotlin/com/galeria/android/GalleryDatabase.kt`
@@ -71,12 +98,14 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
   Varreduras de mídia executadas em segundo plano
 - `app/src/main/kotlin/com/galeria/android/MediaActions.kt`
   Operações de mover, copiar, excluir, ocultar e criar pasta
+- `app/src/main/res/values/strings.xml`
+  Textos, mensagens formatadas, plurais e listas traduzíveis das telas principal e de álbum
 
 ## Testes automatizados
 
-A suíte atual possui 48 testes:
+A suíte funcional atual possui 89 testes: 55 unitários e 34 instrumentados. O módulo de desempenho contém outros 4 casos (3 macrobenchmarks e 1 gerador de perfil).
 
-- 31 testes unitários locais para filtros de mídia, abertura externa, identificação e histórico de pastas ocultas, colunas da grade, identidade de URIs do MediaStore, ordenação de álbuns, regras de gestos, estado e menus do visualizador
+- 51 testes unitários locais para filtros de mídia, abertura externa, identificação e histórico de pastas ocultas, níveis de acesso, preparação e modo de carga do catálogo, preservação de rolagem, operações em lote, colunas da grade, identidade de URIs do MediaStore, ordenação de álbuns, navegação, remoção e repetição na fila, regras de gestos, estado, metadados, reprodução e menus do visualizador
 - 3 testes instrumentados do Room para resumos de álbuns, isolamento dos catálogos e paginação com ordem personalizada
 - 1 teste instrumentado de abertura da tela principal e disponibilidade da pesquisa
 - 1 teste instrumentado que cria uma mídia, move para outro álbum e confirma o caminho final no MediaStore
@@ -90,6 +119,14 @@ A suíte atual possui 48 testes:
 - 1 teste instrumentado que executa a pinça horizontal nas duas direções e confirma a alteração do número de colunas
 - 1 teste instrumentado que arrasta o fast scroll lateral em um álbum com 260 mídias e confirma o salto até o último item
 - 1 teste instrumentado que confirma os submenus de armazenamento e navegação interna usados para criar uma pasta
+- 1 teste instrumentado para a composição do HUD do visualizador
+- 1 teste instrumentado para os controles de reprodução
+- 2 testes instrumentados de invalidação do catálogo após renomeação e movimentação
+- 1 teste instrumentado da migração Room 1 → 2, preservando mídia e ordem personalizada
+- 1 teste instrumentado com vídeo real para decodificação e avanço da barra de tempo após retornar do segundo plano
+- 4 testes unitários de decisão de pasta vazia, incluindo `.nomedia`, arquivos não relacionados e acesso indeterminado
+- 8 testes instrumentados de exclusão/movimentação, atualização imediata, falhas, busca filtrada, navegação ao destino e contagens dos álbuns
+- 3 testes instrumentados do estado de invalidação do catálogo, separando visíveis/ocultos e protegendo alterações concorrentes
 
 Executar apenas os testes unitários rápidos:
 
@@ -110,6 +147,22 @@ gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:connectedDebugAndroidTest
 ```
 
 Os testes locais ficam em `app/src/test/kotlin` e os testes executados no Android ficam em `app/src/androidTest/kotlin`.
+
+### Auditoria técnica de 14/09/2026
+
+[Consultar mudanças, evidências de validação e melhorias pendentes](AUDITORIA-2026-09-14.md).
+
+Foram priorizadas atualizações compatíveis e correções pequenas, sem migração da interface ou alteração das regras de gerenciamento de arquivos. O APK 0.8.50 da raiz é a entrega histórica e não contém automaticamente as alterações locais desta auditoria.
+
+A CI valida testes unitários, lint e APK debug em pushes e pull requests para `main`, com Java 17 e cache do Gradle. Relatórios são disponibilizados por 7 dias mesmo quando a validação falha; o APK debug é disponibilizado somente em execuções aprovadas. Não há publicação nem assinatura release automática.
+
+### Atualização de 15/09/2026
+
+- Exclusões e movimentações confirmadas removem os itens da grade de origem imediatamente, sem aguardar o observador agendado. Resultados antigos não devem recolocar os itens removidos.
+- O catálogo é invalidado separadamente para mídias visíveis e ocultas e sincronizado após a operação; a tela de álbuns atualiza suas contagens.
+- Quando a movimentação esvazia a pasta de origem, o destino é aberto e a tela vazia sai da pilha de navegação. Pesquisa/filtros não determinam se a pasta está vazia. Se o Android não permite conferir o diretório, o app permanece na origem em vez de supor que não há outros arquivos; `.nomedia` sozinho não impede a navegação.
+- “Exibir/ocultar pastas”, mensagens e confirmações voltaram ao centro. Menus de opções, escolha de destino, ordenação e criação de pasta continuam laterais, preservando cores e controles.
+- [Detalhes e validação desta etapa](ALTERACOES-2026-09-15.md).
 
 ### Testes de desempenho
 
@@ -219,9 +272,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.50**: são **51 commits** na linha 0.8, ou **50 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.51**: são **52 commits** na linha 0.8, ou **51 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.50 usa o código `8050`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.51 usa o código `8051`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -276,6 +329,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.48`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.48) | 17/08/2026 | Submenus de armazenamento para criação de pastas e gestão de ocultos simplificada |
 | [`v0.8.49`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.49) | 18/08/2026 | Barra inferior de seleção contínua e instalação no emulador |
 | [`v0.8.50`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.50) | 18/08/2026 | Atualização e estabilização da suíte de interface |
+| [`v0.8.51`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.51) | 15/09/2026 | Atualização técnica, modularização segura e sincronização imediata das pastas |
 
 ## Relatório comparativo de desempenho
 
@@ -291,7 +345,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.50](https://github.com/GustavoDevGTI/Galeria-Android/raw/main/Galeria-Android-versao-0.8.50.apk)
+[Baixar Galeria Android - versão 0.8.51](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.51/Galeria-Android-versao-0.8.51.apk)
 
 Build padrão do Gradle:
 
@@ -302,10 +356,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.50.apk
+Galeria-Android-versao-0.8.51.apk
 ```
 
-O APK 0.8.50 usa a chave permanente criada na correção de rotação. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela nova chave serão compatíveis entre si.
+O APK 0.8.51 usa a mesma chave permanente da versão 0.8.50. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela chave permanente serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 

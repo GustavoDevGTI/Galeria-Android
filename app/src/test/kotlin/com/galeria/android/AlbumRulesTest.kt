@@ -140,6 +140,73 @@ class AlbumRulesTest {
         )
     }
 
+    @Test
+    fun hiddenFilesystemRequiresExplicitRequestAndAllFilesAccess() {
+        assertFalse(StorageAccessRules.includeHiddenFilesystem(false, false))
+        assertFalse(StorageAccessRules.includeHiddenFilesystem(true, false))
+        assertFalse(StorageAccessRules.includeHiddenFilesystem(false, true))
+        assertTrue(StorageAccessRules.includeHiddenFilesystem(true, true))
+    }
+
+    @Test
+    fun initialAccessFlowDistinguishesExistingLimitedAndMissingAccess() {
+        assertEquals(
+            MainAccessStartupAction.LOAD_LIBRARY,
+            MainAccessRules.startupAction(true, true, false)
+        )
+        assertEquals(
+            MainAccessStartupAction.SHOW_INITIAL_CHOICE,
+            MainAccessRules.startupAction(false, true, false)
+        )
+        assertEquals(
+            MainAccessStartupAction.REQUEST_MEDIA_LIBRARY,
+            MainAccessRules.startupAction(false, true, true)
+        )
+        assertEquals(
+            MainAccessStartupAction.REQUEST_MEDIA_LIBRARY,
+            MainAccessRules.startupAction(false, false, false)
+        )
+    }
+
+    @Test
+    fun catalogPreparationKeepsHiddenRulesAndBuildsAllMediaSummary() {
+        val source = listOf(
+            AlbumItem("camera", "Camera", 3, null, 30, 10, 300, "DCIM/Camera/"),
+            AlbumItem("private", "Private", 2, null, 20, 15, 200, "Pictures/.Private/"),
+            AlbumItem("ignored", "Ignored", 4, null, 40, 5, 400, "Pictures/Ignored/")
+        )
+
+        val visible = AlbumCatalogRules.prepare(source, setOf("ignored"), false, false)
+        assertEquals(listOf("camera"), visible.map { it.key })
+
+        val allMedia = AlbumCatalogRules.prepare(source, setOf("ignored"), true, true).single()
+        assertEquals("all_media", allMedia.key)
+        assertEquals(5, allMedia.count)
+        assertEquals(500, allMedia.totalSize)
+    }
+
+    @Test
+    fun albumMediaUsesPagingOnlyForUngroupedLibraryOutsideSelectionMode() {
+        assertTrue(AlbumMediaRules.shouldUsePaging(null, AlbumMediaRules.GROUP_NONE, false))
+        assertTrue(AlbumMediaRules.shouldUsePaging("all_media", AlbumMediaRules.GROUP_NONE, false))
+        assertFalse(AlbumMediaRules.shouldUsePaging("camera", AlbumMediaRules.GROUP_NONE, false))
+        assertFalse(AlbumMediaRules.shouldUsePaging("all_media", AlbumMediaRules.GROUP_DAY, false))
+        assertFalse(AlbumMediaRules.shouldUsePaging("all_media", AlbumMediaRules.GROUP_NONE, true))
+    }
+
+    @Test
+    fun albumMediaScrollTargetDistinguishesReloadAndReturnFromViewer() {
+        assertEquals(18, AlbumMediaRules.scrollTarget(true, 18, 7))
+        assertEquals(7, AlbumMediaRules.scrollTarget(false, 18, 7))
+    }
+
+    @Test
+    fun bulkFileChangesRequireManagementAccessOnlyOnModernAndroidWithoutGrant() {
+        assertFalse(AlbumMediaRules.requiresFileManagement(false, false))
+        assertFalse(AlbumMediaRules.requiresFileManagement(true, true))
+        assertTrue(AlbumMediaRules.requiresFileManagement(true, false))
+    }
+
     private fun albums(): List<AlbumItem> = listOf(
         AlbumItem("z", "Zeta", 3, null, 20, 10, 900, "C/Zeta"),
         AlbumItem("a", "Alpha", 1, null, 10, 5, 100, "A/Alpha"),

@@ -264,6 +264,20 @@ class MediaRecyclerAdapter(
     fun currentOrder(): List<MediaItem> =
         if (pagingMode) ArrayList(pagingDiffer.snapshot().items) else ArrayList(allItems)
 
+    fun removeCompletedItems(uris: Collection<String>) {
+        if (uris.isEmpty() || pagingMode) return
+        val keys = uris.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
+        fun removed(item: MediaItem) = MediaIdentityRules.canonicalKey(item.uri.toString()) in keys
+        allItems.removeAll(::removed)
+        for (index in visibleItems.lastIndex downTo 0) {
+            if (removed(visibleItems[index])) {
+                selectedUris.remove(visibleItems[index].uri.toString())
+                visibleItems.removeAt(index)
+                notifyItemRemoved(index)
+            }
+        }
+    }
+
     fun getCount(): Int = if (pagingMode) pagingDiffer.itemCount else visibleItems.size
 
     fun getItem(position: Int): MediaItem = itemOrNull(position)
@@ -292,7 +306,7 @@ class MediaRecyclerAdapter(
         val asList = viewType == 1
         val item = LinearLayout(context).apply {
             orientation = if (asList) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
-            gravity = if (asList) Gravity.CENTER_VERTICAL else Gravity.LEFT
+            gravity = if (asList) Gravity.CENTER_VERTICAL else Gravity.START
             setBackgroundColor(Color.TRANSPARENT)
             layoutParams = RecyclerView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -351,8 +365,8 @@ class MediaRecyclerAdapter(
             background = Ui.rounded(0x99000000.toInt(), 4, context)
         }
         val checkParams = FrameLayout.LayoutParams(Ui.dp(context, 24), Ui.dp(context, 24)).apply {
-            gravity = Gravity.TOP or Gravity.LEFT
-            leftMargin = Ui.dp(context, 6)
+            gravity = Gravity.TOP or Gravity.START
+            marginStart = Ui.dp(context, 6)
             topMargin = Ui.dp(context, 6)
         }
         thumb.addView(check, checkParams)
@@ -369,7 +383,7 @@ class MediaRecyclerAdapter(
             textSize = 14f
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
-            gravity = Gravity.LEFT
+            gravity = Gravity.START
             setPadding(Ui.dp(context, 12), 0, Ui.dp(context, 2), 0)
         }
         if (asList) {

@@ -71,7 +71,7 @@ class ImageEditActivity : Activity() {
 
         val title = Ui.title(this, "Editar imagem", 18).apply { setTextColor(Color.WHITE) }
         val titleParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            leftMargin = Ui.dp(this@ImageEditActivity, 10)
+            marginStart = Ui.dp(this@ImageEditActivity, 10)
         }
         bar.addView(title, titleParams)
 
@@ -117,8 +117,8 @@ class ImageEditActivity : Activity() {
 
     private fun toolParams(): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f).apply {
-            leftMargin = Ui.dp(this@ImageEditActivity, 5)
-            rightMargin = Ui.dp(this@ImageEditActivity, 5)
+            marginStart = Ui.dp(this@ImageEditActivity, 5)
+            marginEnd = Ui.dp(this@ImageEditActivity, 5)
         }
 
     private fun refreshToolButtons() {
@@ -300,6 +300,7 @@ class ImageEditActivity : Activity() {
         override fun onTouchEvent(event: MotionEvent): Boolean {
             val current = bitmap ?: return true
             if (!brushEnabled) {
+                if (event.actionMasked == MotionEvent.ACTION_UP) performClick()
                 return true
             }
             updateMatrices()
@@ -330,6 +331,8 @@ class ImageEditActivity : Activity() {
             }
             return true
         }
+
+        override fun performClick(): Boolean = super.performClick()
 
         fun renderEditedBitmap(): Bitmap? {
             val current = bitmap ?: return null

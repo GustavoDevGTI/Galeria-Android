@@ -4,8 +4,6 @@ import android.app.AlertDialog
 import android.app.RecoverableSecurityException
 import android.app.WallpaperManager
 import android.content.ActivityNotFoundException
-import android.content.ClipData
-import android.content.ContentValues
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Configuration
@@ -16,9 +14,6 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
-import android.media.MediaExtractor
-import android.media.MediaFormat
-import android.media.MediaMetadataRetriever
 import android.media.ThumbnailUtils
 import android.net.Uri
 import android.os.Build
@@ -47,15 +42,11 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.OptIn
-import androidx.media3.common.PlaybackParameters
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.exifinterface.media.ExifInterface
 import coil3.SingletonImageLoader
 import coil3.load
 import coil3.request.ImageRequest
@@ -84,32 +75,32 @@ import kotlin.math.min
 
 @OptIn(UnstableApi::class)
 class DetailActivity : ComponentActivity() {
-    private data class ImageMetadata(
-        val width: Int? = null,
-        val height: Int? = null,
-        val make: String? = null,
-        val model: String? = null,
-        val capturedAt: String? = null,
-        val iso: String? = null,
-        val aperture: String? = null,
-        val exposure: String? = null,
-        val focalLength: String? = null,
-        val latitude: Double? = null,
-        val longitude: Double? = null
-    ) {
-        val hasLocation: Boolean get() = latitude != null && longitude != null
-    }
-
     private val executor = Executors.newSingleThreadExecutor()
     private val videoPreviewExecutor = Executors.newSingleThreadExecutor()
     private val imagePreloadScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO.limitedParallelism(MAX_CONCURRENT_IMAGE_PRELOADS)
     )
     private val imagePreloadJobs = LinkedHashMap<String, Job>()
-    private val mediaQueue = ArrayList<MediaItem>()
+    private lateinit var queueController: DetailMediaQueueController
+    private lateinit var mediaActions: DetailMediaActions
+    private lateinit var metadataRepository: DetailMetadataRepository
+    private lateinit var metadataFormatter: DetailMetadataFormatter
+    private lateinit var playbackController: DetailPlaybackController
+    private val mediaQueue: List<MediaItem> get() = queueController.items
+    private var currentIndex: Int
+        get() = queueController.currentIndex
+        set(value) = queueController.setCurrentIndex(value)
+    private var shuffleMode: Boolean
+        get() = queueController.shuffleMode
+        set(value) { queueController.shuffleMode = value }
+    private var presentationMode: Boolean
+        get() = queueController.presentationMode
+        set(value) { queueController.presentationMode = value }
+    private var shuffleSeed: Long
+        get() = queueController.shuffleSeed
+        set(value) { queueController.shuffleSeed = value }
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var prefs: SharedPreferences
-    private var currentPlayer: ExoPlayer? = null
     private lateinit var content: FrameLayout
     private var activePage: FrameLayout? = null
     private lateinit var topBar: LinearLayout
@@ -125,33 +116,27 @@ class DetailActivity : ComponentActivity() {
     private lateinit var timelineRow: LinearLayout
     private lateinit var seekBar: SeekBar
     private var speedPopup: PopupWindow? = null
-    private var currentVideoKey: String? = null
     private var pendingDeleteUri: Uri? = null
     private var pendingHiddenCopy: File? = null
     private var pendingMoveItem: MediaItem? = null
     private var pendingMoveFolder: String? = null
+    private var pendingMoveDestinationKey: String? = null
+    private var pendingMoveDestinationName: String? = null
+    private val removedUris = arrayListOf<String>()
+    private val movedUris = arrayListOf<String>()
     private var pendingRotateItem: MediaItem? = null
     private var pendingPdfItem: MediaItem? = null
     private var pendingRenameItem: MediaItem? = null
     private var pendingRenameName: String? = null
-    private var videoPositionRestored = false
     private var userSeeking = false
     private var switchingItem = false
-    private var shuffleMode = false
-    private var presentationMode = false
-    private var currentIndex = 0
     private var downY = 0f
     private var downX = 0f
-    private var playbackSpeed = 1f
-    private var videoMuted = false
-    private var queueLoadGeneration = 0
+    private val playbackSpeed: Float get() = playbackController.playbackSpeed
+    private val videoMuted: Boolean get() = playbackController.muted
     private var hudVisible = true
-    private var shuffleSeed = 0L
-    private var restoredVideoPositionMs: Long? = null
-    private var restoredVideoPlayWhenReady: Boolean? = null
     private var restoredShuffleDelayMs: Long? = null
     private var shuffleAdvanceDeadlineMs = 0L
-    private var playWhenReadyBeforePause: Boolean? = null
     private var dragPreviewPage: FrameLayout? = null
     private var dragHorizontal = true
     private var dragDirection = 0
@@ -161,8 +146,9 @@ class DetailActivity : ComponentActivity() {
     private var lastTapX = 0f
     private var lastTapY = 0f
     private var pendingSingleTap: Runnable? = null
+    private var completedViewerTap = false
     private var zoomed = false
-    private val imageMetadataCache = HashMap<String, ImageMetadata>()
+    private val imageMetadataCache = HashMap<String, DetailImageMetadata>()
     private val gestureTouchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop.toFloat() }
     @Volatile private var preloadGeneration = 0
 
@@ -189,6 +175,32 @@ class DetailActivity : ComponentActivity() {
         })
         Ui.applyOpenTransition(this)
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
+        playbackController = DetailPlaybackController(
+            context = applicationContext,
+            prefs = prefs,
+            initialSpeed = savedInstanceState?.getFloat(STATE_PLAYBACK_SPEED) ?: 1f,
+            initiallyMuted = savedInstanceState?.getBoolean(STATE_VIDEO_MUTED) ?: false,
+            restoredPositionMs = savedInstanceState
+                ?.takeIf { it.containsKey(STATE_VIDEO_POSITION) }
+                ?.getLong(STATE_VIDEO_POSITION),
+            restoredPlayWhenReady = savedInstanceState
+                ?.takeIf { it.containsKey(STATE_VIDEO_POSITION) }
+                ?.getBoolean(STATE_VIDEO_PLAY_WHEN_READY)
+        )
+        queueController = DetailMediaQueueController(applicationContext)
+        mediaActions = DetailMediaActions(this, prefs)
+        removedUris.addAll(savedInstanceState?.getStringArrayList(MediaOperationNavigation.EXTRA_REMOVED_URIS).orEmpty())
+        movedUris.addAll(savedInstanceState?.getStringArrayList(MediaOperationNavigation.EXTRA_MOVED_URIS).orEmpty())
+        if (removedUris.isNotEmpty() || movedUris.isNotEmpty()) updateOperationResult()
+        metadataRepository = DetailMetadataRepository(applicationContext)
+        metadataFormatter = DetailMetadataFormatter(
+            fileSizeFormatter = { bytes -> Formatter.formatFileSize(this, bytes) },
+            dateAddedFormatter = { seconds ->
+                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                    .format(Date(seconds * 1000L))
+            },
+            durationFormatter = ::formatTime
+        )
         val uri = resolveInitialUri(savedInstanceState)
         if (uri == null) {
             Ui.toast(this, "Não foi possível abrir esta mídia.")
@@ -210,19 +222,15 @@ class DetailActivity : ComponentActivity() {
             return
         }
         val path = savedInstanceState?.getString(STATE_CURRENT_PATH) ?: intent.getStringExtra("path")
-        shuffleMode = savedInstanceState?.getBoolean(STATE_SHUFFLE_MODE)
-            ?: intent.getBooleanExtra("shuffle_mode", false)
-        presentationMode = savedInstanceState?.getBoolean(STATE_PRESENTATION_MODE) ?: false
-        shuffleSeed = savedInstanceState?.getLong(STATE_SHUFFLE_SEED) ?: System.nanoTime()
-        if (savedInstanceState?.containsKey(STATE_VIDEO_POSITION) == true) {
-            restoredVideoPositionMs = savedInstanceState.getLong(STATE_VIDEO_POSITION)
-            restoredVideoPlayWhenReady = savedInstanceState.getBoolean(STATE_VIDEO_PLAY_WHEN_READY)
-        }
+        queueController.configureModes(
+            savedInstanceState?.getBoolean(STATE_SHUFFLE_MODE)
+                ?: intent.getBooleanExtra("shuffle_mode", false),
+            savedInstanceState?.getBoolean(STATE_PRESENTATION_MODE) ?: false,
+            savedInstanceState?.getLong(STATE_SHUFFLE_SEED) ?: System.nanoTime()
+        )
         if (savedInstanceState?.containsKey(STATE_SHUFFLE_DELAY) == true) {
             restoredShuffleDelayMs = savedInstanceState.getLong(STATE_SHUFFLE_DELAY)
         }
-        playbackSpeed = savedInstanceState?.getFloat(STATE_PLAYBACK_SPEED) ?: playbackSpeed
-        videoMuted = savedInstanceState?.getBoolean(STATE_VIDEO_MUTED) ?: videoMuted
         prepareInitialMedia(uri, name, mime, path)
         buildLayout()
         loadCurrentItem()
@@ -248,72 +256,22 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun prepareInitialMedia(currentUri: Uri, name: String?, mime: String?, path: String?) {
-        mediaQueue.add(MediaItem(0, currentUri, name, mime, 0, 0, path, "media", "Mídia"))
-        currentIndex = 0
+        queueController.setInitial(MediaItem(0, currentUri, name, mime, 0, 0, path, "media", "Mídia"))
     }
 
     private fun loadAlbumQueueAsync(currentUri: Uri) {
         val albumKey = intent.getStringExtra("album_key")
         val includeHiddenFilesystem = intent.getBooleanExtra("include_hidden_filesystem", false)
-        if (albumKey.isNullOrEmpty()) return
-        val request = ++queueLoadGeneration
-        executor.execute {
-            val loaded = applyCustomOrder(
-                MediaStoreRepository.loadMediaForAlbum(applicationContext, albumKey, includeHiddenFilesystem),
-                albumKey
-            )
-            runOnUiThread {
-                val available = if (presentationMode) loaded.filter { it.isImage() } else loaded
-                if (request != queueLoadGeneration || isFinishing || available.isEmpty()) return@runOnUiThread
-                mediaQueue.clear()
-                mediaQueue.addAll(available)
-                if (shuffleMode) {
-                    shuffleQueueFrom(currentUri)
-                } else {
-                    currentIndex = mediaQueue.indexOfFirst {
-                        MediaIdentityRules.sameUri(it.uri.toString(), currentUri.toString())
-                    }.takeIf { it >= 0 } ?: 0
-                }
+        queueController.loadAlbum(
+            albumKey,
+            includeHiddenFilesystem,
+            currentUri,
+        ) {
+            if (!isFinishing) {
                 scheduleAdjacentPreload()
                 scheduleShuffleAdvance()
             }
         }
-    }
-
-    private fun shuffleQueueFrom(currentUri: Uri) {
-        val byUri = mediaQueue.associateBy { it.uri.toString() }
-        val restoredOrder = ViewerStateRules.shuffledFromCurrent(
-            availableUris = byUri.keys.toList(),
-            currentUri = currentUri.toString(),
-            seed = shuffleSeed
-        )
-        mediaQueue.clear()
-        restoredOrder.mapNotNullTo(mediaQueue) { byUri[it] }
-        currentIndex = 0
-    }
-
-    private fun applyCustomOrder(items: List<MediaItem>, albumKey: String): List<MediaItem> {
-        val saved = GalleryCatalogStore.migrateLegacyOrder(applicationContext, albumKey)
-        if (saved.isEmpty()) return items
-        val byUri = HashMap<String, MediaItem>()
-        for (item in items) {
-            byUri[item.uri.toString()] = item
-        }
-        val ordered = ArrayList<MediaItem>()
-        val used = HashSet<String>()
-        for (line in saved) {
-            val item = byUri[line]
-            if (item != null) {
-                ordered.add(item)
-                used.add(line)
-            }
-        }
-        for (item in items) {
-            if (!used.contains(item.uri.toString())) {
-                ordered.add(item)
-            }
-        }
-        return ordered
     }
 
     private fun buildLayout() {
@@ -344,7 +302,7 @@ class DetailActivity : ComponentActivity() {
             setSingleLine(true)
         }
         val titleParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            leftMargin = Ui.dp(this@DetailActivity, 4)
+            marginStart = Ui.dp(this@DetailActivity, 4)
         }
         topBar.addView(title, titleParams)
 
@@ -354,10 +312,29 @@ class DetailActivity : ComponentActivity() {
         }
         topBar.addView(more, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 44)))
 
+        var touchClickX = Float.NaN
+        var touchClickY = Float.NaN
         content = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             contentDescription = "Visualizador de mídia"
-            setOnTouchListener { _, event -> handleSwipeOrTap(event) }
+            isClickable = true
+            setOnClickListener {
+                val x = touchClickX.takeIf { it.isFinite() } ?: width / 2f
+                val y = touchClickY.takeIf { it.isFinite() } ?: height / 2f
+                touchClickX = Float.NaN
+                touchClickY = Float.NaN
+                handleTap(x, y)
+            }
+            setOnTouchListener { view, event ->
+                val handled = handleSwipeOrTap(event)
+                if (event.actionMasked == MotionEvent.ACTION_UP && completedViewerTap) {
+                    touchClickX = event.x
+                    touchClickY = event.y
+                    view.performClick()
+                    completedViewerTap = false
+                }
+                handled
+            }
         }
         root.addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
@@ -387,19 +364,16 @@ class DetailActivity : ComponentActivity() {
             setPadding(Ui.dp(this@DetailActivity, 6), 0, Ui.dp(this@DetailActivity, 6), 0)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
-                    val player = currentPlayer
-                    if (fromUser && player != null && player.duration > 0) {
-                        currentTime.text = formatTime(player.duration * progress / 1000L)
+                    val duration = playbackController.durationMs()
+                    if (fromUser && duration != null) {
+                        currentTime.text = formatTime(duration * progress / 1000L)
                     }
                 }
                 override fun onStartTrackingTouch(bar: SeekBar?) {
                     userSeeking = true
                 }
                 override fun onStopTrackingTouch(bar: SeekBar?) {
-                    val player = currentPlayer
-                    if (player != null && player.duration > 0 && bar != null) {
-                        player.seekTo(player.duration * bar.progress / 1000L)
-                    }
+                    if (bar != null) playbackController.seekToProgress(bar.progress)
                     userSeeking = false
                 }
             })
@@ -460,8 +434,8 @@ class DetailActivity : ComponentActivity() {
 
     private fun actionParams(): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(Ui.dp(this, 52), Ui.dp(this, 44)).apply {
-            leftMargin = Ui.dp(this@DetailActivity, 10)
-            rightMargin = Ui.dp(this@DetailActivity, 10)
+            marginStart = Ui.dp(this@DetailActivity, 10)
+            marginEnd = Ui.dp(this@DetailActivity, 10)
         }
 
     private fun showMediaMenu(anchor: View) {
@@ -473,7 +447,7 @@ class DetailActivity : ComponentActivity() {
                 showResolvedMediaMenu(anchor, item, cached)
             } else {
                 executor.execute {
-                    val metadata = readImageMetadata(item.uri)
+                    val metadata = metadataRepository.readImage(item.uri)
                     imageMetadataCache[key] = metadata
                     runOnUiThread {
                         if (!isFinishing && anchor.isAttachedToWindow && currentItem().uri == item.uri) {
@@ -487,9 +461,13 @@ class DetailActivity : ComponentActivity() {
         showResolvedMediaMenu(anchor, item, null)
     }
 
-    private fun showResolvedMediaMenu(anchor: View, item: MediaItem, imageMetadata: ImageMetadata?) {
-        val loopEnabled = currentPlayer?.repeatMode == Player.REPEAT_MODE_ONE ||
-            (!shuffleMode && prefs.getBoolean("loop_videos", false))
+    private fun showResolvedMediaMenu(anchor: View, item: MediaItem, imageMetadata: DetailImageMetadata?) {
+        val loopEnabled = playbackController.isLooping() ||
+            ViewerStateRules.shouldLoopVideo(
+                shuffleMode,
+                presentationMode,
+                prefs.getBoolean("loop_videos", false)
+            )
         Ui.showPopupOptions(
             anchor,
             ViewerMenuRules.options(
@@ -526,13 +504,8 @@ class DetailActivity : ComponentActivity() {
     private fun openCurrentWithAnotherApp() {
         val item = currentItem()
         val mediaLabel = if (item.isVideo()) "vídeo" else "imagem"
-        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(item.uri, item.mimeType.ifEmpty { if (item.isVideo()) "video/*" else "image/*" })
-            clipData = ClipData.newRawUri(mediaLabel, item.uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
         try {
-            startActivity(Intent.createChooser(viewIntent, "Abrir $mediaLabel com"))
+            startActivity(Intent.createChooser(mediaActions.openWithIntent(item), "Abrir $mediaLabel com"))
         } catch (_: ActivityNotFoundException) {
             Ui.toast(this, "Nenhum aplicativo compatível foi encontrado.")
         }
@@ -559,12 +532,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun renameImage(item: MediaItem, newName: String, requestPermission: Boolean) {
         try {
-            val updated = contentResolver.update(
-                item.uri,
-                ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, newName) },
-                null,
-                null
-            ) > 0
+            val updated = mediaActions.rename(item, newName)
             if (updated) {
                 applyRenamedItem(item, newName)
                 pendingRenameItem = null
@@ -606,37 +574,29 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun applyRenamedItem(item: MediaItem, newName: String) {
-        val index = mediaQueue.indexOfFirst { it.uri == item.uri }
-        if (index < 0) return
-        mediaQueue[index] = MediaItem(
-            item.id,
-            item.uri,
-            newName,
-            item.mimeType,
-            item.dateAdded,
-            item.size,
-            item.relativePath,
-            item.albumKey,
-            item.albumName,
-            item.duration
-        )
-        if (index == currentIndex) title.text = newName
+        val currentRenamed = queueController.replace(item, mediaActions.renamedItem(item, newName))
+        if (currentRenamed) title.text = newName
         MediaStoreRepository.invalidateCache()
     }
 
     private fun toggleVideoLoop() {
         if (shuffleMode || !currentItem().isVideo()) return
-        val enabled = currentPlayer?.repeatMode != Player.REPEAT_MODE_ONE
+        val enabled = !playbackController.isLooping()
         prefs.edit().putBoolean("loop_videos", enabled).apply()
-        currentPlayer?.repeatMode = if (enabled) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+        playbackController.setLooping(enabled)
         Ui.toast(this, if (enabled) "Repetição ativada." else "Repetição desativada.")
     }
 
     private fun showCurrentVideoInformation() {
         val item = currentItem()
-        val playerDuration = currentPlayer?.duration?.takeIf { it > 0L }
+        val playerDuration = playbackController.durationMs()
         executor.execute {
-            val information = buildVideoInformation(item, playerDuration)
+            val metadata = metadataRepository.readVideo(item.uri, playerDuration)
+            val information = metadataFormatter.videoInformation(
+                item.metadataDescription(),
+                metadata,
+                metadataRepository.resolveMediaSize(item.uri, item.size)
+            )
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 Ui.showMessageDialog(this, "Informações do vídeo", information)
@@ -652,7 +612,7 @@ class DetailActivity : ComponentActivity() {
             return
         }
         executor.execute {
-            val metadata = readImageMetadata(item.uri).also {
+            val metadata = metadataRepository.readImage(item.uri).also {
                 imageMetadataCache[key] = it
             }
             runOnUiThread {
@@ -661,101 +621,24 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun showImageInformationDialog(item: MediaItem, metadata: ImageMetadata) {
+    private fun showImageInformationDialog(item: MediaItem, metadata: DetailImageMetadata) {
         if (isFinishing || isDestroyed) return
-        Ui.showMessageDialog(this, "Informações da imagem", buildImageInformation(item, metadata))
-    }
-
-    private fun buildImageInformation(item: MediaItem, metadata: ImageMetadata): String = buildString {
-        appendLine("Nome: ${item.name}")
-        if (metadata.width != null && metadata.height != null) {
-            appendLine("Resolução: ${metadata.width} × ${metadata.height}")
-        }
-        val size = item.size.takeIf { it > 0L } ?: queryMediaSize(item.uri)
-        size?.let { appendLine("Tamanho: ${Formatter.formatFileSize(this@DetailActivity, it)}") }
-        appendLine("Formato: ${item.mimeType.ifEmpty { "Desconhecido" }}")
-        if (item.relativePath.isNotBlank()) appendLine("Pasta: ${item.relativePath.trimEnd('/')}")
-        if (item.dateAdded > 0L) {
-            appendLine("Adicionado em: ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(item.dateAdded * 1000L))}")
-        }
-        listOfNotNull(metadata.make, metadata.model).joinToString(" ").takeIf { it.isNotBlank() }?.let {
-            appendLine("Câmera: $it")
-        }
-        metadata.capturedAt?.let { appendLine("Capturada em: $it") }
-        metadata.iso?.let { appendLine("ISO: $it") }
-        metadata.aperture?.let { appendLine("Abertura: f/$it") }
-        metadata.exposure?.let { appendLine("Exposição: ${it}s") }
-        metadata.focalLength?.let { appendLine("Distância focal: ${it} mm") }
-        if (metadata.hasLocation) {
-            append(
-                "Localização: ${String.format(Locale.US, "%.6f", metadata.latitude)}, " +
-                    String.format(Locale.US, "%.6f", metadata.longitude)
+        Ui.showMessageDialog(
+            this,
+            "Informações da imagem",
+            metadataFormatter.imageInformation(
+                item.metadataDescription(),
+                metadata,
+                metadataRepository.resolveMediaSize(item.uri, item.size)
             )
-        }
-    }.trim()
-
-    private fun readImageMetadata(uri: Uri): ImageMetadata {
-        var exifWidth: Int? = null
-        var exifHeight: Int? = null
-        var make: String? = null
-        var model: String? = null
-        var capturedAt: String? = null
-        var iso: String? = null
-        var aperture: String? = null
-        var exposure: String? = null
-        var focalLength: String? = null
-        var latitude: Double? = null
-        var longitude: Double? = null
-        try {
-            contentResolver.openInputStream(uri)?.use { input ->
-                val exif = ExifInterface(input)
-                exifWidth = exif.getAttributeInt(ExifInterface.TAG_IMAGE_WIDTH, 0).takeIf { it > 0 }
-                exifHeight = exif.getAttributeInt(ExifInterface.TAG_IMAGE_LENGTH, 0).takeIf { it > 0 }
-                make = exif.getAttribute(ExifInterface.TAG_MAKE)?.trim()?.takeIf { it.isNotEmpty() }
-                model = exif.getAttribute(ExifInterface.TAG_MODEL)?.trim()?.takeIf { it.isNotEmpty() }
-                capturedAt = exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL)
-                iso = exif.getAttribute(ExifInterface.TAG_PHOTOGRAPHIC_SENSITIVITY)
-                aperture = exif.getAttribute(ExifInterface.TAG_F_NUMBER)
-                exposure = exif.getAttribute(ExifInterface.TAG_EXPOSURE_TIME)
-                focalLength = exif.getAttribute(ExifInterface.TAG_FOCAL_LENGTH)
-                exif.latLong?.let { coordinates ->
-                    latitude = coordinates[0]
-                    longitude = coordinates[1]
-                }
-            }
-        } catch (_: Exception) {
-        }
-        val bounds = readImageBounds(uri)
-        return ImageMetadata(
-            width = exifWidth ?: bounds.first,
-            height = exifHeight ?: bounds.second,
-            make = make,
-            model = model,
-            capturedAt = capturedAt,
-            iso = iso,
-            aperture = aperture,
-            exposure = exposure,
-            focalLength = focalLength,
-            latitude = latitude,
-            longitude = longitude
         )
-    }
-
-    private fun readImageBounds(uri: Uri): Pair<Int?, Int?> = try {
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        contentResolver.openInputStream(uri)?.use { input ->
-            BitmapFactory.decodeStream(input, null, options)
-        }
-        options.outWidth.takeIf { it > 0 } to options.outHeight.takeIf { it > 0 }
-    } catch (_: Exception) {
-        null to null
     }
 
     private fun openCurrentImageOnMap() {
         val item = currentItem()
         executor.execute {
             val key = item.uri.toString()
-            val metadata = imageMetadataCache[key] ?: readImageMetadata(item.uri).also {
+            val metadata = imageMetadataCache[key] ?: metadataRepository.readImage(item.uri).also {
                 imageMetadataCache[key] = it
             }
             val latitude = metadata.latitude
@@ -782,9 +665,7 @@ class DetailActivity : ComponentActivity() {
             Ui.toast(this, "A apresentação precisa de pelo menos duas imagens.")
             return
         }
-        mediaQueue.clear()
-        mediaQueue.addAll(images)
-        currentIndex = mediaQueue.indexOfFirst { it.uri == currentUri }.takeIf { it >= 0 } ?: 0
+        queueController.retainImages(currentUri)
         presentationMode = true
         restoredShuffleDelayMs = null
         scheduleAdjacentPreload()
@@ -793,107 +674,11 @@ class DetailActivity : ComponentActivity() {
         Ui.toast(this, "Apresentação iniciada.")
     }
 
-    private fun buildVideoInformation(item: MediaItem, playerDuration: Long?): String {
-        var duration = playerDuration
-        var width: Int? = null
-        var height: Int? = null
-        var rotation = 0
-        var bitRate: Long? = null
-        var frameRate: Float? = null
-        var detectedMime: String? = null
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(this, item.uri)
-            duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: duration
-            width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
-            height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
-            rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
-            bitRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toLongOrNull()
-            frameRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull()
-            detectedMime = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
-        } catch (_: Exception) {
-        } finally {
-            try {
-                retriever.release()
-            } catch (_: Exception) {
-            }
-        }
-
-        val size = item.size.takeIf { it > 0L } ?: queryMediaSize(item.uri)
-        val codec = detectVideoCodec(item.uri)
-        return buildString {
-            appendLine("Nome: ${item.name}")
-            duration?.takeIf { it > 0L }?.let { appendLine("Duração: ${formatTime(it)}") }
-            if (width != null && height != null && width > 0 && height > 0) {
-                appendLine("Resolução: ${width} × ${height}")
-            }
-            if (rotation != 0) appendLine("Rotação: ${rotation}°")
-            size?.takeIf { it > 0L }?.let { appendLine("Tamanho: ${Formatter.formatFileSize(this@DetailActivity, it)}") }
-            appendLine("Formato: ${item.mimeType.ifEmpty { detectedMime ?: "Desconhecido" }}")
-            codec?.let { appendLine("Codec: $it") }
-            bitRate?.takeIf { it > 0L }?.let { appendLine("Taxa de bits: ${formatBitRate(it)}") }
-            frameRate?.takeIf { it > 0f }?.let { appendLine("Quadros por segundo: ${formatFrameRate(it)}") }
-            if (item.relativePath.isNotBlank()) appendLine("Pasta: ${item.relativePath.trimEnd('/')}")
-            if (item.dateAdded > 0L) {
-                append("Adicionado em: ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(item.dateAdded * 1000L))}")
-            }
-        }.trim()
-    }
-
-    private fun queryMediaSize(uri: Uri): Long? = try {
-        contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getLong(0).takeIf { it > 0L } else null
-        }
-    } catch (_: Exception) {
-        null
-    }
-
-    private fun detectVideoCodec(uri: Uri): String? {
-        val extractor = MediaExtractor()
-        return try {
-            extractor.setDataSource(this, uri, null)
-            var videoMime: String? = null
-            for (index in 0 until extractor.trackCount) {
-                val mime = extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)
-                if (mime?.startsWith("video/") == true) {
-                    videoMime = mime
-                    break
-                }
-            }
-            when (videoMime) {
-                "video/avc" -> "H.264 / AVC"
-                "video/hevc" -> "H.265 / HEVC"
-                "video/x-vnd.on2.vp9" -> "VP9"
-                "video/av01" -> "AV1"
-                "video/mp4v-es" -> "MPEG-4 Visual"
-                null -> null
-                else -> videoMime.substringAfter("video/").uppercase(Locale.US)
-            }
-        } catch (_: Exception) {
-            null
-        } finally {
-            extractor.release()
-        }
-    }
-
-    private fun formatBitRate(bitsPerSecond: Long): String =
-        if (bitsPerSecond >= 1_000_000L) {
-            String.format(Locale.getDefault(), "%.1f Mbps", bitsPerSecond / 1_000_000.0)
-        } else {
-            String.format(Locale.getDefault(), "%.0f kbps", bitsPerSecond / 1_000.0)
-        }
-
-    private fun formatFrameRate(frameRate: Float): String =
-        if (abs(frameRate - frameRate.toInt()) < 0.01f) {
-            frameRate.toInt().toString()
-        } else {
-            String.format(Locale.getDefault(), "%.2f", frameRate)
-        }
-
     private fun handleSwipeOrTap(event: MotionEvent): Boolean {
         if (switchingItem) return true
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                completedViewerTap = false
                 beginPointerGesture(event)
                 return true
             }
@@ -902,19 +687,19 @@ class DetailActivity : ComponentActivity() {
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                completedViewerTap = false
                 cancelInteractiveSwipe()
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 updateInteractiveSwipe(event)
                 if (dragPreviewPage != null) {
+                    completedViewerTap = false
                     finishInteractiveSwipe()
                 } else {
                     val deltaY = event.rawY - downY
                     val deltaX = event.rawX - downX
-                    if (SwipeGestureRules.isTap(deltaX, deltaY, gestureTouchSlop)) {
-                        handleTap(event.x, event.y)
-                    }
+                    completedViewerTap = SwipeGestureRules.isTap(deltaX, deltaY, gestureTouchSlop)
                 }
                 return true
             }
@@ -962,10 +747,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun seekCurrentVideoBy(deltaMs: Long) {
-        val player = currentPlayer ?: return
-        val duration = player.duration.takeIf { it > 0 } ?: Long.MAX_VALUE
-        val target = (player.currentPosition + deltaMs).coerceIn(0L, duration)
-        player.seekTo(target)
+        playbackController.seekBy(deltaMs)
         updateTimeline()
     }
 
@@ -1078,15 +860,12 @@ class DetailActivity : ComponentActivity() {
     private fun commitInteractiveSwipe(offset: Int) {
         val incomingPage = dragPreviewPage ?: return
         val outgoingPage = activePage
-        val outgoingPlayer = currentPlayer
         switchingItem = true
         zoomed = false
-        saveCurrentPosition()
+        val outgoingPlayer = playbackController.detachCurrent()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
         speedPopup?.dismiss()
-        currentPlayer = null
-        currentVideoKey = null
         currentIndex = dragTargetIndex
         preloadGeneration++
         val outgoingTarget = if (dragDirection > 0) -offset.toFloat() else offset.toFloat()
@@ -1104,9 +883,7 @@ class DetailActivity : ComponentActivity() {
             .setDuration(165)
             .withEndAction {
                 outgoingPage?.let { content.removeView(it) }
-                if (outgoingPlayer != null && outgoingPlayer !== currentPlayer) {
-                    outgoingPlayer.release()
-                }
+                playbackController.releaseDetached(outgoingPlayer)
                 activePage = incomingPage
                 applyCurrentUiAfterInteractiveSwipe()
                 resetInteractiveSwipeState()
@@ -1201,17 +978,12 @@ class DetailActivity : ComponentActivity() {
         switchingItem = true
         cancelPendingSingleTap()
         resetZoom(false)
-        saveCurrentPosition()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
         speedPopup?.dismiss()
-        val outgoingPlayer = currentPlayer
-        currentPlayer = null
-        currentVideoKey = null
+        val outgoingPlayer = playbackController.detachCurrent()
         val outgoingPage = activePage
-        currentIndex += direction
-        if (currentIndex < 0) currentIndex = mediaQueue.size - 1
-        if (currentIndex >= mediaQueue.size) currentIndex = 0
+        queueController.advance(direction)
         preloadGeneration++
         val offset = if (horizontal) {
             if (content.width == 0) resources.displayMetrics.widthPixels else content.width
@@ -1247,9 +1019,7 @@ class DetailActivity : ComponentActivity() {
             .setDuration(245)
             .withEndAction {
                 outgoingPage?.let { content.removeView(it) }
-                if (outgoingPlayer != null && outgoingPlayer !== currentPlayer) {
-                    outgoingPlayer.release()
-                }
+                playbackController.releaseDetached(outgoingPlayer)
                 activePage = incomingPage
                 applyCurrentUiAfterInteractiveSwipe()
                 switchingItem = false
@@ -1262,7 +1032,7 @@ class DetailActivity : ComponentActivity() {
     private fun loadCurrentItem() {
         cancelPendingSingleTap()
         zoomed = false
-        releasePlayer()
+        playbackController.releaseCurrent()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
         speedPopup?.dismiss()
@@ -1322,56 +1092,38 @@ class DetailActivity : ComponentActivity() {
         }
         page.addView(playerView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
-        val player = ExoPlayer.Builder(this).build()
-        currentPlayer = player
-        currentVideoKey = "video_pos_${item.uri.hashCode()}"
-        videoPositionRestored = false
-        player.setMediaItem(androidx.media3.common.MediaItem.fromUri(item.uri))
-        player.repeatMode = if (!shuffleMode && !presentationMode && prefs.getBoolean("loop_videos", false)) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-        player.playbackParameters = PlaybackParameters(playbackSpeed)
-        player.volume = if (videoMuted) 0f else 1f
-        playerView.player = player
-        player.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY && !videoPositionRestored) {
-                    val restoredPosition = restoredVideoPositionMs
-                    if (restoredPosition != null) {
-                        if (restoredPosition > 0L) player.seekTo(restoredPosition)
-                        restoredVideoPositionMs = null
-                    } else if (!shuffleMode && !presentationMode) {
-                        restoreCurrentPosition()
-                    }
-                    videoPositionRestored = true
+        val player = playbackController.start(
+            uri = item.uri,
+            loop = ViewerStateRules.shouldLoopVideo(
+                shuffleMode,
+                presentationMode,
+                prefs.getBoolean("loop_videos", false)
+            ),
+            defaultPlayWhenReady = shuffleMode || presentationMode ||
+                prefs.getBoolean("autoplay_videos", true),
+            rememberPosition = !shuffleMode && !presentationMode,
+            listener = object : DetailPlaybackController.Listener {
+                override fun onPlaybackChanged() {
+                    updatePlayPauseButton()
+                    updateTimeline()
                 }
-                if ((shuffleMode || presentationMode) && player === currentPlayer && playbackState == Player.STATE_ENDED) {
+
+                override fun onPlaybackEnded() {
                     handler.removeCallbacks(autoAdvanceRunnable)
                     handler.postDelayed(autoAdvanceRunnable, 250L)
                 }
-                if (!shuffleMode && !presentationMode && player === currentPlayer && playbackState == Player.STATE_ENDED) {
-                    saveCurrentPosition()
+
+                override fun onFirstFrame() {
+                    playerView.animate().alpha(1f).setDuration(90).start()
+                    preview.animate()
+                        .alpha(0f)
+                        .setDuration(140)
+                        .withEndAction { page.removeView(preview) }
+                        .start()
                 }
-                updatePlayPauseButton()
-                updateTimeline()
             }
-
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                updatePlayPauseButton()
-            }
-
-            override fun onRenderedFirstFrame() {
-                if (player !== currentPlayer) return
-                playerView.animate().alpha(1f).setDuration(90).start()
-                preview.animate()
-                    .alpha(0f)
-                    .setDuration(140)
-                    .withEndAction { page.removeView(preview) }
-                    .start()
-            }
-        })
-        player.prepare()
-        player.playWhenReady = restoredVideoPlayWhenReady
-            ?: (shuffleMode || presentationMode || prefs.getBoolean("autoplay_videos", true))
-        restoredVideoPlayWhenReady = null
+        )
+        playerView.player = player
         updateSpeedButton()
         updatePlayPauseButton()
         handler.post(progressUpdater)
@@ -1473,10 +1225,7 @@ class DetailActivity : ComponentActivity() {
     private fun viewerSourceKey(item: MediaItem): String = "viewer_source:${item.uri}"
 
     private fun wrappedIndex(index: Int): Int {
-        if (mediaQueue.isEmpty()) return 0
-        var wrapped = index % mediaQueue.size
-        if (wrapped < 0) wrapped += mediaQueue.size
-        return wrapped
+        return ViewerStateRules.wrappedIndex(index, mediaQueue.size)
     }
 
     private fun decodeVideoPreview(item: MediaItem): Bitmap? =
@@ -1518,8 +1267,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun toggleVideoSound() {
         if (!currentItem().isVideo()) return
-        videoMuted = !videoMuted
-        currentPlayer?.volume = if (videoMuted) 0f else 1f
+        playbackController.toggleMuted()
         updateSoundButton()
     }
 
@@ -1552,29 +1300,42 @@ class DetailActivity : ComponentActivity() {
     private fun promoteImagePage(item: MediaItem, page: FrameLayout) {
         if (page.children().any { it is CoilZoomImageView }) return
         val preview = page.children().firstOrNull { it.tag == IMAGE_PREVIEW_TAG }
-        val image = CoilZoomImageView(this).apply {
+        val image = AccessibleCoilZoomImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(Color.BLACK)
             scrollBar = null
             alpha = 0f
+            accessibilityClickAction = { toggleHud() }
         }
         page.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         image.tag = item.uri
         var pagingGesture = false
+        var imageTapCandidate = false
+        var imageTouchDownX = 0f
+        var imageTouchDownY = 0f
         image.setOnTouchListener { _, event ->
             val atBaseScale = isAtBaseZoom(image)
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     pagingGesture = false
+                    imageTapCandidate = true
+                    imageTouchDownX = event.x
+                    imageTouchDownY = event.y
                     beginPointerGesture(event)
                     false
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> {
                     if (dragPreviewPage != null) cancelInteractiveSwipe()
                     pagingGesture = false
+                    imageTapCandidate = false
                     false
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    if (abs(event.x - imageTouchDownX) > gestureTouchSlop ||
+                        abs(event.y - imageTouchDownY) > gestureTouchSlop
+                    ) {
+                        imageTapCandidate = false
+                    }
                     if (event.pointerCount > 1 || !atBaseScale) {
                         if (pagingGesture || dragPreviewPage != null) cancelInteractiveSwipe()
                         pagingGesture = false
@@ -1599,6 +1360,15 @@ class DetailActivity : ComponentActivity() {
                         pagingGesture = false
                         true
                     } else {
+                        if (imageTapCandidate) {
+                            image.suppressAccessibilityClickAction = true
+                            try {
+                                image.performClick()
+                            } finally {
+                                image.suppressAccessibilityClickAction = false
+                            }
+                        }
+                        imageTapCandidate = false
                         false
                     }
                 }
@@ -1606,6 +1376,7 @@ class DetailActivity : ComponentActivity() {
                     if (pagingGesture || dragPreviewPage != null) cancelInteractiveSwipe()
                     val consumed = pagingGesture
                     pagingGesture = false
+                    imageTapCandidate = false
                     consumed
                 }
                 else -> pagingGesture
@@ -1662,34 +1433,25 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun togglePlayback() {
-        val player = currentPlayer ?: return
-        if (player.isPlaying) {
-            player.pause()
-        } else {
-            if (player.playbackState == Player.STATE_ENDED) {
-                player.seekTo(0)
-            }
-            player.play()
-        }
+        playbackController.togglePlayback()
         updatePlayPauseButton()
     }
 
     private fun updatePlayPauseButton() {
-        val player = currentPlayer ?: return
         if (::playPauseButton.isInitialized) {
-            playPauseButton.setImageResource(if (player.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+            playPauseButton.setImageResource(
+                if (playbackController.isPlaying()) R.drawable.ic_pause else R.drawable.ic_play
+            )
         }
     }
 
     private fun updateTimeline() {
-        val player = currentPlayer ?: return
         if (!currentItem().isVideo()) return
-        val duration = max(0L, player.duration)
-        val position = max(0L, player.currentPosition)
-        currentTime.text = formatTime(position)
-        durationTime.text = if (duration > 0) formatTime(duration) else "00:00"
-        if (!userSeeking && duration > 0) {
-            seekBar.progress = min(1000L, position * 1000L / duration).toInt()
+        val timeline = playbackController.timeline() ?: return
+        currentTime.text = formatTime(timeline.positionMs)
+        durationTime.text = if (timeline.durationMs > 0) formatTime(timeline.durationMs) else "00:00"
+        if (!userSeeking && timeline.durationMs > 0) {
+            seekBar.progress = timeline.progress
         }
     }
 
@@ -1753,8 +1515,7 @@ class DetailActivity : ComponentActivity() {
             textSize = 14f
             setBackgroundColor(if (abs(playbackSpeed - speed) < 0.01f) 0x55FFFFFF else Color.TRANSPARENT)
             setOnClickListener {
-                playbackSpeed = speed
-                currentPlayer?.playbackParameters = PlaybackParameters(playbackSpeed)
+                playbackController.setSpeed(speed)
                 updateSpeedButton()
                 speedPopup?.dismiss()
             }
@@ -1764,43 +1525,23 @@ class DetailActivity : ComponentActivity() {
 
     private fun updateSpeedButton() {
         if (!::speedButton.isInitialized) return
-        speedButton.text = when {
-            abs(playbackSpeed - 0.5f) < 0.01f -> "0,5x"
-            abs(playbackSpeed - 1.5f) < 0.01f -> "1,5x"
-            abs(playbackSpeed - 2f) < 0.01f -> "2x"
-            else -> "1x"
-        }
+        speedButton.text = DetailPlaybackRules.speedLabel(playbackSpeed)
     }
 
     private fun toggleFavorite() {
         val item = currentItem()
-        val favorites = HashSet(prefs.getStringSet("favorites", HashSet()) ?: HashSet())
-        val key = item.uri.toString()
-        if (favorites.contains(key)) {
-            favorites.remove(key)
-            Ui.toast(this, "Removido dos favoritos.")
-        } else {
-            favorites.add(key)
-            Ui.toast(this, "Adicionado aos favoritos.")
-        }
-        prefs.edit().putStringSet("favorites", favorites).apply()
+        val favorite = mediaActions.toggleFavorite(item)
+        Ui.toast(this, if (favorite) "Adicionado aos favoritos." else "Removido dos favoritos.")
         updateFavoriteButton()
     }
 
     private fun updateFavoriteButton() {
         if (!::favoriteButton.isInitialized || mediaQueue.isEmpty()) return
-        val favorites = prefs.getStringSet("favorites", HashSet()) ?: HashSet()
-        favoriteButton.alpha = if (favorites.contains(currentItem().uri.toString())) 1f else 0.55f
+        favoriteButton.alpha = if (mediaActions.isFavorite(currentItem())) 1f else 0.55f
     }
 
     private fun shareCurrent() {
-        val item = currentItem()
-        val share = Intent(Intent.ACTION_SEND).apply {
-            type = item.mimeType.ifEmpty { "*/*" }
-            putExtra(Intent.EXTRA_STREAM, item.uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        startActivity(Intent.createChooser(share, "Compartilhar"))
+        startActivity(Intent.createChooser(mediaActions.shareIntent(currentItem()), "Compartilhar"))
     }
 
     private fun confirmHideCurrent() {
@@ -1814,13 +1555,13 @@ class DetailActivity : ComponentActivity() {
 
     private fun hideCurrent() {
         val item = currentItem()
-        pendingHiddenCopy = MediaActions.copyToHidden(this, item)
+        pendingHiddenCopy = mediaActions.copyToHidden(item)
         if (pendingHiddenCopy == null) {
             Ui.toast(this, "Não foi possível copiar para ocultos.")
             return
         }
         pendingDeleteUri = item.uri
-        val result = MediaActions.requestPermanentDelete(this, item.uri, REQ_HIDE_DELETE)
+        val result = mediaActions.delete(item, REQ_HIDE_DELETE)
         if (result == MediaActions.RESULT_DONE) {
             Ui.toast(this, "Item ocultado.")
             removeDeletedItem()
@@ -1834,28 +1575,38 @@ class DetailActivity : ComponentActivity() {
 
     private fun askFolderForCopyOrMove(copy: Boolean, anchor: View) {
         val item = currentItem()
-        executor.execute {
-            val targets = availableAlbumNames(item)
-            runOnUiThread {
-                if (isFinishing || !anchor.isAttachedToWindow || currentItem().uri != item.uri) return@runOnUiThread
-                if (targets.isEmpty()) {
-                    Ui.toast(this, "Nenhum álbum disponível.")
-                    return@runOnUiThread
-                }
-                Ui.showAlbumTargets(anchor, if (copy) "Copiar para" else "Mover para", targets) { album ->
-                    val folder = album.path.ifBlank { album.name }
-                    if (copy) {
-                        copyCurrentToFolder(item, folder)
-                    } else {
-                        moveCurrentToFolder(item, folder)
-                    }
+        val exposedKeys = intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)?.toSet()
+        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
+        val includeHidden = exposedKeys != null && StorageAccessRules.includeHiddenFilesystem(
+            intent.getBooleanExtra("include_hidden_filesystem", false),
+            MediaActions.hasAllFilesAccess(this)
+        )
+        mediaActions.loadTargets(
+            exposedKeys,
+            hiddenKeys,
+            setOfNotNull(item.albumKey, intent.getStringExtra("album_key")),
+            includeHidden
+        ) { targets ->
+            if (isFinishing || !anchor.isAttachedToWindow || currentItem().uri != item.uri) return@loadTargets
+            if (targets.isEmpty()) {
+                Ui.toast(this, "Nenhum álbum disponível.")
+                return@loadTargets
+            }
+            Ui.showAlbumTargets(anchor, if (copy) "Copiar para" else "Mover para", targets) { album ->
+                val folder = album.path.ifBlank { album.name }
+                if (copy) {
+                    copyCurrentToFolder(item, folder)
+                } else {
+                    pendingMoveDestinationKey = album.key
+                    pendingMoveDestinationName = album.name
+                    moveCurrentToFolder(item, folder)
                 }
             }
         }
     }
 
     private fun copyCurrentToFolder(item: MediaItem, folder: String) {
-        val result = MediaActions.copyToFolder(this, item, folder)
+        val result = mediaActions.copyToFolder(item, folder)
         if (result == MediaActions.RESULT_DONE) {
             Ui.toast(this, "Item copiado.")
         } else {
@@ -1866,10 +1617,13 @@ class DetailActivity : ComponentActivity() {
     private fun moveCurrentToFolder(item: MediaItem, folder: String) {
         pendingMoveItem = item
         pendingMoveFolder = folder
-        val result = MediaActions.moveToFolder(this, item, folder)
+        val sourceFolder = MediaActions.fileFromMediaStore(this, item.uri)?.parentFile
+        val result = mediaActions.moveToFolder(item, folder)
         if (result == MediaActions.RESULT_DONE) {
             Ui.toast(this, "Item movido.")
-            removeDeletedItem()
+            completeMovedItem(item, folder, sourceFolder)
+            pendingMoveItem = null
+            pendingMoveFolder = null
         } else if (result == MediaActions.RESULT_NEEDS_PERMISSION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             MediaActions.requestWrite(this, item.uri, REQ_MOVE_WRITE)
         } else {
@@ -1877,18 +1631,6 @@ class DetailActivity : ComponentActivity() {
             pendingMoveFolder = null
             requestFileManagementAccess()
         }
-    }
-
-    private fun availableAlbumNames(item: MediaItem): List<AlbumItem> {
-        val exposedKeys = intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)?.toSet()
-        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
-        val includeHidden = exposedKeys != null && intent.getBooleanExtra("include_hidden_filesystem", false)
-        return AlbumTargetRules.exposedTargets(
-            MediaStoreRepository.loadAlbums(this, includeHidden),
-            exposedKeys,
-            hiddenKeys,
-            setOfNotNull(item.albumKey, intent.getStringExtra("album_key"))
-        )
     }
 
     private fun setCurrentAsWallpaper() {
@@ -2007,7 +1749,7 @@ class DetailActivity : ComponentActivity() {
     private fun deleteCurrent() {
         val item = currentItem()
         pendingDeleteUri = item.uri
-        val result = MediaActions.requestPermanentDelete(this, item.uri, REQ_DELETE)
+        val result = mediaActions.delete(item, REQ_DELETE)
         if (result == MediaActions.RESULT_DONE) {
             Ui.toast(this, "Item excluído.")
             removeDeletedItem()
@@ -2021,8 +1763,8 @@ class DetailActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
             Ui.showConfirmationDialog(
                 this,
-                "Permitir gerenciamento de arquivos",
-                "Para excluir, mover, copiar e criar arquivos no celular, ative o acesso total a arquivos para a Galeria.",
+                "Permitir gerenciamento completo",
+                "Esta mídia não pôde ser alterada pelo acesso padrão do Android. O acesso completo também libera mídias ocultas, pastas arbitrárias e operações em lote.",
                 "Permitir"
             ) { MediaActions.requestAllFilesAccess(this) }
         } else {
@@ -2030,24 +1772,54 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun removeDeletedItem() {
-        if (mediaQueue.isEmpty()) {
+    private fun updateOperationResult(destinationKey: String? = null, destinationName: String? = null) {
+        setResult(RESULT_OK, Intent().apply {
+            putStringArrayListExtra(MediaOperationNavigation.EXTRA_REMOVED_URIS, ArrayList(removedUris))
+            putStringArrayListExtra(MediaOperationNavigation.EXTRA_MOVED_URIS, ArrayList(movedUris))
+            if (destinationKey != null) {
+                putExtra(MediaOperationNavigation.EXTRA_DESTINATION_KEY, destinationKey)
+                putExtra(MediaOperationNavigation.EXTRA_DESTINATION_NAME, destinationName)
+            }
+        })
+    }
+
+    private fun completeMovedItem(item: MediaItem, folder: String, sourceFolder: File?) {
+        movedUris.add(item.uri.toString())
+        val sourceKey = intent.getStringExtra("album_key")
+        if (!sourceKey.isNullOrEmpty() && sourceKey != "all_media" &&
+            MediaOperationNavigation.isEmptyFolder(sourceFolder)) {
+            val key = pendingMoveDestinationKey ?: MediaActions.destinationRelativePath(folder, item.isVideo())
+            val name = pendingMoveDestinationName ?: key.trimEnd('/').substringAfterLast('/')
+            updateOperationResult(key, name)
+            if (callingActivity == null) {
+                startActivity(MediaOperationNavigation.destinationIntent(this, intent, key, name))
+            }
+            finish()
+        } else {
+            updateOperationResult()
+            removeDeletedItem(moved = true)
+        }
+    }
+
+    private fun removeDeletedItem(moved: Boolean = false) {
+        MediaStoreRepository.invalidateCache()
+        GalleryCatalogStore.markCatalogDirty(applicationContext)
+        if (!moved) {
+            removedUris.add(currentItem().uri.toString())
+            updateOperationResult()
+        }
+        pendingDeleteUri = null
+        if (!queueController.removeCurrent()) {
             finish()
             return
         }
-        mediaQueue.removeAt(currentIndex)
-        if (mediaQueue.isEmpty()) {
-            finish()
-            return
-        }
-        if (currentIndex >= mediaQueue.size) currentIndex = mediaQueue.size - 1
         loadCurrentItem()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_DELETE) {
-            val deleted = resultCode == RESULT_OK || (pendingDeleteUri != null && !MediaActions.mediaExists(this, pendingDeleteUri!!))
+            val deleted = resultCode == RESULT_OK
             pendingDeleteUri = null
             if (deleted) {
                 Ui.toast(this, "Item excluído.")
@@ -2056,7 +1828,7 @@ class DetailActivity : ComponentActivity() {
                 Ui.toast(this, "Exclusão cancelada.")
             }
         } else if (requestCode == REQ_HIDE_DELETE) {
-            val deleted = resultCode == RESULT_OK || (pendingDeleteUri != null && !MediaActions.mediaExists(this, pendingDeleteUri!!))
+            val deleted = resultCode == RESULT_OK
             pendingDeleteUri = null
             if (deleted) {
                 pendingHiddenCopy = null
@@ -2071,10 +1843,11 @@ class DetailActivity : ComponentActivity() {
             val item = pendingMoveItem
             val folder = pendingMoveFolder
             if (resultCode == RESULT_OK && item != null && folder != null) {
-                val result = MediaActions.moveToFolder(this, item, folder)
+                val sourceFolder = MediaActions.fileFromMediaStore(this, item.uri)?.parentFile
+                val result = mediaActions.moveToFolder(item, folder)
                 Ui.toast(this, if (result == MediaActions.RESULT_DONE) "Item movido." else "Não foi possível mover.")
                 if (result == MediaActions.RESULT_DONE) {
-                    removeDeletedItem()
+                    completeMovedItem(item, folder, sourceFolder)
                 }
             }
             pendingMoveItem = null
@@ -2106,7 +1879,14 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun currentItem(): MediaItem = mediaQueue[currentIndex]
+    private fun currentItem(): MediaItem = queueController.current()
+
+    private fun MediaItem.metadataDescription(): DetailMediaMetadata = DetailMediaMetadata(
+        name = name,
+        mimeType = mimeType,
+        relativePath = relativePath,
+        dateAddedSeconds = dateAdded
+    )
 
     private fun applyWindowSettings() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -2125,41 +1905,9 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun saveCurrentPosition() {
-        val key = currentVideoKey
-        if (!shuffleMode && !presentationMode && currentPlayer != null && key != null && prefs.getBoolean("remember_video_position", true)) {
-            prefs.edit().putLong(key, rememberedVideoPosition()).apply()
-        }
-    }
-
-    private fun rememberedVideoPosition(): Long {
-        val player = currentPlayer ?: return 0L
-        if (player.playbackState == Player.STATE_ENDED) return 0L
-        val position = max(0L, player.currentPosition)
-        val duration = player.duration
-        if (duration > 0L && position >= duration - 750L) {
-            return 0L
-        }
-        return position
-    }
-
-    private fun restoreCurrentPosition() {
-        val key = currentVideoKey
-        val player = currentPlayer
-        if (player != null && key != null && prefs.getBoolean("remember_video_position", true)) {
-            val savedPosition = prefs.getLong(key, 0L)
-            if (savedPosition > 0L) {
-                player.seekTo(savedPosition)
-            }
-        }
-    }
-
-    private fun releasePlayer() {
-        currentPlayer?.release()
-        currentPlayer = null
-    }
-
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putStringArrayList(MediaOperationNavigation.EXTRA_REMOVED_URIS, ArrayList(removedUris))
+        outState.putStringArrayList(MediaOperationNavigation.EXTRA_MOVED_URIS, ArrayList(movedUris))
         val item = mediaQueue.getOrNull(currentIndex)
         if (item != null) {
             outState.putString(STATE_CURRENT_URI, item.uri.toString())
@@ -2172,11 +1920,11 @@ class DetailActivity : ComponentActivity() {
         outState.putLong(STATE_SHUFFLE_SEED, shuffleSeed)
         outState.putFloat(STATE_PLAYBACK_SPEED, playbackSpeed)
         outState.putBoolean(STATE_VIDEO_MUTED, videoMuted)
-        currentPlayer?.let { player ->
-            outState.putLong(STATE_VIDEO_POSITION, rememberedVideoPosition())
+        playbackController.savedPlayWhenReady()?.let { playWhenReady ->
+            outState.putLong(STATE_VIDEO_POSITION, playbackController.rememberedPosition())
             outState.putBoolean(
                 STATE_VIDEO_PLAY_WHEN_READY,
-                playWhenReadyBeforePause ?: player.playWhenReady
+                playWhenReady
             )
         }
         val shuffleDelay = if (shuffleAdvanceDeadlineMs > 0L) {
@@ -2195,16 +1943,17 @@ class DetailActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (playWhenReadyBeforePause == true) {
-            currentPlayer?.play()
+        playbackController.resumeAfterLifecycle()
+        handler.removeCallbacks(progressUpdater)
+        if (mediaQueue.getOrNull(currentIndex)?.isVideo() == true) {
+            handler.post(progressUpdater)
         }
-        playWhenReadyBeforePause = null
         scheduleShuffleAdvance()
     }
 
     override fun onPause() {
         super.onPause()
-        saveCurrentPosition()
+        playbackController.pauseForLifecycle()
         cancelPendingSingleTap()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
@@ -2213,8 +1962,6 @@ class DetailActivity : ComponentActivity() {
                 (shuffleAdvanceDeadlineMs - SystemClock.uptimeMillis()).coerceAtLeast(0L)
             shuffleAdvanceDeadlineMs = 0L
         }
-        playWhenReadyBeforePause = currentPlayer?.playWhenReady
-        currentPlayer?.pause()
     }
 
     override fun onDestroy() {
@@ -2222,16 +1969,18 @@ class DetailActivity : ComponentActivity() {
         cancelPendingSingleTap()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
-        releasePlayer()
+        playbackController.releaseCurrent()
         imagePreloadJobs.values.forEach { it.cancel() }
         imagePreloadJobs.clear()
         imagePreloadScope.cancel()
         executor.shutdownNow()
         videoPreviewExecutor.shutdownNow()
+        queueController.close()
+        mediaActions.close()
     }
 
     private fun resetSpeedAndFinish() {
-        playbackSpeed = 1f
+        playbackController.resetSpeed()
         finish()
         Ui.applyCloseTransition(this)
     }

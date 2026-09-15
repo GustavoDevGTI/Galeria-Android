@@ -2,6 +2,7 @@ package com.galeria.android
 
 import android.app.Activity
 import android.app.PendingIntent
+import android.Manifest
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.ContentValues
@@ -22,6 +23,12 @@ import java.io.OutputStream
 import java.util.Collections
 
 class MediaActions private constructor() {
+    enum class MediaLibraryAccess {
+        NONE,
+        LIMITED,
+        FULL
+    }
+
     companion object {
         const val RESULT_DONE = 1
         const val RESULT_NEEDS_PERMISSION = 2
@@ -31,6 +38,55 @@ class MediaActions private constructor() {
         fun hasAllFilesAccess(context: Context): Boolean =
             Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
                 (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager())
+
+        @JvmStatic
+        fun mediaLibraryAccess(context: Context): MediaLibraryAccess {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+                return MediaLibraryAccess.FULL
+            }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                return if (context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    MediaLibraryAccess.FULL
+                } else {
+                    MediaLibraryAccess.NONE
+                }
+            }
+
+            val images = context.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            val videos = context.checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (images && videos) return MediaLibraryAccess.FULL
+
+            val selected = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                context.checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            return if (images || videos || selected) MediaLibraryAccess.LIMITED else MediaLibraryAccess.NONE
+        }
+
+        @JvmStatic
+        fun hasMediaLibraryAccess(context: Context): Boolean =
+            mediaLibraryAccess(context) != MediaLibraryAccess.NONE
+
+        @JvmStatic
+        fun mediaLibraryPermissions(): Array<String> {
+            val permissions = ArrayList<String>()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+                permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    permissions.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+                }
+            } else {
+                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                    permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                }
+            }
+            return permissions.toTypedArray()
+        }
 
         @JvmStatic
         fun requestAllFilesAccess(activity: Activity) {
@@ -128,6 +184,7 @@ class MediaActions private constructor() {
                     }
                     MediaScannerConnection.scanFile(activity, arrayOf(path), null, null)
                     MediaStoreRepository.invalidateCache()
+                    GalleryCatalogStore.markCatalogDirty(activity.applicationContext)
                     return true
                 }
             }
@@ -135,6 +192,7 @@ class MediaActions private constructor() {
                 val deleted = activity.contentResolver.delete(uri, null, null) > 0
                 if (deleted) {
                     MediaStoreRepository.invalidateCache()
+                    GalleryCatalogStore.markCatalogDirty(activity.applicationContext)
                 }
                 deleted
             } catch (_: Exception) {
@@ -422,7 +480,7 @@ class MediaActions private constructor() {
             }
         }
 
-        private fun fileFromMediaStore(activity: Activity, uri: Uri): File? {
+        internal fun fileFromMediaStore(activity: Activity, uri: Uri): File? {
             if (uri.scheme == "file") {
                 return File(uri.path.orEmpty())
             }

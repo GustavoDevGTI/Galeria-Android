@@ -1,3 +1,375 @@
 <resources>
     <string name="app_name">Galeria</string>
+
+    <!-- Ações e rótulos compartilhados -->
+    <string name="action_share">Compartilhar</string>
+    <string name="action_favorite">Favoritar</string>
+    <string name="action_delete">Excluir</string>
+    <string name="action_move">Mover</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="action_ok">OK</string>
+    <string name="action_allow">Permitir</string>
+    <string name="action_not_now">Agora não</string>
+    <string name="action_select_all">Selecionar tudo</string>
+    <string name="action_more_options">Mais opções</string>
+    <string name="action_cancel_selection">Cancelar seleção</string>
+    <string name="action_sort_by">Ordenar por</string>
+    <string name="action_filter_media">Filtrar mídia</string>
+    <string name="action_create_folder">Criar nova pasta</string>
+    <string name="action_settings">Configurações</string>
+    <string name="action_refresh">Atualizar</string>
+    <string name="action_move_to">Mover para</string>
+    <string name="action_ascending">Crescente</string>
+    <string name="action_descending">Decrescente</string>
+    <string name="field_title">Título</string>
+    <string name="media_images">Imagens</string>
+    <string name="media_videos">Vídeos</string>
+    <string name="media_gifs">GIFs</string>
+    <string name="media_raw_images">Imagens RAW</string>
+    <string name="media_svgs">SVGs</string>
+    <string name="media_portraits">Retratos</string>
+    <string name="view_grid">Grade</string>
+    <string name="view_list">Lista</string>
+
+    <plurals name="selected_count">
+        <item quantity="one">%d selecionado</item>
+        <item quantity="other">%d selecionados</item>
+    </plurals>
+    <plurals name="items_added_to_favorites">
+        <item quantity="one">%d item adicionado aos favoritos.</item>
+        <item quantity="other">%d itens adicionados aos favoritos.</item>
+    </plurals>
+    <plurals name="items_deleted">
+        <item quantity="one">%d item excluído.</item>
+        <item quantity="other">%d itens excluídos.</item>
+    </plurals>
+    <plurals name="items_moved">
+        <item quantity="one">%d item movido.</item>
+        <item quantity="other">%d itens movidos.</item>
+    </plurals>
+    <plurals name="albums_count">
+        <item quantity="one">%d álbum</item>
+        <item quantity="other">%d álbuns</item>
+    </plurals>
+    <plurals name="files_count">
+        <item quantity="one">%d arquivo</item>
+        <item quantity="other">%d arquivos</item>
+    </plurals>
+    <plurals name="approximately_items_removed">
+        <item quantity="one">Cerca de %d item será removido.</item>
+        <item quantity="other">Cerca de %d itens serão removidos.</item>
+    </plurals>
+    <plurals name="media_grid_columns_description">
+        <item quantity="one">Grade de mídias, %d coluna</item>
+        <item quantity="other">Grade de mídias, %d colunas</item>
+    </plurals>
+
+    <!-- Acesso à biblioteca -->
+    <string name="access_full_title">Permitir gerenciamento de arquivos</string>
+    <string name="access_full_explanation">O acesso completo permite localizar mídias ocultas ou não indexadas, criar pastas em qualquer local e executar operações em lote. A galeria continua funcionando com as mídias autorizadas sem esse acesso.</string>
+    <string name="access_initial_choice_title">Escolha como a Galeria acessará seus arquivos</string>
+    <string name="access_initial_choice_message">O acesso padrão, recomendado, permite escolher todas ou somente algumas fotos e vídeos. O gerenciamento completo também localiza mídias ocultas ou não indexadas, cria pastas em qualquer local e libera operações em lote. Você poderá alterar essa escolha nas Configurações.</string>
+    <string name="access_use_standard">Usar acesso padrão</string>
+    <string name="access_use_full">Usar acesso completo</string>
+    <string name="access_choose_in_settings">Escolha o acesso a fotos e vídeos nas Configurações para carregar a galeria.</string>
+    <string name="access_authorize_media">Autorize acesso a fotos ou vídeos para carregar a galeria.</string>
+    <string name="access_hidden_folders_required">Permita acesso total aos arquivos para localizar pastas ocultas.</string>
+    <string name="access_full_management_title">Permitir gerenciamento completo</string>
+    <string name="access_batch_operation_explanation">Esta operação em lote ou criação de pasta exige acesso completo. Visualizar, compartilhar, favoritar e editar as mídias autorizadas continuam disponíveis sem ele.</string>
+
+    <!-- Tela principal -->
+    <string name="main_search_folders">Pesquisar pastas</string>
+    <string name="main_empty_folders">Nenhuma pasta encontrada.</string>
+    <string name="main_loading_media">Carregando mídia…</string>
+    <string name="main_no_media_to_share">Nenhuma mídia para compartilhar.</string>
+    <string name="main_delete_albums_title">Excluir álbuns</string>
+    <string name="main_delete_albums_message">Tem certeza que deseja excluir as mídias de %1$s? %2$s</string>
+    <string name="main_no_move_target">Nenhum álbum disponível para mover.</string>
+    <string name="main_folder_organization">Organização de pastas</string>
+    <string name="main_folder_visibility">Exibir/ocultar pastas</string>
+    <string name="main_folder_organization_hint">Use dois dedos na grade: juntar diminui as capas; afastar aumenta as capas.</string>
+    <string name="main_pin_hidden">Fixar nos ocultos</string>
+    <string name="main_unpin_hidden">Desfixar dos ocultos</string>
+    <string name="main_album_count_label">%1$s (%2$d)</string>
+    <string name="main_show_hidden">Exibir ocultos</string>
+    <string name="main_unselect_hidden">Desmarcar ocultos</string>
+    <string name="main_load_hidden">Carregar ocultos</string>
+    <string name="main_hidden_dialog_help">Carregue as pastas ocultas, marque o que deve aparecer e confirme em OK.</string>
+    <string name="main_hidden_refresh_failed">Não foi possível atualizar as pastas ocultas.</string>
+    <string name="main_hidden_refresh_instruction">Use o botão Carregar ocultos para procurar novas pastas.</string>
+    <string name="sort_name">Nome</string>
+    <string name="sort_path">Caminho</string>
+    <string name="sort_size">Tamanho</string>
+    <string name="sort_modified_date">Data de modificação</string>
+    <string name="sort_created_date">Data de criação</string>
+    <string name="sort_random">Aleatório</string>
+    <string name="columns_two">2 colunas</string>
+    <string name="columns_three">3 colunas</string>
+    <string name="columns_four">4 colunas</string>
+    <string name="columns_five">5 colunas</string>
+    <string name="columns_six">6 colunas</string>
+
+    <!-- Conteúdo do álbum -->
+    <string name="album_default_name">Álbum</string>
+    <string name="album_back">Voltar</string>
+    <string name="album_search_area_description">Título e pesquisa do álbum</string>
+    <string name="album_search_folder">Pesquisar nesta pasta</string>
+    <string name="album_search_in">Pesquisar em %s</string>
+    <string name="album_load_failed">Não foi possível carregar as mídias.</string>
+    <string name="album_empty">Nenhuma foto ou vídeo nesta pasta.</string>
+    <string name="album_group_by">Agrupar por</string>
+    <string name="album_view_mode">Modo de visualização</string>
+    <string name="album_random">Aleatório</string>
+    <string name="album_grid_spacing">Espaçamento da grade</string>
+    <string name="album_grid_spacing_hint">Vale para todas as pastas. Esquerda: mais espaço. Direita: sem espaço.</string>
+    <string name="album_group_none">Não agrupar arquivos</string>
+    <string name="album_group_type">Tipo de arquivo</string>
+    <string name="album_group_extension">Extensão</string>
+    <string name="album_group_day">Data da foto (por dia)</string>
+    <string name="album_group_month">Data da foto (por mês)</string>
+    <string name="album_sort_custom">Ordem personalizada</string>
+    <string name="album_sort_added_date">Data de adição/download</string>
+    <string name="album_sort_name">Nome alfabético</string>
+    <string name="album_sort_duration">Duração</string>
+    <string name="album_sort_type">Tipo e formato</string>
+    <string name="album_sort_group_hint">A ordenação funciona junto com o agrupamento atual.</string>
+    <string name="album_delete_selected_title">Excluir selecionados</string>
+    <string name="album_delete_selected_message">Tem certeza que deseja excluir %s?</string>
+    <string name="album_loading_media">Carregando mídias…</string>
+    <string name="album_custom_order_saved">Ordem personalizada salva.</string>
+    <string name="album_no_media_to_play">Nenhuma mídia para reproduzir.</string>
+    <string name="album_media_list_description">Lista de mídias</string>
+    <string name="album_internal_storage">Armazenamento interno</string>
+    <string name="album_internal_storage_path">Armazenamento interno/%s</string>
+    <string name="album_enter_folder_name">Digite um nome para a pasta.</string>
+    <string name="album_folder_exists">A pasta já existe.</string>
+    <string name="album_folder_created">Pasta criada.</string>
+    <string name="album_folder_create_failed">Não foi possível criar a pasta.</string>
+    <string name="album_item_deleted">Item excluído.</string>
+    <string name="album_fast_scroll_description">Rolagem rápida do álbum</string>
+
+    <!-- Configurações -->
+    <string name="settings_section_access">Acesso</string>
+    <string name="settings_section_colors">Personalização de cores</string>
+    <string name="settings_section_general">Geral</string>
+    <string name="settings_section_photos">Fotos</string>
+    <string name="settings_section_videos">Vídeos</string>
+    <string name="settings_section_thumbnails">Miniaturas</string>
+    <string name="settings_section_scrolling">Rolagem</string>
+    <string name="settings_section_fullscreen_media">Mídia em tela cheia</string>
+    <string name="settings_section_deep_image_zoom">Zoom aprofundado para imagens</string>
+    <string name="settings_section_additional_details">Detalhes adicionais</string>
+    <string name="settings_section_security">Segurança</string>
+    <string name="settings_section_file_operations">Operações de arquivos</string>
+    <string name="settings_section_bottom_bar">Barra inferior</string>
+    <string name="settings_section_trash">Lixeira</string>
+    <string name="settings_section_migrating">Migrando</string>
+    <string name="settings_media_access">Fotos e vídeos</string>
+    <string name="settings_media_access_full">Acesso a todas as fotos e vídeos.</string>
+    <string name="settings_media_access_limited">Acesso limitado às mídias autorizadas. Toque para alterar.</string>
+    <string name="settings_media_access_none">Sem acesso. Toque para escolher fotos e vídeos.</string>
+    <string name="settings_full_management">Gerenciamento completo</string>
+    <string name="settings_full_management_active">Ativo: mídias ocultas, pastas arbitrárias e operações em lote.</string>
+    <string name="settings_full_management_inactive">Opcional: recursos avançados de arquivos estão desativados.</string>
+    <string name="settings_full_management_explanation">Este acesso é usado para localizar mídias ocultas ou não indexadas, navegar e criar pastas em qualquer local e executar operações em lote.</string>
+    <string name="settings_open_system_settings">Abrir configurações</string>
+    <string name="settings_theme_color">Cor do tema</string>
+    <string name="settings_theme_color_hint">Define o visual padrão da galeria.</string>
+    <string name="settings_choose_theme_color">Escolher cor do tema</string>
+    <string name="settings_theme_color_applied">Cor aplicada.</string>
+    <string name="settings_language">Idioma</string>
+    <string name="settings_language_portuguese">Português</string>
+    <string name="settings_language_english">English</string>
+    <string name="settings_language_spanish">Español</string>
+    <string name="settings_date_time_format">Formato de data e hora</string>
+    <string name="settings_value_system_default">Padrão do sistema</string>
+    <string name="settings_value_default">Padrão</string>
+    <string name="settings_value_short_date">Data curta</string>
+    <string name="settings_value_date_and_time">Data e hora</string>
+    <string name="settings_loading_priority">Prioridade de carregamento</string>
+    <string name="settings_value_speed">Velocidade</string>
+    <string name="settings_value_quality">Qualidade</string>
+    <string name="settings_value_balanced">Equilibrado</string>
+    <string name="settings_manage_included_folders">Gerenciar pastas inclusas</string>
+    <string name="settings_open_folder_picker">Abrir seletor de pastas.</string>
+    <string name="settings_manage_ignored_folders">Gerenciar pastas ignoradas</string>
+    <string name="settings_manage_ignored_folders_hint">Use Exibir/ocultar pastas no menu principal.</string>
+    <string name="settings_always_show_hidden">Sempre exibir ocultos</string>
+    <string name="settings_always_show_hidden_enabled_hint">Mostra pastas ocultas na lista principal.</string>
+    <string name="settings_always_show_hidden_requires_full_hint">Exige gerenciamento completo para localizar mídias não indexadas.</string>
+    <string name="settings_search_all_files">Procurar todos os arquivos</string>
+    <string name="settings_search_all_files_hint">Mostra todos os arquivos em vez de somente pastas na tela principal.</string>
+    <string name="settings_photo_filter">Filtro de fotos</string>
+    <string name="settings_photo_filter_hint">Use Filtrar mídia no menu principal.</string>
+    <string name="settings_autoplay_videos">Reproduzir automaticamente</string>
+    <string name="settings_autoplay_videos_hint">Inicia vídeos ao abrir.</string>
+    <string name="settings_remember_video_position">Lembrar última posição</string>
+    <string name="settings_remember_video_position_hint">Retoma vídeos de onde parou.</string>
+    <string name="settings_loop_videos">Reproduzir vídeos em ciclo</string>
+    <string name="settings_loop_videos_hint">Repete o vídeo continuamente.</string>
+    <string name="settings_video_separate_screen">Abrir vídeos em tela separada</string>
+    <string name="settings_video_separate_screen_hint">Mantém vídeos no visualizador dedicado.</string>
+    <string name="settings_video_vertical_gestures">Gestos verticais de volume/brilho</string>
+    <string name="settings_viewer_saved_preference_hint">Preferência salva para o visualizador.</string>
+    <string name="settings_crop_square_thumbnails">Recortar miniaturas em quadrados</string>
+    <string name="settings_crop_square_thumbnails_hint">Mantém capas com proporção uniforme.</string>
+    <string name="settings_animate_gif_thumbnails">Animar GIFs nas miniaturas</string>
+    <string name="settings_animate_gif_thumbnails_hint">Preferência salva para suporte a GIF animado.</string>
+    <string name="settings_file_thumbnail_style">Estilo da miniatura de arquivo</string>
+    <string name="settings_folder_thumbnail_style">Estilo da miniatura de pasta</string>
+    <string name="settings_value_square">Quadrado</string>
+    <string name="settings_value_rounded_corners">Cantos arredondados</string>
+    <string name="settings_value_circular">Circular</string>
+    <string name="settings_clear_cache">Limpar cache</string>
+    <string name="settings_cache_size_kb">%1$d KB em cache.</string>
+    <string name="settings_cache_cleared">Cache limpo.</string>
+    <string name="settings_horizontal_thumbnail_scroll">Rolar miniaturas horizontalmente</string>
+    <string name="settings_horizontal_thumbnail_scroll_hint">Preferência salva para modos futuros de grade.</string>
+    <string name="settings_pull_to_refresh">Puxar para atualizar</string>
+    <string name="settings_pull_to_refresh_hint">Preferência salva para atualizar a galeria por gesto.</string>
+    <string name="settings_fullscreen_max_brightness">Maximizar brilho</string>
+    <string name="settings_fullscreen_black_bg">Fundo preto em tela cheia</string>
+    <string name="settings_fullscreen_black_bg_hint">Usa fundo preto ao abrir mídia.</string>
+    <string name="settings_fullscreen_hide_system_ui">Esconder interface do sistema</string>
+    <string name="settings_fullscreen_hide_system_ui_hint">Oculta barras do sistema no visualizador.</string>
+    <string name="settings_tap_sides_change_media">Trocar mídia tocando nas laterais</string>
+    <string name="settings_tap_sides_change_media_hint">Preferência salva para navegação lateral.</string>
+    <string name="settings_vertical_brightness_gesture">Controle de brilho na vertical</string>
+    <string name="settings_vertical_brightness_gesture_hint">Preferência salva para gestos no visualizador.</string>
+    <string name="settings_swipe_down_to_close">Fechar com gesto para baixo</string>
+    <string name="settings_swipe_down_to_close_hint">Arraste para baixo para sair do visualizador.</string>
+    <string name="settings_show_display_cutout">Exibir o notch</string>
+    <string name="settings_show_display_cutout_hint">Preferência salva para aparelhos com recorte.</string>
+    <string name="settings_rotation">Rotação de tela</string>
+    <string name="settings_value_portrait">Retrato</string>
+    <string name="settings_value_landscape">Paisagem</string>
+    <string name="settings_value_sensor">Sensor</string>
+    <string name="settings_deep_image_zoom">Habilitar zoom aprofundado</string>
+    <string name="settings_deep_image_zoom_hint">Preferência salva para zoom avançado.</string>
+    <string name="settings_image_rotation_gestures">Rotação por gestos</string>
+    <string name="settings_image_rotation_gestures_hint">Preferência salva para gestos de imagem.</string>
+    <string name="settings_best_image_quality">Maior qualidade possível</string>
+    <string name="settings_best_image_quality_hint">Carrega imagens priorizando qualidade.</string>
+    <string name="settings_double_double_tap_zoom">Zoom 1:1 com dois toques duplos</string>
+    <string name="settings_double_double_tap_zoom_hint">Preferência salva para zoom rápido.</string>
+    <string name="settings_show_fullscreen_details">Exibir detalhes em tela cheia</string>
+    <string name="settings_show_fullscreen_details_hint">Mostra informações do arquivo no visualizador.</string>
+    <string name="settings_lock_entire_app">Proteger com senha todo o app</string>
+    <string name="settings_lock_entire_app_hint">Preferência salva para proteção futura.</string>
+    <string name="settings_lock_hidden_items">Proteger visualização de ocultos</string>
+    <string name="settings_lock_hidden_items_hint">Preferência salva para itens ocultos.</string>
+    <string name="settings_lock_file_operations">Proteger exclusão e movimentação</string>
+    <string name="settings_lock_file_operations_hint">Preferência salva para operações sensíveis.</string>
+    <string name="settings_delete_empty_folders">Apagar pastas vazias</string>
+    <string name="settings_delete_empty_folders_hint">Remove pastas vazias após excluir conteúdo.</string>
+    <string name="settings_keep_modified_date">Manter data de modificação</string>
+    <string name="settings_keep_modified_date_hint">Evita atualizar a data ao mover arquivos quando possível.</string>
+    <string name="settings_skip_delete_confirmation">Pular confirmação de exclusão</string>
+    <string name="settings_skip_delete_confirmation_hint">Pula a confirmação interna do app.</string>
+    <string name="settings_show_bottom_actions">Exibir botões de ação</string>
+    <string name="settings_show_bottom_actions_hint">Preferência salva para a barra inferior.</string>
+    <string name="settings_manage_visible_buttons">Gerenciar botões visíveis</string>
+    <string name="settings_manage_visible_buttons_hint">Excluir, mover, ocultar e restaurar.</string>
+    <string name="settings_move_to_trash">Mover para a Lixeira</string>
+    <string name="settings_move_to_trash_hint">Usa a lixeira do Android quando disponível.</string>
+    <string name="settings_export_favorites_path">Exportar caminho dos favoritos</string>
+    <string name="settings_no_favorites">Nenhum favorito criado ainda.</string>
+
+    <!-- Criação de pastas -->
+    <string name="folder_choose_location">Escolha onde a nova pasta será criada.</string>
+    <string name="folder_sd_card">Cartão SD</string>
+    <string name="folder_sd_card_numbered">Cartão SD %d</string>
+    <string name="folder_no_sd_card">Nenhum cartão montado</string>
+    <string name="folder_previous">Pasta anterior</string>
+    <string name="folder_choose_storage">Escolher armazenamento</string>
+    <string name="folder_create_here">Criar pasta aqui</string>
+    <string name="folder_name">Nome da pasta</string>
+    <string name="folder_create">Criar</string>
+    <string name="folder_invalid_name">Digite um nome válido.</string>
+    <string name="folder_access_explanation">Ative o acesso total a arquivos para criar a pasta no local escolhido.</string>
+    <string name="folder_exists_at_location">A pasta já existe neste local.</string>
+    <string name="folder_created_at">Pasta criada em %s.</string>
+    <string name="folder_create_at_location_failed">Não foi possível criar a pasta neste local.</string>
+    <string name="folder_storage_root">Raiz do armazenamento</string>
+
+    <string-array name="main_sort_labels">
+        <item>@string/sort_name</item>
+        <item>@string/sort_path</item>
+        <item>@string/sort_size</item>
+        <item>@string/sort_modified_date</item>
+        <item>@string/sort_created_date</item>
+        <item>@string/sort_random</item>
+    </string-array>
+    <string-array name="main_media_filter_labels">
+        <item>@string/media_images</item>
+        <item>@string/media_videos</item>
+        <item>@string/media_gifs</item>
+        <item>@string/media_raw_images</item>
+        <item>@string/media_svgs</item>
+        <item>@string/media_portraits</item>
+    </string-array>
+    <string-array name="folder_column_labels">
+        <item>@string/columns_two</item>
+        <item>@string/columns_three</item>
+        <item>@string/columns_four</item>
+        <item>@string/columns_five</item>
+        <item>@string/columns_six</item>
+    </string-array>
+    <string-array name="album_media_filter_labels">
+        <item>@string/media_images</item>
+        <item>@string/media_videos</item>
+        <item>@string/media_gifs</item>
+        <item>@string/media_raw_images</item>
+        <item>@string/media_svgs</item>
+    </string-array>
+    <string-array name="album_group_labels">
+        <item>@string/album_group_none</item>
+        <item>@string/album_group_type</item>
+        <item>@string/album_group_extension</item>
+        <item>@string/album_group_day</item>
+        <item>@string/album_group_month</item>
+    </string-array>
+    <string-array name="album_view_mode_labels">
+        <item>@string/view_grid</item>
+        <item>@string/view_list</item>
+    </string-array>
+    <string-array name="album_sort_labels">
+        <item>@string/album_sort_custom</item>
+        <item>@string/album_sort_added_date</item>
+        <item>@string/album_sort_name</item>
+        <item>@string/sort_size</item>
+        <item>@string/album_sort_duration</item>
+        <item>@string/album_sort_type</item>
+    </string-array>
+    <string-array name="settings_language_values">
+        <item>@string/settings_language_portuguese</item>
+        <item>@string/settings_language_english</item>
+        <item>@string/settings_language_spanish</item>
+    </string-array>
+    <string-array name="settings_date_time_values">
+        <item>@string/settings_value_system_default</item>
+        <item>@string/settings_value_short_date</item>
+        <item>@string/settings_value_date_and_time</item>
+    </string-array>
+    <string-array name="settings_loading_priority_values">
+        <item>@string/settings_value_speed</item>
+        <item>@string/settings_value_quality</item>
+        <item>@string/settings_value_balanced</item>
+    </string-array>
+    <string-array name="settings_file_thumbnail_values">
+        <item>@string/settings_value_default</item>
+        <item>@string/settings_value_square</item>
+        <item>@string/settings_value_rounded_corners</item>
+    </string-array>
+    <string-array name="settings_folder_thumbnail_values">
+        <item>@string/settings_value_square</item>
+        <item>@string/settings_value_rounded_corners</item>
+        <item>@string/settings_value_circular</item>
+    </string-array>
+    <string-array name="settings_rotation_values">
+        <item>@string/settings_value_system_default</item>
+        <item>@string/settings_value_portrait</item>
+        <item>@string/settings_value_landscape</item>
+        <item>@string/settings_value_sensor</item>
+    </string-array>
 </resources>

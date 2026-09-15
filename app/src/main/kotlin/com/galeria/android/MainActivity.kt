@@ -1,11 +1,9 @@
 package com.galeria.android
 
-import android.Manifest
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.graphics.Color
 import android.net.Uri
@@ -20,6 +18,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.BaseAdapter
@@ -32,14 +31,11 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
-import java.util.UUID
 import java.util.concurrent.Executors
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -47,7 +43,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var adapter: AlbumRecyclerAdapter
     private lateinit var emptyView: TextView
     private lateinit var searchInput: EditText
-    private lateinit var grid: RecyclerView
+    private lateinit var grid: AccessibleRecyclerView
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var layoutManager: GridLayoutManager
     private lateinit var root: LinearLayout
@@ -61,6 +57,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var selectAllText: TextView
     private lateinit var prefs: SharedPreferences
     private lateinit var scaleDetector: ScaleGestureDetector
+    private lateinit var accessCoordinator: MainMediaAccessCoordinator
+    private lateinit var catalogController: AlbumCatalogController
     private var sortMode = SORT_MODIFIED
     private var sortDesc = true
     private var showImages = true
@@ -72,8 +70,11 @@ class MainActivity : ComponentActivity() {
     private var showHiddenFolders = false
     private var columnCount = 3
     private var lastColumnGestureMs = 0L
+    private var gridTouchDownX = 0f
+    private var gridTouchDownY = 0f
+    private var gridTouchClickCandidate = false
+    private val gridTouchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop.toFloat() }
     private val mediaLoader = Executors.newSingleThreadExecutor()
-    private var loadGeneration = 0
     private var firstResume = true
     private var mainScreenResumed = false
     private var mediaObserverRefreshPending = false
@@ -84,7 +85,7 @@ class MainActivity : ComponentActivity() {
     private val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val mediaRefreshRunnable = Runnable {
         mediaObserverRefreshScheduled = false
-        if (!isFinishing && mainScreenResumed && hasWindowFocus() && hasReadPermission()) {
+        if (!isFinishing && mainScreenResumed && hasWindowFocus() && accessCoordinator.hasMediaLibraryAccess()) {
             mediaObserverRefreshPending = false
             refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
         } else {
@@ -101,24 +102,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        accessCoordinator = MainMediaAccessCoordinator(this, prefs)
+        catalogController = AlbumCatalogController(applicationContext)
         loadSettings()
         buildLayout()
         registerMediaObserver()
-        if (hasReadPermission()) {
-            ensureInitialFileManagementAccess()
-            mediaRefreshHandler.postDelayed({
-                if (!isFinishing && hasReadPermission()) {
-                    if (GalleryCatalogStore.isCatalogDirty(applicationContext)) {
-                        if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = true
-                        refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
-                    } else {
-                        loadAlbums()
-                    }
-                }
-            }, INITIAL_CATALOG_DELAY_MS)
-        } else {
-            requestReadPermission()
-        }
+        accessCoordinator.start(::scheduleInitialCatalogLoad)
     }
 
     override fun onResume() {
@@ -130,15 +119,31 @@ class MainActivity : ComponentActivity() {
         }
         loadSettings()
         applyThemeColors()
-        if (hasReadPermission()) {
-            if (GalleryCatalogStore.isCatalogDirty(applicationContext)) {
+        if (accessCoordinator.hasMediaLibraryAccess()) {
+            if (GalleryCatalogStore.isCatalogDirty(applicationContext, shouldIncludeHiddenFilesystem())) {
                 if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = true
-                refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
+                loadAlbums()
             } else {
                 loadAlbums()
                 if (mediaObserverRefreshPending) scheduleMediaRefresh()
             }
+        } else if (accessCoordinator.initialChoiceMade()) {
+            emptyView.visibility = View.VISIBLE
+            emptyView.setText(R.string.access_choose_in_settings)
         }
+    }
+
+    private fun scheduleInitialCatalogLoad() {
+        mediaRefreshHandler.postDelayed({
+            if (!isFinishing && accessCoordinator.hasMediaLibraryAccess()) {
+                if (GalleryCatalogStore.isCatalogDirty(applicationContext, shouldIncludeHiddenFilesystem())) {
+                    if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = true
+                    loadAlbums()
+                } else {
+                    loadAlbums()
+                }
+            }
+        }, INITIAL_CATALOG_DELAY_MS)
     }
 
     override fun onPause() {
@@ -156,6 +161,7 @@ class MainActivity : ComponentActivity() {
             contentResolver.unregisterContentObserver(mediaObserver)
         } catch (_: Exception) {
         }
+        catalogController.close()
         mediaLoader.shutdownNow()
     }
 
@@ -184,8 +190,8 @@ class MainActivity : ComponentActivity() {
             Ui.styleSelectionToggle(this, false)
         }
         top.addView(selectAllChip, LinearLayout.LayoutParams(Ui.dp(this, 30), Ui.dp(this, 30)).apply {
-            leftMargin = Ui.dp(this@MainActivity, 3)
-            rightMargin = Ui.dp(this@MainActivity, 3)
+            marginStart = Ui.dp(this@MainActivity, 3)
+            marginEnd = Ui.dp(this@MainActivity, 3)
         })
 
         searchIconButton = iconButton(R.drawable.ic_search).apply {
@@ -198,7 +204,7 @@ class MainActivity : ComponentActivity() {
         top.addView(searchIconButton, LinearLayout.LayoutParams(Ui.dp(this, 36), Ui.dp(this, 38)))
 
         searchInput = EditText(this).apply {
-            hint = "Pesquisar pastas"
+            setHint(R.string.main_search_folders)
             setHintTextColor(0x99F5F7FA.toInt())
             setTextColor(Ui.text(this@MainActivity))
             textSize = 14f
@@ -217,7 +223,7 @@ class MainActivity : ComponentActivity() {
         top.addView(searchInput, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
 
         moreButton = iconButton(R.drawable.ic_more_vertical).apply {
-            contentDescription = "Mais opções"
+            contentDescription = getString(R.string.action_more_options)
             setOnClickListener {
                 if (adapter.isSelectionMode()) {
                     exitSelectionMode()
@@ -233,19 +239,19 @@ class MainActivity : ComponentActivity() {
             background = Ui.rounded(Ui.surface(this@MainActivity), 8, this@MainActivity)
             Ui.setPadding(this, 14, 8, 14, 8)
         }
-        selectAllText = Ui.title(this, "Selecionar tudo", 15).apply {
+        selectAllText = Ui.title(this, getString(R.string.action_select_all), 15).apply {
             setOnClickListener { toggleSelectAll() }
         }
         selectionBar.addView(selectAllText, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val cancelSelection = Ui.title(this, "Cancelar", 15).apply {
-            gravity = Gravity.RIGHT
+        val cancelSelection = Ui.title(this, getString(R.string.action_cancel), 15).apply {
+            gravity = Gravity.END
             setOnClickListener { exitSelectionMode() }
         }
         selectionBar.addView(cancelSelection, LinearLayout.LayoutParams(Ui.dp(this, 96), Ui.dp(this, 38)))
         selectionBar.visibility = View.GONE
 
         val content = FrameLayout(this)
-        grid = RecyclerView(this).apply {
+        grid = AccessibleRecyclerView(this).apply {
             layoutManager = GridLayoutManager(this@MainActivity, columnCount).also { this@MainActivity.layoutManager = it }
             clipToPadding = false
             setHasFixedSize(true)
@@ -316,6 +322,26 @@ class MainActivity : ComponentActivity() {
         })
         grid.setOnTouchListener { _, event: MotionEvent ->
             scaleDetector.onTouchEvent(event)
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    gridTouchDownX = event.x
+                    gridTouchDownY = event.y
+                    gridTouchClickCandidate = true
+                }
+                MotionEvent.ACTION_POINTER_DOWN,
+                MotionEvent.ACTION_CANCEL -> gridTouchClickCandidate = false
+                MotionEvent.ACTION_MOVE -> {
+                    if (abs(event.x - gridTouchDownX) > gridTouchSlop ||
+                        abs(event.y - gridTouchDownY) > gridTouchSlop
+                    ) {
+                        gridTouchClickCandidate = false
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (gridTouchClickCandidate && event.pointerCount == 1) grid.performClick()
+                    gridTouchClickCandidate = false
+                }
+            }
             false
         }
         swipeRefresh = SwipeRefreshLayout(this).apply {
@@ -328,7 +354,7 @@ class MainActivity : ComponentActivity() {
         swipeRefresh.addView(grid, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         content.addView(swipeRefresh, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
-        emptyView = Ui.label(this, "Nenhuma pasta encontrada.").apply {
+        emptyView = Ui.label(this, getString(R.string.main_empty_folders)).apply {
             visibility = View.GONE
         }
         content.addView(
@@ -344,10 +370,10 @@ class MainActivity : ComponentActivity() {
         }
         selectionActionDock = Ui.selectionActionDock(this)
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        addSelectionAction(R.drawable.ic_share, "Compartilhar") { shareSelectedAlbums() }
-        addSelectionAction(R.drawable.ic_star, "Favoritar") { favoriteSelectedAlbums() }
-        addSelectionAction(R.drawable.ic_trash, "Excluir") { confirmDeleteSelectedAlbums() }
-        addSelectionAction(R.drawable.ic_arrow_right, "Mover") { askMoveSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_share, getString(R.string.action_share)) { shareSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_star, getString(R.string.action_favorite)) { favoriteSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { confirmDeleteSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_arrow_right, getString(R.string.action_move)) { askMoveSelectedAlbums() }
         selectionActions.visibility = View.GONE
         root.addView(selectionActions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         setContentView(root)
@@ -367,25 +393,24 @@ class MainActivity : ComponentActivity() {
         }
 
     private fun showMenu(anchor: View) {
+        val sort = getString(R.string.action_sort_by)
+        val filter = getString(R.string.action_filter_media)
+        val organization = getString(R.string.main_folder_organization)
+        val visibility = getString(R.string.main_folder_visibility)
+        val createFolder = getString(R.string.action_create_folder)
+        val settings = getString(R.string.action_settings)
+        val refresh = getString(R.string.action_refresh)
         Ui.showPopupOptions(
             anchor,
-            listOf(
-                "Ordenar por",
-                "Filtrar mídia",
-                "Organização de pastas",
-                "Exibir/ocultar pastas",
-                "Criar nova pasta",
-                "Configurações",
-                "Atualizar"
-            )
+            listOf(sort, filter, organization, visibility, createFolder, settings, refresh)
         ) { selected ->
             when (selected) {
-                "Ordenar por" -> showSortDialog()
-                "Filtrar mídia" -> showMediaFilterDialog()
-                "Organização de pastas" -> showFolderOrganizationDialog()
-                "Exibir/ocultar pastas" -> showFolderVisibilityDialog()
-                "Criar nova pasta" -> FolderCreationMenu(this) { loadAlbums() }.show()
-                "Configurações" -> startActivity(Intent(this, SettingsActivity::class.java))
+                sort -> showSortDialog()
+                filter -> showMediaFilterDialog()
+                organization -> showFolderOrganizationDialog()
+                visibility -> showFolderVisibilityDialog()
+                createFolder -> FolderCreationMenu(this) { loadAlbums() }.show()
+                settings -> startActivity(Intent(this, SettingsActivity::class.java))
                 else -> loadAlbums()
             }
         }
@@ -407,10 +432,16 @@ class MainActivity : ComponentActivity() {
         selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
         searchIconButton.visibility = if (active) View.GONE else View.VISIBLE
         Ui.styleSelectionToggle(selectAllChip, adapter.allVisibleSelected())
-        searchInput.hint = if (active) "${adapter.selectedCount()} selecionados" else "Pesquisar pastas"
+        searchInput.hint = if (active) {
+            resources.getQuantityString(R.plurals.selected_count, adapter.selectedCount(), adapter.selectedCount())
+        } else {
+            getString(R.string.main_search_folders)
+        }
         searchInput.isEnabled = !active
         moreButton.setImageResource(if (active) R.drawable.ic_back else R.drawable.ic_more_vertical)
-        moreButton.contentDescription = if (active) "Cancelar seleção" else "Mais opções"
+        moreButton.contentDescription = getString(
+            if (active) R.string.action_cancel_selection else R.string.action_more_options
+        )
         if (active && adapter.selectedCount() == 0) {
             exitSelectionMode()
         }
@@ -435,7 +466,7 @@ class MainActivity : ComponentActivity() {
             }
             runOnUiThread {
                 if (uris.isEmpty()) {
-                    Ui.toast(this, "Nenhuma mídia para compartilhar.")
+                    Ui.toast(this, getString(R.string.main_no_media_to_share))
                     return@runOnUiThread
                 }
                 val share = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
@@ -443,7 +474,7 @@ class MainActivity : ComponentActivity() {
                     putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                startActivity(Intent.createChooser(share, "Compartilhar"))
+                startActivity(Intent.createChooser(share, getString(R.string.action_share)))
             }
         }
     }
@@ -459,7 +490,10 @@ class MainActivity : ComponentActivity() {
             }
             prefs.edit().putStringSet("favorites", favorites).apply()
             runOnUiThread {
-                Ui.toast(this, "${items.size} item(ns) adicionados aos favoritos.")
+                Ui.toast(
+                    this,
+                    resources.getQuantityString(R.plurals.items_added_to_favorites, items.size, items.size)
+                )
                 exitSelectionMode()
             }
         }
@@ -471,26 +505,37 @@ class MainActivity : ComponentActivity() {
         val visibleCount = albums.sumOf { it.count }
         Ui.showConfirmationDialog(
             this,
-            "Excluir álbuns",
-            "Tem certeza que deseja excluir as mídias de ${albums.size} álbum(ns)? Cerca de $visibleCount item(ns) serão removidos.",
-            "Excluir"
+            getString(R.string.main_delete_albums_title),
+            getString(
+                R.string.main_delete_albums_message,
+                resources.getQuantityString(R.plurals.albums_count, albums.size, albums.size),
+                resources.getQuantityString(
+                    R.plurals.approximately_items_removed,
+                    visibleCount,
+                    visibleCount
+                )
+            ),
+            getString(R.string.action_delete)
         ) { deleteSelectedAlbums(albums) }
     }
 
     private fun deleteSelectedAlbums(albums: List<AlbumItem>) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
-            ensureFileManagementAccess(true)
+            accessCoordinator.ensureFullAccess(true)
             return
         }
         mediaLoader.execute {
-            var deleted = 0
+            val completed = arrayListOf<MediaItem>()
             for (item in mediaForAlbums(albums)) {
-                if (MediaActions.requestPermanentDelete(this, item.uri, REQ_READ) == MediaActions.RESULT_DONE) {
-                    deleted++
+                if (MediaActions.requestPermanentDelete(this, item.uri, REQ_BATCH_DELETE) == MediaActions.RESULT_DONE) {
+                    completed.add(item)
                 }
             }
             runOnUiThread {
-                Ui.toast(this, "$deleted item(ns) excluídos.")
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val deleted = completed.size
+                adapter.removeCompletedItems(completed, moved = false)
+                Ui.toast(this, resources.getQuantityString(R.plurals.items_deleted, deleted, deleted))
                 exitSelectionMode()
                 loadAlbums()
             }
@@ -512,34 +557,40 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 if (isFinishing || !moreButton.isAttachedToWindow) return@runOnUiThread
                 if (targets.isEmpty()) {
-                    Ui.toast(this, "Nenhum álbum disponível para mover.")
+                    Ui.toast(this, getString(R.string.main_no_move_target))
                     return@runOnUiThread
                 }
-                Ui.showAlbumTargets(moreButton, "Mover para", targets) { album ->
-                    moveSelectedAlbums(albums, album.path.ifBlank { album.name })
+                Ui.showAlbumTargets(moreButton, getString(R.string.action_move_to), targets) { album ->
+                    moveSelectedAlbums(albums, album)
                 }
             }
         }
     }
 
-    private fun moveSelectedAlbums(albums: List<AlbumItem>, folder: String) {
+    private fun moveSelectedAlbums(albums: List<AlbumItem>, destination: AlbumItem) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
-            ensureFileManagementAccess(true)
+            accessCoordinator.ensureFullAccess(true)
             return
         }
         mediaLoader.execute {
-            var moved = 0
-            for (item in mediaForAlbums(albums)) {
-                if (MediaActions.moveToFolder(this, item, folder) == MediaActions.RESULT_DONE) {
-                    moved++
-                }
+            val actions = AlbumSelectionActions(this, prefs)
+            val result = try {
+                actions.move(mediaForAlbums(albums), destination.path.ifBlank { destination.name })
+            } finally {
+                actions.close()
             }
+            val moved = result.completed
             runOnUiThread {
-                Ui.toast(this, "$moved item(ns) movidos.")
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                adapter.removeCompletedItems(result.completedItems, moved = true)
+                Ui.toast(this, resources.getQuantityString(R.plurals.items_moved, moved, moved))
                 exitSelectionMode()
+                if (albums.any { it.key in result.emptiedAlbumKeys }) {
+                    startActivity(MediaOperationNavigation.destinationIntent(this, intent, destination.key, destination.name))
+                }
                 if (moved > 0) {
                     if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = true
-                    refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
+                    loadAlbums()
                 } else {
                     loadAlbums()
                 }
@@ -566,101 +617,34 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadAlbums() {
-        val request = ++loadGeneration
-        val searchAllFiles = prefs.getBoolean("search_all_files", false)
-        val includeHidden = shouldIncludeHiddenFilesystem()
-        val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
-            emptyView.text = "Carregando mídia..."
+            emptyView.setText(R.string.main_loading_media)
             emptyView.visibility = View.VISIBLE
         }
-
-        mediaLoader.execute {
-            val cachedSummaries = GalleryCatalogStore.readAlbums(applicationContext, includeHidden)
-            if (cachedSummaries.isNotEmpty() && includesAllMediaTypes()) {
-                val cachedAlbums = prepareAlbums(cachedSummaries, hiddenKeys, includeHidden, searchAllFiles)
-                postAlbums(request, cachedAlbums, query)
-            }
-
-            if (cachedSummaries.isEmpty()) {
-                val media = MediaStoreRepository.refreshMedia(applicationContext, includeHidden, force = true)
-                val albums = buildAlbumsFromMedia(media, hiddenKeys, includeHidden, searchAllFiles)
-                postAlbums(request, albums, query)
-                return@execute
-            }
-
-            if (!includesAllMediaTypes()) {
-                val media = MediaStoreRepository.loadMedia(applicationContext, includeHidden)
-                val albums = buildAlbumsFromMedia(media, hiddenKeys, includeHidden, searchAllFiles)
-                postAlbums(request, albums, query)
-            }
-
-            val allFilesAccess = MediaActions.hasAllFilesAccess(applicationContext)
-            if (!GalleryCatalogStore.hasFreshCatalog(
-                    applicationContext,
-                    includeHidden,
-                    allFilesAccess,
-                    CATALOG_FALLBACK_MAX_AGE_MS
-                )
-            ) {
-                runOnUiThread { scheduleDeferredCatalogRefresh(includeHidden) }
-            }
-        }
-    }
-
-    private fun postAlbums(request: Int, albums: List<AlbumItem>, query: String) {
-        val sorted = albums.toMutableList()
-        sortAlbums(sorted)
-        runOnUiThread {
-            if (request != loadGeneration || isFinishing) return@runOnUiThread
-            showAlbumsProgressively(sorted, query)
-        }
-    }
-
-    private fun prepareAlbums(
-        source: List<AlbumItem>,
-        hiddenKeys: Set<String>,
-        includeHidden: Boolean,
-        searchAllFiles: Boolean
-    ): List<AlbumItem> {
-        val visible = source.filter { !hiddenKeys.contains(it.key) && (includeHidden || !isHiddenAlbum(it)) }
-        if (!searchAllFiles) return visible
-        if (visible.isEmpty()) return emptyList()
-        val latestAlbum = visible.maxByOrNull { it.latestDate }
-        val latest = latestAlbum?.latestDate ?: 0L
-        val first = visible.asSequence().map { it.firstDate }.filter { it > 0L }.minOrNull() ?: latest
-        return listOf(
-            AlbumItem(
-                "all_media",
-                "Todos os arquivos",
-                visible.sumOf { it.count },
-                latestAlbum?.cover,
-                latest,
-                first,
-                visible.sumOf { max(0L, it.totalSize) },
-                ""
-            )
+        catalogController.load(
+            AlbumCatalogOptions(
+                includeHidden = shouldIncludeHiddenFilesystem(),
+                searchAllFiles = prefs.getBoolean("search_all_files", false),
+                hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet()),
+                query = query,
+                filterOptions = MediaFilterOptions(
+                    showImages,
+                    showVideos,
+                    showGifs,
+                    showRaw,
+                    showSvgs,
+                    showPortraits
+                ),
+                sortMode = sortMode,
+                sortDescending = sortDesc
+            ),
+            onAlbums = { albums, currentQuery ->
+                if (!isFinishing) showAlbumsProgressively(albums, currentQuery)
+            },
+            onDeferredRefreshRequired = ::scheduleDeferredCatalogRefresh
         )
     }
-
-    private fun buildAlbumsFromMedia(
-        media: List<MediaItem>,
-        hiddenKeys: Set<String>,
-        includeHidden: Boolean,
-        searchAllFiles: Boolean
-    ): List<AlbumItem> {
-        val filteredMedia = media.filter(::matchesMediaFilter)
-        return prepareAlbums(
-            MediaStoreRepository.buildAlbums(filteredMedia),
-            hiddenKeys,
-            includeHidden,
-            searchAllFiles
-        )
-    }
-
-    private fun includesAllMediaTypes(): Boolean =
-        (showImages || showPortraits) && showVideos && showGifs && showRaw && showSvgs
 
     private fun scheduleDeferredCatalogRefresh(includeHidden: Boolean) {
         if (deferredCatalogRefreshPending || isFinishing || !::grid.isInitialized) return
@@ -763,16 +747,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showSortDialog() {
-        val labels = arrayOf("Nome", "Caminho", "Tamanho", "Data de modificação", "Data de criação", "Aleatório")
+        val labels = resources.getStringArray(R.array.main_sort_labels)
         val modes = arrayOf(SORT_NAME, SORT_PATH, SORT_SIZE, SORT_MODIFIED, SORT_CREATED, SORT_RANDOM)
         var checked = modes.indexOf(sortMode).takeIf { it >= 0 } ?: 3
 
         Ui.showChoiceDialog(
             this,
-            "Ordenar por",
+            getString(R.string.action_sort_by),
             labels,
             checked,
-            neutralText = if (sortDesc) "Decrescente" else "Crescente",
+            neutralText = getString(if (sortDesc) R.string.action_descending else R.string.action_ascending),
             onNeutral = {
                 sortDesc = !sortDesc
                 saveSorting()
@@ -794,9 +778,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showMediaFilterDialog() {
-        val labels = arrayOf("Imagens", "Vídeos", "GIFs", "Imagens RAW", "SVGs", "Retratos")
+        val labels = resources.getStringArray(R.array.main_media_filter_labels)
         val checked = booleanArrayOf(showImages, showVideos, showGifs, showRaw, showSvgs, showPortraits)
-        Ui.showMultiChoiceDialog(this, "Filtrar mídia", labels, checked) { selected ->
+        Ui.showMultiChoiceDialog(this, getString(R.string.action_filter_media), labels, checked) { selected ->
             showImages = selected[0]
             showVideos = selected[1]
             showGifs = selected[2]
@@ -816,14 +800,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showFolderOrganizationDialog() {
-        val labels = arrayOf("2 colunas", "3 colunas", "4 colunas", "5 colunas", "6 colunas")
+        val labels = resources.getStringArray(R.array.folder_column_labels)
         val checked = max(0, min(4, columnCount - 2))
         Ui.showChoiceDialog(
             this,
-            "Organização de pastas",
+            getString(R.string.main_folder_organization),
             labels,
             checked,
-            message = "Use dois dedos na grade: juntar diminui as capas; afastar aumenta as capas."
+            message = getString(R.string.main_folder_organization_hint)
         ) { which ->
             setColumnCount(which + 2)
         }
@@ -946,7 +930,7 @@ class MainActivity : ComponentActivity() {
                             setImageResource(R.drawable.ic_star)
                             setBackgroundColor(Color.TRANSPARENT)
                             scaleType = ImageView.ScaleType.CENTER
-                            contentDescription = "Fixar nos ocultos"
+                            contentDescription = getString(R.string.main_pin_hidden)
                             setPadding(
                                 Ui.dp(this@MainActivity, 8),
                                 Ui.dp(this@MainActivity, 8),
@@ -970,12 +954,14 @@ class MainActivity : ComponentActivity() {
                 val pin = row.findViewWithTag<ImageButton>("pin")
                 val check = row.findViewWithTag<CheckBox>("check")
                 val pinned = pinnedKeys.contains(album.key)
-                label.text = "${album.name} (${album.count})"
+                label.text = getString(R.string.main_album_count_label, album.name, album.count)
                 label.setTextColor(dialogText)
                 pin.setImageResource(if (pinned) R.drawable.ic_star_filled else R.drawable.ic_star)
                 pin.setColorFilter(if (pinned) dialogText else dialogMuted)
                 pin.alpha = if (pinned) 1f else 0.48f
-                pin.contentDescription = if (pinned) "Desfixar dos ocultos" else "Fixar nos ocultos"
+                pin.contentDescription = getString(
+                    if (pinned) R.string.main_unpin_hidden else R.string.main_pin_hidden
+                )
                 pin.setOnClickListener {
                     if (pinnedKeys.contains(album.key)) {
                         pinnedKeys.remove(album.key)
@@ -1031,7 +1017,9 @@ class MainActivity : ComponentActivity() {
         fun updateShowHiddenControl() {
             val allChecked = allAlbumsChecked()
             showHiddenCheck?.isChecked = allChecked
-            showHiddenLabel?.text = if (allChecked || hiddenAlbumsChecked()) "Desmarcar ocultos" else "Exibir ocultos"
+            showHiddenLabel?.setText(
+                if (allChecked || hiddenAlbumsChecked()) R.string.main_unselect_hidden else R.string.main_show_hidden
+            )
         }
 
         fun renderAlbums() {
@@ -1041,8 +1029,8 @@ class MainActivity : ComponentActivity() {
 
         fun requestHiddenScanAccess() {
             refresher.isRefreshing = false
-            Ui.toast(this, "Permita acesso total aos arquivos para localizar pastas ocultas.")
-            ensureFileManagementAccess(true)
+            Ui.toast(this, getString(R.string.access_hidden_folders_required))
+            accessCoordinator.ensureFullAccess(true)
         }
 
         fun refreshHiddenAlbums() {
@@ -1050,9 +1038,10 @@ class MainActivity : ComponentActivity() {
                 requestHiddenScanAccess()
                 return
             }
-            val workId = MediaScanScheduler.enqueue(applicationContext, includeHidden = true, replace = true)
-            observeWorkCompletion(
-                workId,
+            catalogController.refreshCatalog(
+                owner = this,
+                includeHidden = true,
+                force = true,
                 onSuccess = {
                     mediaLoader.execute {
                         val refreshed = MediaStoreRepository.buildAlbums(
@@ -1078,14 +1067,14 @@ class MainActivity : ComponentActivity() {
                 },
                 onFailure = {
                     refresher.isRefreshing = false
-                    Ui.toast(this, "Não foi possível atualizar as pastas ocultas.")
+                    Ui.toast(this, getString(R.string.main_hidden_refresh_failed))
                 }
             )
         }
 
         refresher.setOnRefreshListener {
             refresher.isRefreshing = false
-            Ui.toast(this, "Use o botão Carregar ocultos para procurar novas pastas.")
+            Ui.toast(this, getString(R.string.main_hidden_refresh_instruction))
         }
         renderAlbums()
 
@@ -1166,7 +1155,7 @@ class MainActivity : ComponentActivity() {
             )
             addView(
                 TextView(this@MainActivity).apply {
-                    text = "Exibir/ocultar pastas"
+                    setText(R.string.main_folder_visibility)
                     textSize = 18f
                     setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
                     setTextColor(dialogText)
@@ -1175,7 +1164,7 @@ class MainActivity : ComponentActivity() {
             )
             addView(
                 TextView(this@MainActivity).apply {
-                    text = "Carregue as pastas ocultas, marque o que deve aparecer e confirme em OK."
+                    setText(R.string.main_hidden_dialog_help)
                     textSize = 14f
                     setTextColor(dialogText)
                     alpha = 0.78f
@@ -1200,7 +1189,7 @@ class MainActivity : ComponentActivity() {
                             }
                             showHiddenCheck = checkbox
                             val label = TextView(this@MainActivity).apply {
-                                text = "Exibir ocultos"
+                                setText(R.string.main_show_hidden)
                                 textSize = 15f
                                 setTextColor(dialogText)
                                 setPadding(Ui.dp(this@MainActivity, 8), 0, 0, 0)
@@ -1212,7 +1201,7 @@ class MainActivity : ComponentActivity() {
                         LinearLayout.LayoutParams(0, Ui.dp(this@MainActivity, 48), 1f)
                     )
                     addView(
-                        dialogButton("Carregar ocultos") { loadHiddenAlbums() }.apply {
+                        dialogButton(getString(R.string.main_load_hidden)) { loadHiddenAlbums() }.apply {
                             textSize = 13f
                             setPadding(
                                 Ui.dp(this@MainActivity, 8),
@@ -1232,7 +1221,7 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             background = Ui.rounded(Ui.blend(dialogBg, Color.WHITE, 0.03f), 0, this@MainActivity)
             addView(
-                dialogButton("OK", primary = true) { applyFolderVisibility() },
+                dialogButton(getString(R.string.action_ok), primary = true) { applyFolderVisibility() },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             )
         }
@@ -1249,7 +1238,7 @@ class MainActivity : ComponentActivity() {
         dialog = AlertDialog.Builder(this)
             .setView(panel)
             .create()
-        Ui.showSidePanel(dialog, fullHeight = true)
+        Ui.showCenteredPanel(dialog, fullHeight = true)
     }
 
     private fun setColumnCount(nextCount: Int) {
@@ -1299,13 +1288,13 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshCatalogWithWorker(includeHidden: Boolean, force: Boolean = true) {
         if (force && ::adapter.isInitialized) adapter.refreshVisibleCovers()
-        val workId = MediaScanScheduler.enqueue(applicationContext, includeHidden, replace = force)
-        observeWorkCompletion(
-            workId,
+        catalogController.refreshCatalog(
+            owner = this,
+            includeHidden = includeHidden,
+            force = force,
             onSuccess = {
                 deferredCatalogRefreshPending = false
                 mediaObserverRefreshPending = false
-                GalleryCatalogStore.clearCatalogDirty(applicationContext)
                 forceAlbumCoverRefreshOnNextSubmit = force
                 if (!isFinishing) loadAlbums()
             },
@@ -1316,28 +1305,6 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun observeWorkCompletion(
-        workId: UUID,
-        onSuccess: () -> Unit,
-        onFailure: () -> Unit
-    ) {
-        val workManager = WorkManager.getInstance(applicationContext)
-        val workInfo = workManager.getWorkInfoByIdLiveData(workId)
-        val observer = object : Observer<WorkInfo?> {
-            override fun onChanged(value: WorkInfo?) {
-                value ?: return
-                if (!value.state.isFinished) return
-                workInfo.removeObserver(this)
-                if (value.state == WorkInfo.State.SUCCEEDED) {
-                    onSuccess()
-                } else {
-                    onFailure()
-                }
-            }
-        }
-        workInfo.observe(this, observer)
-    }
-
     private fun scheduleMediaRefresh() {
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
         mediaObserverRefreshScheduled = true
@@ -1346,67 +1313,20 @@ class MainActivity : ComponentActivity() {
 
     private fun updateEmptyText() {
         if (!::adapter.isInitialized || !::emptyView.isInitialized) return
-        emptyView.text = "Nenhuma pasta encontrada."
+        emptyView.setText(R.string.main_empty_folders)
         emptyView.visibility = if (adapter.getCount() == 0) View.VISIBLE else View.GONE
-    }
-
-    private fun hasReadPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED &&
-                checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
-        } else {
-            checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-        }
-    }
-
-    private fun requestReadPermission() {
-        val permissions = ArrayList<String>()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
-            permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
-        } else {
-            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-                permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
-        }
-        requestPermissions(permissions.toTypedArray(), REQ_READ)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_READ && hasReadPermission()) {
-            ensureInitialFileManagementAccess()
-            loadAlbums()
-        } else {
-            emptyView.visibility = View.VISIBLE
-            emptyView.text = "Autorize acesso completo a fotos e vídeos para carregar a galeria."
-        }
-    }
-
-    private fun ensureInitialFileManagementAccess() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || MediaActions.hasAllFilesAccess(this)) return
-        if (prefs.getBoolean(PREF_INITIAL_ALL_FILES_REQUESTED, false)) return
-        prefs.edit().putBoolean(PREF_INITIAL_ALL_FILES_REQUESTED, true).apply()
-        ensureFileManagementAccess(true)
-    }
-
-    private fun ensureFileManagementAccess(force: Boolean) {
-        if (MediaActions.hasAllFilesAccess(this)) return
-        if (!force && prefs.getBoolean(PREF_ALL_FILES_PROMPTED, false)) return
-        Ui.showConfirmationDialog(
-            this,
-            "Permitir gerenciamento de arquivos",
-            "Para excluir, mover, copiar e criar pastas no celular, ative o acesso total a arquivos para a Galeria.",
-            "Permitir",
-            negativeText = "Agora não",
-            onNegative = {
-                prefs.edit().putBoolean(PREF_ALL_FILES_PROMPTED, true).apply()
+        accessCoordinator.onRequestPermissionsResult(
+            requestCode,
+            onGranted = ::loadAlbums,
+            onDenied = {
+                emptyView.visibility = View.VISIBLE
+                emptyView.setText(R.string.access_authorize_media)
             }
-        ) {
-                prefs.edit().putBoolean(PREF_ALL_FILES_PROMPTED, true).apply()
-                MediaActions.requestAllFilesAccess(this)
-        }
+        )
     }
 
     private fun statusBarHeight(): Int {
@@ -1420,16 +1340,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun shouldIncludeHiddenFilesystem(): Boolean =
-        showHiddenFolders || prefs.getBoolean("always_show_hidden", false)
+        accessCoordinator.includeHiddenFilesystem(
+            showHiddenFolders || prefs.getBoolean("always_show_hidden", false)
+        )
 
     companion object {
-        private const val REQ_READ = 10
+        private const val REQ_BATCH_DELETE = 10
         private const val PREFS = "gallery_albums"
-        private const val PREF_ALL_FILES_PROMPTED = "all_files_prompted"
-        private const val PREF_INITIAL_ALL_FILES_REQUESTED = "initial_all_files_requested"
         private const val PREF_PINNED_HIDDEN_FOLDER_KEYS = "pinned_hidden_folder_keys"
         private const val PREF_EVER_VISIBLE_FOLDER_KEYS = "ever_visible_folder_keys"
-        private const val CATALOG_FALLBACK_MAX_AGE_MS = 6 * 60 * 60 * 1000L
         private const val DEFERRED_REFRESH_DELAY_MS = 900L
         private const val INITIAL_CATALOG_DELAY_MS = 90L
         private const val SORT_NAME = AlbumRules.SORT_NAME

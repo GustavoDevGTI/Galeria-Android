@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
@@ -25,6 +26,11 @@ class SettingsActivity : Activity() {
         buildLayout()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::content.isInitialized) fillContent()
+    }
+
     private fun buildLayout() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -35,13 +41,13 @@ class SettingsActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             Ui.setPadding(this, 12, 12, 12, 8)
         }
-        val back = Ui.title(this, "Voltar", 16).apply {
+        val back = Ui.title(this, getString(R.string.album_back), 16).apply {
             gravity = Gravity.CENTER
             setOnClickListener { finish() }
         }
         bar.addView(back, LinearLayout.LayoutParams(Ui.dp(this, 76), Ui.dp(this, 44)))
 
-        val title = Ui.title(this, "Configurações", 22)
+        val title = Ui.title(this, getString(R.string.action_settings), 22)
         bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(bar)
 
@@ -58,89 +64,143 @@ class SettingsActivity : Activity() {
 
     private fun fillContent() {
         content.removeAllViews()
-        addSection("Personalização de cores")
+        addSection(getString(R.string.settings_section_access))
+        addOption(getString(R.string.settings_media_access), mediaLibraryAccessLabel()) {
+            requestPermissions(MediaActions.mediaLibraryPermissions(), REQ_MEDIA_LIBRARY)
+        }
+        addOption(getString(R.string.settings_full_management), allFilesAccessLabel()) {
+            requestFullFileManagementAccess()
+        }
+
+        addSection(getString(R.string.settings_section_colors))
         addColorChoice()
 
-        addSection("Geral")
-        addOption("Idioma", languageLabel()) { chooseLanguage() }
-        addOption("Formato de data e hora", normalizeDisplayValue(prefs.getString("date_time_format", "Padrão do sistema").orEmpty())) {
-            chooseValue("Formato de data e hora", "date_time_format", arrayOf("Padrão do sistema", "Data curta", "Data e hora"))
+        addSection(getString(R.string.settings_section_general))
+        addOption(getString(R.string.settings_language), languageLabel()) { chooseLanguage() }
+        val dateTimeValues = resources.getStringArray(R.array.settings_date_time_values)
+        addOption(getString(R.string.settings_date_time_format), normalizeDisplayValue(prefs.getString("date_time_format", dateTimeValues[0]).orEmpty())) {
+            chooseValue(getString(R.string.settings_date_time_format), "date_time_format", dateTimeValues)
         }
-        addOption("Prioridade de carregamento", prefs.getString("loading_priority", "Velocidade").orEmpty()) {
-            chooseValue("Prioridade de carregamento", "loading_priority", arrayOf("Velocidade", "Qualidade", "Equilibrado"))
+        val loadingPriorityValues = resources.getStringArray(R.array.settings_loading_priority_values)
+        addOption(getString(R.string.settings_loading_priority), prefs.getString("loading_priority", loadingPriorityValues[0]).orEmpty()) {
+            chooseValue(getString(R.string.settings_loading_priority), "loading_priority", loadingPriorityValues)
         }
-        addOption("Gerenciar pastas inclusas", "Abrir seletor de pastas.") {
-            startActivity(Intent(this, FolderPickerActivity::class.java))
+        addOption(getString(R.string.settings_manage_included_folders), getString(R.string.settings_open_folder_picker)) {
+            if (MediaActions.hasAllFilesAccess(this)) {
+                startActivity(Intent(this, FolderPickerActivity::class.java))
+            } else {
+                requestFullFileManagementAccess()
+            }
         }
-        addOption("Gerenciar pastas ignoradas", "Use Exibir/ocultar pastas no menu principal.", null)
-        addSwitch("Sempre exibir ocultos", "Mostra pastas ocultas na lista principal.", "always_show_hidden", false, null)
-        addSwitch("Procurar todos os arquivos", "Mostra todos os arquivos em vez de somente pastas na tela principal.", "search_all_files", false, null)
+        addOption(getString(R.string.settings_manage_ignored_folders), getString(R.string.settings_manage_ignored_folders_hint), null)
+        addSwitch(
+            getString(R.string.settings_always_show_hidden),
+            if (MediaActions.hasAllFilesAccess(this)) {
+                getString(R.string.settings_always_show_hidden_enabled_hint)
+            } else {
+                getString(R.string.settings_always_show_hidden_requires_full_hint)
+            },
+            "always_show_hidden",
+            false,
+            null
+        )
+        addSwitch(getString(R.string.settings_search_all_files), getString(R.string.settings_search_all_files_hint), "search_all_files", false, null)
 
-        addSection("Fotos")
-        addOption("Filtro de fotos", "Use Filtrar mídia no menu principal.", null)
+        addSection(getString(R.string.settings_section_photos))
+        addOption(getString(R.string.settings_photo_filter), getString(R.string.settings_photo_filter_hint), null)
 
-        addSection("Vídeos")
-        addSwitch("Reproduzir automaticamente", "Inicia vídeos ao abrir.", "autoplay_videos", true, null)
-        addSwitch("Lembrar última posição", "Retoma vídeos de onde parou.", "remember_video_position", true, null)
-        addSwitch("Reproduzir vídeos em ciclo", "Repete o vídeo continuamente.", "loop_videos", false, null)
-        addSwitch("Abrir vídeos em tela separada", "Mantém vídeos no visualizador dedicado.", "video_separate_screen", false, null)
-        addSwitch("Gestos verticais de volume/brilho", "Preferência salva para o visualizador.", "video_vertical_gestures", true, null)
+        addSection(getString(R.string.settings_section_videos))
+        addSwitch(getString(R.string.settings_autoplay_videos), getString(R.string.settings_autoplay_videos_hint), "autoplay_videos", true, null)
+        addSwitch(getString(R.string.settings_remember_video_position), getString(R.string.settings_remember_video_position_hint), "remember_video_position", true, null)
+        addSwitch(getString(R.string.settings_loop_videos), getString(R.string.settings_loop_videos_hint), "loop_videos", false, null)
+        addSwitch(getString(R.string.settings_video_separate_screen), getString(R.string.settings_video_separate_screen_hint), "video_separate_screen", false, null)
+        addSwitch(getString(R.string.settings_video_vertical_gestures), getString(R.string.settings_viewer_saved_preference_hint), "video_vertical_gestures", true, null)
 
-        addSection("Miniaturas")
-        addSwitch("Recortar miniaturas em quadrados", "Mantém capas com proporção uniforme.", "crop_square_thumbnails", true, null)
-        addSwitch("Animar GIFs nas miniaturas", "Preferência salva para suporte a GIF animado.", "animate_gif_thumbnails", true, null)
-        addOption("Estilo da miniatura de arquivo", normalizeDisplayValue(prefs.getString("file_thumb_style", "Padrão").orEmpty())) {
-            chooseValue("Estilo da miniatura de arquivo", "file_thumb_style", arrayOf("Padrão", "Quadrado", "Cantos arredondados"))
+        addSection(getString(R.string.settings_section_thumbnails))
+        addSwitch(getString(R.string.settings_crop_square_thumbnails), getString(R.string.settings_crop_square_thumbnails_hint), "crop_square_thumbnails", true, null)
+        addSwitch(getString(R.string.settings_animate_gif_thumbnails), getString(R.string.settings_animate_gif_thumbnails_hint), "animate_gif_thumbnails", true, null)
+        val fileThumbnailValues = resources.getStringArray(R.array.settings_file_thumbnail_values)
+        addOption(getString(R.string.settings_file_thumbnail_style), normalizeDisplayValue(prefs.getString("file_thumb_style", fileThumbnailValues[0]).orEmpty())) {
+            chooseValue(getString(R.string.settings_file_thumbnail_style), "file_thumb_style", fileThumbnailValues)
         }
-        addOption("Estilo da miniatura de pasta", prefs.getString("folder_thumb_style", "Cantos arredondados").orEmpty()) {
-            chooseValue("Estilo da miniatura de pasta", "folder_thumb_style", arrayOf("Quadrado", "Cantos arredondados", "Circular"))
+        val folderThumbnailValues = resources.getStringArray(R.array.settings_folder_thumbnail_values)
+        addOption(getString(R.string.settings_folder_thumbnail_style), prefs.getString("folder_thumb_style", folderThumbnailValues[1]).orEmpty()) {
+            chooseValue(getString(R.string.settings_folder_thumbnail_style), "folder_thumb_style", folderThumbnailValues)
         }
-        addOption("Limpar cache", cacheLabel()) { clearCache() }
+        addOption(getString(R.string.settings_clear_cache), cacheLabel()) { clearCache() }
 
-        addSection("Rolagem")
-        addSwitch("Rolar miniaturas horizontalmente", "Preferência salva para modos futuros de grade.", "horizontal_thumbnail_scroll", false, null)
-        addSwitch("Puxar para atualizar", "Preferência salva para atualizar a galeria por gesto.", "pull_to_refresh", true, null)
+        addSection(getString(R.string.settings_section_scrolling))
+        addSwitch(getString(R.string.settings_horizontal_thumbnail_scroll), getString(R.string.settings_horizontal_thumbnail_scroll_hint), "horizontal_thumbnail_scroll", false, null)
+        addSwitch(getString(R.string.settings_pull_to_refresh), getString(R.string.settings_pull_to_refresh_hint), "pull_to_refresh", true, null)
 
-        addSection("Mídia em tela cheia")
-        addSwitch("Maximizar brilho", "Preferência salva para o visualizador.", "fullscreen_max_brightness", false, null)
-        addSwitch("Fundo preto em tela cheia", "Usa fundo preto ao abrir mídia.", "fullscreen_black_bg", true, null)
-        addSwitch("Esconder interface do sistema", "Oculta barras do sistema no visualizador.", "fullscreen_hide_system_ui", false, null)
-        addSwitch("Trocar mídia tocando nas laterais", "Preferência salva para navegação lateral.", "tap_sides_change_media", false, null)
-        addSwitch("Controle de brilho na vertical", "Preferência salva para gestos no visualizador.", "vertical_brightness_gesture", false, null)
-        addSwitch("Fechar com gesto para baixo", "Arraste para baixo para sair do visualizador.", "swipe_down_to_close", true, null)
-        addSwitch("Exibir o notch", "Preferência salva para aparelhos com recorte.", "show_display_cutout", true, null)
-        addOption("Rotação de tela", normalizeDisplayValue(prefs.getString("rotation_criterion", "Padrão do sistema").orEmpty())) {
-            chooseValue("Rotação de tela", "rotation_criterion", arrayOf("Padrão do sistema", "Retrato", "Paisagem", "Sensor"))
+        addSection(getString(R.string.settings_section_fullscreen_media))
+        addSwitch(getString(R.string.settings_fullscreen_max_brightness), getString(R.string.settings_viewer_saved_preference_hint), "fullscreen_max_brightness", false, null)
+        addSwitch(getString(R.string.settings_fullscreen_black_bg), getString(R.string.settings_fullscreen_black_bg_hint), "fullscreen_black_bg", true, null)
+        addSwitch(getString(R.string.settings_fullscreen_hide_system_ui), getString(R.string.settings_fullscreen_hide_system_ui_hint), "fullscreen_hide_system_ui", false, null)
+        addSwitch(getString(R.string.settings_tap_sides_change_media), getString(R.string.settings_tap_sides_change_media_hint), "tap_sides_change_media", false, null)
+        addSwitch(getString(R.string.settings_vertical_brightness_gesture), getString(R.string.settings_vertical_brightness_gesture_hint), "vertical_brightness_gesture", false, null)
+        addSwitch(getString(R.string.settings_swipe_down_to_close), getString(R.string.settings_swipe_down_to_close_hint), "swipe_down_to_close", true, null)
+        addSwitch(getString(R.string.settings_show_display_cutout), getString(R.string.settings_show_display_cutout_hint), "show_display_cutout", true, null)
+        val rotationValues = resources.getStringArray(R.array.settings_rotation_values)
+        addOption(getString(R.string.settings_rotation), normalizeDisplayValue(prefs.getString("rotation_criterion", rotationValues[0]).orEmpty())) {
+            chooseValue(getString(R.string.settings_rotation), "rotation_criterion", rotationValues)
         }
 
-        addSection("Zoom aprofundado para imagens")
-        addSwitch("Habilitar zoom aprofundado", "Preferência salva para zoom avançado.", "deep_image_zoom", true, null)
-        addSwitch("Rotação por gestos", "Preferência salva para gestos de imagem.", "image_rotation_gestures", true, null)
-        addSwitch("Maior qualidade possível", "Carrega imagens priorizando qualidade.", "best_image_quality", false, null)
-        addSwitch("Zoom 1:1 com dois toques duplos", "Preferência salva para zoom rápido.", "double_double_tap_zoom", false, null)
+        addSection(getString(R.string.settings_section_deep_image_zoom))
+        addSwitch(getString(R.string.settings_deep_image_zoom), getString(R.string.settings_deep_image_zoom_hint), "deep_image_zoom", true, null)
+        addSwitch(getString(R.string.settings_image_rotation_gestures), getString(R.string.settings_image_rotation_gestures_hint), "image_rotation_gestures", true, null)
+        addSwitch(getString(R.string.settings_best_image_quality), getString(R.string.settings_best_image_quality_hint), "best_image_quality", false, null)
+        addSwitch(getString(R.string.settings_double_double_tap_zoom), getString(R.string.settings_double_double_tap_zoom_hint), "double_double_tap_zoom", false, null)
 
-        addSection("Detalhes adicionais")
-        addSwitch("Exibir detalhes em tela cheia", "Mostra informações do arquivo no visualizador.", "show_fullscreen_details", false, null)
+        addSection(getString(R.string.settings_section_additional_details))
+        addSwitch(getString(R.string.settings_show_fullscreen_details), getString(R.string.settings_show_fullscreen_details_hint), "show_fullscreen_details", false, null)
 
-        addSection("Segurança")
-        addSwitch("Proteger com senha todo o app", "Preferência salva para proteção futura.", "lock_entire_app", false, null)
-        addSwitch("Proteger visualização de ocultos", "Preferência salva para itens ocultos.", "lock_hidden_items", false, null)
-        addSwitch("Proteger exclusão e movimentação", "Preferência salva para operações sensíveis.", "lock_file_operations", false, null)
+        addSection(getString(R.string.settings_section_security))
+        addSwitch(getString(R.string.settings_lock_entire_app), getString(R.string.settings_lock_entire_app_hint), "lock_entire_app", false, null)
+        addSwitch(getString(R.string.settings_lock_hidden_items), getString(R.string.settings_lock_hidden_items_hint), "lock_hidden_items", false, null)
+        addSwitch(getString(R.string.settings_lock_file_operations), getString(R.string.settings_lock_file_operations_hint), "lock_file_operations", false, null)
 
-        addSection("Operações de arquivos")
-        addSwitch("Apagar pastas vazias", "Remove pastas vazias após excluir conteúdo.", "delete_empty_folders", false, null)
-        addSwitch("Manter data de modificação", "Evita atualizar a data ao mover arquivos quando possível.", "keep_modified_date", true, null)
-        addSwitch("Pular confirmação de exclusão", "Pula a confirmação interna do app.", "skip_delete_confirmation", false, null)
+        addSection(getString(R.string.settings_section_file_operations))
+        addSwitch(getString(R.string.settings_delete_empty_folders), getString(R.string.settings_delete_empty_folders_hint), "delete_empty_folders", false, null)
+        addSwitch(getString(R.string.settings_keep_modified_date), getString(R.string.settings_keep_modified_date_hint), "keep_modified_date", true, null)
+        addSwitch(getString(R.string.settings_skip_delete_confirmation), getString(R.string.settings_skip_delete_confirmation_hint), "skip_delete_confirmation", false, null)
 
-        addSection("Barra inferior")
-        addSwitch("Exibir botões de ação", "Preferência salva para a barra inferior.", "show_bottom_actions", true, null)
-        addOption("Gerenciar botões visíveis", "Excluir, mover, ocultar e restaurar.", null)
+        addSection(getString(R.string.settings_section_bottom_bar))
+        addSwitch(getString(R.string.settings_show_bottom_actions), getString(R.string.settings_show_bottom_actions_hint), "show_bottom_actions", true, null)
+        addOption(getString(R.string.settings_manage_visible_buttons), getString(R.string.settings_manage_visible_buttons_hint), null)
 
-        addSection("Lixeira")
-        addSwitch("Mover para a Lixeira", "Usa a lixeira do Android quando disponível.", "move_to_trash", false, null)
+        addSection(getString(R.string.settings_section_trash))
+        addSwitch(getString(R.string.settings_move_to_trash), getString(R.string.settings_move_to_trash_hint), "move_to_trash", false, null)
 
-        addSection("Migrando")
-        addOption("Exportar caminho dos favoritos", "Nenhum favorito criado ainda.", null)
+        addSection(getString(R.string.settings_section_migrating))
+        addOption(getString(R.string.settings_export_favorites_path), getString(R.string.settings_no_favorites), null)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_MEDIA_LIBRARY) fillContent()
+    }
+
+    private fun mediaLibraryAccessLabel(): String = when (MediaActions.mediaLibraryAccess(this)) {
+        MediaActions.MediaLibraryAccess.FULL -> getString(R.string.settings_media_access_full)
+        MediaActions.MediaLibraryAccess.LIMITED -> getString(R.string.settings_media_access_limited)
+        MediaActions.MediaLibraryAccess.NONE -> getString(R.string.settings_media_access_none)
+    }
+
+    private fun allFilesAccessLabel(): String = if (MediaActions.hasAllFilesAccess(this)) {
+        getString(R.string.settings_full_management_active)
+    } else {
+        getString(R.string.settings_full_management_inactive)
+    }
+
+    private fun requestFullFileManagementAccess() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || MediaActions.hasAllFilesAccess(this)) return
+        Ui.showConfirmationDialog(
+            this,
+            getString(R.string.access_full_management_title),
+            getString(R.string.settings_full_management_explanation),
+            getString(R.string.settings_open_system_settings)
+        ) { MediaActions.requestAllFilesAccess(this) }
     }
 
     private fun addSection(title: String) {
@@ -159,7 +219,7 @@ class SettingsActivity : Activity() {
         val row = rowBase()
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val titleView = Ui.title(this, title, 16)
-        val subtitleView = Ui.label(this, subtitle).apply { gravity = Gravity.LEFT }
+        val subtitleView = Ui.label(this, subtitle).apply { gravity = Gravity.START }
         texts.addView(titleView)
         texts.addView(subtitleView)
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -179,7 +239,7 @@ class SettingsActivity : Activity() {
         val row = rowBase()
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val titleView = Ui.title(this, title, 16)
-        val subtitleView = Ui.label(this, subtitle).apply { gravity = Gravity.LEFT }
+        val subtitleView = Ui.label(this, subtitle).apply { gravity = Gravity.START }
         texts.addView(titleView)
         texts.addView(subtitleView)
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -198,8 +258,8 @@ class SettingsActivity : Activity() {
     private fun addColorChoice() {
         val row = rowBase()
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val titleView = Ui.title(this, "Cor do tema", 16)
-        val subtitleView = Ui.label(this, "Define o visual padrão da galeria.").apply { gravity = Gravity.LEFT }
+        val titleView = Ui.title(this, getString(R.string.settings_theme_color), 16)
+        val subtitleView = Ui.label(this, getString(R.string.settings_theme_color_hint)).apply { gravity = Gravity.START }
         texts.addView(titleView)
         texts.addView(subtitleView)
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -219,7 +279,7 @@ class SettingsActivity : Activity() {
             clipToOutline = true
             addView(
                 TextView(this@SettingsActivity).apply {
-                    text = "Escolher cor do tema"
+                    setText(R.string.settings_choose_theme_color)
                     textSize = 18f
                     setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
                     setTextColor(Ui.menuText(this@SettingsActivity))
@@ -239,7 +299,7 @@ class SettingsActivity : Activity() {
                     background = Ui.rounded(color, 10, this@SettingsActivity)
                     setOnClickListener {
                         prefs.edit().putInt("theme_color", color).apply()
-                        Ui.toast(this@SettingsActivity, "Cor aplicada.")
+                        Ui.toast(this@SettingsActivity, getString(R.string.settings_theme_color_applied))
                         dialogRef[0]?.dismiss()
                         buildLayout()
                     }
@@ -253,7 +313,7 @@ class SettingsActivity : Activity() {
         }
         panel.addView(
             TextView(this).apply {
-                text = "Cancelar"
+                setText(R.string.action_cancel)
                 textSize = 15f
                 gravity = Gravity.CENTER_VERTICAL or Gravity.START
                 setTextColor(Ui.menuText(this@SettingsActivity))
@@ -293,26 +353,26 @@ class SettingsActivity : Activity() {
 
     private fun languageLabel(): String =
         when (prefs.getString("language", "pt")) {
-            "en" -> "English"
-            "es" -> "Español"
-            else -> "Português"
+            "en" -> getString(R.string.settings_language_english)
+            "es" -> getString(R.string.settings_language_spanish)
+            else -> getString(R.string.settings_language_portuguese)
         }
 
     private fun normalizeDisplayValue(value: String): String =
         when (value) {
-            "Padrao do sistema" -> "Padrão do sistema"
-            "Padrao" -> "Padrão"
-            "Portugues" -> "Português"
-            "Espanol" -> "Español"
+            "Padrao do sistema" -> getString(R.string.settings_value_system_default)
+            "Padrao" -> getString(R.string.settings_value_default)
+            "Portugues" -> getString(R.string.settings_language_portuguese)
+            "Espanol" -> getString(R.string.settings_language_spanish)
             else -> value
         }
 
     private fun chooseLanguage() {
-        val labels = arrayOf("Português", "English", "Español")
+        val labels = resources.getStringArray(R.array.settings_language_values)
         val values = arrayOf("pt", "en", "es")
         val current = prefs.getString("language", "pt")
         val checked = values.indexOf(current).takeIf { it >= 0 } ?: 0
-        Ui.showChoiceDialog(this, "Idioma", labels, checked) { which ->
+        Ui.showChoiceDialog(this, getString(R.string.settings_language), labels, checked) { which ->
             prefs.edit().putString("language", values[which]).apply()
             fillContent()
         }
@@ -329,12 +389,12 @@ class SettingsActivity : Activity() {
 
     private fun cacheLabel(): String {
         val bytes = folderSize(cacheDir)
-        return "${bytes / 1024} KB em cache."
+        return getString(R.string.settings_cache_size_kb, bytes / 1024)
     }
 
     private fun clearCache() {
         deleteChildren(cacheDir)
-        Ui.toast(this, "Cache limpo.")
+        Ui.toast(this, getString(R.string.settings_cache_cleared))
         fillContent()
     }
 
@@ -359,5 +419,9 @@ class SettingsActivity : Activity() {
             }
             file.delete()
         }
+    }
+
+    private companion object {
+        const val REQ_MEDIA_LIBRARY = 20
     }
 }

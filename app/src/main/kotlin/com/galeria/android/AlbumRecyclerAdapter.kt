@@ -78,6 +78,23 @@ class AlbumRecyclerAdapter(
         diff.dispatchUpdatesTo(this)
     }
 
+    fun removeCompletedItems(items: List<MediaItem>, moved: Boolean) {
+        if (items.isEmpty()) return
+        val byAlbum = items.groupBy { it.albumKey }
+        val keys = items.mapTo(HashSet()) { MediaIdentityRules.canonicalKey(it.uri.toString()) }
+        submit(allAlbums.mapNotNull { album ->
+            val removed = if (album.key == "all_media") {
+                if (moved) emptyList() else items
+            } else byAlbum[album.key].orEmpty()
+            if (removed.isEmpty()) return@mapNotNull album
+            val remaining = (album.count - removed.size).coerceAtLeast(0)
+            if (remaining == 0 && album.key != "all_media") return@mapNotNull null
+            val cover = album.cover?.takeUnless { MediaIdentityRules.canonicalKey(it.uri.toString()) in keys }
+            AlbumItem(album.key, album.name, remaining, cover, album.latestDate, album.firstDate,
+                (album.totalSize - removed.sumOf { it.size }).coerceAtLeast(0), album.path)
+        })
+    }
+
     fun getCount(): Int = visibleAlbums.size
 
     fun getItem(position: Int): AlbumItem = visibleAlbums[position]
@@ -157,8 +174,8 @@ class AlbumRecyclerAdapter(
             background = Ui.rounded(0x99000000.toInt(), 4, context)
         }
         val checkParams = FrameLayout.LayoutParams(Ui.dp(context, 24), Ui.dp(context, 24)).apply {
-            gravity = Gravity.TOP or Gravity.LEFT
-            leftMargin = Ui.dp(context, 6)
+            gravity = Gravity.TOP or Gravity.START
+            marginStart = Ui.dp(context, 6)
             topMargin = Ui.dp(context, 6)
         }
         thumb.addView(check, checkParams)
@@ -167,7 +184,7 @@ class AlbumRecyclerAdapter(
         val name = TextView(context).apply {
             setTextColor(Ui.text(context))
             textSize = 14f
-            gravity = Gravity.LEFT
+            gravity = Gravity.START
             maxLines = 2
             includeFontPadding = true
         }
@@ -181,7 +198,7 @@ class AlbumRecyclerAdapter(
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val album = visibleAlbums[position]
         bindSelection(holder, album)
-        holder.name.text = "${album.name} (${album.count})"
+        holder.name.text = context.getString(R.string.main_album_count_label, album.name, album.count)
         holder.name.setTextColor(Ui.text(context))
         bindCover(holder, album)
         holder.itemView.setOnClickListener { callbacks.onAlbumClick(holder.bindingAdapterPosition) }

@@ -59,7 +59,7 @@ class AlbumFastScroller(
     }
 
     init {
-        contentDescription = "Rolagem rápida do álbum"
+        contentDescription = context.getString(R.string.album_fast_scroll_description)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         isClickable = true
         registerListeners()

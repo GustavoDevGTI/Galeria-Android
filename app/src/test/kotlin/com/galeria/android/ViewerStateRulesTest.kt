@@ -46,4 +46,36 @@ class ViewerStateRulesTest {
 
         assertEquals(media.toSet(), restored.toSet())
     }
+
+    @Test
+    fun navigationWrapsAtBothEndsOfTheQueue() {
+        assertEquals(0, ViewerStateRules.advancedIndex(2, 1, 3))
+        assertEquals(2, ViewerStateRules.advancedIndex(0, -1, 3))
+        assertEquals(1, ViewerStateRules.wrappedIndex(7, 3))
+    }
+
+    @Test
+    fun removalKeepsTheSameSlotOrMovesToTheNewLastItem() {
+        assertEquals(1, ViewerStateRules.indexAfterRemoval(1, 3))
+        assertEquals(2, ViewerStateRules.indexAfterRemoval(3, 3))
+        assertEquals(null, ViewerStateRules.indexAfterRemoval(0, 0))
+    }
+
+    @Test
+    fun customOrderKeepsOnlyAvailableUrisWithoutDuplicates() {
+        val ordered = ViewerStateRules.orderedUris(
+            availableUris = listOf("a", "b", "c"),
+            customOrder = listOf("c", "missing", "a", "c")
+        )
+
+        assertEquals(listOf("c", "a"), ordered)
+    }
+
+    @Test
+    fun videoLoopPreferenceIsDisabledDuringShuffleAndPresentation() {
+        assertEquals(true, ViewerStateRules.shouldLoopVideo(false, false, true))
+        assertEquals(false, ViewerStateRules.shouldLoopVideo(true, false, true))
+        assertEquals(false, ViewerStateRules.shouldLoopVideo(false, true, true))
+        assertEquals(false, ViewerStateRules.shouldLoopVideo(false, false, false))
+    }
 }

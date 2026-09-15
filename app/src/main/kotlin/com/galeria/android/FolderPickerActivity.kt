@@ -51,7 +51,7 @@ class FolderPickerActivity : Activity() {
         bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(bar)
 
-        pathView = Ui.label(this, "").apply { gravity = Gravity.LEFT }
+        pathView = Ui.label(this, "").apply { gravity = Gravity.START }
         Ui.setPadding(pathView, 18, 0, 18, 8)
         root.addView(pathView)
 
@@ -78,7 +78,7 @@ class FolderPickerActivity : Activity() {
         root.addView(list, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         val actions = LinearLayout(this).apply {
-            gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
             Ui.setPadding(this, 12, 10, 12, 14)
         }
         val create = Ui.title(this, "Criar pasta", 16).apply {
@@ -194,7 +194,7 @@ class FolderPickerActivity : Activity() {
                 isSingleLine = false
             }
             val textParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                leftMargin = Ui.dp(this@FolderPickerActivity, 14)
+                marginStart = Ui.dp(this@FolderPickerActivity, 14)
             }
             row.addView(text, textParams)
             return row

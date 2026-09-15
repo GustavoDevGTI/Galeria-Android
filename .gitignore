@@ -3,6 +3,9 @@
 build/
 app/build/
 local.properties
+*.jks
+*.keystore
+keystore.properties
 *.apk
 !Galeria-Android-versao-*.apk
 *.ap_
