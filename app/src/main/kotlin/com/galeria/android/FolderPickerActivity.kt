@@ -24,6 +24,7 @@ class FolderPickerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Ui.applySystemBars(this)
         rootDir = Environment.getExternalStorageDirectory()
         val pictures = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
         currentDir = if (pictures.exists()) pictures else rootDir
@@ -39,7 +40,7 @@ class FolderPickerActivity : Activity() {
 
         val bar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            Ui.setPadding(this, 12, 12, 12, 8)
+            Ui.applySystemBarPadding(this, 12, 8, 12, 8)
         }
         val back = Ui.title(this, "Voltar", 16).apply {
             gravity = Gravity.CENTER

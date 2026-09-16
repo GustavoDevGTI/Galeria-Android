@@ -18,11 +18,23 @@ internal data class DetailPlaybackTimeline(
 
 internal object DetailPlaybackRules {
     private const val FINISHED_TOLERANCE_MS = 750L
+    const val RESUME_RETENTION_MS = 12L * 60L * 60L * 1000L
 
     fun rememberedPosition(positionMs: Long, durationMs: Long, ended: Boolean): Long {
         if (ended) return 0L
         val position = max(0L, positionMs)
         return if (durationMs > 0L && position >= durationMs - FINISHED_TOLERANCE_MS) 0L else position
+    }
+
+    fun restoredPosition(
+        positionMs: Long,
+        durationMs: Long,
+        savedAtMs: Long,
+        nowMs: Long
+    ): Long {
+        val ageMs = nowMs - savedAtMs
+        if (savedAtMs <= 0L || ageMs !in 0L..RESUME_RETENTION_MS) return 0L
+        return rememberedPosition(positionMs, durationMs, ended = false)
     }
 
     fun seekTarget(positionMs: Long, deltaMs: Long, durationMs: Long): Long {
@@ -97,7 +109,13 @@ internal class DetailPlaybackController(
                     positionRestored = true
                 }
                 if (playbackState == Player.STATE_ENDED) {
-                    if (rememberPositionForCurrent) saveCurrentPosition() else listener.onPlaybackEnded()
+                    if (rememberPositionForCurrent) {
+                        clearCurrentPosition()
+                        player.playWhenReady = false
+                        player.seekTo(0L)
+                    } else {
+                        listener.onPlaybackEnded()
+                    }
                 }
                 listener.onPlaybackChanged()
             }
@@ -175,8 +193,20 @@ internal class DetailPlaybackController(
 
     fun saveCurrentPosition() {
         val key = currentVideoKey ?: return
-        if (rememberPositionForCurrent && prefs.getBoolean("remember_video_position", true)) {
-            prefs.edit { putLong(key, rememberedPosition()) }
+        if (!rememberPositionForCurrent) return
+        if (!prefs.getBoolean("remember_video_position", true)) {
+            clearCurrentPosition()
+            return
+        }
+        val position = rememberedPosition()
+        prefs.edit {
+            if (position > 0L) {
+                putLong(key, position)
+                putLong(savedAtKey(key), System.currentTimeMillis())
+            } else {
+                remove(key)
+                remove(savedAtKey(key))
+            }
         }
     }
 
@@ -228,8 +258,32 @@ internal class DetailPlaybackController(
             pendingRestoredPositionMs = null
             return
         }
-        if (!rememberPositionForCurrent || !prefs.getBoolean("remember_video_position", true)) return
+        if (!rememberPositionForCurrent) return
+        if (!prefs.getBoolean("remember_video_position", true)) {
+            clearCurrentPosition()
+            return
+        }
         val key = currentVideoKey ?: return
-        prefs.getLong(key, 0L).takeIf { it > 0L }?.let(player::seekTo)
+        val restoredPosition = DetailPlaybackRules.restoredPosition(
+            positionMs = prefs.getLong(key, 0L),
+            durationMs = player.duration,
+            savedAtMs = prefs.getLong(savedAtKey(key), 0L),
+            nowMs = System.currentTimeMillis()
+        )
+        if (restoredPosition > 0L) {
+            player.seekTo(restoredPosition)
+        } else {
+            clearCurrentPosition()
+        }
     }
+
+    private fun clearCurrentPosition() {
+        val key = currentVideoKey ?: return
+        prefs.edit {
+            remove(key)
+            remove(savedAtKey(key))
+        }
+    }
+
+    private fun savedAtKey(positionKey: String): String = "${positionKey}_saved_at"
 }

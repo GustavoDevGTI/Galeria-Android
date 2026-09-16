@@ -174,9 +174,15 @@
     <string name="settings_full_management_explanation">Este acesso é usado para localizar mídias ocultas ou não indexadas, navegar e criar pastas em qualquer local e executar operações em lote.</string>
     <string name="settings_open_system_settings">Abrir configurações</string>
     <string name="settings_theme_color">Cor do tema</string>
-    <string name="settings_theme_color_hint">Define o visual padrão da galeria.</string>
+    <string name="settings_theme_color_hint">Escolha um tom suave e confortável para a galeria.</string>
     <string name="settings_choose_theme_color">Escolher cor do tema</string>
     <string name="settings_theme_color_applied">Cor aplicada.</string>
+    <string name="settings_theme_color_instruction">Arraste pelo círculo e acompanhe a prévia em tempo real.</string>
+    <string name="settings_theme_color_wheel_description">Círculo de cores do tema</string>
+    <string name="settings_theme_tone">Luminosidade</string>
+    <string name="settings_theme_preview_title">Prévia do tema</string>
+    <string name="settings_theme_preview_subtitle">Superfícies e textos com contraste confortável.</string>
+    <string name="settings_theme_apply">Aplicar</string>
     <string name="settings_language">Idioma</string>
     <string name="settings_language_portuguese">Português</string>
     <string name="settings_language_english">English</string>
@@ -204,7 +210,7 @@
     <string name="settings_autoplay_videos">Reproduzir automaticamente</string>
     <string name="settings_autoplay_videos_hint">Inicia vídeos ao abrir.</string>
     <string name="settings_remember_video_position">Lembrar última posição</string>
-    <string name="settings_remember_video_position_hint">Retoma vídeos de onde parou.</string>
+    <string name="settings_remember_video_position_hint">Retoma vídeos de onde parou por até 12 horas. Vídeos concluídos voltam ao início.</string>
     <string name="settings_loop_videos">Reproduzir vídeos em ciclo</string>
     <string name="settings_loop_videos_hint">Repete o vídeo continuamente.</string>
     <string name="settings_video_separate_screen">Abrir vídeos em tela separada</string>

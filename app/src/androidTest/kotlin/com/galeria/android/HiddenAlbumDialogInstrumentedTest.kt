@@ -3,6 +3,8 @@ package com.galeria.android
 import android.Manifest
 import android.content.Context
 import android.provider.MediaStore
+import android.view.Gravity
+import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
@@ -113,6 +115,14 @@ class HiddenAlbumDialogInstrumentedTest {
                 onView(withText(containsString("Câmera"))).inRoot(isDialog()).check(matches(isDisplayed()))
                 onView(withText(containsString("Oculto nunca exibido"))).inRoot(isDialog()).check(doesNotExist())
                 onView(withText("Carregar ocultos")).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText("OK")).inRoot(isDialog()).check { view, exception ->
+                    if (exception != null) throw exception
+                    val gravity = Gravity.getAbsoluteGravity(
+                        (view as TextView).gravity,
+                        view.layoutDirection
+                    ) and Gravity.HORIZONTAL_GRAVITY_MASK
+                    assertTrue("O OK do painel central deve ficar à direita.", gravity == Gravity.RIGHT)
+                }
                 val hiddenControlLocation = IntArray(2)
                 val loadControlLocation = IntArray(2)
                 onView(withText("Exibir ocultos")).inRoot(isDialog()).check { view, exception ->

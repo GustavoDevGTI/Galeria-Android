@@ -145,6 +145,7 @@ class AlbumMediaActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         completedRemovalUris.addAll(savedInstanceState?.getStringArrayList("completed_removal_uris").orEmpty())
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
+        Ui.applySystemBars(this)
         catalogController = AlbumMediaCatalogController(applicationContext)
         selectionCoordinator = AlbumSelectionActions(this, prefs)
         albumKey = intent.getStringExtra("album_key")
@@ -163,6 +164,7 @@ class AlbumMediaActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        Ui.applySystemBars(this)
         if (firstResume) {
             firstResume = false
             return

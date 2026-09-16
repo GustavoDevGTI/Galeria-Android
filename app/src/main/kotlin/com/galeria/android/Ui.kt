@@ -23,6 +23,9 @@ import android.widget.RadioButton
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import coil3.load
 import coil3.request.allowHardware
 import coil3.request.crossfade
@@ -40,6 +43,8 @@ class Ui private constructor() {
         @JvmField val TEXT: Int = Color.rgb(245, 247, 250)
         @JvmField val MUTED: Int = Color.rgb(170, 178, 189)
         @JvmField val ACCENT: Int = Color.rgb(245, 247, 250)
+        private const val MAX_THEME_SATURATION = 0.48f
+        private var previewThemeSeed: Int? = null
 
         @JvmStatic
         fun darkMode(context: Context): Boolean = luminance(themeSeed(context)) < 0.56
@@ -100,7 +105,65 @@ class Ui private constructor() {
         @JvmStatic
         fun themeSeed(context: Context): Int {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            return prefs.getInt("theme_color", Color.rgb(18, 18, 18))
+            return previewThemeSeed
+                ?: normalizeThemeSeed(prefs.getInt("theme_color", Color.rgb(18, 18, 18)))
+        }
+
+        @JvmStatic
+        fun normalizeThemeSeed(color: Int): Int {
+            val hsv = FloatArray(3)
+            Color.colorToHSV(color, hsv)
+            hsv[1] = hsv[1].coerceAtMost(MAX_THEME_SATURATION)
+            if (hsv[1] >= 0.08f) hsv[2] = hsv[2].coerceIn(0.24f, 0.92f)
+            return Color.HSVToColor(hsv)
+        }
+
+        @JvmStatic
+        fun setThemePreview(color: Int) {
+            previewThemeSeed = normalizeThemeSeed(color)
+        }
+
+        @JvmStatic
+        fun clearThemePreview() {
+            previewThemeSeed = null
+        }
+
+        @JvmStatic
+        fun applySystemBars(activity: Activity) {
+            val background = bg(activity)
+            activity.window.statusBarColor = background
+            activity.window.navigationBarColor = background
+            WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+                val darkIcons = luminance(background) >= 0.56
+                isAppearanceLightStatusBars = darkIcons
+                isAppearanceLightNavigationBars = darkIcons
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                activity.window.isStatusBarContrastEnforced = false
+                activity.window.isNavigationBarContrastEnforced = false
+            }
+        }
+
+        @JvmStatic
+        fun applySystemBarPadding(
+            view: View,
+            leftDp: Int,
+            topDp: Int,
+            rightDp: Int,
+            bottomDp: Int
+        ) {
+            val context = view.context
+            ViewCompat.setOnApplyWindowInsetsListener(view) { target, insets ->
+                val topInset = insets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+                target.setPadding(
+                    dp(context, leftDp),
+                    topInset + dp(context, topDp),
+                    dp(context, rightDp),
+                    dp(context, bottomDp)
+                )
+                insets
+            }
+            ViewCompat.requestApplyInsets(view)
         }
 
         @JvmStatic
@@ -304,6 +367,7 @@ class Ui private constructor() {
             dialog.setOnShowListener {
                 applySidePanelStyle(dialog, widthFraction, fullHeight)
                 val decor = dialog.window?.decorView ?: return@setOnShowListener
+                alignPrimaryDialogActions(decor, Gravity.START)
                 decor.alpha = 0f
                 decor.postDelayed({
                     if (!dialog.isShowing) return@postDelayed
@@ -336,6 +400,7 @@ class Ui private constructor() {
                     dimAmount = 0.32f
                     windowAnimations = 0
                 }
+                alignPrimaryDialogActions(window.decorView, Gravity.END)
             }
             position()
             dialog.setOnShowListener { position() }
@@ -592,6 +657,11 @@ class Ui private constructor() {
         }
 
         @JvmStatic
+        fun markPrimaryDialogAction(view: TextView): TextView = view.apply {
+            tag = DIALOG_PRIMARY_ACTION_TAG
+        }
+
+        @JvmStatic
         fun showAlbumTargets(
             anchor: View,
             title: String,
@@ -804,7 +874,10 @@ class Ui private constructor() {
                 text = label
                 textSize = 15f
                 setTextColor(menuText(context))
-                if (primary) setTypeface(Typeface.DEFAULT_BOLD)
+                if (primary) {
+                    setTypeface(Typeface.DEFAULT_BOLD)
+                    tag = DIALOG_PRIMARY_ACTION_TAG
+                }
                 gravity = Gravity.CENTER_VERTICAL or Gravity.START
                 minimumHeight = dp(context, 50)
                 isClickable = true
@@ -818,6 +891,17 @@ class Ui private constructor() {
                 setOnClickListener { onClick() }
             }
 
+        private fun alignPrimaryDialogActions(view: View, horizontalGravity: Int) {
+            if (view.tag == DIALOG_PRIMARY_ACTION_TAG && view is TextView) {
+                view.gravity = Gravity.CENTER_VERTICAL or horizontalGravity
+            }
+            if (view is ViewGroup) {
+                for (index in 0 until view.childCount) {
+                    alignPrimaryDialogActions(view.getChildAt(index), horizontalGravity)
+                }
+            }
+        }
+
         private fun menuActionParams(): LinearLayout.LayoutParams =
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
@@ -828,6 +912,7 @@ class Ui private constructor() {
         private const val SELECTION_ACTION_LABEL_TAG = "selection_action_label"
         private const val SELECTION_ACTION_DOCK_TAG = "selection_action_dock"
         private const val SELECTION_ACTION_DIVIDER_TAG = "selection_action_divider"
+        private const val DIALOG_PRIMARY_ACTION_TAG = "dialog_primary_action"
         private const val SIDE_PANEL_MAX_WIDTH_DP = 280
         private const val SIDE_PANEL_RADIUS_DP = 14
         private const val SIDE_PANEL_END_MARGIN_DP = 8

@@ -4,13 +4,14 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
-import android.graphics.Color
+import android.content.res.ColorStateList
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.CompoundButton
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
@@ -19,27 +20,30 @@ import java.io.File
 class SettingsActivity : Activity() {
     private lateinit var prefs: SharedPreferences
     private lateinit var content: LinearLayout
+    private lateinit var root: LinearLayout
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
+        Ui.applySystemBars(this)
         buildLayout()
     }
 
     override fun onResume() {
         super.onResume()
+        Ui.applySystemBars(this)
         if (::content.isInitialized) fillContent()
     }
 
     private fun buildLayout() {
-        val root = LinearLayout(this).apply {
+        root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.bg(this@SettingsActivity))
         }
 
         val bar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            Ui.setPadding(this, 12, 12, 12, 8)
+            Ui.applySystemBarPadding(this, 12, 8, 12, 8)
         }
         val back = Ui.title(this, getString(R.string.album_back), 16).apply {
             gravity = Gravity.CENTER
@@ -273,73 +277,168 @@ class SettingsActivity : Activity() {
     }
 
     private fun showThemeColorDialog() {
+        val initialColor = Ui.themeSeed(this)
+        var selectedColor = initialColor
+        var applied = false
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = Ui.rounded(Ui.menuSurface(this@SettingsActivity), 14, this@SettingsActivity)
             clipToOutline = true
-            addView(
-                TextView(this@SettingsActivity).apply {
-                    setText(R.string.settings_choose_theme_color)
-                    textSize = 18f
-                    setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-                    setTextColor(Ui.menuText(this@SettingsActivity))
-                    Ui.setPadding(this, 18, 18, 18, 10)
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            )
+            Ui.setPadding(this, 18, 18, 18, 12)
         }
-        val colors = themeColors()
-        var index = 0
-        val dialogRef = arrayOfNulls<AlertDialog>(1)
-        repeat(8) {
-            val row = LinearLayout(this).apply { gravity = Gravity.CENTER }
-            repeat(4) {
-                val color = colors[index++]
-                val swatch = TextView(this).apply {
-                    background = Ui.rounded(color, 10, this@SettingsActivity)
-                    setOnClickListener {
-                        prefs.edit().putInt("theme_color", color).apply()
-                        Ui.toast(this@SettingsActivity, getString(R.string.settings_theme_color_applied))
-                        dialogRef[0]?.dismiss()
-                        buildLayout()
-                    }
-                }
-                val params = LinearLayout.LayoutParams(Ui.dp(this, 34), Ui.dp(this, 42)).apply {
-                    setMargins(Ui.dp(this@SettingsActivity, 4), Ui.dp(this@SettingsActivity, 4), Ui.dp(this@SettingsActivity, 4), Ui.dp(this@SettingsActivity, 4))
-                }
-                row.addView(swatch, params)
-            }
-            panel.addView(row)
+
+        val title = TextView(this).apply {
+            setText(R.string.settings_choose_theme_color)
+            textSize = 19f
+            setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+        }
+        panel.addView(title)
+
+        val instruction = TextView(this).apply {
+            setText(R.string.settings_theme_color_instruction)
+            textSize = 13f
         }
         panel.addView(
-            TextView(this).apply {
-                setText(R.string.action_cancel)
-                textSize = 15f
-                gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                setTextColor(Ui.menuText(this@SettingsActivity))
-                isClickable = true
-                isFocusable = true
-                Ui.setPadding(this, 18, 14, 18, 14)
-                setOnClickListener { dialogRef[0]?.dismiss() }
-            },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            instruction,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = Ui.dp(this@SettingsActivity, 3)
+                bottomMargin = Ui.dp(this@SettingsActivity, 10)
+            }
         )
+
+        val wheel = ThemeColorWheelView(this).apply {
+            tag = ThemeColorWheelView.TAG
+            contentDescription = getString(R.string.settings_theme_color_wheel_description)
+            setColor(initialColor)
+        }
+        panel.addView(
+            wheel,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 238)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+            }
+        )
+
+        val toneLabel = TextView(this).apply {
+            setText(R.string.settings_theme_tone)
+            textSize = 13f
+        }
+        panel.addView(toneLabel)
+
+        val tone = SeekBar(this).apply {
+            max = 1000
+            progress = (((wheel.selectedTone() - ThemeColorWheelView.MIN_TONE) /
+                (ThemeColorWheelView.MAX_TONE - ThemeColorWheelView.MIN_TONE)) * max).toInt()
+        }
+        panel.addView(tone, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42)))
+
+        val sample = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            Ui.setPadding(this, 14, 12, 14, 12)
+        }
+        val sampleTitle = TextView(this).apply {
+            setText(R.string.settings_theme_preview_title)
+            textSize = 15f
+            setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+        }
+        val sampleSubtitle = TextView(this).apply {
+            setText(R.string.settings_theme_preview_subtitle)
+            textSize = 12f
+        }
+        val sampleAccent = TextView(this).apply {
+            text = "●"
+            textSize = 22f
+            gravity = Gravity.END
+        }
+        sample.addView(sampleTitle)
+        sample.addView(sampleSubtitle)
+        sample.addView(sampleAccent)
+        panel.addView(
+            sample,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = Ui.dp(this@SettingsActivity, 8)
+            }
+        )
+
+        val buttons = LinearLayout(this).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
+        val dialogRef = arrayOfNulls<AlertDialog>(1)
+        val cancel = TextView(this).apply {
+            setText(R.string.action_cancel)
+            textSize = 15f
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = true
+            Ui.setPadding(this, 14, 12, 14, 12)
+            setOnClickListener { dialogRef[0]?.dismiss() }
+        }
+        val confirm = TextView(this).apply {
+            setText(R.string.settings_theme_apply)
+            textSize = 15f
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = true
+            Ui.setPadding(this, 14, 12, 14, 12)
+            setOnClickListener {
+                applied = true
+                prefs.edit().putInt("theme_color", Ui.normalizeThemeSeed(selectedColor)).apply()
+                Ui.clearThemePreview()
+                dialogRef[0]?.dismiss()
+                Ui.toast(this@SettingsActivity, getString(R.string.settings_theme_color_applied))
+                Ui.applySystemBars(this@SettingsActivity)
+                buildLayout()
+            }
+        }
+        buttons.addView(cancel)
+        buttons.addView(confirm)
+        panel.addView(buttons)
+
+        fun applyPreview(color: Int) {
+            selectedColor = Ui.normalizeThemeSeed(color)
+            Ui.setThemePreview(selectedColor)
+            root.setBackgroundColor(Ui.bg(this@SettingsActivity))
+            Ui.applySystemBars(this@SettingsActivity)
+            panel.background = Ui.rounded(Ui.menuSurface(this@SettingsActivity), 14, this@SettingsActivity)
+            val menuText = Ui.menuText(this@SettingsActivity)
+            title.setTextColor(menuText)
+            instruction.setTextColor(Ui.blend(menuText, Ui.menuSurface(this@SettingsActivity), 0.34f))
+            toneLabel.setTextColor(menuText)
+            cancel.setTextColor(menuText)
+            confirm.setTextColor(Ui.accent(this@SettingsActivity))
+            tone.progressTintList = ColorStateList.valueOf(Ui.accent(this@SettingsActivity))
+            tone.thumbTintList = ColorStateList.valueOf(Ui.accent(this@SettingsActivity))
+            sample.background = Ui.rounded(Ui.surface(this@SettingsActivity), 10, this@SettingsActivity)
+            sampleTitle.setTextColor(Ui.text(this@SettingsActivity))
+            sampleSubtitle.setTextColor(Ui.muted(this@SettingsActivity))
+            sampleAccent.setTextColor(Ui.accent(this@SettingsActivity))
+        }
+
+        wheel.onColorChanged = ::applyPreview
+        tone.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val fraction = progress / 1000f
+                wheel.setTone(
+                    ThemeColorWheelView.MIN_TONE +
+                        fraction * (ThemeColorWheelView.MAX_TONE - ThemeColorWheelView.MIN_TONE)
+                )
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        })
+        applyPreview(initialColor)
+
         dialogRef[0] = AlertDialog.Builder(this)
             .setView(panel)
             .create()
-        dialogRef[0]?.let { dialog -> Ui.showSidePanel(dialog) }
+        dialogRef[0]?.setOnDismissListener {
+            Ui.clearThemePreview()
+            if (!applied && !isFinishing) {
+                root.setBackgroundColor(Ui.bg(this@SettingsActivity))
+                Ui.applySystemBars(this@SettingsActivity)
+            }
+        }
+        dialogRef[0]?.let { dialog -> Ui.showCenteredPanel(dialog) }
     }
-
-    private fun themeColors(): IntArray = intArrayOf(
-        Color.rgb(18, 18, 18), Color.rgb(45, 45, 45), Color.rgb(244, 244, 245), Color.rgb(214, 211, 209),
-        Color.rgb(239, 68, 68), Color.rgb(220, 38, 38), Color.rgb(249, 115, 22), Color.rgb(245, 158, 11),
-        Color.rgb(234, 179, 8), Color.rgb(132, 204, 22), Color.rgb(34, 197, 94), Color.rgb(16, 185, 129),
-        Color.rgb(20, 184, 166), Color.rgb(6, 182, 212), Color.rgb(14, 165, 233), Color.rgb(59, 130, 246),
-        Color.rgb(37, 99, 235), Color.rgb(99, 102, 241), Color.rgb(124, 58, 237), Color.rgb(147, 51, 234),
-        Color.rgb(168, 85, 247), Color.rgb(217, 70, 239), Color.rgb(236, 72, 153), Color.rgb(244, 114, 182),
-        Color.rgb(190, 18, 60), Color.rgb(127, 29, 29), Color.rgb(120, 53, 15), Color.rgb(63, 98, 18),
-        Color.rgb(21, 94, 117), Color.rgb(30, 64, 175), Color.rgb(88, 28, 135), Color.rgb(80, 7, 36)
-    )
 
     private fun rowBase(): LinearLayout =
         LinearLayout(this).apply {

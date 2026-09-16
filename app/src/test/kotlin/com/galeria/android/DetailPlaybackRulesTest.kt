@@ -16,6 +16,55 @@ class DetailPlaybackRulesTest {
     }
 
     @Test
+    fun recentSavedPositionCanBeRestoredForUpToTwelveHours() {
+        val now = 200_000_000L
+
+        assertEquals(
+            8_500L,
+            DetailPlaybackRules.restoredPosition(
+                positionMs = 8_500L,
+                durationMs = 20_000L,
+                savedAtMs = now - 43_200_000L,
+                nowMs = now
+            )
+        )
+    }
+
+    @Test
+    fun positionOlderThanTwelveHoursIsDiscarded() {
+        val now = 200_000_000L
+
+        assertEquals(
+            0L,
+            DetailPlaybackRules.restoredPosition(
+                positionMs = 8_500L,
+                durationMs = 20_000L,
+                savedAtMs = now - 43_200_001L,
+                nowMs = now
+            )
+        )
+    }
+
+    @Test
+    fun legacyOrInvalidTimestampDoesNotRestoreAStalePosition() {
+        assertEquals(0L, DetailPlaybackRules.restoredPosition(8_500L, 20_000L, 0L, 200_000_000L))
+        assertEquals(0L, DetailPlaybackRules.restoredPosition(8_500L, 20_000L, 200_000_001L, 200_000_000L))
+    }
+
+    @Test
+    fun savedPositionAtTheEndIsDiscardedEvenWhenRecent() {
+        assertEquals(
+            0L,
+            DetailPlaybackRules.restoredPosition(
+                positionMs = 19_300L,
+                durationMs = 20_000L,
+                savedAtMs = 199_999_000L,
+                nowMs = 200_000_000L
+            )
+        )
+    }
+
+    @Test
     fun seekTargetIsLimitedToVideoBounds() {
         assertEquals(0L, DetailPlaybackRules.seekTarget(3_000L, -10_000L, 20_000L))
         assertEquals(20_000L, DetailPlaybackRules.seekTarget(18_000L, 10_000L, 20_000L))

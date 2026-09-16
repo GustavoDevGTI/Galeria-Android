@@ -103,7 +103,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A suíte funcional atual possui 89 testes: 55 unitários e 34 instrumentados. O módulo de desempenho contém outros 4 casos (3 macrobenchmarks e 1 gerador de perfil).
+A suíte funcional atual possui 98 testes: 59 unitários e 39 instrumentados. O módulo de desempenho contém outros 4 casos (3 macrobenchmarks e 1 gerador de perfil).
 
 - 51 testes unitários locais para filtros de mídia, abertura externa, identificação e histórico de pastas ocultas, níveis de acesso, preparação e modo de carga do catálogo, preservação de rolagem, operações em lote, colunas da grade, identidade de URIs do MediaStore, ordenação de álbuns, navegação, remoção e repetição na fila, regras de gestos, estado, metadados, reprodução e menus do visualizador
 - 3 testes instrumentados do Room para resumos de álbuns, isolamento dos catálogos e paginação com ordem personalizada
@@ -127,6 +127,10 @@ A suíte funcional atual possui 89 testes: 55 unitários e 34 instrumentados. O 
 - 4 testes unitários de decisão de pasta vazia, incluindo `.nomedia`, arquivos não relacionados e acesso indeterminado
 - 8 testes instrumentados de exclusão/movimentação, atualização imediata, falhas, busca filtrada, navegação ao destino e contagens dos álbuns
 - 3 testes instrumentados do estado de invalidação do catálogo, separando visíveis/ocultos e protegendo alterações concorrentes
+- 4 testes unitários para expiração em 12 horas e descarte da posição de vídeos concluídos
+- 2 testes instrumentados para expiração da memória e retorno ao início após a conclusão do vídeo
+- 2 testes instrumentados para contraste das barras do sistema, prévia ao vivo e cancelamento da escolha de tema
+- 1 teste instrumentado para manter o OK à direita em painéis centrais e à esquerda em painéis laterais
 
 Executar apenas os testes unitários rápidos:
 
@@ -272,9 +276,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.51**: são **52 commits** na linha 0.8, ou **51 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.52**: são **53 commits** na linha 0.8, ou **52 atualizações** depois do lançamento inicial.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.51 usa o código `8051`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.52 usa o código `8052`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -330,6 +334,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.49`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.49) | 18/08/2026 | Barra inferior de seleção contínua e instalação no emulador |
 | [`v0.8.50`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.50) | 18/08/2026 | Atualização e estabilização da suíte de interface |
 | [`v0.8.51`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.51) | 15/09/2026 | Atualização técnica, modularização segura e sincronização imediata das pastas |
+| [`v0.8.52`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.52) | 16/09/2026 | Memória de vídeo temporária, temas suaves e alinhamento contextual dos submenus |
 
 ## Relatório comparativo de desempenho
 
@@ -345,7 +350,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.51](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.51/Galeria-Android-versao-0.8.51.apk)
+[Baixar Galeria Android - versão 0.8.52](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.52/Galeria-Android-versao-0.8.52.apk)
 
 Build padrão do Gradle:
 
@@ -356,10 +361,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.51.apk
+Galeria-Android-versao-0.8.52.apk
 ```
 
-O APK 0.8.51 usa a mesma chave permanente da versão 0.8.50. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela chave permanente serão compatíveis entre si.
+O APK 0.8.52 usa a mesma chave permanente das versões 0.8.50 e 0.8.51. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela chave permanente serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 

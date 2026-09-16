@@ -102,6 +102,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        Ui.applySystemBars(this)
         accessCoordinator = MainMediaAccessCoordinator(this, prefs)
         catalogController = AlbumCatalogController(applicationContext)
         loadSettings()
@@ -716,6 +717,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyThemeColors() {
+        Ui.applySystemBars(this)
         if (::root.isInitialized) root.setBackgroundColor(Ui.bg(this))
         if (::top.isInitialized) top.background = Ui.rounded(Ui.search(this), 22, this)
         if (::searchInput.isInitialized) {
@@ -1221,7 +1223,9 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             background = Ui.rounded(Ui.blend(dialogBg, Color.WHITE, 0.03f), 0, this@MainActivity)
             addView(
-                dialogButton(getString(R.string.action_ok), primary = true) { applyFolderVisibility() },
+                Ui.markPrimaryDialogAction(
+                    dialogButton(getString(R.string.action_ok), primary = true) { applyFolderVisibility() }
+                ),
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             )
         }
