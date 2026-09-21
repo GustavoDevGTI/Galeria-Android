@@ -28,6 +28,17 @@ class ViewerMenuRulesTest {
     }
 
     @Test
+    fun cinemaTrackOptionsOnlyAppearInCinemaMode() {
+        val normal = ViewerMenuRules.options(true, false, false, cinemaMode = false)
+        val cinema = ViewerMenuRules.options(true, false, false, cinemaMode = true)
+
+        assertFalse(normal.contains(ViewerMenuRules.AUDIO_TRACK))
+        assertFalse(normal.contains(ViewerMenuRules.SUBTITLES))
+        assertTrue(cinema.contains(ViewerMenuRules.AUDIO_TRACK))
+        assertTrue(cinema.contains(ViewerMenuRules.SUBTITLES))
+    }
+
+    @Test
     fun imageMenuCombinesFileActionsAndImageTools() {
         val options = ViewerMenuRules.options(isVideo = false, loopEnabled = false, shuffleMode = false)
 

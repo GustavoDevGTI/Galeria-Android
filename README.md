@@ -39,6 +39,10 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Miniaturas reais para vídeos na grade de mídias e nas capas de álbuns
 - Player de vídeo em tela cheia com HUD superior e inferior translúcida sobreposta à mídia
 - Controle de áudio no player para ativar ou silenciar o vídeo durante a navegação
+- Modo cinema opcional por vídeo, com rotação horizontal, transição suave e retorno imediato ao modo normal
+- Gestos verticais de brilho e volume no modo cinema, além da escolha de trilhas de áudio e legendas incorporadas
+- Preferência de modo cinema e de trilhas aplicável a todos os vídeos de um álbum
+- Barra de ações unificada com ícones mais delicados e favoritos representados por coração em todas as telas
 - Navegação fluida entre mídias por gestos horizontais e verticais
 - Arrastes curtos trocam a mídia, com proteção para toques simples e duplos
 - Pré-carregamento das cinco mídias anteriores e posteriores em alta qualidade
@@ -103,7 +107,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A suíte funcional atual possui 98 testes: 59 unitários e 39 instrumentados. O módulo de desempenho contém outros 4 casos (3 macrobenchmarks e 1 gerador de perfil).
+A suíte funcional atual possui 110 testes: 67 unitários e 43 instrumentados. O módulo de desempenho contém outros 4 casos (3 macrobenchmarks e 1 gerador de perfil).
 
 - 51 testes unitários locais para filtros de mídia, abertura externa, identificação e histórico de pastas ocultas, níveis de acesso, preparação e modo de carga do catálogo, preservação de rolagem, operações em lote, colunas da grade, identidade de URIs do MediaStore, ordenação de álbuns, navegação, remoção e repetição na fila, regras de gestos, estado, metadados, reprodução e menus do visualizador
 - 3 testes instrumentados do Room para resumos de álbuns, isolamento dos catálogos e paginação com ordem personalizada
@@ -131,6 +135,8 @@ A suíte funcional atual possui 98 testes: 59 unitários e 39 instrumentados. O 
 - 2 testes instrumentados para expiração da memória e retorno ao início após a conclusão do vídeo
 - 2 testes instrumentados para contraste das barras do sistema, prévia ao vivo e cancelamento da escolha de tema
 - 1 teste instrumentado para manter o OK à direita em painéis centrais e à esquerda em painéis laterais
+- 8 testes unitários para preferências por álbum, regras do menu e gestos verticais do modo cinema
+- 3 testes instrumentados para alternância do modo cinema, preservação do player e restauração das trilhas escolhidas
 
 Executar apenas os testes unitários rápidos:
 

@@ -4,8 +4,8 @@ import android.Manifest
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -105,10 +105,10 @@ class AlbumSelectionInstrumentedTest {
                             icon.imageTintList?.defaultColor
                         )
                         assertEquals(action, view.findViewWithTag<TextView>("selection_action_label").text.toString())
-                        assertEquals(Color.TRANSPARENT, (view.background as ColorDrawable).color)
+                        assertEquals(true, view.background is RippleDrawable)
                         if (action == "Compartilhar") {
                             val dock = view.parent as LinearLayout
-                            assertEquals("A barra deve ter quatro ações e três divisórias.", 7, dock.childCount)
+                            assertEquals("A barra deve ter quatro ações sem divisórias.", 4, dock.childCount)
                             val fullBar = dock.parent as View
                             assertEquals("O conjunto de ações deve preencher toda a barra inferior.", fullBar.width, dock.width)
                             assertEquals("A barra não deve deixar recorte na lateral esquerda.", 0, fullBar.paddingLeft)

@@ -61,6 +61,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private var albumKey: String? = null
     private var albumName: String = ""
     private lateinit var prefs: SharedPreferences
+    private lateinit var cinemaPreferences: CinemaModePreferences
     private var gridSpacingDp = 3
     private var gridColumnCount = 0
     private var horizontalPinchScale = 1f
@@ -145,6 +146,7 @@ class AlbumMediaActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         completedRemovalUris.addAll(savedInstanceState?.getStringArrayList("completed_removal_uris").orEmpty())
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
+        cinemaPreferences = CinemaModePreferences(prefs)
         Ui.applySystemBars(this)
         catalogController = AlbumMediaCatalogController(applicationContext)
         selectionCoordinator = AlbumSelectionActions(this, prefs)
@@ -554,7 +556,7 @@ class AlbumMediaActivity : ComponentActivity() {
         selectionActionDock = Ui.selectionActionDock(this)
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         addSelectionAction(R.drawable.ic_share, getString(R.string.action_share)) { shareSelected() }
-        addSelectionAction(R.drawable.ic_star, getString(R.string.action_favorite)) { favoriteSelected() }
+        addSelectionAction(R.drawable.ic_heart, getString(R.string.action_favorite)) { favoriteSelected() }
         addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { confirmDeleteSelected() }
         addSelectionAction(R.drawable.ic_arrow_right, getString(R.string.action_move)) { askMoveSelected() }
         selectionActions.visibility = View.GONE
@@ -585,9 +587,15 @@ class AlbumMediaActivity : ComponentActivity() {
         val createFolder = getString(R.string.action_create_folder)
         val random = getString(R.string.album_random)
         val spacing = getString(R.string.album_grid_spacing)
+        val cinemaMode = getString(R.string.album_cinema_mode)
+        val options = buildList {
+            addAll(listOf(filter, group, sort, viewMode, createFolder, random, spacing))
+            if (CinemaModeRules.supportsAlbum(albumKey)) add(cinemaMode)
+        }
         Ui.showPopupOptions(
             anchor,
-            listOf(filter, group, sort, viewMode, createFolder, random, spacing)
+            options,
+            selectedItems = if (cinemaPreferences.isEnabled(albumKey)) setOf(cinemaMode) else emptySet()
         ) { selected ->
             when (selected) {
                 filter -> showMediaFilterDialog()
@@ -596,9 +604,18 @@ class AlbumMediaActivity : ComponentActivity() {
                 viewMode -> showViewModeDialog()
                 createFolder -> showCreateFolderDialog()
                 random -> startRandomPlayback()
-                else -> showSpacingDialog()
+                spacing -> showSpacingDialog()
+                cinemaMode -> toggleAlbumCinemaMode()
             }
         }
+    }
+
+    private fun toggleAlbumCinemaMode() {
+        val enabled = cinemaPreferences.toggle(albumKey)
+        Ui.toast(
+            this,
+            getString(if (enabled) R.string.album_cinema_mode_enabled else R.string.album_cinema_mode_disabled)
+        )
     }
 
     private fun readAlbumOptions() {

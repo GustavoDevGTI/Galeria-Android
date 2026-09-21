@@ -173,6 +173,8 @@ internal class DetailPlaybackController(
 
     fun isPlaying(): Boolean = currentPlayer?.isPlaying == true
 
+    fun player(): ExoPlayer? = currentPlayer
+
     fun durationMs(): Long? = currentPlayer?.duration?.takeIf { it > 0L }
 
     fun timeline(): DetailPlaybackTimeline? {

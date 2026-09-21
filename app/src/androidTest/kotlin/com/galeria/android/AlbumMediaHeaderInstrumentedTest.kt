@@ -116,6 +116,37 @@ class AlbumMediaHeaderInstrumentedTest {
         }
     }
 
+    @Test
+    fun albumMenuShowsOnlyCinemaModeNameAndPersistsSelection() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val albumKey = "Pictures/AlbumCinemaTest-${System.currentTimeMillis()}/"
+        val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val originalAlbums = prefs.getStringSet("cinema_mode_album_keys", null)?.toSet()
+        val intent = Intent(context, AlbumMediaActivity::class.java).apply {
+            putExtra("album_key", albumKey)
+            putExtra("album_name", "Álbum cinema")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        try {
+            ActivityScenario.launch<AlbumMediaActivity>(intent).use {
+                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withText("Modo cinema")).check(matches(isDisplayed())).perform(click())
+                waitForView {
+                    assertTrue(CinemaModePreferences(prefs).isEnabled(albumKey))
+                }
+                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withText("Modo cinema")).check(matches(isDisplayed()))
+                androidx.test.espresso.Espresso.pressBack()
+            }
+        } finally {
+            prefs.edit().apply {
+                if (originalAlbums == null) remove("cinema_mode_album_keys")
+                else putStringSet("cinema_mode_album_keys", originalAlbums)
+            }.commit()
+        }
+    }
+
     private fun assertRightAligned(view: View) {
         val root = view.rootView
         val location = IntArray(2)

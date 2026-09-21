@@ -374,12 +374,15 @@ object ViewerMenuRules {
     const val RESIZE = "Redimensionar"
     const val SHOW_ON_MAP = "Exibir no mapa"
     const val PRESENTATION = "Apresentação"
+    const val AUDIO_TRACK = "Trilha de áudio"
+    const val SUBTITLES = "Legenda"
 
     fun options(
         isVideo: Boolean,
         loopEnabled: Boolean,
         shuffleMode: Boolean,
-        hasLocation: Boolean = false
+        hasLocation: Boolean = false,
+        cinemaMode: Boolean = false
     ): List<String> {
         if (!isVideo) {
             return buildList {
@@ -403,6 +406,10 @@ object ViewerMenuRules {
             add(MOVE_TO)
             add(HIDE)
             add(INFORMATION)
+            if (cinemaMode) {
+                add(AUDIO_TRACK)
+                add(SUBTITLES)
+            }
             if (!shuffleMode) add(if (loopEnabled) DISABLE_LOOP else ENABLE_LOOP)
         }
     }

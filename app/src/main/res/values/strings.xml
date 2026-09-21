@@ -4,6 +4,7 @@
     <!-- Ações e rótulos compartilhados -->
     <string name="action_share">Compartilhar</string>
     <string name="action_favorite">Favoritar</string>
+    <string name="action_unfavorite">Remover dos favoritos</string>
     <string name="action_delete">Excluir</string>
     <string name="action_move">Mover</string>
     <string name="action_cancel">Cancelar</string>
@@ -120,6 +121,9 @@
     <string name="album_group_by">Agrupar por</string>
     <string name="album_view_mode">Modo de visualização</string>
     <string name="album_random">Aleatório</string>
+    <string name="album_cinema_mode">Modo cinema</string>
+    <string name="album_cinema_mode_enabled">Modo cinema ativado.</string>
+    <string name="album_cinema_mode_disabled">Modo cinema desativado.</string>
     <string name="album_grid_spacing">Espaçamento da grade</string>
     <string name="album_grid_spacing_hint">Vale para todas as pastas. Esquerda: mais espaço. Direita: sem espaço.</string>
     <string name="album_group_none">Não agrupar arquivos</string>
@@ -216,6 +220,19 @@
     <string name="settings_video_separate_screen">Abrir vídeos em tela separada</string>
     <string name="settings_video_separate_screen_hint">Mantém vídeos no visualizador dedicado.</string>
     <string name="settings_video_vertical_gestures">Gestos verticais de volume/brilho</string>
+    <string name="viewer_cinema_mode">Modo cinema</string>
+    <string name="viewer_cinema_active">Ativado</string>
+    <string name="viewer_cinema_inactive">Desativado</string>
+    <string name="viewer_cinema_transition_on">Modo cinema</string>
+    <string name="viewer_cinema_transition_off">Modo normal</string>
+    <string name="viewer_audio_track">Trilha de áudio</string>
+    <string name="viewer_subtitles">Legenda</string>
+    <string name="viewer_track_automatic">Automática</string>
+    <string name="viewer_subtitles_off">Desativada</string>
+    <string name="viewer_no_audio_tracks">Nenhuma trilha de áudio disponível.</string>
+    <string name="viewer_no_subtitle_tracks">Nenhuma legenda incorporada disponível.</string>
+    <string name="viewer_brightness_percent">Brilho %1$d%%</string>
+    <string name="viewer_volume_percent">Volume %1$d%%</string>
     <string name="settings_viewer_saved_preference_hint">Preferência salva para o visualizador.</string>
     <string name="settings_crop_square_thumbnails">Recortar miniaturas em quadrados</string>
     <string name="settings_crop_square_thumbnails_hint">Mantém capas com proporção uniforme.</string>

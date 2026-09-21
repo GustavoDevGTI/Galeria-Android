@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.view.Gravity
 import android.view.View
@@ -17,6 +18,7 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.RadioButton
@@ -234,17 +236,38 @@ class Ui private constructor() {
             view.contentDescription = if (checked) "Desmarcar todos" else "Selecionar todos"
         }
 
+        const val ACTION_ICON_SIZE_DP = 24
+        const val ACTION_TOUCH_HEIGHT_DP = 56
+
+        fun actionFeedback(context: Context, color: Int, selected: Boolean = false): RippleDrawable =
+            RippleDrawable(
+                ColorStateList.valueOf((color and 0x00FFFFFF) or 0x22000000),
+                if (selected) rounded((color and 0x00FFFFFF) or 0x16000000, 18, context) else null,
+                rounded(Color.WHITE, 18, context)
+            )
+
+        fun actionIconButton(context: Context, icon: Int, color: Int): ImageButton =
+            ImageButton(context).apply {
+                setImageResource(icon)
+                imageTintList = ColorStateList.valueOf(color)
+                scaleType = ImageView.ScaleType.CENTER
+                setPadding(0, 0, 0, 0)
+                minimumWidth = dp(context, 48)
+                minimumHeight = dp(context, ACTION_TOUCH_HEIGHT_DP)
+                background = actionFeedback(context, color)
+            }
+
         @JvmStatic
         fun selectionAction(context: Context, icon: Int, label: String, listener: () -> Unit): LinearLayout =
             LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                minimumHeight = dp(context, 58)
+                minimumHeight = dp(context, 64)
                 contentDescription = label
                 isClickable = true
                 isFocusable = true
-                background = ColorDrawable(Color.TRANSPARENT)
-                setPadding(dp(context, 2), dp(context, 6), dp(context, 2), dp(context, 5))
+                background = actionFeedback(context, selectionActionIcon(context))
+                setPadding(dp(context, 2), dp(context, 8), dp(context, 2), dp(context, 8))
                 addView(
                     ImageView(context).apply {
                         tag = SELECTION_ACTION_ICON_TAG
@@ -253,13 +276,13 @@ class Ui private constructor() {
                         scaleType = ImageView.ScaleType.CENTER_INSIDE
                         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                     },
-                    LinearLayout.LayoutParams(dp(context, 23), dp(context, 23))
+                    LinearLayout.LayoutParams(dp(context, ACTION_ICON_SIZE_DP), dp(context, ACTION_ICON_SIZE_DP))
                 )
                 addView(
                     TextView(context).apply {
                         tag = SELECTION_ACTION_LABEL_TAG
                         text = label
-                        textSize = 10.5f
+                        textSize = 11f
                         setTypeface(Typeface.DEFAULT, Typeface.NORMAL)
                         setTextColor(text(context))
                         alpha = 0.86f
@@ -269,7 +292,7 @@ class Ui private constructor() {
                         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                     },
                     LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                        topMargin = dp(context, 2)
+                        topMargin = dp(context, 5)
                     }
                 )
                 setOnClickListener { listener() }
@@ -285,30 +308,18 @@ class Ui private constructor() {
                 background = ColorDrawable(surface(context))
                 elevation = 0f
                 clipToOutline = false
-                setPadding(0, dp(context, 2), 0, dp(context, 2))
+                setPadding(dp(context, 8), dp(context, 4), dp(context, 8), dp(context, 4))
             }
 
         @JvmStatic
         fun addSelectionActionToDock(dock: LinearLayout, action: View) {
-            val context = dock.context
-            if (dock.childCount > 0) {
-                dock.addView(
-                    View(context).apply {
-                        tag = SELECTION_ACTION_DIVIDER_TAG
-                        setBackgroundColor(blend(surface(context), text(context), 0.14f))
-                    },
-                    LinearLayout.LayoutParams(dp(context, 1), dp(context, 30)).apply {
-                        gravity = Gravity.CENTER_VERTICAL
-                    }
-                )
-            }
             dock.addView(action, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
 
         @JvmStatic
         fun restyleSelectionAction(view: View) {
             val context = view.context
-            view.background = ColorDrawable(Color.TRANSPARENT)
+            view.background = actionFeedback(context, selectionActionIcon(context))
             view.findViewWithTag<ImageView>(SELECTION_ACTION_ICON_TAG)?.imageTintList =
                 ColorStateList.valueOf(selectionActionIcon(context))
             view.findViewWithTag<TextView>(SELECTION_ACTION_LABEL_TAG)?.setTextColor(text(context))
@@ -320,11 +331,7 @@ class Ui private constructor() {
             dock.background = ColorDrawable(surface(context))
             for (index in 0 until dock.childCount) {
                 val child = dock.getChildAt(index)
-                if (child.tag == SELECTION_ACTION_DIVIDER_TAG) {
-                    child.setBackgroundColor(blend(surface(context), text(context), 0.14f))
-                } else {
-                    restyleSelectionAction(child)
-                }
+                restyleSelectionAction(child)
             }
         }
 
@@ -599,6 +606,7 @@ class Ui private constructor() {
             anchor: View,
             items: List<String>,
             widthDp: Int = 248,
+            selectedItems: Set<String> = emptySet(),
             onSelect: (String) -> Unit
         ): PopupWindow {
             val context = anchor.context
@@ -619,6 +627,10 @@ class Ui private constructor() {
                     textSize = 15f
                     gravity = Gravity.CENTER_VERTICAL or Gravity.START
                     setPadding(dp(context, 18), dp(context, 16), dp(context, 18), dp(context, 16))
+                    if (selectedItems.contains(item)) {
+                        background = rounded(blend(menuSurface(context), menuText(context), 0.10f), 0, context)
+                        setTypeface(Typeface.DEFAULT_BOLD)
+                    }
                     setOnClickListener {
                         pendingSelection[0] = item
                         localPopupRef[0]?.dismiss()
@@ -911,7 +923,6 @@ class Ui private constructor() {
         private const val SELECTION_ACTION_ICON_TAG = "selection_action_icon"
         private const val SELECTION_ACTION_LABEL_TAG = "selection_action_label"
         private const val SELECTION_ACTION_DOCK_TAG = "selection_action_dock"
-        private const val SELECTION_ACTION_DIVIDER_TAG = "selection_action_divider"
         private const val DIALOG_PRIMARY_ACTION_TAG = "dialog_primary_action"
         private const val SIDE_PANEL_MAX_WIDTH_DP = 280
         private const val SIDE_PANEL_RADIUS_DP = 14

@@ -372,7 +372,7 @@ class MainActivity : ComponentActivity() {
         selectionActionDock = Ui.selectionActionDock(this)
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         addSelectionAction(R.drawable.ic_share, getString(R.string.action_share)) { shareSelectedAlbums() }
-        addSelectionAction(R.drawable.ic_star, getString(R.string.action_favorite)) { favoriteSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_heart, getString(R.string.action_favorite)) { favoriteSelectedAlbums() }
         addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { confirmDeleteSelectedAlbums() }
         addSelectionAction(R.drawable.ic_arrow_right, getString(R.string.action_move)) { askMoveSelectedAlbums() }
         selectionActions.visibility = View.GONE
@@ -929,7 +929,7 @@ class MainActivity : ComponentActivity() {
                     addView(
                         ImageButton(this@MainActivity).apply {
                             tag = "pin"
-                            setImageResource(R.drawable.ic_star)
+                            setImageResource(R.drawable.ic_pin)
                             setBackgroundColor(Color.TRANSPARENT)
                             scaleType = ImageView.ScaleType.CENTER
                             contentDescription = getString(R.string.main_pin_hidden)
@@ -958,7 +958,7 @@ class MainActivity : ComponentActivity() {
                 val pinned = pinnedKeys.contains(album.key)
                 label.text = getString(R.string.main_album_count_label, album.name, album.count)
                 label.setTextColor(dialogText)
-                pin.setImageResource(if (pinned) R.drawable.ic_star_filled else R.drawable.ic_star)
+                pin.setImageResource(if (pinned) R.drawable.ic_pin_filled else R.drawable.ic_pin)
                 pin.setColorFilter(if (pinned) dialogText else dialogMuted)
                 pin.alpha = if (pinned) 1f else 0.48f
                 pin.contentDescription = getString(

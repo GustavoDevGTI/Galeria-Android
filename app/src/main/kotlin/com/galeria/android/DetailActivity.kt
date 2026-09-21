@@ -6,6 +6,7 @@ import android.app.WallpaperManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -14,6 +15,7 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
+import android.media.AudioManager
 import android.media.ThumbnailUtils
 import android.net.Uri
 import android.os.Build
@@ -23,6 +25,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.text.format.Formatter
 import android.util.LruCache
 import android.util.Size
@@ -37,6 +40,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.ProgressBar
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -46,6 +50,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.core.view.WindowCompat
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil3.SingletonImageLoader
 import coil3.load
@@ -72,6 +77,7 @@ import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 @OptIn(UnstableApi::class)
 class DetailActivity : ComponentActivity() {
@@ -86,6 +92,8 @@ class DetailActivity : ComponentActivity() {
     private lateinit var metadataRepository: DetailMetadataRepository
     private lateinit var metadataFormatter: DetailMetadataFormatter
     private lateinit var playbackController: DetailPlaybackController
+    private lateinit var cinemaPreferences: CinemaModePreferences
+    private lateinit var videoTrackController: VideoTrackController
     private val mediaQueue: List<MediaItem> get() = queueController.items
     private var currentIndex: Int
         get() = queueController.currentIndex
@@ -112,6 +120,12 @@ class DetailActivity : ComponentActivity() {
     private lateinit var playPauseButton: ImageButton
     private lateinit var favoriteButton: ImageButton
     private lateinit var soundButton: ImageButton
+    private lateinit var cinemaButton: ImageButton
+    private lateinit var actionsBar: LinearLayout
+    private lateinit var cinemaGestureIndicator: LinearLayout
+    private lateinit var cinemaGestureLabel: TextView
+    private lateinit var cinemaGestureProgress: ProgressBar
+    private lateinit var cinemaModeIndicator: TextView
     private lateinit var videoControls: LinearLayout
     private lateinit var timelineRow: LinearLayout
     private lateinit var seekBar: SeekBar
@@ -147,6 +161,29 @@ class DetailActivity : ComponentActivity() {
     private var lastTapY = 0f
     private var pendingSingleTap: Runnable? = null
     private var completedViewerTap = false
+    private var sourceAlbumKey: String? = null
+    private var cinemaMode = false
+    private var restoredCinemaMode: Boolean? = null
+    private var orientationBeforeCinema: Int? = null
+    private var cinemaTransitionRunning = false
+    private var pendingCinemaOrientationChange: Runnable? = null
+    private var pendingCinemaTransitionFinish: Runnable? = null
+    private val cinemaGestureController = VideoCinemaGestureController()
+    private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
+    private val hideCinemaGestureIndicator = Runnable {
+        if (::cinemaGestureIndicator.isInitialized) cinemaGestureIndicator.visibility = View.GONE
+    }
+    private val hideCinemaModeIndicator = Runnable {
+        if (!::cinemaModeIndicator.isInitialized) return@Runnable
+        cinemaModeIndicator.animate().cancel()
+        cinemaModeIndicator.animate()
+            .alpha(0f)
+            .scaleX(0.96f)
+            .scaleY(0.96f)
+            .setDuration(CINEMA_MESSAGE_FADE_MS)
+            .withEndAction { cinemaModeIndicator.visibility = View.GONE }
+            .start()
+    }
     private var zoomed = false
     private val imageMetadataCache = HashMap<String, DetailImageMetadata>()
     private val gestureTouchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop.toFloat() }
@@ -175,6 +212,15 @@ class DetailActivity : ComponentActivity() {
         })
         Ui.applyOpenTransition(this)
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
+        cinemaPreferences = CinemaModePreferences(prefs)
+        videoTrackController = VideoTrackController(cinemaPreferences)
+        sourceAlbumKey = intent.getStringExtra("album_key")
+        restoredCinemaMode = savedInstanceState
+            ?.takeIf { it.containsKey(STATE_CINEMA_MODE) }
+            ?.getBoolean(STATE_CINEMA_MODE)
+        orientationBeforeCinema = savedInstanceState
+            ?.takeIf { it.containsKey(STATE_ORIENTATION_BEFORE_CINEMA) }
+            ?.getInt(STATE_ORIENTATION_BEFORE_CINEMA)
         playbackController = DetailPlaybackController(
             context = applicationContext,
             prefs = prefs,
@@ -260,10 +306,9 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun loadAlbumQueueAsync(currentUri: Uri) {
-        val albumKey = intent.getStringExtra("album_key")
         val includeHiddenFilesystem = intent.getBooleanExtra("include_hidden_filesystem", false)
         queueController.loadAlbum(
-            albumKey,
+            sourceAlbumKey,
             includeHiddenFilesystem,
             currentUri,
         ) {
@@ -338,6 +383,63 @@ class DetailActivity : ComponentActivity() {
         }
         root.addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
+        cinemaGestureLabel = timeLabel("").apply {
+            textSize = 15f
+            setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+        }
+        cinemaGestureProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progressTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x55FFFFFF)
+        }
+        cinemaGestureIndicator = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = Ui.rounded(0xCC111111.toInt(), 12, this@DetailActivity)
+            setPadding(
+                Ui.dp(this@DetailActivity, 18),
+                Ui.dp(this@DetailActivity, 12),
+                Ui.dp(this@DetailActivity, 18),
+                Ui.dp(this@DetailActivity, 12)
+            )
+            addView(cinemaGestureLabel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this@DetailActivity, 28)))
+            addView(cinemaGestureProgress, LinearLayout.LayoutParams(Ui.dp(this@DetailActivity, 150), Ui.dp(this@DetailActivity, 12)))
+            visibility = View.GONE
+        }
+        root.addView(
+            cinemaGestureIndicator,
+            FrameLayout.LayoutParams(Ui.dp(this, 190), Ui.dp(this, 64), Gravity.CENTER)
+        )
+
+        cinemaModeIndicator = TextView(this).apply {
+            tag = CINEMA_TRANSITION_TAG
+            gravity = Gravity.CENTER
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            compoundDrawablePadding = Ui.dp(this@DetailActivity, 10)
+            background = Ui.rounded(0xD9161719.toInt(), 24, this@DetailActivity)
+            setPadding(
+                Ui.dp(this@DetailActivity, 22),
+                Ui.dp(this@DetailActivity, 13),
+                Ui.dp(this@DetailActivity, 22),
+                Ui.dp(this@DetailActivity, 13)
+            )
+            alpha = 0f
+            scaleX = 0.92f
+            scaleY = 0.92f
+            visibility = View.GONE
+            elevation = Ui.dp(this@DetailActivity, 10).toFloat()
+        }
+        root.addView(
+            cinemaModeIndicator,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER
+            )
+        )
+
         bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0x66000000)
@@ -388,19 +490,32 @@ class DetailActivity : ComponentActivity() {
         timelineRow.addView(speedButton, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 34)))
         bottomBar.addView(timelineRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 38)))
 
-        val actions = LinearLayout(this).apply { gravity = Gravity.CENTER }
-        favoriteButton = actionButton(R.drawable.ic_star).apply { setOnClickListener { toggleFavorite() } }
-        val share = actionButton(R.drawable.ic_share).apply { setOnClickListener { shareCurrent() } }
-        val trash = actionButton(R.drawable.ic_trash).apply { setOnClickListener { confirmDeleteCurrent() } }
+        actionsBar = LinearLayout(this).apply { gravity = Gravity.CENTER }
+        favoriteButton = actionButton(R.drawable.ic_heart).apply { setOnClickListener { toggleFavorite() } }
+        val share = actionButton(R.drawable.ic_share).apply {
+            contentDescription = getString(R.string.action_share)
+            setOnClickListener { shareCurrent() }
+        }
+        val trash = actionButton(R.drawable.ic_trash).apply {
+            contentDescription = getString(R.string.action_delete)
+            setOnClickListener { confirmDeleteCurrent() }
+        }
         soundButton = actionButton(R.drawable.ic_volume_on).apply {
             contentDescription = "Desativar som"
             setOnClickListener { toggleVideoSound() }
         }
-        actions.addView(favoriteButton, actionParams())
-        actions.addView(share, actionParams())
-        actions.addView(trash, actionParams())
-        actions.addView(soundButton, actionParams())
-        bottomBar.addView(actions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 50)))
+        cinemaButton = actionButton(R.drawable.ic_movie).apply {
+            tag = CINEMA_BUTTON_TAG
+            contentDescription = getString(R.string.viewer_cinema_mode)
+            visibility = View.GONE
+            setOnClickListener { toggleCinemaMode() }
+        }
+        actionsBar.addView(favoriteButton, actionParams())
+        actionsBar.addView(share, actionParams())
+        actionsBar.addView(trash, actionParams())
+        actionsBar.addView(soundButton, actionParams())
+        actionsBar.addView(cinemaButton, actionParams())
+        bottomBar.addView(actionsBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, Ui.ACTION_TOUCH_HEIGHT_DP)))
 
         root.addView(topBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
         root.addView(bottomBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
@@ -428,15 +543,10 @@ class DetailActivity : ComponentActivity() {
         }
 
     private fun actionButton(icon: Int): ImageButton =
-        iconButton(icon, Ui.dp(this, 44)).apply {
-            background = Ui.rounded(0x22000000, 22, this@DetailActivity)
-        }
+        Ui.actionIconButton(this, icon, Color.WHITE)
 
     private fun actionParams(): LinearLayout.LayoutParams =
-        LinearLayout.LayoutParams(Ui.dp(this, 52), Ui.dp(this, 44)).apply {
-            marginStart = Ui.dp(this@DetailActivity, 10)
-            marginEnd = Ui.dp(this@DetailActivity, 10)
-        }
+        LinearLayout.LayoutParams(0, Ui.dp(this, Ui.ACTION_TOUCH_HEIGHT_DP), 1f)
 
     private fun showMediaMenu(anchor: View) {
         val item = currentItem()
@@ -474,7 +584,8 @@ class DetailActivity : ComponentActivity() {
                 isVideo = item.isVideo(),
                 loopEnabled = loopEnabled,
                 shuffleMode = shuffleMode || presentationMode,
-                hasLocation = imageMetadata?.hasLocation == true
+                hasLocation = imageMetadata?.hasLocation == true,
+                cinemaMode = cinemaMode
             ),
             widthDp = 216
         ) { selected ->
@@ -491,6 +602,8 @@ class DetailActivity : ComponentActivity() {
                 }
                 ViewerMenuRules.ENABLE_LOOP,
                 ViewerMenuRules.DISABLE_LOOP -> toggleVideoLoop()
+                ViewerMenuRules.AUDIO_TRACK -> showAudioTrackDialog()
+                ViewerMenuRules.SUBTITLES -> showSubtitleTrackDialog()
                 ViewerMenuRules.SET_AS -> setCurrentAsWallpaper()
                 ViewerMenuRules.ROTATE -> rotateCurrentImage()
                 ViewerMenuRules.EXPORT_PDF -> createPdfFromCurrentImage()
@@ -680,18 +793,46 @@ class DetailActivity : ComponentActivity() {
             MotionEvent.ACTION_DOWN -> {
                 completedViewerTap = false
                 beginPointerGesture(event)
+                if (cinemaGesturesEnabled()) {
+                    cinemaGestureController.start(
+                        event.x,
+                        event.y,
+                        content.width.toFloat(),
+                        content.height.toFloat(),
+                        currentBrightnessFraction(),
+                        currentVolumeFraction()
+                    )
+                }
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
+                if (cinemaGesturesEnabled()) {
+                    val update = cinemaGestureController.update(event.x, event.y, gestureTouchSlop)
+                    if (update.consumed) {
+                        update.kind?.let { applyCinemaGesture(it, update.fraction) }
+                        return true
+                    }
+                }
                 updateInteractiveSwipe(event)
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
                 completedViewerTap = false
+                cinemaGestureController.cancel()
                 cancelInteractiveSwipe()
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                if (cinemaGesturesEnabled()) {
+                    val update = cinemaGestureController.update(event.x, event.y, gestureTouchSlop)
+                    update.kind?.let { applyCinemaGesture(it, update.fraction) }
+                    if (cinemaGestureController.finish()) {
+                        completedViewerTap = false
+                        handler.removeCallbacks(hideCinemaGestureIndicator)
+                        handler.postDelayed(hideCinemaGestureIndicator, CINEMA_INDICATOR_HIDE_MS)
+                        return true
+                    }
+                }
                 updateInteractiveSwipe(event)
                 if (dragPreviewPage != null) {
                     completedViewerTap = false
@@ -942,9 +1083,13 @@ class DetailActivity : ComponentActivity() {
             activePage = createCurrentPage()
             content.addView(activePage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         } else {
+            cinemaMode = false
+            applyCinemaOrientation()
             videoControls.visibility = View.GONE
             timelineRow.visibility = View.GONE
             soundButton.visibility = View.GONE
+            cinemaButton.visibility = View.GONE
+            videoTrackController.unbind()
             activePage?.let { promoteImagePage(item, it) }
         }
     }
@@ -1044,6 +1189,13 @@ class DetailActivity : ComponentActivity() {
     private fun createCurrentPage(): FrameLayout {
         val page = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         val item = currentItem()
+        val restoredMode = restoredCinemaMode.also { restoredCinemaMode = null }
+        cinemaMode = if (item.isVideo()) {
+            restoredMode ?: cinemaPreferences.isEnabled(sourceAlbumKey)
+        } else {
+            false
+        }
+        applyCinemaOrientation()
         title.text = item.name
         updateFavoriteButton()
         if (item.isVideo()) {
@@ -1074,6 +1226,8 @@ class DetailActivity : ComponentActivity() {
         videoControls.visibility = View.VISIBLE
         timelineRow.visibility = View.VISIBLE
         soundButton.visibility = View.VISIBLE
+        cinemaButton.visibility = View.VISIBLE
+        updateCinemaButton()
         updateSoundButton()
         val preview = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
@@ -1124,6 +1278,7 @@ class DetailActivity : ComponentActivity() {
             }
         )
         playerView.player = player
+        if (cinemaMode) videoTrackController.bind(player, sourceAlbumKey) else videoTrackController.unbind()
         updateSpeedButton()
         updatePlayPauseButton()
         handler.post(progressUpdater)
@@ -1261,6 +1416,8 @@ class DetailActivity : ComponentActivity() {
         videoControls.visibility = View.GONE
         timelineRow.visibility = View.GONE
         soundButton.visibility = View.GONE
+        cinemaButton.visibility = View.GONE
+        videoTrackController.unbind()
         addImagePreviewToPage(item, page)
         promoteImagePage(item, page)
     }
@@ -1276,6 +1433,223 @@ class DetailActivity : ComponentActivity() {
         soundButton.setImageResource(if (videoMuted) R.drawable.ic_volume_off else R.drawable.ic_volume_on)
         soundButton.contentDescription = if (videoMuted) "Ativar som" else "Desativar som"
         soundButton.alpha = if (videoMuted) 0.62f else 1f
+    }
+
+    private fun toggleCinemaMode() {
+        if (!currentItem().isVideo() || switchingItem || cinemaTransitionRunning) return
+        cinemaMode = !cinemaMode
+        cinemaGestureController.cancel()
+        handler.removeCallbacks(hideCinemaGestureIndicator)
+        cinemaGestureIndicator.visibility = View.GONE
+        if (cinemaMode) {
+            playbackController.player()?.let { videoTrackController.bind(it, sourceAlbumKey) }
+        } else {
+            videoTrackController.unbind()
+        }
+        updateCinemaButton()
+        animateCinemaModeTransition()
+    }
+
+    private fun updateCinemaButton() {
+        if (!::cinemaButton.isInitialized) return
+        cinemaButton.setImageResource(if (cinemaMode) R.drawable.ic_movie_open else R.drawable.ic_movie)
+        cinemaButton.background = Ui.actionFeedback(this, Color.WHITE)
+        cinemaButton.alpha = 1f
+        cinemaButton.isSelected = false
+        ViewCompat.setStateDescription(
+            cinemaButton,
+            getString(if (cinemaMode) R.string.viewer_cinema_active else R.string.viewer_cinema_inactive)
+        )
+    }
+
+    private fun applyCinemaOrientation() {
+        if (cinemaMode) {
+            if (orientationBeforeCinema == null) orientationBeforeCinema = requestedOrientation
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            orientationBeforeCinema?.let { previous ->
+                orientationBeforeCinema = null
+                requestedOrientation = previous
+            }
+        }
+    }
+
+    private fun animateCinemaModeTransition() {
+        cinemaTransitionRunning = true
+        cinemaButton.isEnabled = false
+        pendingCinemaOrientationChange?.let(handler::removeCallbacks)
+        pendingCinemaTransitionFinish?.let(handler::removeCallbacks)
+        handler.removeCallbacks(hideCinemaModeIndicator)
+
+        cinemaModeIndicator.animate().cancel()
+        cinemaModeIndicator.text = getString(
+            if (cinemaMode) R.string.viewer_cinema_transition_on else R.string.viewer_cinema_transition_off
+        )
+        cinemaModeIndicator.setCompoundDrawablesRelativeWithIntrinsicBounds(
+            if (cinemaMode) R.drawable.ic_movie_open else R.drawable.ic_movie,
+            0,
+            0,
+            0
+        )
+        cinemaModeIndicator.compoundDrawableTintList =
+            android.content.res.ColorStateList.valueOf(Color.WHITE)
+        cinemaModeIndicator.visibility = View.VISIBLE
+        cinemaModeIndicator.alpha = 0f
+        cinemaModeIndicator.scaleX = 0.92f
+        cinemaModeIndicator.scaleY = 0.92f
+        cinemaModeIndicator.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(CINEMA_MESSAGE_APPEAR_MS)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+
+        listOf(content, topBar, bottomBar).forEach { view ->
+            view.animate().cancel()
+            view.animate().alpha(CINEMA_TRANSITION_DIM_ALPHA)
+                .setDuration(CINEMA_ROTATION_DELAY_MS)
+                .start()
+        }
+
+        pendingCinemaOrientationChange = Runnable {
+            pendingCinemaOrientationChange = null
+            applyCinemaOrientation()
+        }.also { handler.postDelayed(it, CINEMA_ROTATION_DELAY_MS) }
+        pendingCinemaTransitionFinish = Runnable {
+            pendingCinemaTransitionFinish = null
+            completeCinemaModeTransition()
+        }.also { handler.postDelayed(it, CINEMA_TRANSITION_FALLBACK_MS) }
+    }
+
+    private fun completeCinemaModeTransition() {
+        pendingCinemaTransitionFinish?.let(handler::removeCallbacks)
+        pendingCinemaTransitionFinish = null
+        listOf(content, topBar, bottomBar).forEach { view ->
+            view.animate().cancel()
+            view.animate().alpha(1f)
+                .setDuration(CINEMA_CONTENT_FADE_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        }
+        cinemaTransitionRunning = false
+        cinemaButton.isEnabled = true
+        handler.removeCallbacks(hideCinemaModeIndicator)
+        handler.postDelayed(hideCinemaModeIndicator, CINEMA_MESSAGE_VISIBLE_MS)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (!::content.isInitialized) return
+        cancelPendingSingleTap()
+        cinemaGestureController.cancel()
+        handler.removeCallbacks(hideCinemaGestureIndicator)
+        cinemaGestureIndicator.visibility = View.GONE
+        if (!switchingItem) cancelInteractiveSwipe()
+        speedPopup?.dismiss()
+        topBar.setPadding(
+            Ui.dp(this, 8), statusBarHeight() + Ui.dp(this, 6),
+            navigationBarSideInset() + Ui.dp(this, 10), Ui.dp(this, 6)
+        )
+        bottomBar.setPadding(
+            Ui.dp(this, 14), Ui.dp(this, 4),
+            navigationBarSideInset() + Ui.dp(this, 14), navigationBarBottomInset() + Ui.dp(this, 8)
+        )
+        if (cinemaTransitionRunning) completeCinemaModeTransition()
+    }
+
+    private fun cinemaGesturesEnabled(): Boolean =
+        cinemaMode && currentItem().isVideo() && !switchingItem
+
+    private fun currentBrightnessFraction(): Float {
+        val windowBrightness = window.attributes.screenBrightness
+        if (windowBrightness >= 0f) return windowBrightness.coerceIn(0f, 1f)
+        return runCatching {
+            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
+        }.getOrDefault(0.5f).coerceIn(0f, 1f)
+    }
+
+    private fun currentVolumeFraction(): Float {
+        val maximum = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        return audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maximum
+    }
+
+    private fun applyCinemaGesture(kind: CinemaGestureKind, fraction: Float) {
+        val bounded = fraction.coerceIn(0f, 1f)
+        when (kind) {
+            CinemaGestureKind.BRIGHTNESS -> {
+                window.attributes = window.attributes.apply {
+                    screenBrightness = bounded.coerceAtLeast(MIN_CINEMA_BRIGHTNESS)
+                }
+                cinemaGestureLabel.text = getString(
+                    R.string.viewer_brightness_percent,
+                    (bounded * 100).roundToInt()
+                )
+            }
+            CinemaGestureKind.VOLUME -> {
+                val maximum = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    (bounded * maximum).roundToInt().coerceIn(0, maximum),
+                    0
+                )
+                cinemaGestureLabel.text = getString(
+                    R.string.viewer_volume_percent,
+                    (bounded * 100).roundToInt()
+                )
+            }
+        }
+        handler.removeCallbacks(hideCinemaGestureIndicator)
+        handler.removeCallbacks(hideCinemaModeIndicator)
+        pendingCinemaOrientationChange?.let(handler::removeCallbacks)
+        pendingCinemaTransitionFinish?.let(handler::removeCallbacks)
+        cinemaGestureProgress.progress = (bounded * 100).roundToInt()
+        cinemaGestureIndicator.visibility = View.VISIBLE
+    }
+
+    private fun showAudioTrackDialog() {
+        val choices = videoTrackController.audioChoices()
+        if (choices.isEmpty()) {
+            Ui.toast(this, getString(R.string.viewer_no_audio_tracks))
+            return
+        }
+        val labels = arrayOf(getString(R.string.viewer_track_automatic)) + choices.map { it.label }
+        val preferred = videoTrackController.audioPreference()
+        val checked = preferred?.let { token ->
+            choices.indexOfFirst { it.preferenceToken == token }.takeIf { it >= 0 }?.plus(1)
+        } ?: 0
+        Ui.showChoiceDialog(this, getString(R.string.viewer_audio_track), labels, checked) { selected ->
+            if (selected == 0) videoTrackController.selectAutomaticAudio()
+            else choices.getOrNull(selected - 1)?.let(videoTrackController::selectAudio)
+        }
+    }
+
+    private fun showSubtitleTrackDialog() {
+        val choices = videoTrackController.subtitleChoices()
+        if (choices.isEmpty()) {
+            Ui.toast(this, getString(R.string.viewer_no_subtitle_tracks))
+            return
+        }
+        val labels = arrayOf(
+            getString(R.string.viewer_subtitles_off),
+            getString(R.string.viewer_track_automatic)
+        ) + choices.map { it.label }
+        val preferred = videoTrackController.subtitlePreference()
+        val selectedTrack = preferred?.let { token ->
+            choices.indexOfFirst { it.preferenceToken == token }
+        } ?: -1
+        val checked = when {
+            !videoTrackController.subtitlesEnabled() -> 0
+            selectedTrack >= 0 -> selectedTrack + 2
+            else -> 1
+        }
+        Ui.showChoiceDialog(this, getString(R.string.viewer_subtitles), labels, checked) { selected ->
+            when (selected) {
+                0 -> videoTrackController.disableSubtitles()
+                1 -> videoTrackController.selectAutomaticSubtitles()
+                else -> choices.getOrNull(selected - 2)?.let(videoTrackController::selectSubtitle)
+            }
+        }
     }
 
     private fun addImagePreviewToPage(item: MediaItem, page: FrameLayout) {
@@ -1537,7 +1911,15 @@ class DetailActivity : ComponentActivity() {
 
     private fun updateFavoriteButton() {
         if (!::favoriteButton.isInitialized || mediaQueue.isEmpty()) return
-        favoriteButton.alpha = if (mediaActions.isFavorite(currentItem())) 1f else 0.55f
+        val favorite = mediaActions.isFavorite(currentItem())
+        favoriteButton.setImageResource(if (favorite) R.drawable.ic_heart_filled else R.drawable.ic_heart)
+        favoriteButton.imageTintList = android.content.res.ColorStateList.valueOf(
+            if (favorite) Color.rgb(238, 112, 132) else Color.WHITE
+        )
+        favoriteButton.isSelected = favorite
+        favoriteButton.contentDescription = getString(
+            if (favorite) R.string.action_unfavorite else R.string.action_favorite
+        )
     }
 
     private fun shareCurrent() {
@@ -1920,6 +2302,8 @@ class DetailActivity : ComponentActivity() {
         outState.putLong(STATE_SHUFFLE_SEED, shuffleSeed)
         outState.putFloat(STATE_PLAYBACK_SPEED, playbackSpeed)
         outState.putBoolean(STATE_VIDEO_MUTED, videoMuted)
+        outState.putBoolean(STATE_CINEMA_MODE, cinemaMode)
+        orientationBeforeCinema?.let { outState.putInt(STATE_ORIENTATION_BEFORE_CINEMA, it) }
         playbackController.savedPlayWhenReady()?.let { playWhenReady ->
             outState.putLong(STATE_VIDEO_POSITION, playbackController.rememberedPosition())
             outState.putBoolean(
@@ -1969,6 +2353,13 @@ class DetailActivity : ComponentActivity() {
         cancelPendingSingleTap()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
+        handler.removeCallbacks(hideCinemaGestureIndicator)
+        handler.removeCallbacks(hideCinemaModeIndicator)
+        pendingCinemaOrientationChange?.let(handler::removeCallbacks)
+        pendingCinemaTransitionFinish?.let(handler::removeCallbacks)
+        pendingCinemaOrientationChange = null
+        pendingCinemaTransitionFinish = null
+        videoTrackController.unbind()
         playbackController.releaseCurrent()
         imagePreloadJobs.values.forEach { it.cancel() }
         imagePreloadJobs.clear()
@@ -2030,6 +2421,19 @@ class DetailActivity : ComponentActivity() {
         private const val STATE_VIDEO_PLAY_WHEN_READY = "viewer_video_play_when_ready"
         private const val STATE_PLAYBACK_SPEED = "viewer_playback_speed"
         private const val STATE_VIDEO_MUTED = "viewer_video_muted"
+        private const val STATE_CINEMA_MODE = "viewer_cinema_mode"
+        private const val STATE_ORIENTATION_BEFORE_CINEMA = "viewer_orientation_before_cinema"
+        private const val CINEMA_BUTTON_TAG = "viewer_cinema_mode_button"
+        private const val CINEMA_TRANSITION_TAG = "viewer_cinema_transition_message"
+        private const val CINEMA_INDICATOR_HIDE_MS = 650L
+        private const val CINEMA_ROTATION_DELAY_MS = 170L
+        private const val CINEMA_TRANSITION_FALLBACK_MS = 520L
+        private const val CINEMA_MESSAGE_APPEAR_MS = 150L
+        private const val CINEMA_CONTENT_FADE_MS = 230L
+        private const val CINEMA_MESSAGE_VISIBLE_MS = 1_200L
+        private const val CINEMA_MESSAGE_FADE_MS = 180L
+        private const val CINEMA_TRANSITION_DIM_ALPHA = 0.78f
+        private const val MIN_CINEMA_BRIGHTNESS = 0.02f
         private val videoPreviewCache = object : LruCache<String, Bitmap>((Runtime.getRuntime().maxMemory() / 32).toInt()) {
             override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
         }
