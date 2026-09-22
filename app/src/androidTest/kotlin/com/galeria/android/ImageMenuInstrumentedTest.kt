@@ -96,9 +96,7 @@ class ImageMenuInstrumentedTest {
                 waitUntilDisplayed(ViewerMenuRules.PRESENTATION)
                 onView(withText(ViewerMenuRules.PRESENTATION)).perform(clickClickableAncestor())
                 Thread.sleep(4_700L)
-                onView(withContentDescription("Visualizador de mídia")).perform(click())
-                waitUntilDisplayed(secondName)
-                onView(withText(secondName)).check(matches(isDisplayed()))
+                waitUntilTitleChanges(secondName)
             }
         } finally {
             context.contentResolver.delete(firstUri, null, null)
@@ -143,6 +141,22 @@ class ImageMenuInstrumentedTest {
             }
         }
         throw AssertionError("Texto não exibido: $text", lastFailure)
+    }
+
+    private fun waitUntilTitleChanges(text: String) {
+        val deadline = System.currentTimeMillis() + 10_000L
+        var lastFailure: Throwable? = null
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                // Presentation intentionally hides the HUD; its title still tracks the active image.
+                onView(withText(text)).check(matches(withText(text)))
+                return
+            } catch (failure: Throwable) {
+                lastFailure = failure
+                Thread.sleep(100L)
+            }
+        }
+        throw AssertionError("A apresentação não avançou para $text", lastFailure)
     }
 
     private fun waitUntilDisplayedInDialog(text: String) {

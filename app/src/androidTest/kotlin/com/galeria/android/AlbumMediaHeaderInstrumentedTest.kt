@@ -12,7 +12,9 @@ import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
+import androidx.test.espresso.matcher.ViewMatchers.isSelected
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withHint
 import androidx.test.espresso.matcher.ViewMatchers.withText
@@ -80,17 +82,8 @@ class AlbumMediaHeaderInstrumentedTest {
                     assertRightAligned(view)
                 }
             }
-            val cancelLocation = IntArray(2)
-            onView(withText("Cancelar")).inRoot(isDialog()).check { view, exception ->
-                if (exception != null) throw exception
-                view.getLocationOnScreen(cancelLocation)
-            }
-            onView(withText("OK")).inRoot(isDialog()).check { view, exception ->
-                if (exception != null) throw exception
-                val okLocation = IntArray(2)
-                view.getLocationOnScreen(okLocation)
-                assertTrue("As ações do painel devem ficar empilhadas verticalmente.", okLocation[1] > cancelLocation[1])
-            }
+            onView(withText("OK")).inRoot(isDialog()).check(doesNotExist())
+            onView(withText("Cancelar")).inRoot(isDialog()).check(doesNotExist())
             onView(withText("Ordenar por")).inRoot(isDialog()).check { view, exception ->
                 if (exception != null) throw exception
                 val panel = view.parent as View
@@ -100,8 +93,27 @@ class AlbumMediaHeaderInstrumentedTest {
                     background.cornerRadius >= Ui.dp(view.context, 12).toFloat()
                 )
             }
+            onView(withText("Nome alfabético")).inRoot(isDialog()).perform(clickClickableAncestor())
+            waitForView {
+                onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
+            }
+            onView(withContentDescription("Mais opções")).perform(click())
+            onView(withText("Ordenar por")).perform(clickClickableAncestor())
+            onView(withContentDescription("Crescente"))
+                .inRoot(isDialog())
+                .check(matches(isSelected()))
+            onView(withContentDescription("Decrescente"))
+                .inRoot(isDialog())
+                .perform(clickClickableAncestor())
+            onView(withContentDescription("Mais opções")).perform(click())
+            onView(withText("Ordenar por")).perform(clickClickableAncestor())
+            onView(withContentDescription("Decrescente"))
+                .inRoot(isDialog())
+                .check(matches(isSelected()))
+            onView(withContentDescription("Crescente"))
+                .inRoot(isDialog())
+                .perform(clickClickableAncestor())
 
-            androidx.test.espresso.Espresso.pressBack()
             waitForView {
                 onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
             }

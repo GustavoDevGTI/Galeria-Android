@@ -1957,7 +1957,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun askFolderForCopyOrMove(copy: Boolean, anchor: View) {
         val item = currentItem()
-        val exposedKeys = intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)?.toSet()
+        val exposedKeys = intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)?.toList()
         val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
         val includeHidden = exposedKeys != null && StorageAccessRules.includeHiddenFilesystem(
             intent.getBooleanExtra("include_hidden_filesystem", false),

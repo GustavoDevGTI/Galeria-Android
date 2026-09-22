@@ -74,15 +74,19 @@ class AlbumMediaActivity : ComponentActivity() {
     private val gridTouchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop.toFloat() }
     private var gridDensityAnimationGeneration = 0
     private var dragging = false
+    private var selectionDragActive = false
+    private var selectionDragPosition = RecyclerView.NO_POSITION
     private var dragPosition = -1
     private var savedFirstVisible = 0
     private var draggedView: View? = null
     private lateinit var selectionBar: LinearLayout
     private lateinit var selectionActions: LinearLayout
     private lateinit var selectionActionDock: LinearLayout
+    private lateinit var previewSelectionAction: LinearLayout
     private lateinit var selectAllText: TextView
     private var spacingDecoration: RecyclerView.ItemDecoration? = null
     private var dragMoved = false
+    private var previewSelectionMode = false
     private var showImages = true
     private var showVideos = true
     private var showGifs = true
@@ -352,8 +356,14 @@ class AlbumMediaActivity : ComponentActivity() {
                 if (position !in 0 until adapter.getCount()) return
                 if (!dragging) {
                     if (adapter.isSelectionMode()) {
-                        adapter.toggleSelection(position)
-                        updateSelectionUi()
+                        if (previewSelectionMode) {
+                            previewSelectionMode = false
+                            updatePreviewSelectionAction()
+                            openDetail(adapter.getItem(position), position)
+                        } else {
+                            adapter.toggleSelection(position)
+                            updateSelectionUi()
+                        }
                     } else {
                         openDetail(adapter.getItem(position), position)
                     }
@@ -362,9 +372,13 @@ class AlbumMediaActivity : ComponentActivity() {
 
             override fun onMediaLongClick(view: View, position: Int): Boolean {
                 if (position !in 0 until adapter.getCount()) return true
+                val wasSelectionMode = adapter.isSelectionMode()
+                val wasSelected = adapter.isSelected(position)
                 if (adapter.isPagingMode()) {
                     if (!adapter.isSelectionMode()) enterSelectionMode()
                     if (!adapter.isSelected(position)) adapter.selectPosition(position)
+                    selectionDragActive = !wasSelectionMode || !wasSelected
+                    selectionDragPosition = position
                     updateSelectionUi()
                     view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
                     return true
@@ -372,12 +386,16 @@ class AlbumMediaActivity : ComponentActivity() {
                 if (!adapter.isSelectionMode()) {
                     enterSelectionMode()
                     adapter.selectPosition(position)
+                    selectionDragActive = true
+                    selectionDragPosition = position
                     updateSelectionUi()
                     view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
                     return true
                 }
                 if (!adapter.isSelected(position)) {
                     adapter.selectPosition(position)
+                    selectionDragActive = true
+                    selectionDragPosition = position
                     updateSelectionUi()
                     view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
                     return true
@@ -411,6 +429,19 @@ class AlbumMediaActivity : ComponentActivity() {
         }
         applyViewMode()
         grid.adapter = adapter
+        grid.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+            override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
+                if (shouldHandleGridGesture(event)) {
+                    handleGridGesture(event)
+                    return true
+                }
+                return false
+            }
+
+            override fun onTouchEvent(recyclerView: RecyclerView, event: MotionEvent) {
+                handleGridGesture(event)
+            }
+        })
         grid.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -433,86 +464,12 @@ class AlbumMediaActivity : ComponentActivity() {
                 mediaRefreshScheduled = false
                 pendingMediaRefresh = true
             }
-            val pinchCandidate = !listMode && !dragging && event.pointerCount > 1
-            if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && pinchCandidate) {
-                horizontalPinchScale = 1f
-                lastHorizontalPinchSpan = horizontalPointerSpan(event)
-                pinchGestureActive = true
-                pinchGestureConsumed = true
-                grid.stopScroll()
-                grid.parent?.requestDisallowInterceptTouchEvent(true)
-                if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = false
-                return@setOnTouchListener true
-            }
-            if (event.actionMasked == MotionEvent.ACTION_MOVE && pinchGestureActive) {
-                val currentSpan = horizontalPointerSpan(event)
-                if (lastHorizontalPinchSpan > 0f && currentSpan > 0f) {
-                    val factor = currentSpan / lastHorizontalPinchSpan
-                    if (factor.isFinite() && factor in 0.5f..2f) {
-                        horizontalPinchScale *= factor
-                        val delta = GridColumnRules.columnDelta(horizontalPinchScale)
-                        if (delta != 0) {
-                            horizontalPinchScale = 1f
-                            changeGridColumnCount(
-                                delta,
-                                horizontalPointerCenterX(event),
-                                horizontalPointerCenterY(event)
-                            )
-                        }
-                    }
-                }
-                lastHorizontalPinchSpan = currentSpan
-                return@setOnTouchListener true
-            }
-            if (event.actionMasked == MotionEvent.ACTION_POINTER_UP && pinchGestureActive) {
-                pinchGestureActive = false
-                horizontalPinchScale = 1f
-                lastHorizontalPinchSpan = 0f
-                if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
-                return@setOnTouchListener true
-            }
-            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
-                val consumed = pinchGestureConsumed
-                pinchGestureActive = false
-                pinchGestureConsumed = false
-                horizontalPinchScale = 1f
-                lastHorizontalPinchSpan = 0f
-                if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
-                if (consumed) return@setOnTouchListener true
-            }
-            if (pinchCandidate || pinchGestureActive || pinchGestureConsumed) {
-                return@setOnTouchListener true
-            }
-            if (!dragging) {
+            if (!dragging && !selectionDragActive) {
                 if (event.actionMasked == MotionEvent.ACTION_UP && gridTouchClickCandidate) grid.performClick()
                 if (event.actionMasked == MotionEvent.ACTION_UP) gridTouchClickCandidate = false
                 return@setOnTouchListener false
             }
-            if (event.action == MotionEvent.ACTION_MOVE) {
-                val targetView = grid.findChildViewUnder(event.x, event.y)
-                val target = if (targetView == null) RecyclerView.NO_POSITION else grid.getChildAdapterPosition(targetView)
-                if (adapter.isSelectionMode() && target >= 0 && target != dragPosition && adapter.moveSelectedBlock(target)) {
-                    dragPosition = target
-                    dragMoved = true
-                    animateGridMove()
-                } else if (!adapter.isSelectionMode() && target >= 0 && target != dragPosition && adapter.moveVisible(dragPosition, target)) {
-                    dragPosition = target
-                    dragMoved = true
-                    animateGridMove()
-                }
-                return@setOnTouchListener true
-            }
-            if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
-                finishDrag()
-                if (dragMoved) {
-                    saveCustomOrder()
-                    if (adapter.isSelectionMode()) {
-                        exitSelectionMode()
-                    }
-                }
-                return@setOnTouchListener true
-            }
-            true
+            false
         }
         swipeRefresh = SwipeRefreshLayout(this).apply {
             setColorSchemeColors(Ui.accent(this@AlbumMediaActivity))
@@ -555,6 +512,13 @@ class AlbumMediaActivity : ComponentActivity() {
         }
         selectionActionDock = Ui.selectionActionDock(this)
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        previewSelectionAction = Ui.selectionAction(
+            this,
+            R.drawable.ic_eye,
+            getString(R.string.action_view_media),
+            ::requestSelectedMediaPreview
+        )
+        Ui.addSelectionActionToDock(selectionActionDock, previewSelectionAction)
         addSelectionAction(R.drawable.ic_share, getString(R.string.action_share)) { shareSelected() }
         addSelectionAction(R.drawable.ic_heart, getString(R.string.action_favorite)) { favoriteSelected() }
         addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { confirmDeleteSelected() }
@@ -690,7 +654,6 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun showSpacingDialog() {
-        lateinit var dialog: AlertDialog
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = Ui.rounded(Ui.menuSurface(this@AlbumMediaActivity), 14, this@AlbumMediaActivity)
@@ -737,39 +700,7 @@ class AlbumMediaActivity : ComponentActivity() {
             })
         }
         panel.addView(seekBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48)))
-        panel.addView(
-            LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(0, Ui.dp(this@AlbumMediaActivity, 8), 0, 0)
-                addView(
-                    TextView(this@AlbumMediaActivity).apply {
-                        setText(R.string.action_ok)
-                        textSize = 14f
-                        setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-                        setTextColor(Ui.menuText(this@AlbumMediaActivity))
-                        gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                        minimumHeight = Ui.dp(this@AlbumMediaActivity, 50)
-                        isClickable = true
-                        isFocusable = true
-                        background = Ui.rounded(
-                            Ui.blend(Ui.menuSurface(this@AlbumMediaActivity), Ui.menuText(this@AlbumMediaActivity), 0.08f),
-                            0,
-                            this@AlbumMediaActivity
-                        )
-                        setPadding(
-                            Ui.dp(this@AlbumMediaActivity, 14),
-                            Ui.dp(this@AlbumMediaActivity, 12),
-                            Ui.dp(this@AlbumMediaActivity, 14),
-                            Ui.dp(this@AlbumMediaActivity, 12)
-                        )
-                        setOnClickListener { dialog.dismiss() }
-                    },
-                    LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                )
-            },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        )
-        dialog = AlertDialog.Builder(this).setView(panel).create()
+        val dialog = AlertDialog.Builder(this).setView(panel).create()
         Ui.showSidePanel(dialog)
     }
 
@@ -789,6 +720,9 @@ class AlbumMediaActivity : ComponentActivity() {
 
     private fun exitSelectionMode() {
         val wasSelecting = adapter.isSelectionMode()
+        previewSelectionMode = false
+        selectionDragActive = false
+        selectionDragPosition = RecyclerView.NO_POSITION
         adapter.clearSelection()
         updateSelectionUi()
         if (wasSelecting && groupMode == GROUP_NONE) {
@@ -801,6 +735,7 @@ class AlbumMediaActivity : ComponentActivity() {
             adapter.setSelectionMode(false)
         }
         val active = adapter.isSelectionMode() && adapter.selectedCount() > 0
+        if (!active) previewSelectionMode = false
         selectionBar.visibility = View.GONE
         selectionActions.visibility = if (active) View.VISIBLE else View.GONE
         selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
@@ -815,6 +750,32 @@ class AlbumMediaActivity : ComponentActivity() {
             hideKeyboard()
         }
         updateSearchPresentation()
+        updatePreviewSelectionAction()
+    }
+
+    private fun requestSelectedMediaPreview() {
+        val selected = adapter.selectedItems()
+        if (selected.isEmpty()) return
+        if (selected.size == 1) {
+            val position = adapter.positionOf(selected.first().uri.toString())
+            if (position >= 0) openDetail(selected.first(), position)
+            return
+        }
+        previewSelectionMode = !previewSelectionMode
+        updatePreviewSelectionAction()
+        if (previewSelectionMode) {
+            Ui.toast(this, getString(R.string.album_choose_media_to_view))
+        }
+    }
+
+    private fun updatePreviewSelectionAction() {
+        if (!::previewSelectionAction.isInitialized) return
+        previewSelectionAction.isSelected = previewSelectionMode
+        previewSelectionAction.background = Ui.actionFeedback(
+            this,
+            Ui.selectionActionIcon(this),
+            selected = previewSelectionMode
+        )
     }
 
     private fun handleToolbarBack() {
@@ -927,7 +888,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun askMoveSelected() {
         val selected = adapter.selectedItems()
         if (selected.isEmpty()) return
-        val exposedKeys = intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)?.toSet()
+        val exposedKeys = intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)?.toList()
         val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
         selectionCoordinator.loadMoveTargets(
             exposedKeys,
@@ -957,28 +918,17 @@ class AlbumMediaActivity : ComponentActivity() {
             MediaSortRules.SORT_TYPE
         )
         val selected = values.indexOf(mediaSortMode).takeIf { it >= 0 } ?: 0
-        Ui.showChoiceDialog(
+        Ui.showSortChoiceDialog(
             this,
             getString(R.string.action_sort_by),
             labels,
+            values,
             selected,
-            message = getString(R.string.album_sort_group_hint),
-            neutralText = if (mediaSortMode == MediaSortRules.SORT_CUSTOM) {
-                null
-            } else if (mediaSortDescending) {
-                getString(R.string.action_descending)
-            } else {
-                getString(R.string.action_ascending)
-            },
-            onNeutral = if (mediaSortMode == MediaSortRules.SORT_CUSTOM) null else {
-                {
-                    mediaSortDescending = !mediaSortDescending
-                    saveMediaSortOptions()
-                    loadMedia(true)
-                }
-            }
-        ) { which ->
+            mediaSortDescending,
+            message = getString(R.string.album_sort_group_hint)
+        ) { which, descending ->
             mediaSortMode = values[which]
+            mediaSortDescending = descending
             saveMediaSortOptions()
             loadMedia(true)
         }
@@ -1109,6 +1059,121 @@ class AlbumMediaActivity : ComponentActivity() {
 
     private fun spacingKey(): String = "grid_spacing_global"
 
+    private fun shouldHandleGridGesture(event: MotionEvent): Boolean =
+        pinchGestureActive ||
+            pinchGestureConsumed ||
+            (!listMode && !dragging && event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && event.pointerCount > 1) ||
+            selectionDragActive ||
+            dragging
+
+    private fun handleGridGesture(event: MotionEvent) {
+        if (
+            pinchGestureActive ||
+            pinchGestureConsumed ||
+            (!listMode && !dragging && event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && event.pointerCount > 1)
+        ) {
+            handleGridPinch(event)
+            return
+        }
+        when (event.actionMasked) {
+            MotionEvent.ACTION_MOVE -> {
+                val targetView = grid.findChildViewUnder(event.x, event.y)
+                val target = targetView?.let(grid::getChildAdapterPosition) ?: RecyclerView.NO_POSITION
+                if (selectionDragActive) {
+                    if (target != RecyclerView.NO_POSITION && target != selectionDragPosition) {
+                        val start = min(selectionDragPosition, target).coerceAtLeast(0)
+                        val end = max(selectionDragPosition, target)
+                        var changed = false
+                        for (position in start..end) {
+                            changed = adapter.selectPosition(position) || changed
+                        }
+                        selectionDragPosition = target
+                        if (changed) updateSelectionUi()
+                    }
+                    val edge = Ui.dp(this, SELECTION_DRAG_EDGE_DP)
+                    when {
+                        event.y < edge -> grid.scrollBy(0, -Ui.dp(this, SELECTION_DRAG_SCROLL_DP))
+                        event.y > grid.height - edge -> grid.scrollBy(0, Ui.dp(this, SELECTION_DRAG_SCROLL_DP))
+                    }
+                } else if (dragging && target >= 0 && target != dragPosition) {
+                    if (adapter.isSelectionMode() && adapter.moveSelectedBlock(target)) {
+                        dragPosition = target
+                        dragMoved = true
+                        animateGridMove()
+                    } else if (!adapter.isSelectionMode() && adapter.moveVisible(dragPosition, target)) {
+                        dragPosition = target
+                        dragMoved = true
+                        animateGridMove()
+                    }
+                }
+            }
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL -> {
+                if (selectionDragActive) {
+                    selectionDragActive = false
+                    selectionDragPosition = RecyclerView.NO_POSITION
+                    updateSelectionUi()
+                } else if (dragging) {
+                    finishDrag()
+                    if (dragMoved) {
+                        saveCustomOrder()
+                        if (adapter.isSelectionMode()) exitSelectionMode()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleGridPinch(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (listMode || dragging || event.pointerCount < 2) return
+                selectionDragActive = false
+                selectionDragPosition = RecyclerView.NO_POSITION
+                horizontalPinchScale = 1f
+                lastHorizontalPinchSpan = horizontalPointerSpan(event)
+                pinchGestureActive = true
+                pinchGestureConsumed = true
+                grid.stopScroll()
+                grid.parent?.requestDisallowInterceptTouchEvent(true)
+                if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = false
+            }
+            MotionEvent.ACTION_MOVE -> if (pinchGestureActive) {
+                val currentSpan = horizontalPointerSpan(event)
+                if (lastHorizontalPinchSpan > 0f && currentSpan > 0f) {
+                    val factor = currentSpan / lastHorizontalPinchSpan
+                    if (factor.isFinite() && factor in 0.5f..2f) {
+                        horizontalPinchScale *= factor
+                        val delta = GridColumnRules.columnDelta(horizontalPinchScale)
+                        if (delta != 0) {
+                            horizontalPinchScale = 1f
+                            changeGridColumnCount(
+                                delta,
+                                horizontalPointerCenterX(event),
+                                horizontalPointerCenterY(event)
+                            )
+                        }
+                    }
+                }
+                lastHorizontalPinchSpan = currentSpan
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                pinchGestureActive = false
+                horizontalPinchScale = 1f
+                lastHorizontalPinchSpan = 0f
+            }
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL -> {
+                pinchGestureActive = false
+                pinchGestureConsumed = false
+                horizontalPinchScale = 1f
+                lastHorizontalPinchSpan = 0f
+                grid.parent?.requestDisallowInterceptTouchEvent(false)
+                if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
+            }
+        }
+    }
+
     private fun finishDrag() {
         dragging = false
         dragPosition = -1
@@ -1205,45 +1270,33 @@ class AlbumMediaActivity : ComponentActivity() {
         anchorOffset: Int
     ) {
         val generation = ++gridDensityAnimationGeneration
-        val exitScale = if (delta > 0) 0.982f else 1.018f
         val entryScale = if (delta > 0) 1.018f else 0.982f
         grid.animate().cancel()
         grid.pivotX = focusX.coerceIn(0f, grid.width.toFloat())
         grid.pivotY = focusY.coerceIn(0f, grid.height.toFloat())
+        layoutManager.spanCount = gridColumnCount
+        applyGridSpacing()
+        updateThumbnailRequestSize()
+        if (anchorPosition != RecyclerView.NO_POSITION) {
+            layoutManager.scrollToPositionWithOffset(anchorPosition, anchorOffset)
+        }
+        grid.alpha = 0.82f
+        grid.scaleX = entryScale
+        grid.scaleY = entryScale
+        warmedGridPoolViewType = -1
+        warmGridPoolGradually()
         grid.animate()
-            .alpha(0.72f)
-            .scaleX(exitScale)
-            .scaleY(exitScale)
-            .setInterpolator(DecelerateInterpolator())
-            .setDuration(GRID_DENSITY_EXIT_MS)
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setInterpolator(DecelerateInterpolator(1.5f))
+            .setDuration(GRID_DENSITY_ENTRY_MS)
             .withEndAction {
-                if (generation != gridDensityAnimationGeneration || isFinishing || isDestroyed) {
-                    return@withEndAction
+                if (generation == gridDensityAnimationGeneration) {
+                    grid.alpha = 1f
+                    grid.scaleX = 1f
+                    grid.scaleY = 1f
                 }
-                layoutManager.spanCount = gridColumnCount
-                applyGridSpacing()
-                updateThumbnailRequestSize()
-                if (anchorPosition != RecyclerView.NO_POSITION) {
-                    layoutManager.scrollToPositionWithOffset(anchorPosition, anchorOffset)
-                }
-                grid.scaleX = entryScale
-                grid.scaleY = entryScale
-                warmedGridPoolViewType = -1
-                warmGridPoolGradually()
-                grid.animate()
-                    .alpha(1f)
-                    .scaleX(1f)
-                    .scaleY(1f)
-                    .setInterpolator(DecelerateInterpolator(1.5f))
-                    .setDuration(GRID_DENSITY_ENTRY_MS)
-                    .withEndAction {
-                        if (generation == gridDensityAnimationGeneration) {
-                            grid.alpha = 1f
-                            grid.scaleX = 1f
-                            grid.scaleY = 1f
-                        }
-                    }
-                    .start()
             }
             .start()
     }
@@ -1396,8 +1449,9 @@ class AlbumMediaActivity : ComponentActivity() {
         private const val INITIAL_MEDIA_DELAY_MS = 60L
         private const val GRID_POOL_WARMUP_STEP_MS = 24L
         private const val GRID_POOL_WARMUP_RETRY_MS = 80L
-        private const val GRID_DENSITY_EXIT_MS = 70L
         private const val GRID_DENSITY_ENTRY_MS = 125L
+        private const val SELECTION_DRAG_EDGE_DP = 72
+        private const val SELECTION_DRAG_SCROLL_DP = 24
         private const val FAST_SCROLL_PREVIEW_DURATION_MS = 650L
         private const val MEDIA_OBSERVER_GRACE_MS = 3_000L
         private const val MEDIA_REFRESH_DEBOUNCE_MS = 5_000L

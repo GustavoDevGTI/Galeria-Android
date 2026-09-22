@@ -282,9 +282,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada commit posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.52**: são **53 commits** na linha 0.8, ou **52 atualizações** depois do lançamento inicial.
+A linha começou em `v0.8.0`. Cada lançamento posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.54**.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.52 usa o código `8052`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.54 usa o código `8054`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -341,6 +341,8 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.50`](https://github.com/GustavoDevGTI/Galeria-Android/tree/v0.8.50) | 18/08/2026 | Atualização e estabilização da suíte de interface |
 | [`v0.8.51`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.51) | 15/09/2026 | Atualização técnica, modularização segura e sincronização imediata das pastas |
 | [`v0.8.52`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.52) | 16/09/2026 | Memória de vídeo temporária, temas suaves e alinhamento contextual dos submenus |
+| [`v0.8.53`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.53) | 21/09/2026 | Modo cinema e controles de reprodução |
+| [`v0.8.54`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.54) | 21/09/2026 | Gestos e seleção da grade, ordenação consistente e submenus de escolha imediata |
 
 ## Relatório comparativo de desempenho
 
@@ -356,7 +358,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.52](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.52/Galeria-Android-versao-0.8.52.apk)
+[Baixar Galeria Android - versão 0.8.54](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.54/Galeria-Android-versao-0.8.54.apk)
 
 Build padrão do Gradle:
 
@@ -367,10 +369,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.52.apk
+Galeria-Android-versao-0.8.54.apk
 ```
 
-O APK 0.8.52 usa a mesma chave permanente das versões 0.8.50 e 0.8.51. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela chave permanente serão compatíveis entre si.
+O APK 0.8.54 usa a mesma chave permanente das versões recentes. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela chave permanente serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 
@@ -407,6 +409,7 @@ A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_
 - Gestos usam coordenadas absolutas e um único controlador, eliminando a tremedeira durante a transição
 - Pinça horizontal ajusta a grade interna entre 2 e 8 colunas, salva a preferência, mantém a mídia sob os dedos como referência e usa uma transição curta de escala e opacidade
 - Diálogos e submenus principais usam componentes temáticos próprios do app
+- Submenus de escolha aplicam a opção imediatamente, sem confirmação redundante; escolhas de acesso inicial ficam alinhadas lado a lado
 - Gerenciamento de ocultos atualizado com lista rolável, botões fixos e suporte a pastas fixadas
 - Abertura do submenu de ocultos sem varredura automática: somente álbuns visíveis ou já exibidos entram na lista até o uso de `Carregar ocultos`
 - Player ajustado para manter o vídeo ocupando o máximo possível da tela sem ser reduzido pelos controles

@@ -53,20 +53,21 @@ class MainMediaAccessCoordinator(
     }
 
     private fun showInitialChoice() {
-        val dialog = Ui.showConfirmationDialog(
+        val dialog = Ui.showActionChoiceDialog(
             activity,
             activity.getString(R.string.access_initial_choice_title),
             activity.getString(R.string.access_initial_choice_message),
             activity.getString(R.string.access_use_standard),
-            negativeText = activity.getString(R.string.access_use_full),
-            onNegative = {
+            activity.getString(R.string.access_use_full),
+            onFirst = {
+                markInitialChoiceMade()
+                requestMediaLibraryAccess()
+            },
+            onSecond = {
                 markInitialChoiceMade()
                 MediaActions.requestAllFilesAccess(activity)
             }
-        ) {
-            markInitialChoiceMade()
-            requestMediaLibraryAccess()
-        }
+        )
         dialog.setCancelable(false)
         dialog.setCanceledOnTouchOutside(false)
     }

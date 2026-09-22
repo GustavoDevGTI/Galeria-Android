@@ -117,7 +117,7 @@ object HiddenAlbumDialogRules {
 object GridColumnRules {
     const val MIN_COLUMNS = 2
     const val MAX_COLUMNS = 8
-    const val SCALE_STEP = 1.12f
+    const val SCALE_STEP = 1.08f
 
     fun normalized(columns: Int, fallback: Int): Int =
         (if (columns > 0) columns else fallback).coerceIn(MIN_COLUMNS, MAX_COLUMNS)
@@ -130,6 +130,22 @@ object GridColumnRules {
 
     fun changed(columns: Int, delta: Int): Int =
         (columns + delta).coerceIn(MIN_COLUMNS, MAX_COLUMNS)
+}
+
+object SortDirectionRules {
+    fun defaultDescending(mode: String): Boolean = when (mode) {
+        AlbumRules.SORT_NAME,
+        AlbumRules.SORT_PATH,
+        MediaSortRules.SORT_TYPE,
+        MediaSortRules.SORT_CUSTOM,
+        AlbumRules.SORT_RANDOM -> false
+        else -> true
+    }
+
+    fun whenModeSelected(currentMode: String, selectedMode: String, currentDescending: Boolean): Boolean =
+        if (currentMode == selectedMode) currentDescending else defaultDescending(selectedMode)
+
+    fun supportsDirection(mode: String): Boolean = mode != MediaSortRules.SORT_CUSTOM
 }
 
 object MediaIdentityRules {
@@ -322,6 +338,22 @@ object AlbumTargetRules {
             }
         }
         return targets.values.toList()
+    }
+
+    fun orderedTargets(
+        source: List<AlbumItem>,
+        exposedKeys: List<String>?,
+        hiddenKeys: Set<String>,
+        excludedKeys: Set<String>,
+        sortMode: String,
+        sortDescending: Boolean
+    ): List<AlbumItem> {
+        val targets = exposedTargets(source, exposedKeys?.toSet(), hiddenKeys, excludedKeys)
+        if (exposedKeys == null) {
+            return targets.toMutableList().also { AlbumRules.sort(it, sortMode, sortDescending) }
+        }
+        val positions = exposedKeys.withIndex().associate { it.value to it.index }
+        return targets.sortedBy { positions[it.key] ?: Int.MAX_VALUE }
     }
 }
 

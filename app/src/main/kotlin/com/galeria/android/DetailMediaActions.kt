@@ -81,7 +81,7 @@ class DetailMediaActions(
         MediaActions.moveToFolder(activity, item, folder)
 
     fun loadTargets(
-        exposedKeys: Set<String>?,
+        exposedKeys: List<String>?,
         hiddenKeys: Set<String>,
         excludedKeys: Set<String>,
         includeHidden: Boolean,
@@ -89,11 +89,13 @@ class DetailMediaActions(
     ) {
         if (closed) return
         executor.execute {
-            val targets = AlbumTargetRules.exposedTargets(
+            val targets = AlbumTargetRules.orderedTargets(
                 MediaStoreRepository.loadAlbums(activity.applicationContext, includeHidden),
                 exposedKeys,
                 hiddenKeys,
-                excludedKeys
+                excludedKeys,
+                prefs.getString("sort_mode", AlbumRules.SORT_MODIFIED) ?: AlbumRules.SORT_MODIFIED,
+                prefs.getBoolean("sort_desc", true)
             )
             activity.runOnUiThread {
                 if (!closed && !activity.isFinishing && !activity.isDestroyed) onTargets(targets)

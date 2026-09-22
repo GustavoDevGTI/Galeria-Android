@@ -2,9 +2,12 @@ package com.galeria.android
 
 import android.Manifest
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
+import android.provider.MediaStore
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
@@ -42,15 +45,20 @@ class AlbumGridPinchInstrumentedTest {
         val hadSavedColumns = prefs.contains(PREF_GRID_COLUMNS)
         val originalColumns = prefs.getInt(PREF_GRID_COLUMNS, 0)
         prefs.edit().putInt(PREF_GRID_COLUMNS, 4).commit()
+        val suffix = System.nanoTime()
+        val albumPath = "Pictures/GridPinchTest-$suffix/"
+        val mediaNames = (1..4).map { "pinch-over-media-$suffix-$it.png" }
+        val mediaUris = mediaNames.map { insertImage(context, albumPath, it) }
         MediaStoreRepository.invalidateCache()
         val intent = Intent(context, AlbumMediaActivity::class.java).apply {
-            putExtra("album_key", "Pictures/GridPinchTest/")
+            putExtra("album_key", albumPath)
             putExtra("album_name", "Pinça")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
         try {
             ActivityScenario.launch<AlbumMediaActivity>(intent).use { scenario ->
+                mediaNames.forEach(::waitUntilMediaDisplayed)
                 onView(withContentDescription("Grade de mídias, 4 colunas"))
                     .check(matches(withContentDescription("Grade de mídias, 4 colunas")))
 
@@ -88,8 +96,41 @@ class AlbumGridPinchInstrumentedTest {
             val editor = prefs.edit()
             if (hadSavedColumns) editor.putInt(PREF_GRID_COLUMNS, originalColumns) else editor.remove(PREF_GRID_COLUMNS)
             editor.commit()
+            mediaUris.forEach { context.contentResolver.delete(it, null, null) }
             MediaStoreRepository.invalidateCache()
         }
+    }
+
+    private fun insertImage(context: Context, albumPath: String, name: String): Uri {
+        val uri = requireNotNull(context.contentResolver.insert(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, albumPath)
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+        ))
+        context.contentResolver.openOutputStream(uri)?.use { it.write(ONE_PIXEL_PNG) }
+        context.contentResolver.update(uri, ContentValues().apply {
+            put(MediaStore.Images.Media.IS_PENDING, 0)
+        }, null, null)
+        return uri
+    }
+
+    private fun waitUntilMediaDisplayed(name: String) {
+        val deadline = SystemClock.uptimeMillis() + 10_000L
+        var failure: Throwable? = null
+        do {
+            try {
+                onView(withContentDescription(name)).check(matches(withContentDescription(name)))
+                return
+            } catch (error: Throwable) {
+                failure = error
+                SystemClock.sleep(100L)
+            }
+        } while (SystemClock.uptimeMillis() < deadline)
+        throw AssertionError("A mídia de teste não apareceu na grade.", failure)
     }
 
     private fun findViewWithDescription(view: View, description: String): View? {
@@ -115,8 +156,10 @@ class AlbumGridPinchInstrumentedTest {
 
     private fun dispatchHorizontalPinch(view: View, startSpanRatio: Float, endSpanRatio: Float) {
         val width = view.width.toFloat().coerceAtLeast(1f)
+        val touchedMedia = (view as? RecyclerView)?.getChildAt(0)
         val centerX = width / 2f
-        val centerY = view.height.toFloat().coerceAtLeast(1f) / 2f
+        val centerY = touchedMedia?.let { it.top + it.height / 2f }
+            ?: view.height.toFloat().coerceAtLeast(1f) / 2f
         val startSpan = width * startSpanRatio
         val intermediateSpan = startSpan + (width * endSpanRatio - startSpan) * 0.08f
         val endSpan = width * endSpanRatio
@@ -206,5 +249,9 @@ class AlbumGridPinchInstrumentedTest {
     private companion object {
         const val PREF_GRID_COLUMNS = "media_grid_columns"
         const val GRID_MOTION_SETTLE_MS = 280L
+        val ONE_PIXEL_PNG = android.util.Base64.decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+            android.util.Base64.DEFAULT
+        )
     }
 }

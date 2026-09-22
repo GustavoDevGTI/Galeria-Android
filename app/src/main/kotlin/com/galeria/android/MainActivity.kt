@@ -751,22 +751,18 @@ class MainActivity : ComponentActivity() {
     private fun showSortDialog() {
         val labels = resources.getStringArray(R.array.main_sort_labels)
         val modes = arrayOf(SORT_NAME, SORT_PATH, SORT_SIZE, SORT_MODIFIED, SORT_CREATED, SORT_RANDOM)
-        var checked = modes.indexOf(sortMode).takeIf { it >= 0 } ?: 3
+        val checked = modes.indexOf(sortMode).takeIf { it >= 0 } ?: 3
 
-        Ui.showChoiceDialog(
+        Ui.showSortChoiceDialog(
             this,
             getString(R.string.action_sort_by),
             labels,
+            modes,
             checked,
-            neutralText = getString(if (sortDesc) R.string.action_descending else R.string.action_ascending),
-            onNeutral = {
-                sortDesc = !sortDesc
-                saveSorting()
-                loadAlbums()
-            }
-        ) { which ->
-            checked = which
-            sortMode = modes[checked]
+            sortDesc
+        ) { which, descending ->
+            sortMode = modes[which]
+            sortDesc = descending
             saveSorting()
             loadAlbums()
         }

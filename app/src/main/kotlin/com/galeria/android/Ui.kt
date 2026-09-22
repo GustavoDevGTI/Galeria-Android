@@ -431,6 +431,7 @@ class Ui private constructor() {
             onNeutral: (() -> Unit)? = null,
             onConfirm: (Int) -> Unit
         ): AlertDialog {
+            require(labels.isNotEmpty())
             var selected = checkedIndex.coerceIn(0, labels.lastIndex)
             lateinit var dialog: AlertDialog
             lateinit var content: LinearLayout
@@ -439,6 +440,7 @@ class Ui private constructor() {
                     val row = content.getChildAt(i) as LinearLayout
                     val radio = row.findViewWithTag<RadioButton>("radio")
                     radio.isChecked = i == selected
+                    styleDialogChoiceRow(row, radio.isChecked)
                     row.alpha = if (radio.isChecked) 1f else 0.72f
                 }
             }
@@ -448,23 +450,133 @@ class Ui private constructor() {
                 val row = themedChoiceRow(context, label, true) {
                     selected = index
                     refreshRows()
+                    dialog.dismiss()
+                    onConfirm(selected)
                 }
                 content.addView(row)
             }
             body.addView(content)
-            body.addView(themedDialogButtons(context, neutralText, onNeutral?.let { action ->
-                {
-                    action()
+            if (neutralText != null && onNeutral != null) {
+                body.addView(themedDialogButton(context, neutralText) {
                     dialog.dismiss()
-                }
-            }, { dialog.dismiss() }) {
-                onConfirm(selected)
-                dialog.dismiss()
-            })
+                    onNeutral()
+                }, menuActionParams())
+            }
             dialog = AlertDialog.Builder(context).setView(body).create()
+            refreshRows()
             showSidePanel(dialog) {
                 refreshRows()
             }
+            return dialog
+        }
+
+        @JvmStatic
+        fun showSortChoiceDialog(
+            context: Context,
+            title: String,
+            labels: Array<String>,
+            modes: Array<String>,
+            checkedIndex: Int,
+            descending: Boolean,
+            message: String? = null,
+            onConfirm: (Int, Boolean) -> Unit
+        ): AlertDialog {
+            require(labels.isNotEmpty() && labels.size == modes.size)
+            var selected = checkedIndex.coerceIn(0, labels.lastIndex)
+            var selectedDescending = descending
+            lateinit var dialog: AlertDialog
+            lateinit var content: LinearLayout
+            lateinit var directionRow: LinearLayout
+            lateinit var ascendingButton: TextView
+            lateinit var descendingButton: TextView
+
+            fun styleDirectionButton(button: TextView, active: Boolean) {
+                val activeColor = accent(context)
+                button.isSelected = active
+                button.alpha = if (active) 1f else 0.72f
+                button.setTypeface(Typeface.DEFAULT, if (active) Typeface.BOLD else Typeface.NORMAL)
+                button.setTextColor(
+                    if (active) {
+                        if (luminance(activeColor) >= 0.56) Color.BLACK else Color.WHITE
+                    } else {
+                        menuText(context)
+                    }
+                )
+                button.background = rounded(
+                    if (active) activeColor else blend(menuSurface(context), menuText(context), 0.08f),
+                    10,
+                    context
+                )
+            }
+
+            fun refreshState() {
+                for (index in 0 until content.childCount) {
+                    val row = content.getChildAt(index) as LinearLayout
+                    val radio = row.findViewWithTag<RadioButton>("radio")
+                    radio.isChecked = index == selected
+                    styleDialogChoiceRow(row, radio.isChecked)
+                    row.alpha = if (radio.isChecked) 1f else 0.72f
+                }
+                directionRow.visibility = if (SortDirectionRules.supportsDirection(modes[selected])) {
+                    View.VISIBLE
+                } else {
+                    View.GONE
+                }
+                styleDirectionButton(ascendingButton, !selectedDescending)
+                styleDirectionButton(descendingButton, selectedDescending)
+            }
+
+            val body = themedDialogBody(context, title, message)
+            content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            labels.forEachIndexed { index, label ->
+                content.addView(
+                    themedChoiceRow(context, label, true) {
+                        selectedDescending = SortDirectionRules.defaultDescending(modes[index])
+                        selected = index
+                        refreshState()
+                        dialog.dismiss()
+                        onConfirm(selected, selectedDescending)
+                    }.apply {
+                        tag = "sort_option_${modes[index]}"
+                    }
+                )
+            }
+            body.addView(content)
+
+            fun directionButton(label: String, value: Boolean) = TextView(context).apply {
+                text = label
+                textSize = 14f
+                gravity = Gravity.CENTER
+                minimumHeight = dp(context, 46)
+                isClickable = true
+                isFocusable = true
+                contentDescription = label
+                setPadding(dp(context, 10), dp(context, 8), dp(context, 10), dp(context, 8))
+                setOnClickListener {
+                    selectedDescending = value
+                    refreshState()
+                    dialog.dismiss()
+                    onConfirm(selected, selectedDescending)
+                }
+            }
+
+            ascendingButton = directionButton(context.getString(R.string.action_ascending), false)
+            descendingButton = directionButton(context.getString(R.string.action_descending), true)
+            directionRow = LinearLayout(context).apply {
+                tag = "sort_direction_options"
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(dp(context, 12), dp(context, 8), dp(context, 12), dp(context, 8))
+                addView(ascendingButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = dp(context, 4)
+                })
+                addView(descendingButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = dp(context, 4)
+                })
+            }
+            body.addView(directionRow)
+            dialog = AlertDialog.Builder(context).setView(body).create()
+            refreshState()
+            showSidePanel(dialog) { refreshState() }
             return dialog
         }
 
@@ -486,18 +598,18 @@ class Ui private constructor() {
                     selected[index] = !selected[index]
                     val check = it.findViewWithTag<CheckBox>("check")
                     check.isChecked = selected[index]
+                    styleDialogChoiceRow(it, selected[index])
                     it.alpha = if (selected[index]) 1f else 0.72f
+                    dialog.dismiss()
+                    onConfirm(selected.copyOf())
                 }
                 val check = row.findViewWithTag<CheckBox>("check")
                 check.isChecked = selected[index]
+                styleDialogChoiceRow(row, selected[index])
                 row.alpha = if (selected[index]) 1f else 0.72f
                 content.addView(row)
             }
             body.addView(content)
-            body.addView(themedDialogButtons(context, null, null, { dialog.dismiss() }) {
-                onConfirm(selected)
-                dialog.dismiss()
-            })
             dialog = AlertDialog.Builder(context).setView(body).create()
             showSidePanel(dialog)
             return dialog
@@ -531,14 +643,16 @@ class Ui private constructor() {
                 marginEnd = dp(context, 18)
             })
             body.addView(
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    addView(themedDialogButton(context, "Cancelar") { dialog.dismiss() }, menuActionParams())
-                    addView(themedDialogButton(context, positiveText, true) {
+                themedActionPair(
+                    context,
+                    context.getString(R.string.action_cancel),
+                    positiveText,
+                    onFirst = { dialog.dismiss() },
+                    onSecond = {
                         onConfirm(input.text.toString())
                         dialog.dismiss()
-                    }, menuActionParams())
-                }
+                    }
+                )
             )
             dialog = AlertDialog.Builder(context).setView(body).create()
             showSidePanel(dialog) {
@@ -579,18 +693,64 @@ class Ui private constructor() {
             lateinit var dialog: AlertDialog
             val body = themedDialogBody(context, title, message)
             body.addView(
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    addView(themedDialogButton(context, negativeText) {
+                themedActionPair(
+                    context,
+                    negativeText,
+                    positiveText,
+                    onFirst = {
                         onNegative?.invoke()
                         dialog.dismiss()
-                    }, menuActionParams())
-                    addView(themedDialogButton(context, positiveText, true) {
+                    },
+                    onSecond = {
                         onPositive()
                         dialog.dismiss()
-                    }, menuActionParams())
-                }
+                    }
+                )
             )
+            dialog = AlertDialog.Builder(context).setView(body).create()
+            return showCenteredPanel(dialog)
+        }
+
+        @JvmStatic
+        fun showActionChoiceDialog(
+            context: Context,
+            title: String,
+            message: String,
+            firstLabel: String,
+            secondLabel: String,
+            onFirst: () -> Unit,
+            onSecond: () -> Unit
+        ): AlertDialog {
+            lateinit var dialog: AlertDialog
+            val body = themedDialogBody(context, title, message)
+            val choices = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(context, 12), dp(context, 8), dp(context, 12), dp(context, 16))
+            }
+            fun choice(label: String, primary: Boolean, action: () -> Unit) =
+                themedDialogButton(context, label, primary) {
+                    dialog.dismiss()
+                    action()
+                }.apply {
+                    tag = null // Both access choices have identical alignment and prominence.
+                    gravity = Gravity.CENTER
+                    textSize = 14f
+                    minHeight = dp(context, 64)
+                    background = RippleDrawable(
+                        ColorStateList.valueOf((menuText(context) and 0x00FFFFFF) or 0x22000000),
+                        rounded(blend(menuSurface(context), menuText(context), if (primary) 0.12f else 0.06f), 12, context),
+                        rounded(Color.WHITE, 12, context)
+                    )
+                    setPadding(dp(context, 8), dp(context, 8), dp(context, 8), dp(context, 8))
+                }
+            choices.addView(choice(firstLabel, true, onFirst), LinearLayout.LayoutParams(0, dp(context, 64), 1f).apply {
+                marginEnd = dp(context, 4)
+            })
+            choices.addView(choice(secondLabel, false, onSecond), LinearLayout.LayoutParams(0, dp(context, 64), 1f).apply {
+                marginStart = dp(context, 4)
+            })
+            body.addView(choices)
             dialog = AlertDialog.Builder(context).setView(body).create()
             return showCenteredPanel(dialog)
         }
@@ -831,7 +991,7 @@ class Ui private constructor() {
                 gravity = Gravity.CENTER_VERTICAL
                 minimumHeight = dp(context, 52)
                 setPadding(dp(context, 10), dp(context, 4), dp(context, 14), dp(context, 4))
-                setBackgroundColor(Color.TRANSPARENT)
+                background = actionFeedback(context, menuText(context))
                 if (radio) {
                     addView(
                         RadioButton(context).apply {
@@ -865,21 +1025,15 @@ class Ui private constructor() {
                 setOnClickListener { onClick(this) }
             }
 
-        private fun themedDialogButtons(
-            context: Context,
-            neutralText: String?,
-            onNeutral: (() -> Unit)?,
-            onCancel: () -> Unit,
-            onOk: () -> Unit
-        ): LinearLayout =
-            LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                if (neutralText != null && onNeutral != null) {
-                    addView(themedDialogButton(context, neutralText) { onNeutral() }, menuActionParams())
-                }
-                addView(themedDialogButton(context, "Cancelar") { onCancel() }, menuActionParams())
-                addView(themedDialogButton(context, "OK", true) { onOk() }, menuActionParams())
-            }
+        private fun styleDialogChoiceRow(row: LinearLayout, selected: Boolean) {
+            val context = row.context
+            row.isSelected = selected
+            row.background = RippleDrawable(
+                ColorStateList.valueOf((menuText(context) and 0x00FFFFFF) or 0x22000000),
+                if (selected) rounded(blend(menuSurface(context), accent(context), 0.12f), 10, context) else null,
+                rounded(Color.WHITE, 10, context)
+            )
+        }
 
         private fun themedDialogButton(context: Context, label: String, primary: Boolean = false, onClick: () -> Unit): TextView =
             TextView(context).apply {
@@ -902,6 +1056,37 @@ class Ui private constructor() {
                 setPadding(dp(context, 18), dp(context, 12), dp(context, 18), dp(context, 12))
                 setOnClickListener { onClick() }
             }
+
+        private fun themedActionPair(
+            context: Context,
+            firstLabel: String,
+            secondLabel: String,
+            onFirst: () -> Unit,
+            onSecond: () -> Unit
+        ): LinearLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(context, 12), dp(context, 8), dp(context, 12), dp(context, 12))
+            fun addAction(label: String, primary: Boolean, marginStart: Int, marginEnd: Int, action: () -> Unit) {
+                val button = themedDialogButton(context, label, primary, action).apply {
+                    tag = null
+                    gravity = Gravity.CENTER
+                    textSize = 14f
+                    background = RippleDrawable(
+                        ColorStateList.valueOf((menuText(context) and 0x00FFFFFF) or 0x22000000),
+                        rounded(blend(menuSurface(context), menuText(context), if (primary) 0.12f else 0.06f), 10, context),
+                        rounded(Color.WHITE, 10, context)
+                    )
+                    setPadding(dp(context, 6), dp(context, 6), dp(context, 6), dp(context, 6))
+                }
+                addView(button, LinearLayout.LayoutParams(0, dp(context, 52), 1f).apply {
+                    this.marginStart = dp(context, marginStart)
+                    this.marginEnd = dp(context, marginEnd)
+                })
+            }
+            addAction(firstLabel, false, 0, 4, onFirst)
+            addAction(secondLabel, true, 4, 0, onSecond)
+        }
 
         private fun alignPrimaryDialogActions(view: View, horizontalGravity: Int) {
             if (view.tag == DIALOG_PRIMARY_ACTION_TAG && view is TextView) {

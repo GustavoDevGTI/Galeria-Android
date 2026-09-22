@@ -9,15 +9,21 @@ import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.Espresso.pressBack
+import androidx.test.espresso.UiController
+import androidx.test.espresso.ViewAction
 import androidx.test.espresso.action.ViewActions.click
-import androidx.test.espresso.action.ViewActions.longClick
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
@@ -30,6 +36,7 @@ import androidx.test.rule.GrantPermissionRule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import org.hamcrest.Matcher
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -93,10 +100,10 @@ class AlbumSelectionInstrumentedTest {
 
             ActivityScenario.launch<AlbumMediaActivity>(intent).use {
                 waitUntilDisplayed(firstName)
-                onView(withContentDescription(firstName)).perform(longClick())
-                waitUntilHint(context.resources.getQuantityString(R.plurals.selected_count, 1, 1))
-                onView(withContentDescription("Selecionar todos")).check(matches(isDisplayed()))
-                listOf("Compartilhar", "Favoritar", "Excluir", "Mover").forEach { action ->
+                onView(withContentDescription(firstName)).perform(longPressAndDragTo(secondName))
+                waitUntilHint(context.resources.getQuantityString(R.plurals.selected_count, 2, 2))
+                onView(withContentDescription("Desmarcar todos")).check(matches(isDisplayed()))
+                listOf("Visualizar", "Compartilhar", "Favoritar", "Excluir", "Mover").forEach { action ->
                     onView(withContentDescription(action)).check { view, noViewFoundException ->
                         if (noViewFoundException != null) throw noViewFoundException
                         val icon = view.findViewWithTag<ImageView>("selection_action_icon")
@@ -108,7 +115,7 @@ class AlbumSelectionInstrumentedTest {
                         assertEquals(true, view.background is RippleDrawable)
                         if (action == "Compartilhar") {
                             val dock = view.parent as LinearLayout
-                            assertEquals("A barra deve ter quatro ações sem divisórias.", 4, dock.childCount)
+                            assertEquals("A barra deve ter cinco ações sem divisórias.", 5, dock.childCount)
                             val fullBar = dock.parent as View
                             assertEquals("O conjunto de ações deve preencher toda a barra inferior.", fullBar.width, dock.width)
                             assertEquals("A barra não deve deixar recorte na lateral esquerda.", 0, fullBar.paddingLeft)
@@ -118,8 +125,10 @@ class AlbumSelectionInstrumentedTest {
                         }
                     }
                 }
+                onView(withContentDescription("Visualizar")).perform(click())
                 onView(withContentDescription(secondName)).perform(click())
-
+                waitUntilText(secondName)
+                pressBack()
                 waitUntilHint("2 selecionados")
                 onView(withContentDescription("Mover")).check(matches(isDisplayed())).perform(click())
                 waitUntilText("Mover para")
@@ -142,6 +151,56 @@ class AlbumSelectionInstrumentedTest {
             context.contentResolver.delete(hiddenUri, null, null)
             prefs.edit().putStringSet("hidden_folder_keys", originalHiddenKeys).commit()
             MediaStoreRepository.invalidateCache()
+        }
+    }
+
+    private fun longPressAndDragTo(targetDescription: String): ViewAction = object : ViewAction {
+        override fun getConstraints(): Matcher<View> = isDisplayed()
+
+        override fun getDescription(): String = "toque prolongado e arraste contínuo até $targetDescription"
+
+        override fun perform(uiController: UiController, view: View) {
+            val target = descendants(view.rootView)
+                .first { it.contentDescription?.toString() == targetDescription }
+            val start = IntArray(2).also(view::getLocationOnScreen)
+            val end = IntArray(2).also(target::getLocationOnScreen)
+            val startX = start[0] + view.width / 2f
+            val startY = start[1] + view.height / 2f
+            val endX = end[0] + target.width / 2f
+            val endY = end[1] + target.height / 2f
+            val downTime = SystemClock.uptimeMillis()
+
+            inject(uiController, downTime, downTime, MotionEvent.ACTION_DOWN, startX, startY)
+            uiController.loopMainThreadForAtLeast(ViewConfiguration.getLongPressTimeout().toLong() + 150L)
+            inject(uiController, downTime, SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, endX, endY)
+            uiController.loopMainThreadForAtLeast(32L)
+            inject(uiController, downTime, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, endX, endY)
+            uiController.loopMainThreadUntilIdle()
+        }
+    }
+
+    private fun inject(
+        uiController: UiController,
+        downTime: Long,
+        eventTime: Long,
+        action: Int,
+        x: Float,
+        y: Float
+    ) {
+        MotionEvent.obtain(downTime, eventTime, action, x, y, 0).let { event ->
+            event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+            try {
+                check(uiController.injectMotionEvent(event)) { "Não foi possível injetar o gesto touch." }
+            } finally {
+                event.recycle()
+            }
+        }
+    }
+
+    private fun descendants(root: View): Sequence<View> = sequence {
+        yield(root)
+        if (root is ViewGroup) {
+            for (index in 0 until root.childCount) yieldAll(descendants(root.getChildAt(index)))
         }
     }
 

@@ -206,11 +206,11 @@ class MediaRecyclerAdapter(
         notifyItemChanged(position, PAYLOAD_SELECTION)
     }
 
-    fun selectPosition(position: Int) {
-        itemOrNull(position)?.let {
-            selectedUris.add(it.uri.toString())
-            notifyItemChanged(position, PAYLOAD_SELECTION)
-        }
+    fun selectPosition(position: Int): Boolean {
+        val item = itemOrNull(position) ?: return false
+        if (!selectedUris.add(item.uri.toString())) return false
+        notifyItemChanged(position, PAYLOAD_SELECTION)
+        return true
     }
 
     fun setGridThumbnailSize(sizePx: Int) {

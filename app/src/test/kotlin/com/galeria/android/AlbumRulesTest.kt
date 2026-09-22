@@ -110,6 +110,54 @@ class AlbumRulesTest {
     }
 
     @Test
+    fun moveTargetsUseTheSameSortAsTheMainGallery() {
+        val targets = AlbumTargetRules.orderedTargets(
+            albums(),
+            exposedKeys = listOf("z", "b", "a"),
+            hiddenKeys = emptySet(),
+            excludedKeys = emptySet(),
+            sortMode = AlbumRules.SORT_NAME,
+            sortDescending = false
+        )
+
+        assertEquals(listOf("Zeta", "Beta", "Alpha"), targets.map { it.name })
+    }
+
+    @Test
+    fun moveTargetsFallBackToTheMainSortWhenNoDisplayedOrderWasProvided() {
+        val targets = AlbumTargetRules.orderedTargets(
+            albums(),
+            exposedKeys = null,
+            hiddenKeys = emptySet(),
+            excludedKeys = emptySet(),
+            sortMode = AlbumRules.SORT_NAME,
+            sortDescending = false
+        )
+
+        assertEquals(listOf("Alpha", "Beta", "Zeta"), targets.map { it.name })
+    }
+
+    @Test
+    fun selectingNameStartsAscendingAndKeepsAnExplicitDirection() {
+        assertFalse(
+            SortDirectionRules.whenModeSelected(
+                AlbumRules.SORT_MODIFIED,
+                AlbumRules.SORT_NAME,
+                currentDescending = true
+            )
+        )
+        assertTrue(
+            SortDirectionRules.whenModeSelected(
+                AlbumRules.SORT_NAME,
+                AlbumRules.SORT_NAME,
+                currentDescending = true
+            )
+        )
+        assertTrue(SortDirectionRules.defaultDescending(AlbumRules.SORT_SIZE))
+        assertFalse(SortDirectionRules.supportsDirection(MediaSortRules.SORT_CUSTOM))
+    }
+
+    @Test
     fun horizontalPinchChangesTheNumberOfGridColumns() {
         assertEquals(-1, GridColumnRules.columnDelta(GridColumnRules.SCALE_STEP))
         assertEquals(1, GridColumnRules.columnDelta(1f / GridColumnRules.SCALE_STEP))

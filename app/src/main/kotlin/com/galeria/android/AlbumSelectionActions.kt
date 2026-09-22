@@ -57,7 +57,7 @@ class AlbumSelectionActions(
     }
 
     fun loadMoveTargets(
-        exposedKeys: Set<String>?,
+        exposedKeys: List<String>?,
         hiddenKeys: Set<String>,
         excludedAlbumKey: String?,
         includeHidden: Boolean,
@@ -66,11 +66,13 @@ class AlbumSelectionActions(
         if (closed) return
         executor.execute {
             val source = MediaStoreRepository.loadAlbums(activity.applicationContext, includeHidden)
-            val targets = AlbumTargetRules.exposedTargets(
+            val targets = AlbumTargetRules.orderedTargets(
                 source,
                 exposedKeys,
                 hiddenKeys,
-                setOfNotNull(excludedAlbumKey)
+                setOfNotNull(excludedAlbumKey),
+                prefs.getString("sort_mode", AlbumRules.SORT_MODIFIED) ?: AlbumRules.SORT_MODIFIED,
+                prefs.getBoolean("sort_desc", true)
             )
             activity.runOnUiThread {
                 if (!closed && !activity.isFinishing && !activity.isDestroyed) onTargets(targets)

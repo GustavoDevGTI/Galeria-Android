@@ -7,6 +7,7 @@
     <string name="action_unfavorite">Remover dos favoritos</string>
     <string name="action_delete">Excluir</string>
     <string name="action_move">Mover</string>
+    <string name="action_view_media">Visualizar</string>
     <string name="action_cancel">Cancelar</string>
     <string name="action_ok">OK</string>
     <string name="action_allow">Permitir</string>
@@ -121,6 +122,7 @@
     <string name="album_group_by">Agrupar por</string>
     <string name="album_view_mode">Modo de visualização</string>
     <string name="album_random">Aleatório</string>
+    <string name="album_choose_media_to_view">Toque na mídia que deseja visualizar. A seleção atual será mantida.</string>
     <string name="album_cinema_mode">Modo cinema</string>
     <string name="album_cinema_mode_enabled">Modo cinema ativado.</string>
     <string name="album_cinema_mode_disabled">Modo cinema desativado.</string>
