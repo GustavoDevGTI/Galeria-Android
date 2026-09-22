@@ -107,6 +107,27 @@ class CinemaModeInstrumentedTest {
         }
     }
 
+    @Test
+    fun virtualAlbumUsesTheVideosPhysicalAlbumCinemaPreference() = withVideo { context, uri, albumKey ->
+        val preferences = CinemaModePreferences(context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE))
+        preferences.setEnabled(albumKey, true)
+        preferences.setAudioPreference(albumKey, "language:pt")
+
+        val intent = videoIntent(context, uri, VirtualAlbumRules.RECENT_KEY).apply {
+            putExtra("path", albumKey)
+        }
+        ActivityScenario.launch<DetailActivity>(intent).use { scenario ->
+            waitForOrientation(scenario, Configuration.ORIENTATION_LANDSCAPE)
+            assertCinemaButtonState(true)
+            scenario.onActivity { activity ->
+                val controller = DetailActivity::class.java.getDeclaredField("videoTrackController").apply {
+                    isAccessible = true
+                }.get(activity) as VideoTrackController
+                assertEquals("language:pt", controller.audioPreference())
+            }
+        }
+    }
+
     private fun assertCinemaButtonState(active: Boolean) {
         onView(withContentDescription("Modo cinema"))
             .check(matches(isDisplayed()))

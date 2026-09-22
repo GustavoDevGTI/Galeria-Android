@@ -273,7 +273,7 @@ class MainActivity : ComponentActivity() {
                 val exposedAlbumKeys = adapter.allAlbumsSnapshot()
                     .asSequence()
                     .map { it.key }
-                    .filter { it != "all_media" }
+                    .filterNot(VirtualAlbumRules::isVirtual)
                     .toCollection(ArrayList())
                 MediaScanScheduler.cancelMaintenance(applicationContext)
                 val intent = Intent(this@MainActivity, AlbumMediaActivity::class.java).apply {
@@ -287,6 +287,7 @@ class MainActivity : ComponentActivity() {
 
             override fun onAlbumLongClick(view: View, position: Int): Boolean {
                 if (position !in 0 until adapter.getCount()) return true
+                if (VirtualAlbumRules.isVirtual(adapter.getItem(position).key)) return true
                 enterSelectionMode()
                 adapter.selectPosition(position)
                 updateSelectionUi()
@@ -516,7 +517,7 @@ class MainActivity : ComponentActivity() {
                     visibleCount
                 )
             ),
-            getString(R.string.action_delete)
+            getString(R.string.action_move_to_trash)
         ) { deleteSelectedAlbums(albums) }
     }
 
@@ -528,7 +529,7 @@ class MainActivity : ComponentActivity() {
         mediaLoader.execute {
             val completed = arrayListOf<MediaItem>()
             for (item in mediaForAlbums(albums)) {
-                if (MediaActions.requestPermanentDelete(this, item.uri, REQ_BATCH_DELETE) == MediaActions.RESULT_DONE) {
+                if (MediaActions.requestDelete(this, item.uri, REQ_BATCH_DELETE) == MediaActions.RESULT_DONE) {
                     completed.add(item)
                 }
             }
@@ -536,7 +537,7 @@ class MainActivity : ComponentActivity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 val deleted = completed.size
                 adapter.removeCompletedItems(completed, moved = false)
-                Ui.toast(this, resources.getQuantityString(R.plurals.items_deleted, deleted, deleted))
+                Ui.toast(this, resources.getQuantityString(R.plurals.items_moved_to_trash, deleted, deleted))
                 exitSelectionMode()
                 loadAlbums()
             }
@@ -857,8 +858,8 @@ class MainActivity : ComponentActivity() {
         val everVisibleKeys = HashSet(
             prefs.getStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet()) ?: HashSet()
         )
-        everVisibleKeys.addAll(albums.map { it.key }.filter { it != "all_media" })
-        val mutableAlbums = albums.toMutableList()
+        everVisibleKeys.addAll(albums.map { it.key }.filterNot(VirtualAlbumRules::isVirtual))
+        val mutableAlbums = albums.filterNot { VirtualAlbumRules.isVirtual(it.key) }.toMutableList()
         val checkedKeys = HashSet<String>()
         val dialogBg = Ui.menuSurface(this)
         val dialogRow = Ui.blend(dialogBg, Color.WHITE, 0.04f)
@@ -1109,7 +1110,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             showHiddenFolders = mutableAlbums.any { checkedKeys.contains(it.key) && isHiddenAlbum(it) }
-            everVisibleKeys.addAll(checkedKeys.filter { it != "all_media" })
+            everVisibleKeys.addAll(checkedKeys.filterNot(VirtualAlbumRules::isVirtual))
             prefs.edit()
                 .putStringSet("hidden_folder_keys", nextHidden)
                 .putStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet(everVisibleKeys))

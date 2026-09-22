@@ -140,6 +140,9 @@ class AlbumMediaActivity : ComponentActivity() {
     private val finishFastScrollPreview = Runnable {
         if (::adapter.isInitialized) adapter.setFastScrollPreview(false)
     }
+    private val initialMediaLoad = Runnable {
+        if (!isFinishing && !isDestroyed) loadMedia(false)
+    }
     private val mediaObserver = object : ContentObserver(mediaRefreshHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             scheduleMediaRefresh()
@@ -163,9 +166,7 @@ class AlbumMediaActivity : ComponentActivity() {
             override fun handleOnBackPressed() = handleToolbarBack()
         })
         registerMediaObserver()
-        mediaRefreshHandler.postDelayed({
-            if (!isFinishing) loadMedia(false)
-        }, INITIAL_MEDIA_DELAY_MS)
+        mediaRefreshHandler.postDelayed(initialMediaLoad, INITIAL_MEDIA_DELAY_MS)
     }
 
     override fun onResume() {
@@ -185,6 +186,7 @@ class AlbumMediaActivity : ComponentActivity() {
         if (::grid.isInitialized) grid.removeCallbacks(gridPoolWarmup)
         if (::grid.isInitialized) grid.removeCallbacks(finishFastScrollPreview)
         super.onDestroy()
+        mediaRefreshHandler.removeCallbacks(initialMediaLoad)
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
         try {
             contentResolver.unregisterContentObserver(mediaObserver)
@@ -213,6 +215,7 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun scheduleMediaRefresh() {
+        if (isFinishing || isDestroyed) return
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
         mediaRefreshScheduled = true
         val age = SystemClock.elapsedRealtime() - createdAtElapsedRealtime
@@ -519,10 +522,15 @@ class AlbumMediaActivity : ComponentActivity() {
             ::requestSelectedMediaPreview
         )
         Ui.addSelectionActionToDock(selectionActionDock, previewSelectionAction)
-        addSelectionAction(R.drawable.ic_share, getString(R.string.action_share)) { shareSelected() }
-        addSelectionAction(R.drawable.ic_heart, getString(R.string.action_favorite)) { favoriteSelected() }
-        addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { confirmDeleteSelected() }
-        addSelectionAction(R.drawable.ic_arrow_right, getString(R.string.action_move)) { askMoveSelected() }
+        if (albumKey == VirtualAlbumRules.TRASH_KEY) {
+            addSelectionAction(R.drawable.ic_restore, getString(R.string.action_restore)) { restoreSelected() }
+            addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete_permanently)) { confirmDeleteSelected() }
+        } else {
+            addSelectionAction(R.drawable.ic_share, getString(R.string.action_share)) { shareSelected() }
+            addSelectionAction(R.drawable.ic_heart, getString(R.string.action_favorite)) { favoriteSelected() }
+            addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { confirmDeleteSelected() }
+            addSelectionAction(R.drawable.ic_arrow_right, getString(R.string.action_move)) { askMoveSelected() }
+        }
         selectionActions.visibility = View.GONE
         root.addView(selectionActions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         setContentView(root)
@@ -553,7 +561,9 @@ class AlbumMediaActivity : ComponentActivity() {
         val spacing = getString(R.string.album_grid_spacing)
         val cinemaMode = getString(R.string.album_cinema_mode)
         val options = buildList {
-            addAll(listOf(filter, group, sort, viewMode, createFolder, random, spacing))
+            addAll(listOf(filter, group, sort, viewMode))
+            if (albumKey != VirtualAlbumRules.TRASH_KEY) addAll(listOf(createFolder, random))
+            add(spacing)
             if (CinemaModeRules.supportsAlbum(albumKey)) add(cinemaMode)
         }
         Ui.showPopupOptions(
@@ -594,8 +604,9 @@ class AlbumMediaActivity : ComponentActivity() {
             mediaSpanCount()
         )
         groupMode = prefs.getString(optionKey("group_mode"), GROUP_NONE) ?: GROUP_NONE
-        mediaSortMode = prefs.getString(optionKey("sort_mode"), MediaSortRules.SORT_CUSTOM)
-            ?: MediaSortRules.SORT_CUSTOM
+        val chronological = albumKey == VirtualAlbumRules.RECENT_KEY || albumKey == VirtualAlbumRules.TRASH_KEY
+        val defaultSort = if (chronological) MediaSortRules.SORT_DATE else MediaSortRules.SORT_CUSTOM
+        mediaSortMode = prefs.getString(optionKey("sort_mode"), defaultSort) ?: defaultSort
         mediaSortDescending = prefs.getBoolean(optionKey("sort_desc"), true)
     }
 
@@ -854,18 +865,26 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun confirmDeleteSelected() {
         val selected = adapter.selectedItems()
         if (selected.isEmpty()) return
+        val permanent = albumKey == VirtualAlbumRules.TRASH_KEY
         Ui.showConfirmationDialog(
             this,
-            getString(R.string.album_delete_selected_title),
-            getString(
-                R.string.album_delete_selected_message,
-                resources.getQuantityString(R.plurals.files_count, selected.size, selected.size)
-            ),
-            getString(R.string.action_delete)
-        ) { deleteSelected(selected) }
+            getString(if (permanent) R.string.trash_delete_selected_title else R.string.album_delete_selected_title),
+            if (permanent) {
+                getString(
+                    R.string.trash_delete_selected_message,
+                    resources.getQuantityString(R.plurals.files_count, selected.size, selected.size)
+                )
+            } else {
+                getString(
+                    R.string.album_delete_selected_message,
+                    resources.getQuantityString(R.plurals.files_count, selected.size, selected.size)
+                )
+            },
+            getString(if (permanent) R.string.action_delete_permanently else R.string.action_move_to_trash)
+        ) { deleteSelected(selected, permanent) }
     }
 
-    private fun deleteSelected(selected: List<MediaItem>) {
+    private fun deleteSelected(selected: List<MediaItem>, permanent: Boolean = false) {
         if (AlbumMediaRules.requiresFileManagement(
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
                 MediaActions.hasAllFilesAccess(this)
@@ -874,14 +893,30 @@ class AlbumMediaActivity : ComponentActivity() {
             requestFileManagementAccess()
             return
         }
-        val result = selectionCoordinator.delete(selected, REQ_DELETE)
+        val result = if (permanent) selectionCoordinator.permanentlyDelete(selected, REQ_DELETE)
+            else selectionCoordinator.delete(selected, REQ_DELETE)
         completedRemovalUris.addAll(result.completedItems.map { MediaIdentityRules.canonicalKey(it.uri.toString()) })
         adapter.removeCompletedItems(result.completedItems.map { it.uri.toString() })
         updateEmptyState()
         Ui.toast(
             this,
-            resources.getQuantityString(R.plurals.items_deleted, result.completed, result.completed)
+            resources.getQuantityString(
+                if (permanent) R.plurals.items_deleted else R.plurals.items_moved_to_trash,
+                result.completed,
+                result.completed
+            )
         )
+        exitSelectionMode()
+    }
+
+    private fun restoreSelected() {
+        val selected = adapter.selectedItems()
+        if (selected.isEmpty()) return
+        val result = selectionCoordinator.restore(selected, REQ_RESTORE)
+        completedRemovalUris.addAll(result.completedItems.map { MediaIdentityRules.canonicalKey(it.uri.toString()) })
+        adapter.removeCompletedItems(result.completedItems.map { it.uri.toString() })
+        updateEmptyState()
+        Ui.toast(this, resources.getQuantityString(R.plurals.items_restored, result.completed, result.completed))
         exitSelectionMode()
     }
 
@@ -1411,14 +1446,28 @@ class AlbumMediaActivity : ComponentActivity() {
             if (resultCode == RESULT_OK) {
                 MediaStoreRepository.invalidateCache()
                 GalleryCatalogStore.markCatalogDirty(applicationContext)
-                Ui.toast(this, getString(R.string.album_item_deleted))
+                Ui.toast(
+                    this,
+                    getString(
+                        if (albumKey == VirtualAlbumRules.TRASH_KEY) R.string.album_item_deleted
+                        else R.string.item_moved_to_trash
+                    )
+                )
+            }
+            loadMedia(true)
+        } else if (requestCode == REQ_RESTORE) {
+            if (resultCode == RESULT_OK) {
+                MediaStoreRepository.invalidateCache()
+                GalleryCatalogStore.markCatalogDirty(applicationContext)
+                Ui.toast(this, getString(R.string.item_restored))
             }
             loadMedia(true)
         } else if (requestCode == REQ_DETAIL && resultCode == RESULT_OK && data != null) {
             val removed = data.getStringArrayListExtra(MediaOperationNavigation.EXTRA_REMOVED_URIS).orEmpty()
             val moved = data.getStringArrayListExtra(MediaOperationNavigation.EXTRA_MOVED_URIS).orEmpty()
-            completedRemovalUris.addAll((removed + if (albumKey == "all_media") emptyList() else moved).map(MediaIdentityRules::canonicalKey))
-            adapter.removeCompletedItems(removed + if (albumKey == "all_media") emptyList() else moved)
+            val movedOutsideCollection = if (VirtualAlbumRules.remainsAfterMove(albumKey)) emptyList() else moved
+            completedRemovalUris.addAll((removed + movedOutsideCollection).map(MediaIdentityRules::canonicalKey))
+            adapter.removeCompletedItems(removed + movedOutsideCollection)
             updateEmptyState()
             val destinationKey = data.getStringExtra(MediaOperationNavigation.EXTRA_DESTINATION_KEY)
             if (destinationKey != null) {
@@ -1443,6 +1492,7 @@ class AlbumMediaActivity : ComponentActivity() {
         private const val TAG_ALBUM_TOOLBAR = "album_toolbar"
         private const val TAG_ALBUM_SEARCH_TITLE = "album_search_title"
         private const val REQ_DELETE = 11
+        private const val REQ_RESTORE = 15
         private const val REQ_DETAIL = 12
         private const val MAX_GRID_SPACING_DP = 8
         private const val PREF_GRID_COLUMNS = "media_grid_columns"

@@ -112,6 +112,7 @@ class AlbumRecyclerAdapter(
     fun toggleSelection(position: Int) {
         if (position !in visibleAlbums.indices) return
         val key = visibleAlbums[position].key
+        if (VirtualAlbumRules.isVirtual(key)) return
         if (!selectedKeys.add(key)) {
             selectedKeys.remove(key)
         }
@@ -119,7 +120,7 @@ class AlbumRecyclerAdapter(
     }
 
     fun selectPosition(position: Int) {
-        if (position in visibleAlbums.indices) {
+        if (position in visibleAlbums.indices && !VirtualAlbumRules.isVirtual(visibleAlbums[position].key)) {
             selectedKeys.add(visibleAlbums[position].key)
             notifyItemChanged(position, PAYLOAD_SELECTION)
         }
@@ -127,7 +128,7 @@ class AlbumRecyclerAdapter(
 
     fun selectAllVisible() {
         for (album in visibleAlbums) {
-            selectedKeys.add(album.key)
+            if (!VirtualAlbumRules.isVirtual(album.key)) selectedKeys.add(album.key)
         }
         notifySelectionRange()
     }
@@ -138,7 +139,10 @@ class AlbumRecyclerAdapter(
         notifySelectionRange()
     }
 
-    fun allVisibleSelected(): Boolean = visibleAlbums.isNotEmpty() && selectedKeys.size >= visibleAlbums.size
+    fun allVisibleSelected(): Boolean {
+        val selectable = visibleAlbums.count { !VirtualAlbumRules.isVirtual(it.key) }
+        return selectable > 0 && selectedKeys.size >= selectable
+    }
 
     fun selectedCount(): Int = selectedKeys.size
 

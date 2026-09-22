@@ -173,9 +173,6 @@ class SettingsActivity : Activity() {
         addSwitch(getString(R.string.settings_show_bottom_actions), getString(R.string.settings_show_bottom_actions_hint), "show_bottom_actions", true, null)
         addOption(getString(R.string.settings_manage_visible_buttons), getString(R.string.settings_manage_visible_buttons_hint), null)
 
-        addSection(getString(R.string.settings_section_trash))
-        addSwitch(getString(R.string.settings_move_to_trash), getString(R.string.settings_move_to_trash_hint), "move_to_trash", false, null)
-
         addSection(getString(R.string.settings_section_migrating))
         addOption(getString(R.string.settings_export_favorites_path), getString(R.string.settings_no_favorites), null)
     }

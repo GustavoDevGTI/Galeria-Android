@@ -67,7 +67,7 @@ class AlbumRulesTest {
     fun visibleAlbumHistoryIsKeptWithoutTheSyntheticAllMediaAlbum() {
         val remembered = HiddenAlbumDialogRules.rememberVisible(
             previouslyVisible = listOf("camera"),
-            visibleNow = listOf("all_media", "viagem")
+            visibleNow = listOf("all_media", VirtualAlbumRules.RECENT_KEY, VirtualAlbumRules.FAVORITES_KEY, "viagem")
         )
 
         assertEquals(setOf("camera", "viagem"), remembered)
@@ -237,6 +237,7 @@ class AlbumRulesTest {
     fun albumMediaUsesPagingOnlyForUngroupedLibraryOutsideSelectionMode() {
         assertTrue(AlbumMediaRules.shouldUsePaging(null, AlbumMediaRules.GROUP_NONE, false))
         assertTrue(AlbumMediaRules.shouldUsePaging("all_media", AlbumMediaRules.GROUP_NONE, false))
+        assertTrue(AlbumMediaRules.shouldUsePaging(VirtualAlbumRules.RECENT_KEY, AlbumMediaRules.GROUP_NONE, false))
         assertFalse(AlbumMediaRules.shouldUsePaging("camera", AlbumMediaRules.GROUP_NONE, false))
         assertFalse(AlbumMediaRules.shouldUsePaging("all_media", AlbumMediaRules.GROUP_DAY, false))
         assertFalse(AlbumMediaRules.shouldUsePaging("all_media", AlbumMediaRules.GROUP_NONE, true))
@@ -253,6 +254,30 @@ class AlbumRulesTest {
         assertFalse(AlbumMediaRules.requiresFileManagement(false, false))
         assertFalse(AlbumMediaRules.requiresFileManagement(true, true))
         assertTrue(AlbumMediaRules.requiresFileManagement(true, false))
+    }
+
+    @Test
+    fun essentialAlbumsStayInTheExpectedOrderAheadOfOtherAlbums() {
+        val source = listOf(
+            album("travel", "Viagem", "Pictures/Travel/"),
+            album(VirtualAlbumRules.RECENT_KEY, "Recentes", ""),
+            album("downloads", "Downloads", "Download/"),
+            album("screens", "Capturas de tela", "Pictures/Screenshots/"),
+            album(VirtualAlbumRules.FAVORITES_KEY, "Favoritos", ""),
+            album("camera", "Câmera", "DCIM/Camera/")
+        )
+
+        assertEquals(
+            listOf("camera", "screens", VirtualAlbumRules.FAVORITES_KEY, "downloads", VirtualAlbumRules.RECENT_KEY, "travel"),
+            VirtualAlbumRules.pinEssential(source).map { it.key }
+        )
+    }
+
+    @Test
+    fun virtualAlbumsCannotBeMoveTargetsAndAggregatesRemainAfterMove() {
+        assertTrue(VirtualAlbumRules.isVirtual(VirtualAlbumRules.FAVORITES_KEY))
+        assertTrue(VirtualAlbumRules.remainsAfterMove(VirtualAlbumRules.RECENT_KEY))
+        assertFalse(VirtualAlbumRules.remainsAfterMove(VirtualAlbumRules.TRASH_KEY))
     }
 
     private fun albums(): List<AlbumItem> = listOf(

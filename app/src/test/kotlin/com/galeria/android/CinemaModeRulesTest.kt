@@ -11,6 +11,9 @@ class CinemaModeRulesTest {
         assertFalse(CinemaModeRules.supportsAlbum(null))
         assertFalse(CinemaModeRules.supportsAlbum(""))
         assertFalse(CinemaModeRules.supportsAlbum("all_media"))
+        assertFalse(CinemaModeRules.supportsAlbum(VirtualAlbumRules.RECENT_KEY))
+        assertFalse(CinemaModeRules.supportsAlbum(VirtualAlbumRules.FAVORITES_KEY))
+        assertFalse(CinemaModeRules.supportsAlbum(VirtualAlbumRules.TRASH_KEY))
         assertTrue(CinemaModeRules.supportsAlbum("Movies/Series/"))
     }
 

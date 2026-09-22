@@ -84,8 +84,8 @@
     <string name="main_empty_folders">Nenhuma pasta encontrada.</string>
     <string name="main_loading_media">Carregando mídia…</string>
     <string name="main_no_media_to_share">Nenhuma mídia para compartilhar.</string>
-    <string name="main_delete_albums_title">Excluir álbuns</string>
-    <string name="main_delete_albums_message">Tem certeza que deseja excluir as mídias de %1$s? %2$s</string>
+    <string name="main_delete_albums_title">Mover álbuns para a Lixeira</string>
+    <string name="main_delete_albums_message">Mover as mídias de %1$s para a Lixeira? %2$s</string>
     <string name="main_no_move_target">Nenhum álbum disponível para mover.</string>
     <string name="main_folder_organization">Organização de pastas</string>
     <string name="main_folder_visibility">Exibir/ocultar pastas</string>
@@ -139,8 +139,8 @@
     <string name="album_sort_duration">Duração</string>
     <string name="album_sort_type">Tipo e formato</string>
     <string name="album_sort_group_hint">A ordenação funciona junto com o agrupamento atual.</string>
-    <string name="album_delete_selected_title">Excluir selecionados</string>
-    <string name="album_delete_selected_message">Tem certeza que deseja excluir %s?</string>
+    <string name="album_delete_selected_title">Mover para a Lixeira</string>
+    <string name="album_delete_selected_message">Mover %s para a Lixeira?</string>
     <string name="album_loading_media">Carregando mídias…</string>
     <string name="album_custom_order_saved">Ordem personalizada salva.</string>
     <string name="album_no_media_to_play">Nenhuma mídia para reproduzir.</string>
@@ -297,6 +297,27 @@
     <string name="settings_manage_visible_buttons_hint">Excluir, mover, ocultar e restaurar.</string>
     <string name="settings_move_to_trash">Mover para a Lixeira</string>
     <string name="settings_move_to_trash_hint">Usa a lixeira do Android quando disponível.</string>
+    <string name="album_recent">Recentes</string>
+    <string name="album_favorites">Favoritos</string>
+    <string name="album_trash">Lixeira</string>
+    <string name="action_restore">Restaurar</string>
+    <string name="action_move_to_trash">Mover para a Lixeira</string>
+    <string name="action_delete_permanently">Excluir definitivamente</string>
+    <string name="trash_delete_selected_title">Excluir definitivamente?</string>
+    <string name="trash_delete_selected_message">%1$s serão removidos sem possibilidade de recuperação.</string>
+    <string name="trash_delete_item_message">Este arquivo será removido sem possibilidade de recuperação.</string>
+    <string name="move_item_to_trash_title">Mover para a Lixeira?</string>
+    <string name="move_item_to_trash_message">O arquivo será movido para a Lixeira.</string>
+    <string name="item_moved_to_trash">Item movido para a Lixeira.</string>
+    <string name="item_restored">Item restaurado.</string>
+    <plurals name="items_moved_to_trash">
+        <item quantity="one">%d item movido para a Lixeira.</item>
+        <item quantity="other">%d itens movidos para a Lixeira.</item>
+    </plurals>
+    <plurals name="items_restored">
+        <item quantity="one">%d item restaurado.</item>
+        <item quantity="other">%d itens restaurados.</item>
+    </plurals>
     <string name="settings_export_favorites_path">Exportar caminho dos favoritos</string>
     <string name="settings_no_favorites">Nenhum favorito criado ainda.</string>
 

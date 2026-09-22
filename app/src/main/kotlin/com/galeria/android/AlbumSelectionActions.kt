@@ -38,7 +38,21 @@ class AlbumSelectionActions(
 
     fun delete(selected: List<MediaItem>, requestCode: Int): AlbumSelectionResult {
         val completed = selected.filter { item ->
+            MediaActions.requestDelete(activity, item.uri, requestCode) == MediaActions.RESULT_DONE
+        }
+        return AlbumSelectionResult(completed.size, selected.size, completed)
+    }
+
+    fun permanentlyDelete(selected: List<MediaItem>, requestCode: Int): AlbumSelectionResult {
+        val completed = selected.filter { item ->
             MediaActions.requestPermanentDelete(activity, item.uri, requestCode) == MediaActions.RESULT_DONE
+        }
+        return AlbumSelectionResult(completed.size, selected.size, completed)
+    }
+
+    fun restore(selected: List<MediaItem>, requestCode: Int): AlbumSelectionResult {
+        val completed = selected.filter { item ->
+            MediaActions.requestRestore(activity, item.uri, requestCode) == MediaActions.RESULT_DONE
         }
         return AlbumSelectionResult(completed.size, selected.size, completed)
     }

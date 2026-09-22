@@ -44,6 +44,7 @@ class AlbumMediaCatalogController(context: Context) {
         onItems: (List<MediaItem>) -> Unit,
         onPage: suspend (PagingData<MediaItem>) -> Unit
     ) {
+        if (closed) return
         val request = ++generation
         pagingJob?.cancel()
         if (AlbumMediaRules.shouldUsePaging(options.albumKey, options.groupMode, options.selectionMode)) {

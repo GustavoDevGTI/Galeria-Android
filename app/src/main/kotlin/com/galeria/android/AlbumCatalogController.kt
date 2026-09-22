@@ -47,7 +47,8 @@ class AlbumCatalogController(context: Context) {
             }
             val cachedSummaries = GalleryCatalogStore.readAlbums(appContext, options.includeHidden)
             if (cachedSummaries.isNotEmpty() && options.includesAllMediaTypes()) {
-                deliverAlbums(request, prepareAlbums(cachedSummaries, options), options, onAlbums)
+                val cachedMedia = GalleryCatalogStore.readMedia(appContext, options.includeHidden)
+                deliverAlbums(request, withVirtualAlbums(cachedSummaries, cachedMedia, options), options, onAlbums)
             }
 
             if (cachedSummaries.isEmpty()) {
@@ -111,8 +112,9 @@ class AlbumCatalogController(context: Context) {
     ) {
         val sorted = albums.toMutableList()
         AlbumRules.sort(sorted, options.sortMode, options.sortDescending)
+        val ordered = VirtualAlbumRules.pinEssential(sorted)
         mainHandler.post {
-            if (!closed && request == generation) onAlbums(sorted, options.query)
+            if (!closed && request == generation) onAlbums(ordered, options.query)
         }
     }
 
@@ -120,7 +122,26 @@ class AlbumCatalogController(context: Context) {
         val filteredMedia = media.filter { item ->
             MediaFilterRules.matches(item.name, item.mimeType, options.filterOptions)
         }
-        return prepareAlbums(MediaStoreRepository.buildAlbums(filteredMedia), options)
+        return withVirtualAlbums(MediaStoreRepository.buildAlbums(filteredMedia), filteredMedia, options)
+    }
+
+    private fun withVirtualAlbums(
+        sourceAlbums: List<AlbumItem>,
+        media: List<MediaItem>,
+        options: AlbumCatalogOptions
+    ): List<AlbumItem> {
+        val physical = prepareAlbums(sourceAlbums, options)
+        val favorites = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+            .getStringSet("favorites", emptySet()).orEmpty()
+        return VirtualAlbumRules.addCollections(
+            physical,
+            media,
+            favorites,
+            MediaStoreRepository.loadTrashedMedia(appContext),
+            appContext.getString(R.string.album_recent),
+            appContext.getString(R.string.album_favorites),
+            appContext.getString(R.string.album_trash)
+        )
     }
 
     private fun prepareAlbums(source: List<AlbumItem>, options: AlbumCatalogOptions): List<AlbumItem> {

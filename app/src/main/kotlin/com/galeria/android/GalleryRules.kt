@@ -4,6 +4,7 @@ import java.util.Collections
 import java.util.Calendar
 import java.util.Locale
 import java.util.Random
+import java.text.Normalizer
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -105,13 +106,15 @@ object HiddenAlbumDialogRules {
     ): Set<String> = LinkedHashSet<String>().apply {
         addAll(previouslyVisible)
         addAll(currentlyVisible)
-        remove("all_media")
+        removeAll(::isVirtualFolderKey)
     }
 
     fun rememberVisible(
         previouslyVisible: Collection<String>,
         visibleNow: Collection<String>
     ): Set<String> = keysForInitialDialog(visibleNow, previouslyVisible)
+
+    private fun isVirtualFolderKey(key: String): Boolean = VirtualAlbumRules.isVirtual(key)
 }
 
 object GridColumnRules {
@@ -199,6 +202,86 @@ object AlbumRules {
     }
 }
 
+object VirtualAlbumRules {
+    const val RECENT_KEY = "virtual_recent"
+    const val FAVORITES_KEY = "virtual_favorites"
+    const val TRASH_KEY = "virtual_trash"
+
+    fun isVirtual(key: String): Boolean = key == RECENT_KEY || key == FAVORITES_KEY || key == TRASH_KEY || key == "all_media"
+
+    fun remainsAfterMove(key: String?): Boolean = key == RECENT_KEY || key == FAVORITES_KEY || key == "all_media"
+
+    fun mediaForAlbum(source: List<MediaItem>, albumKey: String?, favoriteUris: Set<String>): List<MediaItem> = when (albumKey) {
+        RECENT_KEY, "all_media", null -> source
+        FAVORITES_KEY -> {
+            val favoriteKeys = favoriteUris.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
+            source.filter { MediaIdentityRules.canonicalKey(it.uri.toString()) in favoriteKeys }
+        }
+        else -> source.filter { it.albumKey == albumKey }
+    }
+
+    fun addCollections(
+        physicalAlbums: List<AlbumItem>,
+        visibleMedia: List<MediaItem>,
+        favoriteUris: Set<String>,
+        trashedMedia: List<MediaItem>,
+        recentName: String = "Recentes",
+        favoritesName: String = "Favoritos",
+        trashName: String = "Lixeira"
+    ): List<AlbumItem> {
+        val availableMedia = if (physicalAlbums.any { it.key == "all_media" }) {
+            visibleMedia
+        } else {
+            val visibleKeys = physicalAlbums.mapTo(HashSet()) { it.key }
+            visibleMedia.filter { it.albumKey in visibleKeys }
+        }
+        val favoriteKeys = favoriteUris.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
+        val favorites = availableMedia.filter { MediaIdentityRules.canonicalKey(it.uri.toString()) in favoriteKeys }
+        return buildList {
+            addAll(physicalAlbums.filterNot { isVirtual(it.key) })
+            add(aggregate(RECENT_KEY, recentName, availableMedia))
+            add(aggregate(FAVORITES_KEY, favoritesName, favorites))
+            add(aggregate(TRASH_KEY, trashName, trashedMedia))
+        }
+    }
+
+    fun pinEssential(albums: List<AlbumItem>): List<AlbumItem> = albums.withIndex()
+        .sortedWith(compareBy<IndexedValue<AlbumItem>> { essentialPriority(it.value) }.thenBy { it.index })
+        .map { it.value }
+
+    private fun aggregate(key: String, name: String, media: List<MediaItem>): AlbumItem {
+        val newest = media.maxByOrNull { it.dateAdded }
+        val latest = newest?.dateAdded ?: 0L
+        return AlbumItem(
+            key,
+            name,
+            media.size,
+            newest,
+            latest,
+            media.asSequence().map { it.dateAdded }.filter { it > 0L }.minOrNull() ?: latest,
+            media.sumOf { max(0L, it.size) },
+            ""
+        )
+    }
+
+    private fun essentialPriority(album: AlbumItem): Int {
+        val normalized = normalize("${album.name} ${album.path}")
+        return when {
+            album.key == FAVORITES_KEY -> 2
+            album.key == RECENT_KEY -> 4
+            normalized.contains("dcim/camera") || normalized.contains(" camera") || normalized.startsWith("camera") -> 0
+            normalized.contains("screenshot") || normalized.contains("captura") -> 1
+            normalized.contains("download") -> 3
+            else -> 5
+        }
+    }
+
+    private fun normalize(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFD)
+        .replace("\\p{M}+".toRegex(), "")
+        .replace('\\', '/')
+        .lowercase(Locale.US)
+}
+
 object AlbumCatalogRules {
     fun prepare(
         source: List<AlbumItem>,
@@ -246,7 +329,7 @@ object AlbumMediaRules {
     const val GROUP_MONTH = "month"
 
     fun shouldUsePaging(albumKey: String?, groupMode: String, selectionMode: Boolean): Boolean =
-        (albumKey.isNullOrEmpty() || albumKey == "all_media") &&
+        (albumKey.isNullOrEmpty() || albumKey == "all_media" || albumKey == VirtualAlbumRules.RECENT_KEY) &&
             groupMode == GROUP_NONE &&
             !selectionMode
 
@@ -330,6 +413,7 @@ object AlbumTargetRules {
             if (
                 exposed &&
                 album.key != "all_media" &&
+                !VirtualAlbumRules.isVirtual(album.key) &&
                 !excludedKeys.contains(album.key) &&
                 album.name.isNotBlank()
             ) {

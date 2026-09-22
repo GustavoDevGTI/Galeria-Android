@@ -6,7 +6,7 @@ internal object CinemaModeRules {
     const val ALL_MEDIA_KEY = "all_media"
 
     fun supportsAlbum(albumKey: String?): Boolean =
-        !albumKey.isNullOrBlank() && albumKey != ALL_MEDIA_KEY
+        !albumKey.isNullOrBlank() && !VirtualAlbumRules.isVirtual(albumKey)
 
     fun updatedAlbums(current: Set<String>, albumKey: String?, enabled: Boolean): Set<String> {
         if (!supportsAlbum(albumKey)) return current

@@ -302,7 +302,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun prepareInitialMedia(currentUri: Uri, name: String?, mime: String?, path: String?) {
-        queueController.setInitial(MediaItem(0, currentUri, name, mime, 0, 0, path, "media", "Mídia"))
+        queueController.setInitial(MediaItem(0, currentUri, name, mime, 0, 0, path, path ?: sourceAlbumKey, "Mídia"))
     }
 
     private fun loadAlbumQueueAsync(currentUri: Uri) {
@@ -497,8 +497,20 @@ class DetailActivity : ComponentActivity() {
             setOnClickListener { shareCurrent() }
         }
         val trash = actionButton(R.drawable.ic_trash).apply {
-            contentDescription = getString(R.string.action_delete)
+            contentDescription = getString(
+                if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) R.string.action_delete_permanently
+                else R.string.action_delete
+            )
             setOnClickListener { confirmDeleteCurrent() }
+        }
+        val restore = actionButton(R.drawable.ic_restore).apply {
+            contentDescription = getString(R.string.action_restore)
+            visibility = if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) View.VISIBLE else View.GONE
+            setOnClickListener { restoreCurrent() }
+        }
+        if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) {
+            favoriteButton.visibility = View.GONE
+            share.visibility = View.GONE
         }
         soundButton = actionButton(R.drawable.ic_volume_on).apply {
             contentDescription = "Desativar som"
@@ -512,6 +524,7 @@ class DetailActivity : ComponentActivity() {
         }
         actionsBar.addView(favoriteButton, actionParams())
         actionsBar.addView(share, actionParams())
+        actionsBar.addView(restore, actionParams())
         actionsBar.addView(trash, actionParams())
         actionsBar.addView(soundButton, actionParams())
         actionsBar.addView(cinemaButton, actionParams())
@@ -1191,7 +1204,7 @@ class DetailActivity : ComponentActivity() {
         val item = currentItem()
         val restoredMode = restoredCinemaMode.also { restoredCinemaMode = null }
         cinemaMode = if (item.isVideo()) {
-            restoredMode ?: cinemaPreferences.isEnabled(sourceAlbumKey)
+            restoredMode ?: cinemaPreferences.isEnabled(cinemaAlbumKey(item))
         } else {
             false
         }
@@ -1278,7 +1291,7 @@ class DetailActivity : ComponentActivity() {
             }
         )
         playerView.player = player
-        if (cinemaMode) videoTrackController.bind(player, sourceAlbumKey) else videoTrackController.unbind()
+        if (cinemaMode) videoTrackController.bind(player, cinemaAlbumKey(item)) else videoTrackController.unbind()
         updateSpeedButton()
         updatePlayPauseButton()
         handler.post(progressUpdater)
@@ -1442,7 +1455,7 @@ class DetailActivity : ComponentActivity() {
         handler.removeCallbacks(hideCinemaGestureIndicator)
         cinemaGestureIndicator.visibility = View.GONE
         if (cinemaMode) {
-            playbackController.player()?.let { videoTrackController.bind(it, sourceAlbumKey) }
+            playbackController.player()?.let { videoTrackController.bind(it, cinemaAlbumKey(currentItem())) }
         } else {
             videoTrackController.unbind()
         }
@@ -2120,20 +2133,23 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun confirmDeleteCurrent() {
+        val permanent = sourceAlbumKey == VirtualAlbumRules.TRASH_KEY
         Ui.showConfirmationDialog(
             this,
-            "Excluir arquivo",
-            "Tem certeza que deseja excluir este arquivo?",
-            "Excluir"
+            if (permanent) getString(R.string.trash_delete_selected_title) else getString(R.string.move_item_to_trash_title),
+            if (permanent) getString(R.string.trash_delete_item_message)
+                else getString(R.string.move_item_to_trash_message),
+            getString(if (permanent) R.string.action_delete_permanently else R.string.action_move_to_trash)
         ) { deleteCurrent() }
     }
 
     private fun deleteCurrent() {
         val item = currentItem()
         pendingDeleteUri = item.uri
-        val result = mediaActions.delete(item, REQ_DELETE)
+        val permanent = sourceAlbumKey == VirtualAlbumRules.TRASH_KEY
+        val result = mediaActions.delete(item, REQ_DELETE, permanent)
         if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, "Item excluído.")
+            Ui.toast(this, getString(if (permanent) R.string.album_item_deleted else R.string.item_moved_to_trash))
             removeDeletedItem()
         } else if (result == MediaActions.RESULT_FAILED) {
             pendingDeleteUri = null
@@ -2183,6 +2199,18 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
+    private fun restoreCurrent() {
+        val item = currentItem()
+        pendingDeleteUri = item.uri
+        when (MediaActions.requestRestore(this, item.uri, REQ_RESTORE)) {
+            MediaActions.RESULT_DONE -> {
+                Ui.toast(this, getString(R.string.item_restored))
+                removeDeletedItem()
+            }
+            MediaActions.RESULT_FAILED -> pendingDeleteUri = null
+        }
+    }
+
     private fun removeDeletedItem(moved: Boolean = false) {
         MediaStoreRepository.invalidateCache()
         GalleryCatalogStore.markCatalogDirty(applicationContext)
@@ -2204,10 +2232,22 @@ class DetailActivity : ComponentActivity() {
             val deleted = resultCode == RESULT_OK
             pendingDeleteUri = null
             if (deleted) {
-                Ui.toast(this, "Item excluído.")
+                Ui.toast(
+                    this,
+                    getString(
+                        if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) R.string.album_item_deleted
+                        else R.string.item_moved_to_trash
+                    )
+                )
                 removeDeletedItem()
             } else {
                 Ui.toast(this, "Exclusão cancelada.")
+            }
+        } else if (requestCode == REQ_RESTORE) {
+            pendingDeleteUri = null
+            if (resultCode == RESULT_OK) {
+                Ui.toast(this, getString(R.string.item_restored))
+                removeDeletedItem()
             }
         } else if (requestCode == REQ_HIDE_DELETE) {
             val deleted = resultCode == RESULT_OK
@@ -2262,6 +2302,10 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun currentItem(): MediaItem = queueController.current()
+
+    private fun cinemaAlbumKey(item: MediaItem): String =
+        if (sourceAlbumKey?.let(VirtualAlbumRules::isVirtual) == true) item.albumKey
+        else sourceAlbumKey ?: item.albumKey
 
     private fun MediaItem.metadataDescription(): DetailMediaMetadata = DetailMediaMetadata(
         name = name,
@@ -2399,6 +2443,7 @@ class DetailActivity : ComponentActivity() {
 
     companion object {
         private const val REQ_DELETE = 31
+        private const val REQ_RESTORE = 36
         private const val REQ_HIDE_DELETE = 32
         private const val REQ_MOVE_WRITE = 33
         private const val REQ_ROTATE_WRITE = 34

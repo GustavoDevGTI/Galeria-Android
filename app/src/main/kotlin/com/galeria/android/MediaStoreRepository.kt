@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.Looper
+import android.os.Bundle
 import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import java.io.File
@@ -131,14 +132,15 @@ object MediaStoreRepository {
 
     @JvmStatic
     fun loadMediaForAlbum(context: Context, albumKey: String?, includeHiddenFilesystem: Boolean = false): List<MediaItem> {
+        if (albumKey == VirtualAlbumRules.TRASH_KEY) return loadTrashedMedia(context)
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
         val includeHidden = StorageAccessRules.includeHiddenFilesystem(includeHiddenFilesystem, allFilesAccess)
         if (GalleryCatalogStore.isCatalogDirty(context, includeHidden)) {
             val items = refreshMedia(context, includeHidden, force = true)
-            return if (albumKey == "all_media") items else items.filter { it.albumKey == albumKey }
+            return VirtualAlbumRules.mediaForAlbum(items, albumKey, favoriteUris(context))
         }
-        if (albumKey == "all_media") {
-            return loadMedia(context, includeHidden)
+        if (albumKey == "all_media" || albumKey == VirtualAlbumRules.RECENT_KEY || albumKey == VirtualAlbumRules.FAVORITES_KEY) {
+            return VirtualAlbumRules.mediaForAlbum(loadMedia(context, includeHidden), albumKey, favoriteUris(context))
         }
         val now = System.currentTimeMillis()
         synchronized(cacheLock) {
@@ -180,7 +182,20 @@ object MediaStoreRepository {
     fun loadAlbums(context: Context, includeHiddenFilesystem: Boolean = false): List<AlbumItem> =
         buildAlbums(loadMedia(context, includeHiddenFilesystem)).sortedByDescending { it.latestDate }
 
-    private fun loadFromFilesCollection(context: Context, output: MutableList<MediaItem>, albumKey: String? = null) {
+    @JvmStatic
+    fun loadTrashedMedia(context: Context): List<MediaItem> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return LegacyTrashStore.load(context)
+        val items = ArrayList<MediaItem>()
+        loadFromFilesCollection(context, items, trashedOnly = true)
+        return items
+    }
+
+    private fun loadFromFilesCollection(
+        context: Context,
+        output: MutableList<MediaItem>,
+        albumKey: String? = null,
+        trashedOnly: Boolean = false
+    ) {
         val collection = MediaStore.Files.getContentUri("external")
         val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             arrayOf(
@@ -235,7 +250,22 @@ object MediaStoreRepository {
             }
         }
         try {
-            resolver.query(collection, projection, selection.toString(), args.toTypedArray(), "${MediaStore.MediaColumns.DATE_ADDED} DESC")?.use { cursor ->
+            val cursor = if (trashedOnly && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                resolver.query(
+                    collection,
+                    projection,
+                    Bundle().apply {
+                        putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection.toString())
+                        putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args.toTypedArray())
+                        putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "${MediaStore.MediaColumns.DATE_ADDED} DESC")
+                        putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_ONLY)
+                    },
+                    null
+                )
+            } else {
+                resolver.query(collection, projection, selection.toString(), args.toTypedArray(), "${MediaStore.MediaColumns.DATE_ADDED} DESC")
+            }
+            cursor?.use { cursor ->
                 val idIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
                 val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
                 val mimeIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
@@ -287,6 +317,10 @@ object MediaStoreRepository {
             // Recent Android versions may grant only photos or only videos.
         }
     }
+
+    private fun favoriteUris(context: Context): Set<String> =
+        context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+            .getStringSet("favorites", emptySet()).orEmpty()
 
     private fun loadFromHiddenFilesystem(output: MutableList<MediaItem>, allFilesAccess: Boolean) {
         if (!allFilesAccess) {
@@ -349,6 +383,7 @@ object MediaStoreRepository {
         if (dir == root) {
             return false
         }
+        if (LegacyTrashStore.isTrashDirectory(dir)) return true
         val name = dir.name
         if (name == "Android") {
             return false

@@ -411,6 +411,9 @@ A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_
 - Diálogos e submenus principais usam componentes temáticos próprios do app
 - Submenus de escolha aplicam a opção imediatamente, sem confirmação redundante; escolhas de acesso inicial ficam alinhadas lado a lado
 - Gerenciamento de ocultos atualizado com lista rolável, botões fixos e suporte a pastas fixadas
+- Coleções virtuais de Recentes e Favoritos agregam mídias sem duplicar os arquivos originais
+- Lixeira com restauração e exclusão definitiva usa o MediaStore no Android 11+ e armazenamento de recuperação próprio nas versões anteriores
+- Câmera, Capturas de tela, Favoritos, Downloads e Recentes permanecem fixos no topo, sem interferir na ordenação dos demais álbuns
 - Abertura do submenu de ocultos sem varredura automática: somente álbuns visíveis ou já exibidos entram na lista até o uso de `Carregar ocultos`
 - Player ajustado para manter o vídeo ocupando o máximo possível da tela sem ser reduzido pelos controles
 - Player com controle de som integrado à barra inferior e estado preservado ao navegar entre vídeos

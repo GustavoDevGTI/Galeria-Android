@@ -105,18 +105,14 @@ class MediaActions private constructor() {
 
         @JvmStatic
         fun requestDelete(activity: Activity, uri: Uri, requestCode: Int): Int {
-            if (hasAllFilesAccess(activity)) {
-                return if (deleteDirect(activity, uri)) RESULT_DONE else RESULT_FAILED
-            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                if (setTrashed(activity, uri, true)) return RESULT_DONE
                 return try {
-                    val moveToTrash = activity.getSharedPreferences(Ui.PREFS, Activity.MODE_PRIVATE)
-                        .getBoolean("move_to_trash", false)
-                    val pendingIntent = if (moveToTrash) {
-                        MediaStore.createTrashRequest(activity.contentResolver, Collections.singletonList(uri), true)
-                    } else {
-                        MediaStore.createDeleteRequest(activity.contentResolver, Collections.singletonList(uri))
-                    }
+                    val pendingIntent = MediaStore.createTrashRequest(
+                        activity.contentResolver,
+                        Collections.singletonList(uri),
+                        true
+                    )
                     activity.startIntentSenderForResult(
                         pendingIntent.intentSender,
                         requestCode,
@@ -127,23 +123,64 @@ class MediaActions private constructor() {
                     )
                     RESULT_NEEDS_PERMISSION
                 } catch (_: Exception) {
-                    val deleted = deleteDirect(activity, uri)
-                    if (!deleted) {
-                        Ui.toast(activity, "Não foi possível pedir permissão para excluir.")
+                    val trashed = setTrashed(activity, uri, true)
+                    if (!trashed) {
+                        Ui.toast(activity, "Não foi possível mover o item para a Lixeira.")
                     }
-                    if (deleted) RESULT_DONE else RESULT_FAILED
+                    if (trashed) RESULT_DONE else RESULT_FAILED
                 }
             }
 
-            val deleted = deleteDirect(activity, uri)
-            Ui.toast(activity, if (deleted) "Item excluído." else "Não foi possível excluir.")
-            return if (deleted) RESULT_DONE else RESULT_FAILED
+            val trashed = LegacyTrashStore.trash(activity, uri)
+            Ui.toast(activity, if (trashed) "Item movido para a Lixeira." else "Não foi possível mover para a Lixeira.")
+            return if (trashed) RESULT_DONE else RESULT_FAILED
+        }
+
+        @JvmStatic
+        fun requestRestore(activity: Activity, uri: Uri, requestCode: Int): Int {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                return if (LegacyTrashStore.restore(activity, uri)) RESULT_DONE else RESULT_FAILED
+            }
+            if (setTrashed(activity, uri, false)) return RESULT_DONE
+            return try {
+                val pendingIntent = MediaStore.createTrashRequest(
+                    activity.contentResolver,
+                    Collections.singletonList(uri),
+                    false
+                )
+                activity.startIntentSenderForResult(pendingIntent.intentSender, requestCode, null, 0, 0, 0)
+                RESULT_NEEDS_PERMISSION
+            } catch (_: Exception) {
+                if (setTrashed(activity, uri, false)) RESULT_DONE else RESULT_FAILED
+            }
+        }
+
+        private fun setTrashed(activity: Activity, uri: Uri, trashed: Boolean): Boolean = try {
+            val changed = activity.contentResolver.update(
+                uri,
+                ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, if (trashed) 1 else 0) },
+                null,
+                null
+            ) > 0
+            if (changed) {
+                invalidateAfterMediaMutation(activity)
+            }
+            changed
+        } catch (_: Exception) {
+            false
+        }
+
+        private fun invalidateAfterMediaMutation(activity: Activity) {
+            MediaStoreRepository.invalidateCache()
+            GalleryCatalogStore.markCatalogDirty(activity.applicationContext)
         }
 
         @JvmStatic
         fun requestPermanentDelete(activity: Activity, uri: Uri, requestCode: Int): Int {
             if (hasAllFilesAccess(activity)) {
-                return if (deleteDirect(activity, uri)) RESULT_DONE else RESULT_FAILED
+                val deleted = deleteDirect(activity, uri)
+                if (deleted) LegacyTrashStore.forget(activity, uri)
+                return if (deleted) RESULT_DONE else RESULT_FAILED
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 return try {
@@ -168,13 +205,15 @@ class MediaActions private constructor() {
                     if (deleted) RESULT_DONE else RESULT_FAILED
                 }
             }
-            return if (deleteDirect(activity, uri)) RESULT_DONE else RESULT_FAILED
+            val deleted = deleteDirect(activity, uri)
+            if (deleted) LegacyTrashStore.forget(activity, uri)
+            return if (deleted) RESULT_DONE else RESULT_FAILED
         }
 
         @JvmStatic
         fun deleteDirect(activity: Activity, uri: Uri): Boolean {
             val file = fileFromMediaStore(activity, uri)
-            if (hasAllFilesAccess(activity) && file != null && file.exists()) {
+            if ((hasAllFilesAccess(activity) || uri.scheme == "file") && file != null && file.exists()) {
                 val path = file.absolutePath
                 val deleted = file.delete()
                 if (deleted) {

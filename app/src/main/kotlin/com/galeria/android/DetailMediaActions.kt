@@ -69,8 +69,9 @@ class DetailMediaActions(
         item.duration
     )
 
-    fun delete(item: MediaItem, requestCode: Int): Int =
-        MediaActions.requestPermanentDelete(activity, item.uri, requestCode)
+    fun delete(item: MediaItem, requestCode: Int, permanent: Boolean = false): Int =
+        if (permanent) MediaActions.requestPermanentDelete(activity, item.uri, requestCode)
+        else MediaActions.requestDelete(activity, item.uri, requestCode)
 
     fun copyToHidden(item: MediaItem): File? = MediaActions.copyToHidden(activity, item)
 

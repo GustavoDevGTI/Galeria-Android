@@ -325,7 +325,9 @@ object GalleryCatalogStore {
         config: PagingConfig
     ): Flow<PagingData<MediaItem>> {
         val dao = GalleryDatabase.get(context).galleryDao()
-        val requestedAlbum = if (albumKey == null || albumKey == "all_media") "__all__" else albumKey
+        val requestedAlbum = if (
+            albumKey == null || albumKey == "all_media" || albumKey == VirtualAlbumRules.RECENT_KEY
+        ) "__all__" else albumKey
         val customOrderAlbum = albumKey ?: "all"
         return Pager(config) {
             dao.pagedMedia(
