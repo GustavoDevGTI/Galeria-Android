@@ -23,6 +23,8 @@ import coil3.load
 import coil3.request.allowHardware
 import coil3.request.crossfade
 import coil3.size.Precision
+import coil3.video.videoFrameMillis
+import coil3.video.videoFrameOption
 import kotlinx.coroutines.Dispatchers
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -479,18 +481,32 @@ class MediaRecyclerAdapter(
     private fun bindThumbnail(holder: Holder, item: MediaItem) {
         val normalSize = if (listMode) Ui.dp(context, 82) else gridThumbnailSizePx
         val requestSize = if (fastScrollPreview) minOf(normalSize, FAST_SCROLL_PREVIEW_SIZE_PX) else normalSize
-        val diskKey = "media:${item.uri}"
-        val memoryKey = "$diskKey:$requestSize"
         val uriKey = item.uri.toString()
         if (holder.boundUri != uriKey) {
             holder.image.setImageDrawable(null)
             holder.boundUri = uriKey
         }
+        val selected = if (item.isVideo() && !fastScrollPreview) {
+            VideoThumbnailFrames.selectedTime(context, item) { millis ->
+                if (millis > 0L && holder.boundUri == uriKey) {
+                    loadThumbnail(holder, item, requestSize, millis)
+                }
+            }
+        } else 0L
+        loadThumbnail(holder, item, requestSize, selected ?: 0L)
+    }
+
+    private fun loadThumbnail(holder: Holder, item: MediaItem, requestSize: Int, frameMillis: Long) {
+        val diskKey = "media:${item.uri}:${item.size}:${item.dateAdded}:$frameMillis"
         holder.image.load(item.uri) {
             size(requestSize, requestSize)
             precision(Precision.INEXACT)
-            memoryCacheKey(memoryKey)
+            memoryCacheKey("$diskKey:$requestSize")
             diskCacheKey(diskKey)
+            if (item.isVideo()) {
+                videoFrameMillis(frameMillis)
+                videoFrameOption(MediaMetadataRetriever.OPTION_CLOSEST)
+            }
             allowHardware(true)
             crossfade(180)
         }

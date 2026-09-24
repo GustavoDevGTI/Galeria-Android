@@ -2,6 +2,7 @@ package com.galeria.android
 
 import android.content.Context
 import android.graphics.Color
+import android.media.MediaMetadataRetriever
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
@@ -16,6 +17,8 @@ import coil3.load
 import coil3.request.allowHardware
 import coil3.request.crossfade
 import coil3.size.Precision
+import coil3.video.videoFrameMillis
+import coil3.video.videoFrameOption
 import java.util.Locale
 
 class AlbumRecyclerAdapter(
@@ -263,16 +266,33 @@ class AlbumRecyclerAdapter(
         if (cover == null) {
             holder.cover.setImageDrawable(null)
         } else {
-            val diskKey = "album:${cover.uri}:$coverRevision"
-            val memoryKey = "$diskKey:$coverSizePx"
-            holder.cover.load(cover.uri) {
-                size(coverSizePx, coverSizePx)
-                precision(Precision.INEXACT)
-                memoryCacheKey(memoryKey)
-                diskCacheKey(diskKey)
-                allowHardware(true)
-                crossfade(180)
+            val selected = if (cover.isVideo()) {
+                val boundKey = album.key
+                val boundUri = cover.uri
+                VideoThumbnailFrames.selectedTime(context, cover) { millis ->
+                    if (millis > 0L && holder.bindingAdapterPosition in visibleAlbums.indices &&
+                        visibleAlbums[holder.bindingAdapterPosition].key == boundKey &&
+                        visibleAlbums[holder.bindingAdapterPosition].cover?.uri == boundUri
+                    ) loadCover(holder, cover, millis)
+                }
+            } else 0L
+            loadCover(holder, cover, selected ?: 0L)
+        }
+    }
+
+    private fun loadCover(holder: Holder, cover: MediaItem, frameMillis: Long) {
+        val diskKey = "album:${cover.uri}:${cover.size}:${cover.dateAdded}:$frameMillis:$coverRevision"
+        holder.cover.load(cover.uri) {
+            size(coverSizePx, coverSizePx)
+            precision(Precision.INEXACT)
+            memoryCacheKey("$diskKey:$coverSizePx")
+            diskCacheKey(diskKey)
+            if (cover.isVideo()) {
+                videoFrameMillis(frameMillis)
+                videoFrameOption(MediaMetadataRetriever.OPTION_CLOSEST)
             }
+            allowHardware(true)
+            crossfade(180)
         }
     }
 

@@ -68,9 +68,8 @@ class VideoMenuInstrumentedTest {
                 onView(withContentDescription("Mais opções")).perform(click())
                 onView(withText(ViewerMenuRules.INFORMATION)).perform(clickClickableAncestor())
                 waitUntilDisplayedInDialog("Informações do vídeo")
-                onView(withText(containsString("Formato: video/mp4")))
-                    .inRoot(isDialog())
-                    .check(matches(isDisplayed()))
+                onView(withText("Formato")).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText("video/mp4")).inRoot(isDialog()).check(matches(isDisplayed()))
             }
         } finally {
             context.contentResolver.delete(uri, null, null)

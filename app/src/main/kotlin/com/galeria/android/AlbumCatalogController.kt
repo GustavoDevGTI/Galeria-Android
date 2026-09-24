@@ -136,17 +136,61 @@ class AlbumCatalogController(context: Context) {
         val prefs = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val favorites = prefs
             .getStringSet("favorites", emptySet()).orEmpty()
-        return VirtualAlbumRules.addCollections(
+        val trash = MediaStoreRepository.loadTrashedMedia(appContext)
+        val collections = VirtualAlbumRules.addCollections(
             physical,
             media,
             favorites,
-            MediaStoreRepository.loadTrashedMedia(appContext),
+            trash,
             appContext.getString(R.string.album_recent),
             appContext.getString(R.string.album_favorites),
             appContext.getString(R.string.album_trash),
             options.hiddenKeys,
             prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
         )
+        val available = VirtualAlbumRules.availableMedia(physical, media, options.hiddenKeys)
+        val favoriteKeys = favorites.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
+        val byFolder = media.groupBy { it.albumKey }
+        val customOrders = GalleryCatalogStore.allCustomOrders(appContext)
+        return collections.map { album ->
+            val candidates = when (album.key) {
+                "all_media", VirtualAlbumRules.RECENT_KEY -> available
+                VirtualAlbumRules.FAVORITES_KEY -> available.filter {
+                    MediaIdentityRules.canonicalKey(it.uri.toString()) in favoriteKeys
+                }
+                VirtualAlbumRules.TRASH_KEY -> VirtualAlbumRules.visibleTrash(
+                    trash, options.hiddenKeys,
+                    prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
+                )
+                else -> byFolder[album.key].orEmpty()
+            }
+            val key = album.key
+            val defaultSort = if (key == VirtualAlbumRules.RECENT_KEY || key == VirtualAlbumRules.TRASH_KEY) {
+                MediaSortRules.SORT_DATE
+            } else MediaSortRules.SORT_CUSTOM
+            val order = customOrders[key] ?: prefs.getString("custom_order_$key", "").orEmpty()
+                .lineSequence().filter { it.isNotBlank() }.toList()
+            val cover = AlbumCoverRules.choose(
+                candidates,
+                prefs.getString(AlbumCoverRules.preferenceKey(key), null),
+                AlbumMediaPreparationOptions(
+                    MediaFilterOptions(
+                        prefs.getBoolean(AlbumCoverRules.optionKey(key, "filter_images"), true),
+                        prefs.getBoolean(AlbumCoverRules.optionKey(key, "filter_videos"), true),
+                        prefs.getBoolean(AlbumCoverRules.optionKey(key, "filter_gifs"), true),
+                        prefs.getBoolean(AlbumCoverRules.optionKey(key, "filter_raw"), true),
+                        prefs.getBoolean(AlbumCoverRules.optionKey(key, "filter_svg"), true)
+                    ),
+                    prefs.getString(AlbumCoverRules.optionKey(key, "group_mode"), AlbumMediaRules.GROUP_NONE)
+                        ?: AlbumMediaRules.GROUP_NONE,
+                    prefs.getString(AlbumCoverRules.optionKey(key, "sort_mode"), defaultSort) ?: defaultSort,
+                    prefs.getBoolean(AlbumCoverRules.optionKey(key, "sort_desc"), true)
+                ),
+                order
+            ) ?: album.cover
+            AlbumItem(album.key, album.name, album.count, cover, album.latestDate,
+                album.firstDate, album.totalSize, album.path)
+        }
     }
 
     private fun prepareAlbums(source: List<AlbumItem>, options: AlbumCatalogOptions): List<AlbumItem> {

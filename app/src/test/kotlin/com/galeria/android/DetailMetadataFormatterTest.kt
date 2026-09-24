@@ -40,18 +40,18 @@ class DetailMetadataFormatterTest {
         assertEquals(
             """
             Nome: foto.jpg
-            Resolução: 4000 × 3000
+            Data: data-123
             Tamanho: 4096 bytes
             Formato: image/jpeg
             Pasta: Pictures/Camera
-            Adicionado em: data-123
+            Resolução: 4000 × 3000
             Câmera: Canon EOS
             Capturada em: 2026:08:20 10:30:00
             ISO: 200
             Abertura: f/2.8
             Exposição: 1/125s
             Distância focal: 50 mm
-            Localização: -23.550520, -46.633308
+            Coordenadas: -23.550520, -46.633308
             """.trimIndent(),
             information
         )
@@ -65,7 +65,7 @@ class DetailMetadataFormatterTest {
             null
         )
 
-        assertEquals("Nome: sem-dados\nFormato: Desconhecido", information)
+        assertEquals("Nome: sem-dados\nData: Desconhecida\nFormato: Desconhecido", information)
     }
 
     @Test
@@ -88,16 +88,16 @@ class DetailMetadataFormatterTest {
         assertEquals(
             """
             Nome: video.mp4
+            Data: data-321
+            Tamanho: 8192 bytes
+            Formato: video/mp4
+            Pasta: Movies
             Duração: duracao-65000
             Resolução: 1920 × 1080
             Rotação: 90°
-            Tamanho: 8192 bytes
-            Formato: video/mp4
             Codec: H.265 / HEVC
             Taxa de bits: 2.5 Mbps
             Quadros por segundo: 29.97
-            Pasta: Movies
-            Adicionado em: data-321
             """.trimIndent(),
             information
         )
@@ -112,9 +112,20 @@ class DetailMetadataFormatterTest {
         )
 
         assertEquals(
-            "Nome: clip\nFormato: video/webm\nTaxa de bits: 850 kbps\nQuadros por segundo: 30",
+            "Nome: clip\nData: Desconhecida\nFormato: video/webm\nTaxa de bits: 850 kbps\nQuadros por segundo: 30",
             information
         )
+    }
+
+    @Test
+    fun sectionsKeepNameThenDateAndSeparateTechnicalFields() {
+        val sections = formatter.imageSections(
+            DetailMediaMetadata("foto.jpg", "image/jpeg", "Camera/", 123L),
+            DetailImageMetadata(width = 1920, height = 1080, latitude = 1.0, longitude = 2.0),
+            1234L
+        )
+        assertEquals(listOf("Arquivo", "Imagem e câmera", "Localização"), sections.map { it.title })
+        assertEquals(listOf("Nome", "Data"), sections.first().fields.take(2).map { it.label })
     }
 
     @Test

@@ -118,8 +118,8 @@ class VirtualAlbumsInstrumentedTest {
             ActivityScenario.launch<AlbumMediaActivity>(intent).use {
                 waitForView { onView(withContentDescription(name)).check(matches(isDisplayed())) }
                 onView(withContentDescription(name)).perform(longClick())
-                onView(withText(R.string.action_restore)).check(matches(isDisplayed()))
-                onView(withText(R.string.action_delete_permanently)).check(matches(isDisplayed()))
+                waitForView { onView(withText(R.string.action_restore)).check(matches(isDisplayed())) }
+                waitForView { onView(withText(R.string.action_delete_permanently)).check(matches(isDisplayed())) }
             }
         } finally {
             runCatching {

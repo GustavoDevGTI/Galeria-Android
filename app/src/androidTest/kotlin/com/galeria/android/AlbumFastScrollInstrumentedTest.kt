@@ -71,6 +71,8 @@ class AlbumFastScrollInstrumentedTest {
         val originalColumns = prefs.getInt(PREF_GRID_COLUMNS, 0)
         val hadColumns = prefs.contains(PREF_GRID_COLUMNS)
         val originalMediaStoreVersion = catalogPrefs.getString(PREF_MEDIA_STORE_VERSION_VISIBLE, null)
+        val visibleWasDirty = GalleryCatalogStore.isCatalogDirty(context, false)
+        val completeWasDirty = GalleryCatalogStore.isCatalogDirty(context, true)
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
 
         try {
@@ -81,6 +83,7 @@ class AlbumFastScrollInstrumentedTest {
                     CatalogStateEntity(VISIBLE_SCOPE, System.currentTimeMillis(), allFilesAccess)
                 )
             }
+            GalleryCatalogStore.clearCatalogDirty(context, false)
             catalogPrefs.edit()
                 .putString(
                     PREF_MEDIA_STORE_VERSION_VISIBLE,
@@ -159,6 +162,12 @@ class AlbumFastScrollInstrumentedTest {
                 catalogPrefs.edit().putString(PREF_MEDIA_STORE_VERSION_VISIBLE, originalMediaStoreVersion).commit()
             }
             MediaStoreRepository.invalidateCache()
+            GalleryCatalogStore.clearCatalogDirty(context)
+            if (visibleWasDirty || completeWasDirty) {
+                GalleryCatalogStore.markCatalogDirty(context)
+                if (!visibleWasDirty) GalleryCatalogStore.clearCatalogDirty(context, false)
+                if (!completeWasDirty) GalleryCatalogStore.clearCatalogDirty(context, true)
+            }
         }
     }
 

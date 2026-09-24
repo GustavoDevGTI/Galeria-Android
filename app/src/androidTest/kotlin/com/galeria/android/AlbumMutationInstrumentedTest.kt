@@ -66,7 +66,8 @@ class AlbumMutationInstrumentedTest {
             scenario.onActivity { activity ->
                 val adapter = adapter(activity)
                 val selected = adapter.currentOrder().first { MediaIdentityRules.sameUri(it.uri.toString(), first.toString()) }
-                invoke(activity, "deleteSelected", arrayOf(List::class.java), listOf(selected))
+                invoke(activity, "deleteSelected", arrayOf(List::class.java, Boolean::class.javaPrimitiveType!!),
+                    listOf(selected), false)
                 assertEquals("A saída deve ser visível na própria conclusão da ação", 1, adapter.getCount())
                 assertEquals("keep.png", adapter.getItem(0).name)
                 // Even a late delivery of the old data must not resurrect a removed item.

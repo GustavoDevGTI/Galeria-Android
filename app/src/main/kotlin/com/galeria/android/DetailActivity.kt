@@ -718,14 +718,14 @@ class DetailActivity : ComponentActivity() {
         val playerDuration = playbackController.durationMs()
         executor.execute {
             val metadata = metadataRepository.readVideo(item.uri, playerDuration)
-            val information = metadataFormatter.videoInformation(
+            val information = metadataFormatter.videoSections(
                 item.metadataDescription(),
                 metadata,
                 metadataRepository.resolveMediaSize(item.uri, item.size)
             )
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                Ui.showMessageDialog(this, "Informações do vídeo", information)
+                Ui.showMetadataDialog(this, "Informações do vídeo", information)
             }
         }
     }
@@ -749,10 +749,10 @@ class DetailActivity : ComponentActivity() {
 
     private fun showImageInformationDialog(item: MediaItem, metadata: DetailImageMetadata) {
         if (isFinishing || isDestroyed) return
-        Ui.showMessageDialog(
+        Ui.showMetadataDialog(
             this,
             "Informações da imagem",
-            metadataFormatter.imageInformation(
+            metadataFormatter.imageSections(
                 item.metadataDescription(),
                 metadata,
                 metadataRepository.resolveMediaSize(item.uri, item.size)

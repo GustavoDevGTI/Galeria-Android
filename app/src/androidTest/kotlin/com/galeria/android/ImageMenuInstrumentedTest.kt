@@ -76,9 +76,8 @@ class ImageMenuInstrumentedTest {
 
                 onView(withText(ViewerMenuRules.INFORMATION)).perform(clickClickableAncestor())
                 waitUntilDisplayedInDialog("Informações da imagem")
-                onView(withText(containsString("Resolução: 1 × 1")))
-                    .inRoot(isDialog())
-                    .check(matches(isDisplayed()))
+                onView(withText("Resolução")).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText("1 × 1")).inRoot(isDialog()).check(matches(isDisplayed()))
                 onView(withText("Fechar")).inRoot(isDialog()).perform(clickClickableAncestor())
 
                 onView(withContentDescription("Mais opções")).perform(click())

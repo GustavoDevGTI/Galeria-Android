@@ -229,6 +229,14 @@ object VirtualAlbumRules {
     fun visibleTrash(items: List<MediaItem>, hiddenKeys: Set<String>, showHidden: Boolean): List<MediaItem> =
         if (showHidden) items else items.filterNot { isHiddenMedia(it, hiddenKeys) }
 
+    fun availableMedia(physicalAlbums: List<AlbumItem>, media: List<MediaItem>, hiddenKeys: Set<String>): List<MediaItem> =
+        if (physicalAlbums.any { it.key == "all_media" }) {
+            media.filterNot { isHiddenMedia(it, hiddenKeys) }
+        } else {
+            val visibleKeys = physicalAlbums.mapTo(HashSet()) { it.key }
+            media.filter { it.albumKey in visibleKeys && !isHiddenMedia(it, hiddenKeys) }
+        }
+
     fun addCollections(
         physicalAlbums: List<AlbumItem>,
         visibleMedia: List<MediaItem>,
@@ -240,12 +248,7 @@ object VirtualAlbumRules {
         hiddenKeys: Set<String> = emptySet(),
         showHiddenTrash: Boolean = false
     ): List<AlbumItem> {
-        val availableMedia = if (physicalAlbums.any { it.key == "all_media" }) {
-            visibleMedia.filterNot { isHiddenMedia(it, hiddenKeys) }
-        } else {
-            val visibleKeys = physicalAlbums.mapTo(HashSet()) { it.key }
-            visibleMedia.filter { it.albumKey in visibleKeys && !isHiddenMedia(it, hiddenKeys) }
-        }
+        val availableMedia = availableMedia(physicalAlbums, visibleMedia, hiddenKeys)
         val favoriteKeys = favoriteUris.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
         val favorites = availableMedia.filter { MediaIdentityRules.canonicalKey(it.uri.toString()) in favoriteKeys }
         val displayedTrash = visibleTrash(trashedMedia, hiddenKeys, showHiddenTrash)

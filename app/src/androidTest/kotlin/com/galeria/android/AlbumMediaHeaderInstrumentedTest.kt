@@ -61,7 +61,10 @@ class AlbumMediaHeaderInstrumentedTest {
             onView(withContentDescription("Pesquisar nesta pasta"))
                 .check(matches(withHint("Pesquisar em $albumName")))
                 .perform(click())
-                .check(matches(withHint("Pesquisar nesta pasta")))
+            waitForView {
+                onView(withContentDescription("Pesquisar nesta pasta"))
+                    .check(matches(withHint("Pesquisar nesta pasta")))
+            }
         }
     }
 

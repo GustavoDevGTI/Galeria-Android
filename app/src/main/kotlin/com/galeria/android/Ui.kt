@@ -631,6 +631,64 @@ class Ui private constructor() {
         }
 
         @JvmStatic
+        internal fun showMetadataDialog(
+            context: Context,
+            title: String,
+            sections: List<DetailMetadataSection>
+        ): AlertDialog {
+            lateinit var dialog: AlertDialog
+            val body = themedDialogBody(context, title, null)
+            val content = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(context, 12), 0, dp(context, 12), dp(context, 8))
+            }
+            for (section in sections) {
+                val group = LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = rounded(blend(menuSurface(context), menuText(context), 0.06f), 12, context)
+                    setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 8))
+                }
+                group.addView(TextView(context).apply {
+                    text = section.title
+                    textSize = 14f
+                    setTypeface(Typeface.DEFAULT_BOLD)
+                    setTextColor(accent(context))
+                    setPadding(0, 0, 0, dp(context, 8))
+                })
+                for (field in section.fields) {
+                    val label = TextView(context).apply {
+                        text = field.label
+                        textSize = 13f
+                        setTypeface(Typeface.DEFAULT_BOLD)
+                        setTextColor(menuText(context))
+                    }
+                    val value = TextView(context).apply {
+                        text = field.value
+                        textSize = 15f
+                        setTextColor(menuText(context))
+                        setTextIsSelectable(true)
+                    }
+                    group.addView(label)
+                    group.addView(value, LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dp(context, 10) })
+                }
+                content.addView(group, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(context, 10) })
+            }
+            body.addView(ScrollView(context).apply {
+                isFillViewport = false
+                addView(content)
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            body.addView(themedDialogButton(context, context.getString(R.string.action_close), true) {
+                dialog.dismiss()
+            }, menuActionParams())
+            dialog = AlertDialog.Builder(context).setView(body).create()
+            return showCenteredPanel(dialog, fullHeight = true)
+        }
+
+        @JvmStatic
         fun showConfirmationDialog(
             context: Context,
             title: String,

@@ -94,6 +94,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private var groupMode = GROUP_NONE
     private var mediaSortMode = MediaSortRules.SORT_CUSTOM
     private var mediaSortDescending = true
+    private var choosingAlbumCover = false
     private lateinit var catalogController: AlbumMediaCatalogController
     private lateinit var selectionCoordinator: AlbumSelectionActions
     private var pendingPagedScrollPosition = -1
@@ -302,7 +303,11 @@ class AlbumMediaActivity : ComponentActivity() {
             setPadding(Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9))
             contentDescription = getString(R.string.action_more_options)
             setOnClickListener {
-                if (adapter.isSelectionMode()) {
+                if (choosingAlbumCover) {
+                    choosingAlbumCover = false
+                    searchInput.isEnabled = true
+                    updateSearchPresentation()
+                } else if (adapter.isSelectionMode()) {
                     exitSelectionMode()
                 } else {
                     showFolderMenu(it)
@@ -356,7 +361,17 @@ class AlbumMediaActivity : ComponentActivity() {
             override fun onMediaClick(position: Int) {
                 if (position !in 0 until adapter.getCount()) return
                 if (!dragging) {
-                    if (adapter.isSelectionMode()) {
+                    if (choosingAlbumCover) {
+                        val item = adapter.getItem(position)
+                        prefs.edit().putString(
+                            AlbumCoverRules.preferenceKey(albumKey ?: "all_media"),
+                            item.uri.toString()
+                        ).apply()
+                        choosingAlbumCover = false
+                        searchInput.isEnabled = true
+                        updateSearchPresentation()
+                        Ui.toast(this@AlbumMediaActivity, getString(R.string.album_cover_saved))
+                    } else if (adapter.isSelectionMode()) {
                         adapter.toggleSelection(position)
                         updateSelectionUi()
                     } else {
@@ -372,6 +387,7 @@ class AlbumMediaActivity : ComponentActivity() {
             }
 
             override fun onMediaLongClick(view: View, position: Int): Boolean {
+                if (choosingAlbumCover) return true
                 if (position !in 0 until adapter.getCount()) return true
                 val wasSelectionMode = adapter.isSelectionMode()
                 val wasSelected = adapter.isSelected(position)
@@ -552,9 +568,14 @@ class AlbumMediaActivity : ComponentActivity() {
             if (prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)) R.string.trash_hide_hidden
             else R.string.trash_show_hidden
         )
+        val chooseCover = getString(R.string.album_choose_cover)
+        val automaticCover = getString(R.string.album_automatic_cover)
+        val hasManualCover = prefs.contains(AlbumCoverRules.preferenceKey(albumKey ?: "all_media"))
         val options = buildList {
             addAll(listOf(filter, group, sort, viewMode))
             if (albumKey != VirtualAlbumRules.TRASH_KEY) addAll(listOf(createFolder, random))
+            if (albumKey != VirtualAlbumRules.TRASH_KEY) add(chooseCover)
+            if (albumKey != VirtualAlbumRules.TRASH_KEY && hasManualCover) add(automaticCover)
             if (albumKey == VirtualAlbumRules.TRASH_KEY) add(trashVisibility)
             add(spacing)
             if (CinemaModeRules.supportsAlbum(albumKey)) add(cinemaMode)
@@ -571,6 +592,19 @@ class AlbumMediaActivity : ComponentActivity() {
                 viewMode -> showViewModeDialog()
                 createFolder -> showCreateFolderDialog()
                 random -> startRandomPlayback()
+                chooseCover -> {
+                    choosingAlbumCover = true
+                    searchInput.setText("")
+                    searchInput.clearFocus()
+                    hideKeyboard()
+                    searchInput.isEnabled = false
+                    updateSearchPresentation()
+                    Ui.toast(this, getString(R.string.album_choose_cover_hint))
+                }
+                automaticCover -> {
+                    prefs.edit().remove(AlbumCoverRules.preferenceKey(albumKey ?: "all_media")).apply()
+                    Ui.toast(this, getString(R.string.album_automatic_cover_saved))
+                }
                 trashVisibility -> {
                     val showHidden = !prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
                     prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, showHidden).apply()
@@ -768,6 +802,12 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun handleToolbarBack() {
+        if (choosingAlbumCover) {
+            choosingAlbumCover = false
+            searchInput.isEnabled = true
+            updateSearchPresentation()
+            return
+        }
         if (::adapter.isInitialized && adapter.isSelectionMode()) {
             exitSelectionMode()
             return
@@ -793,6 +833,7 @@ class AlbumMediaActivity : ComponentActivity() {
             else -> Ui.rounded(Ui.search(this), 18, this)
         }
         searchInput.hint = when {
+            choosingAlbumCover -> getString(R.string.album_choose_cover_hint)
             selecting -> resources.getQuantityString(
                 R.plurals.selected_count,
                 adapter.selectedCount(),
@@ -801,7 +842,7 @@ class AlbumMediaActivity : ComponentActivity() {
             searching -> getString(R.string.album_search_folder)
             else -> getString(R.string.album_search_in, albumName)
         }
-        searchInput.setHintTextColor(if (selecting) Ui.text(this) else Ui.muted(this))
+        searchInput.setHintTextColor(if (selecting || choosingAlbumCover) Ui.text(this) else Ui.muted(this))
         searchInput.textSize = if (selecting) 20f else if (searching) 14f else 15f
         searchInput.setTypeface(Typeface.DEFAULT, if (selecting) Typeface.BOLD else Typeface.NORMAL)
         searchInput.isCursorVisible = searching && searchInput.hasFocus()
@@ -1335,8 +1376,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun mediaSpanCount(): Int =
         max(2, resources.displayMetrics.widthPixels / Ui.dp(this, 126))
 
-    private fun optionKey(suffix: String): String =
-        "album_${suffix}_${albumKey?.hashCode() ?: "all"}"
+    private fun optionKey(suffix: String): String = AlbumCoverRules.optionKey(albumKey, suffix)
 
     private fun folderDisplayPath(): String {
         val path = currentRelativeFolder()

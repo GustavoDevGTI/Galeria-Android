@@ -404,6 +404,9 @@ A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_
 - Miniaturas decodificadas no tamanho real da grade, com chaves de cache separadas por resolução
 - Carregamentos duplicados do primeiro `onResume` removidos das telas de álbuns e mídias
 - Imagens e thumbnails carregados pelo Coil 3, sem transição de baixa para alta resolução
+- Capas automáticas de álbuns seguem a primeira mídia da ordenação interna; uma capa escolhida manualmente pode ser removida pelo menu para voltar ao comportamento automático
+- Miniaturas de vídeos com abertura praticamente preta procuram um quadro posterior estável; vídeos que começam com imagem visível mantêm o quadro inicial
+- Informações de mídia agrupadas por arquivo, características técnicas e localização, com nome e data no início e rótulos em negrito
 - Preview de tela e imagem nativa usam chaves separadas; a imagem visível só é substituída quando a resolução final está pronta
 - Pré-carregamento do visualizador é limitado a duas decodificações simultâneas e cancela itens fora da janela de cinco mídias
 - Baseline Profile com os fluxos de abertura, lista de álbuns e grade de mídias incluído nas builds

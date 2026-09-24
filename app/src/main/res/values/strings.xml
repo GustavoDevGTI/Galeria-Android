@@ -10,9 +10,15 @@
     <string name="action_view_selected_media">Visualizar %s sem alterar a seleção</string>
     <string name="action_pin_album">Fixar/desafixar</string>
     <string name="album_pinned">Álbum fixado</string>
+    <string name="album_choose_cover">Escolher capa</string>
+    <string name="album_choose_cover_hint">Toque na mídia que será a capa</string>
+    <string name="album_cover_saved">Capa do álbum definida.</string>
+    <string name="album_automatic_cover">Usar capa automática</string>
+    <string name="album_automatic_cover_saved">A capa seguirá a ordenação do álbum.</string>
     <string name="trash_show_hidden">Exibir itens ocultos da Lixeira</string>
     <string name="trash_hide_hidden">Ocultar itens ocultos da Lixeira</string>
     <string name="action_cancel">Cancelar</string>
+    <string name="action_close">Fechar</string>
     <string name="action_ok">OK</string>
     <string name="action_allow">Permitir</string>
     <string name="action_not_now">Agora não</string>

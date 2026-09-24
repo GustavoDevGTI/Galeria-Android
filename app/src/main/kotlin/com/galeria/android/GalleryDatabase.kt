@@ -175,6 +175,9 @@ abstract class GalleryDao {
     @Query("SELECT uri FROM custom_media_order WHERE albumKey = :albumKey ORDER BY position")
     abstract fun customOrder(albumKey: String): List<String>
 
+    @Query("SELECT * FROM custom_media_order ORDER BY albumKey, position")
+    abstract fun allCustomOrders(): List<CustomMediaOrderEntity>
+
     @Query("DELETE FROM custom_media_order WHERE albumKey = :albumKey")
     abstract fun deleteCustomOrder(albumKey: String)
 
@@ -398,6 +401,10 @@ object GalleryCatalogStore {
 
     fun customOrder(context: Context, albumKey: String): List<String> =
         GalleryDatabase.get(context).galleryDao().customOrder(albumKey)
+
+    fun allCustomOrders(context: Context): Map<String, List<String>> =
+        GalleryDatabase.get(context).galleryDao().allCustomOrders()
+            .groupBy({ it.albumKey }, { it.uri })
 
     fun hasFreshCatalog(context: Context, includeHidden: Boolean, allFilesAccess: Boolean, maxAgeMs: Long): Boolean {
         if (isCatalogDirty(context, includeHidden)) return false
