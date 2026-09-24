@@ -102,11 +102,13 @@
     <string name="main_folder_organization_hint">Use dois dedos na grade: juntar diminui as capas; afastar aumenta as capas.</string>
     <string name="main_pin_hidden">Fixar nos ocultos</string>
     <string name="main_unpin_hidden">Desfixar dos ocultos</string>
+    <string name="main_reveal_hidden_temporarily">Exibir por 30 minutos</string>
+    <string name="main_hide_revealed_album">Ocultar novamente</string>
     <string name="main_album_count_label">%1$s (%2$d)</string>
     <string name="main_show_hidden">Exibir ocultos</string>
     <string name="main_unselect_hidden">Desmarcar ocultos</string>
     <string name="main_load_hidden">Carregar ocultos</string>
-    <string name="main_hidden_dialog_help">Carregue as pastas ocultas, marque o que deve aparecer e confirme em OK.</string>
+    <string name="main_hidden_dialog_help">Marque as pastas que devem aparecer sempre e confirme em OK. O olho exibe uma pasta oculta por 30 minutos, sem mudar sua configuração.</string>
     <string name="main_hidden_refresh_failed">Não foi possível atualizar as pastas ocultas.</string>
     <string name="main_hidden_refresh_instruction">Use o botão Carregar ocultos para procurar novas pastas.</string>
     <string name="sort_name">Nome</string>

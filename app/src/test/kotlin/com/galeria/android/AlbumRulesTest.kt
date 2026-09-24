@@ -228,10 +228,24 @@ class AlbumRulesTest {
         val visible = AlbumCatalogRules.prepare(source, setOf("ignored"), false, false)
         assertEquals(listOf("camera"), visible.map { it.key })
 
-        val allMedia = AlbumCatalogRules.prepare(source, setOf("ignored"), true, true).single()
+        val prepared = AlbumCatalogRules.prepare(source, setOf("ignored"), true, true)
+        val allMedia = prepared.first()
         assertEquals("all_media", allMedia.key)
-        assertEquals(5, allMedia.count)
-        assertEquals(500, allMedia.totalSize)
+        assertEquals(3, allMedia.count)
+        assertEquals(300, allMedia.totalSize)
+        assertEquals(listOf("all_media", "private"), prepared.map { it.key })
+    }
+
+    @Test
+    fun temporaryHiddenAlbumAppearsSeparatelyWithoutJoiningAllMedia() {
+        val source = listOf(
+            AlbumItem("camera", "Camera", 3, null, 30, 10, 300, "DCIM/Camera/"),
+            AlbumItem("secret", "Secret", 2, null, 20, 15, 200, "Pictures/Secret/")
+        )
+        val prepared = AlbumCatalogRules.prepare(source, setOf("secret"), false, true, setOf("secret"))
+        assertEquals(listOf("all_media", "secret"), prepared.map { it.key })
+        assertEquals(3, prepared.first().count)
+        assertEquals(2, prepared.last().count)
     }
 
     @Test

@@ -213,7 +213,7 @@ object VirtualAlbumRules {
         hiddenKeys: Set<String> = emptySet()
     ): List<MediaItem> = when (albumKey) {
         RECENT_KEY -> source.filterNot { isHiddenMedia(it, hiddenKeys) }
-        "all_media", null -> source
+        "all_media", null -> source.filterNot { isHiddenMedia(it, hiddenKeys) }
         FAVORITES_KEY -> {
             val favoriteKeys = favoriteUris.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
             source.filter {
@@ -304,30 +304,35 @@ object AlbumCatalogRules {
         source: List<AlbumItem>,
         hiddenKeys: Set<String>,
         includeHidden: Boolean,
-        searchAllFiles: Boolean
+        searchAllFiles: Boolean,
+        temporarilyVisibleKeys: Set<String> = emptySet()
     ): List<AlbumItem> {
         val visible = source.filter { album ->
-            !hiddenKeys.contains(album.key) &&
-                (includeHidden || !AlbumRules.isHidden(album.path, album.key))
+            (album.key in temporarilyVisibleKeys || album.key !in hiddenKeys) &&
+                (album.key in temporarilyVisibleKeys || includeHidden || !AlbumRules.isHidden(album.path, album.key))
         }
         if (!searchAllFiles) return visible
-        if (visible.isEmpty()) return emptyList()
+        val isolated = visible.filter { album ->
+            album.key in hiddenKeys || AlbumRules.isHidden(album.path, album.key)
+        }
+        val publicAlbums = visible - isolated.toSet()
+        if (publicAlbums.isEmpty()) return isolated
 
-        val latestAlbum = visible.maxByOrNull { it.latestDate }
+        val latestAlbum = publicAlbums.maxByOrNull { it.latestDate }
         val latest = latestAlbum?.latestDate ?: 0L
-        val first = visible.asSequence().map { it.firstDate }.filter { it > 0L }.minOrNull() ?: latest
+        val first = publicAlbums.asSequence().map { it.firstDate }.filter { it > 0L }.minOrNull() ?: latest
         return listOf(
             AlbumItem(
                 "all_media",
                 "Todos os arquivos",
-                visible.sumOf { it.count },
+                publicAlbums.sumOf { it.count },
                 latestAlbum?.cover,
                 latest,
                 first,
-                visible.sumOf { max(0L, it.totalSize) },
+                publicAlbums.sumOf { max(0L, it.totalSize) },
                 ""
             )
-        )
+        ) + isolated
     }
 }
 

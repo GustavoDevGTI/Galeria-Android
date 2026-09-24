@@ -4,6 +4,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.view.View
@@ -19,6 +21,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.Q)
@@ -61,16 +65,30 @@ class PlaybackResumeInstrumentedTest {
                 scenario.moveToState(Lifecycle.State.CREATED)
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 val progressValues = mutableSetOf<Int>()
-                waitUntil {
-                    var advancing = false
-                    scenario.onActivity { activity ->
-                        val progress = requireNotNull(find<SeekBar>(activity.window.decorView)).progress
-                        val player = requireNotNull(find<PlayerView>(activity.window.decorView)).player
-                        if (player?.isPlaying == true) progressValues.add(progress)
-                        advancing = progressValues.size >= 3
+                val advanced = CountDownLatch(1)
+                var lastState = "not sampled"
+                scenario.onActivity { activity ->
+                    val handler = Handler(Looper.getMainLooper())
+                    val deadline = SystemClock.uptimeMillis() + 10_000L
+                    val sample = object : Runnable {
+                        override fun run() {
+                            val progress = requireNotNull(find<SeekBar>(activity.window.decorView)).progress
+                            val player = requireNotNull(find<PlayerView>(activity.window.decorView)).player
+                            lastState = "playing=${player?.isPlaying}, ready=${player?.playWhenReady}, " +
+                                "state=${player?.playbackState}, position=${player?.currentPosition}, " +
+                                "duration=${player?.duration}, progress=$progress"
+                            if (player?.isPlaying == true) progressValues.add(progress)
+                            if (progressValues.size >= 3 || SystemClock.uptimeMillis() >= deadline) {
+                                advanced.countDown()
+                            } else {
+                                handler.postDelayed(this, 150L)
+                            }
+                        }
                     }
-                    advancing
+                    handler.post(sample)
                 }
+                assertTrue("Retomada sem avanço: $lastState; valores=$progressValues",
+                    advanced.await(12, TimeUnit.SECONDS) && progressValues.size >= 3)
             }
         } finally {
             resolver.delete(uri, null, null)

@@ -48,6 +48,10 @@ class AlbumMediaCatalogController(context: Context) {
         val request = ++generation
         pagingJob?.cancel()
         if (AlbumMediaRules.shouldUsePaging(options.albumKey, options.groupMode, options.selectionMode)) {
+            val hiddenKeys = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+                .getStringSet("hidden_folder_keys", emptySet()).orEmpty().toSet()
+            val aggregateAlbum = options.albumKey == null || options.albumKey == "all_media" ||
+                options.albumKey == VirtualAlbumRules.RECENT_KEY
             pagingJob = scope.launch {
                 if (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)) {
                     withContext(Dispatchers.IO) {
@@ -70,7 +74,8 @@ class AlbumMediaCatalogController(context: Context) {
                     )
                 ).map { page ->
                     page.filter { item ->
-                        MediaFilterRules.matches(item.name, item.mimeType, options.filterOptions)
+                        MediaFilterRules.matches(item.name, item.mimeType, options.filterOptions) &&
+                            (!aggregateAlbum || !VirtualAlbumRules.isHiddenMedia(item, hiddenKeys))
                     }
                 }.collectLatest { page ->
                     if (!closed && request == generation) onPage(page)

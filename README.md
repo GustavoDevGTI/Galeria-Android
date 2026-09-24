@@ -61,6 +61,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Pinça horizontal dentro dos álbuns para alternar entre 2 e 8 colunas, preservando a posição e a escolha nas próximas aberturas
 - Ajuste global de espaçamento da grade
 - Área de itens ocultos com gerenciamento de exibição/ocultação de pastas
+- Olho no gerenciamento de ocultos revela um álbum na página inicial por até 30 minutos, inclusive com o app em segundo plano; ao fechar o app, a revelação acaba. O álbum continua oculto nas coleções agregadas.
 - Fixação de pastas no gerenciamento de ocultos para manter pastas importantes no topo e forçar varredura dos ocultos quando necessário
 - Submenu de ocultos limitado aos álbuns visíveis ou já exibidos anteriormente; novos álbuns ocultos só são procurados pelo botão `Carregar ocultos`
 - Menus e submenus acompanham a cor do tema escolhido, mantendo contraste adequado em temas claros e escuros
@@ -282,9 +283,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada lançamento posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.56**.
+A linha começou em `v0.8.0`. Cada lançamento posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.58**.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.56 usa o código `8056`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.58 usa o código `8058`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -345,6 +346,8 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.54`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.54) | 21/09/2026 | Gestos e seleção da grade, ordenação consistente e submenus de escolha imediata |
 | [`v0.8.55`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.55) | 22/09/2026 | Coleções virtuais de Recentes e Favoritos, Lixeira e álbuns essenciais no topo |
 | [`v0.8.56`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.56) | 24/09/2026 | Ocultação coerente nas coleções e Lixeira, álbuns fixados, seleção por arraste e ordenação simplificada |
+| [`v0.8.57`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.57) | 24/09/2026 | Capas personalizadas, miniaturas de vídeos e metadados reorganizados |
+| [`v0.8.58`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.58) | 24/09/2026 | Revelação temporária e isolada de álbuns ocultos |
 
 ## Relatório comparativo de desempenho
 
@@ -360,7 +363,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.56](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.56/Galeria-Android-versao-0.8.56.apk)
+[Baixar Galeria Android - versão 0.8.58](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.58/Galeria-Android-versao-0.8.58.apk)
 
 Build padrão do Gradle:
 
@@ -371,10 +374,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.56.apk
+Galeria-Android-versao-0.8.58.apk
 ```
 
-O APK 0.8.56 usa a mesma chave permanente das versões recentes. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela chave permanente serão compatíveis entre si.
+O APK 0.8.58 usa a mesma chave permanente das versões recentes. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela chave permanente serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 

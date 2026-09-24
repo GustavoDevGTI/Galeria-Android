@@ -139,12 +139,13 @@ class AlbumMediaHeaderInstrumentedTest {
         try {
             ActivityScenario.launch<AlbumMediaActivity>(intent).use {
                 onView(withContentDescription("Mais opções")).perform(click())
-                onView(withText("Modo cinema")).check(matches(isDisplayed())).perform(click())
+                waitForView { onView(withText("Modo cinema")).check(matches(isDisplayed())) }
+                onView(withText("Modo cinema")).perform(click())
                 waitForView {
                     assertTrue(CinemaModePreferences(prefs).isEnabled(albumKey))
                 }
                 onView(withContentDescription("Mais opções")).perform(click())
-                onView(withText("Modo cinema")).check(matches(isDisplayed()))
+                waitForView { onView(withText("Modo cinema")).check(matches(isDisplayed())) }
                 androidx.test.espresso.Espresso.pressBack()
             }
         } finally {

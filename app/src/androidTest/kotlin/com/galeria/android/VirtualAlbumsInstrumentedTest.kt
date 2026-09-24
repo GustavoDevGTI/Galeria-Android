@@ -12,6 +12,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.longClick
 import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withText
@@ -115,9 +116,15 @@ class VirtualAlbumsInstrumentedTest {
                 putExtra("album_name", "Lixeira")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            ActivityScenario.launch<AlbumMediaActivity>(intent).use {
+            ActivityScenario.launch<AlbumMediaActivity>(intent).use { scenario ->
                 waitForView { onView(withContentDescription(name)).check(matches(isDisplayed())) }
                 onView(withContentDescription(name)).perform(longClick())
+                scenario.onActivity { activity ->
+                    val field = AlbumMediaActivity::class.java.getDeclaredField("adapter").apply { isAccessible = true }
+                    val adapter = field.get(activity) as MediaRecyclerAdapter
+                    assertTrue("Long click did not enter selection; count=${adapter.selectedCount()}, mode=${adapter.isSelectionMode()}",
+                        adapter.isSelectionMode() && adapter.selectedCount() > 0)
+                }
                 waitForView { onView(withText(R.string.action_restore)).check(matches(isDisplayed())) }
                 waitForView { onView(withText(R.string.action_delete_permanently)).check(matches(isDisplayed())) }
             }
@@ -168,6 +175,18 @@ class VirtualAlbumsInstrumentedTest {
             assertFalse(collections.any { it.key == VirtualAlbumRules.FAVORITES_KEY })
             assertFalse(VirtualAlbumRules.mediaForAlbum(source, VirtualAlbumRules.RECENT_KEY, emptySet(), hiddenKeys)
                 .any { MediaIdentityRules.sameUri(it.uri.toString(), hiddenUri.toString()) })
+            assertFalse(VirtualAlbumRules.mediaForAlbum(source, "all_media", emptySet(), hiddenKeys)
+                .any { MediaIdentityRules.sameUri(it.uri.toString(), hiddenUri.toString()) })
+            assertFalse(MediaStoreRepository.loadMediaForAlbum(context, "all_media")
+                .any { MediaIdentityRules.sameUri(it.uri.toString(), hiddenUri.toString()) })
+            ActivityScenario.launch<AlbumMediaActivity>(Intent(context, AlbumMediaActivity::class.java).apply {
+                putExtra("album_key", "all_media")
+                putExtra("album_name", "Todos os arquivos")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }).use {
+                waitForView { onView(withContentDescription(visible.name)).check(matches(isDisplayed())) }
+                onView(withContentDescription(hidden.name)).check(doesNotExist())
+            }
 
             resolver.update(hiddenUri, ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, 1) }, null, null)
             assertFalse(MediaStoreRepository.loadMediaForAlbum(context, VirtualAlbumRules.TRASH_KEY)

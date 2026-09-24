@@ -1,6 +1,7 @@
 package com.galeria.android
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.Context
 import android.provider.MediaStore
 import android.view.Gravity
@@ -14,6 +15,7 @@ import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
+import androidx.test.espresso.matcher.ViewMatchers.withParent
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
@@ -23,7 +25,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.hamcrest.Matchers.containsString
+import org.hamcrest.Matchers.allOf
+import androidx.test.espresso.matcher.ViewMatchers.hasDescendant
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -140,6 +145,63 @@ class HiddenAlbumDialogInstrumentedTest {
                     kotlin.math.abs(hiddenControlLocation[1] - loadControlLocation[1]) <= Ui.dp(context, 8)
                 )
             }
+
+            val revealName = "GaleriaRevealTest${System.nanoTime()}"
+            val revealUri = requireNotNull(context.contentResolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "reveal.png")
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/$revealName/")
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+            ))
+            try {
+                context.contentResolver.openOutputStream(revealUri)?.use { it.write(byteArrayOf(1, 2, 3, 4)) }
+                context.contentResolver.update(revealUri, ContentValues().apply {
+                    put(MediaStore.Images.Media.IS_PENDING, 0)
+                }, null, null)
+                MediaStoreRepository.invalidateCache()
+                val revealKey = MediaStoreRepository.refreshMedia(context, force = true)
+                    .first { MediaIdentityRules.sameUri(it.uri.toString(), revealUri.toString()) }.albumKey
+                prefs.edit()
+                    .putStringSet(PREF_HIDDEN_KEYS, setOf(revealKey, "hidden-known", "hidden-never"))
+                    .putStringSet(PREF_EVER_VISIBLE,
+                        prefs.getStringSet(PREF_EVER_VISIBLE, emptySet()).orEmpty() + revealKey)
+                    .commit()
+                ActivityScenario.launch(MainActivity::class.java).use {
+                    onView(withContentDescription("Mais opções")).perform(click())
+                    onView(withText("Exibir/ocultar pastas")).perform(clickClickableAncestor())
+                    waitUntilDialogDisplayedContaining(revealName)
+                    onView(allOf(withContentDescription("Exibir por 30 minutos"),
+                        withParent(hasDescendant(withText(containsString(revealName))))))
+                        .inRoot(isDialog()).perform(click())
+                    waitUntilDisplayedContaining(revealName)
+                    assertTrue(prefs.getStringSet(PREF_HIDDEN_KEYS, emptySet()).orEmpty().contains(revealKey))
+
+                    onView(withContentDescription("Mais opções")).perform(click())
+                    onView(withText("Exibir/ocultar pastas")).perform(clickClickableAncestor())
+                    waitUntilDialogDisplayedContaining(revealName)
+                    onView(allOf(withContentDescription("Ocultar novamente"),
+                        withParent(hasDescendant(withText(containsString(revealName))))))
+                        .inRoot(isDialog()).perform(click())
+                    waitForView {
+                        onView(withText(containsString(revealName))).check(doesNotExist())
+                    }
+                    onView(withContentDescription("Mais opções")).perform(click())
+                    onView(withText("Exibir/ocultar pastas")).perform(clickClickableAncestor())
+                    waitUntilDialogDisplayedContaining(revealName)
+                    onView(allOf(withContentDescription("Exibir por 30 minutos"),
+                        withParent(hasDescendant(withText(containsString(revealName))))))
+                        .inRoot(isDialog()).perform(click())
+                    waitUntilDisplayedContaining(revealName)
+                }
+                assertFalse(TemporaryAlbumVisibility.activeKeys().contains(revealKey))
+            } finally {
+                context.contentResolver.delete(revealUri, null, null)
+                MediaStoreRepository.invalidateCache()
+                GalleryCatalogStore.markCatalogDirty(context)
+            }
         } finally {
             io {
                 dao.replaceMedia(
@@ -165,6 +227,8 @@ class HiddenAlbumDialogInstrumentedTest {
             } else {
                 catalogPrefs.edit().putString(PREF_MEDIA_STORE_VERSION_VISIBLE, originalMediaStoreVersion).commit()
             }
+            MediaStoreRepository.invalidateCache()
+            GalleryCatalogStore.markCatalogDirty(context)
         }
     }
 

@@ -20,6 +20,7 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import android.view.animation.OvershootInterpolator
 import android.view.inputmethod.InputMethodManager
 import android.widget.BaseAdapter
 import android.widget.CheckBox
@@ -82,7 +83,13 @@ class MainActivity : ComponentActivity() {
     private var deferredCatalogRefreshPending = false
     private var pendingAlbumSubmission: PendingAlbumSubmission? = null
     private var forceAlbumCoverRefreshOnNextSubmit = false
+    private var visibilityDialogAdapter: BaseAdapter? = null
     private val mediaRefreshHandler = Handler(Looper.getMainLooper())
+    private val revealExpiryRunnable = Runnable {
+        visibilityDialogAdapter?.notifyDataSetChanged()
+        if (mainScreenResumed && accessCoordinator.hasMediaLibraryAccess()) loadAlbums()
+        scheduleRevealExpiry()
+    }
     private val mediaRefreshRunnable = Runnable {
         mediaObserverRefreshScheduled = false
         if (!isFinishing && mainScreenResumed && hasWindowFocus() && accessCoordinator.hasMediaLibraryAccess()) {
@@ -101,6 +108,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) TemporaryAlbumVisibility.clear()
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         Ui.applySystemBars(this)
         accessCoordinator = MainMediaAccessCoordinator(this, prefs)
@@ -114,6 +122,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         mainScreenResumed = true
+        scheduleRevealExpiry()
         if (firstResume) {
             firstResume = false
             return
@@ -149,6 +158,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         mainScreenResumed = false
+        mediaRefreshHandler.removeCallbacks(revealExpiryRunnable)
         if (mediaObserverRefreshScheduled) mediaObserverRefreshPending = true
         mediaObserverRefreshScheduled = false
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
@@ -158,6 +168,8 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
+        mediaRefreshHandler.removeCallbacks(revealExpiryRunnable)
+        if (!isChangingConfigurations) TemporaryAlbumVisibility.clear()
         try {
             contentResolver.unregisterContentObserver(mediaObserver)
         } catch (_: Exception) {
@@ -609,8 +621,10 @@ class MainActivity : ComponentActivity() {
             keys.add(album.key)
         }
         val items = ArrayList<MediaItem>()
+        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
         for (item in MediaStoreRepository.loadMedia(applicationContext, shouldIncludeHiddenFilesystem())) {
-            if ((allMedia || keys.contains(item.albumKey)) && matchesMediaFilter(item)) {
+            if ((keys.contains(item.albumKey) || (allMedia && !VirtualAlbumRules.isHiddenMedia(item, hiddenKeys))) &&
+                matchesMediaFilter(item)) {
                 items.add(item)
             }
         }
@@ -638,7 +652,9 @@ class MainActivity : ComponentActivity() {
                     showPortraits
                 ),
                 sortMode = sortMode,
-                sortDescending = sortDesc
+                sortDescending = sortDesc,
+                temporarilyVisibleKeys = TemporaryAlbumVisibility.activeKeys(),
+                showNaturallyHidden = showHiddenFolders || prefs.getBoolean("always_show_hidden", false)
             ),
             onAlbums = { albums, currentQuery ->
                 if (!isFinishing) showAlbumsProgressively(albums, currentQuery)
@@ -683,6 +699,7 @@ class MainActivity : ComponentActivity() {
     private fun submitAlbumsNow(albums: List<AlbumItem>, query: String) {
         rememberVisibleFolderKeys(albums)
         adapter.setPinnedKeys(prefs.getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty())
+        adapter.setTemporarilyVisibleKeys(TemporaryAlbumVisibility.activeKeys())
         adapter.submit(albums, query)
         if (forceAlbumCoverRefreshOnNextSubmit) {
             forceAlbumCoverRefreshOnNextSubmit = false
@@ -694,7 +711,10 @@ class MainActivity : ComponentActivity() {
 
     private fun rememberVisibleFolderKeys(albums: Collection<AlbumItem>) {
         val previous = prefs.getStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet()) ?: HashSet()
-        val updated = HiddenAlbumDialogRules.rememberVisible(previous, albums.map { it.key })
+        val temporaryKeys = TemporaryAlbumVisibility.activeKeys()
+        val updated = HiddenAlbumDialogRules.rememberVisible(
+            previous, albums.map { it.key }.filterNot { it in temporaryKeys }
+        )
         if (updated != previous) {
             prefs.edit().putStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet(updated)).apply()
         }
@@ -858,9 +878,13 @@ class MainActivity : ComponentActivity() {
         val everVisibleKeys = HashSet(
             prefs.getStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet()) ?: HashSet()
         )
-        everVisibleKeys.addAll(albums.map { it.key }.filterNot(VirtualAlbumRules::isVirtual))
+        val temporaryKeys = TemporaryAlbumVisibility.activeKeys()
+        everVisibleKeys.addAll(albums.map { it.key }.filterNot {
+            VirtualAlbumRules.isVirtual(it) || it in temporaryKeys
+        })
         val mutableAlbums = albums.filterNot { VirtualAlbumRules.isVirtual(it.key) }.toMutableList()
         val checkedKeys = HashSet<String>()
+        lateinit var dialog: AlertDialog
         val dialogBg = Ui.menuSurface(this)
         val dialogRow = Ui.blend(dialogBg, Color.WHITE, 0.04f)
         val dialogText = Ui.menuText(this)
@@ -940,17 +964,36 @@ class MainActivity : ComponentActivity() {
                         LinearLayout.LayoutParams(Ui.dp(this@MainActivity, 44), Ui.dp(this@MainActivity, 44))
                     )
                     addView(
+                        ImageButton(this@MainActivity).apply {
+                            tag = "eye"
+                            setImageResource(R.drawable.ic_eye_off)
+                            setBackgroundColor(Color.TRANSPARENT)
+                            scaleType = ImageView.ScaleType.CENTER
+                            contentDescription = getString(R.string.main_reveal_hidden_temporarily)
+                            setPadding(
+                                Ui.dp(this@MainActivity, 8),
+                                Ui.dp(this@MainActivity, 8),
+                                Ui.dp(this@MainActivity, 8),
+                                Ui.dp(this@MainActivity, 8)
+                            )
+                        },
+                        LinearLayout.LayoutParams(Ui.dp(this@MainActivity, 44), Ui.dp(this@MainActivity, 44))
+                    )
+                    addView(
                         CheckBox(this@MainActivity).apply {
                             tag = "check"
                             buttonTintList = android.content.res.ColorStateList.valueOf(dialogText)
                             isClickable = false
                             isFocusable = false
-                        }
+                            gravity = Gravity.CENTER
+                        },
+                        LinearLayout.LayoutParams(Ui.dp(this@MainActivity, 44), Ui.dp(this@MainActivity, 44))
                     )
                 }
                 val album = getItem(position)
                 val label = row.findViewWithTag<TextView>("label")
                 val pin = row.findViewWithTag<ImageButton>("pin")
+                val eye = row.findViewWithTag<ImageButton>("eye")
                 val check = row.findViewWithTag<CheckBox>("check")
                 val pinned = pinnedKeys.contains(album.key)
                 label.text = getString(R.string.main_album_count_label, album.name, album.count)
@@ -967,12 +1010,45 @@ class MainActivity : ComponentActivity() {
                     } else {
                         pinnedKeys.add(album.key)
                     }
+                    val nowPinned = pinnedKeys.contains(album.key)
+                    pin.setImageResource(if (nowPinned) R.drawable.ic_pin_filled else R.drawable.ic_pin)
+                    pin.setColorFilter(if (nowPinned) dialogText else dialogMuted)
+                    pin.alpha = if (nowPinned) 1f else 0.48f
+                    animateHiddenControl(pin)
                     savePinnedFolders()
                     sortVisibilityAlbums()
-                    notifyDataSetChanged()
-                    if (pinnedKeys.contains(album.key)) {
-                        listView.smoothScrollToPosition(0)
+                    pin.postDelayed({
+                        notifyDataSetChanged()
+                        if (nowPinned) listView.smoothScrollToPosition(0)
+                    }, 190L)
+                }
+                val temporarilyRevealed = album.key in TemporaryAlbumVisibility.activeKeys()
+                eye.visibility = if (album.key !in checkedKeys &&
+                    (album.key in hiddenKeys || isHiddenAlbum(album))) View.VISIBLE else View.INVISIBLE
+                eye.setImageResource(if (temporarilyRevealed) R.drawable.ic_eye else R.drawable.ic_eye_off)
+                eye.setColorFilter(if (temporarilyRevealed) dialogText else dialogMuted)
+                eye.alpha = if (temporarilyRevealed) 1f else 0.65f
+                eye.contentDescription = getString(
+                    if (temporarilyRevealed) R.string.main_hide_revealed_album
+                    else R.string.main_reveal_hidden_temporarily
+                )
+                eye.setOnClickListener {
+                    if (isHiddenAlbum(album) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                        !MediaActions.hasAllFilesAccess(this@MainActivity)) {
+                        Ui.toast(this@MainActivity, getString(R.string.access_hidden_folders_required))
+                        accessCoordinator.ensureFullAccess(true)
+                        return@setOnClickListener
                     }
+                    val revealed = TemporaryAlbumVisibility.toggle(album.key)
+                    eye.setImageResource(if (revealed) R.drawable.ic_eye else R.drawable.ic_eye_off)
+                    eye.setColorFilter(if (revealed) dialogText else dialogMuted)
+                    eye.alpha = if (revealed) 1f else 0.65f
+                    animateHiddenControl(eye)
+                    scheduleRevealExpiry()
+                    eye.postDelayed({
+                        if (dialog.isShowing) dialog.dismiss()
+                        if (!isFinishing) loadAlbums()
+                    }, 190L)
                 }
                 check.isChecked = checkedKeys.contains(album.key)
                 row.alpha = if (check.isChecked) 1f else 0.56f
@@ -983,12 +1059,15 @@ class MainActivity : ComponentActivity() {
                     } else {
                         checkedKeys.add(album.key)
                     }
+                    check.isChecked = checkedKeys.contains(album.key)
+                    animateHiddenControl(check)
                     notifyDataSetChanged()
                 }
                 return row
             }
         }
         listView.adapter = listAdapter
+        visibilityDialogAdapter = listAdapter
         val dialogListHeight = min(
             Ui.dp(this, 248),
             (resources.displayMetrics.heightPixels * 0.29f).toInt()
@@ -1099,12 +1178,12 @@ class MainActivity : ComponentActivity() {
             renderAlbums()
         }
 
-        lateinit var dialog: AlertDialog
         fun applyFolderVisibility() {
             val nextHidden = HashSet(hiddenKeys)
             for (album in mutableAlbums) {
                 if (checkedKeys.contains(album.key)) {
                     nextHidden.remove(album.key)
+                    TemporaryAlbumVisibility.hide(album.key)
                 } else {
                     nextHidden.add(album.key)
                 }
@@ -1117,6 +1196,7 @@ class MainActivity : ComponentActivity() {
                 .putBoolean("show_hidden_folders", showHiddenFolders)
                 .apply()
             loadAlbums()
+            scheduleRevealExpiry()
             dialog.dismiss()
         }
 
@@ -1239,6 +1319,7 @@ class MainActivity : ComponentActivity() {
         dialog = AlertDialog.Builder(this)
             .setView(panel)
             .create()
+        dialog.setOnDismissListener { visibilityDialogAdapter = null }
         Ui.showCenteredPanel(dialog, fullHeight = true)
     }
 
@@ -1342,8 +1423,25 @@ class MainActivity : ComponentActivity() {
 
     private fun shouldIncludeHiddenFilesystem(): Boolean =
         accessCoordinator.includeHiddenFilesystem(
-            showHiddenFolders || prefs.getBoolean("always_show_hidden", false)
+            showHiddenFolders || prefs.getBoolean("always_show_hidden", false) ||
+                TemporaryAlbumVisibility.activeKeys().isNotEmpty()
         )
+
+    private fun scheduleRevealExpiry() {
+        mediaRefreshHandler.removeCallbacks(revealExpiryRunnable)
+        if (!mainScreenResumed) return
+        TemporaryAlbumVisibility.nextExpiryDelay()?.let {
+            mediaRefreshHandler.postDelayed(revealExpiryRunnable, it)
+        }
+    }
+
+    private fun animateHiddenControl(view: View) {
+        view.animate().cancel()
+        view.scaleX = 0.76f
+        view.scaleY = 0.76f
+        view.animate().scaleX(1f).scaleY(1f).setDuration(190)
+            .setInterpolator(OvershootInterpolator(1.5f)).start()
+    }
 
     companion object {
         private const val REQ_BATCH_DELETE = 10

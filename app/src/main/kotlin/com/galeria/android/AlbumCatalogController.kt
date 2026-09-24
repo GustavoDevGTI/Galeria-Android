@@ -16,7 +16,9 @@ data class AlbumCatalogOptions(
     val query: String,
     val filterOptions: MediaFilterOptions,
     val sortMode: String,
-    val sortDescending: Boolean
+    val sortDescending: Boolean,
+    val temporarilyVisibleKeys: Set<String> = emptySet(),
+    val showNaturallyHidden: Boolean = includeHidden
 ) {
     fun includesAllMediaTypes(): Boolean =
         (filterOptions.showImages || filterOptions.showPortraits) &&
@@ -197,8 +199,9 @@ class AlbumCatalogController(context: Context) {
         return AlbumCatalogRules.prepare(
             source,
             options.hiddenKeys,
-            options.includeHidden,
-            options.searchAllFiles
+            options.showNaturallyHidden,
+            options.searchAllFiles,
+            options.temporarilyVisibleKeys
         )
     }
 
