@@ -82,11 +82,9 @@ class AlbumMediaActivity : ComponentActivity() {
     private lateinit var selectionBar: LinearLayout
     private lateinit var selectionActions: LinearLayout
     private lateinit var selectionActionDock: LinearLayout
-    private lateinit var previewSelectionAction: LinearLayout
     private lateinit var selectAllText: TextView
     private var spacingDecoration: RecyclerView.ItemDecoration? = null
     private var dragMoved = false
-    private var previewSelectionMode = false
     private var showImages = true
     private var showVideos = true
     private var showGifs = true
@@ -359,17 +357,17 @@ class AlbumMediaActivity : ComponentActivity() {
                 if (position !in 0 until adapter.getCount()) return
                 if (!dragging) {
                     if (adapter.isSelectionMode()) {
-                        if (previewSelectionMode) {
-                            previewSelectionMode = false
-                            updatePreviewSelectionAction()
-                            openDetail(adapter.getItem(position), position)
-                        } else {
-                            adapter.toggleSelection(position)
-                            updateSelectionUi()
-                        }
+                        adapter.toggleSelection(position)
+                        updateSelectionUi()
                     } else {
                         openDetail(adapter.getItem(position), position)
                     }
+                }
+            }
+
+            override fun onMediaPreview(position: Int) {
+                if (position in 0 until adapter.getCount() && adapter.isSelected(position)) {
+                    openDetail(adapter.getItem(position), position)
                 }
             }
 
@@ -380,8 +378,7 @@ class AlbumMediaActivity : ComponentActivity() {
                 if (adapter.isPagingMode()) {
                     if (!adapter.isSelectionMode()) enterSelectionMode()
                     if (!adapter.isSelected(position)) adapter.selectPosition(position)
-                    selectionDragActive = !wasSelectionMode || !wasSelected
-                    selectionDragPosition = position
+                    if (!wasSelectionMode || !wasSelected) beginSelectionDrag(position)
                     updateSelectionUi()
                     view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
                     return true
@@ -389,16 +386,14 @@ class AlbumMediaActivity : ComponentActivity() {
                 if (!adapter.isSelectionMode()) {
                     enterSelectionMode()
                     adapter.selectPosition(position)
-                    selectionDragActive = true
-                    selectionDragPosition = position
+                    beginSelectionDrag(position)
                     updateSelectionUi()
                     view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
                     return true
                 }
                 if (!adapter.isSelected(position)) {
                     adapter.selectPosition(position)
-                    selectionDragActive = true
-                    selectionDragPosition = position
+                    beginSelectionDrag(position)
                     updateSelectionUi()
                     view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
                     return true
@@ -515,13 +510,6 @@ class AlbumMediaActivity : ComponentActivity() {
         }
         selectionActionDock = Ui.selectionActionDock(this)
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        previewSelectionAction = Ui.selectionAction(
-            this,
-            R.drawable.ic_eye,
-            getString(R.string.action_view_media),
-            ::requestSelectedMediaPreview
-        )
-        Ui.addSelectionActionToDock(selectionActionDock, previewSelectionAction)
         if (albumKey == VirtualAlbumRules.TRASH_KEY) {
             addSelectionAction(R.drawable.ic_restore, getString(R.string.action_restore)) { restoreSelected() }
             addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete_permanently)) { confirmDeleteSelected() }
@@ -560,9 +548,14 @@ class AlbumMediaActivity : ComponentActivity() {
         val random = getString(R.string.album_random)
         val spacing = getString(R.string.album_grid_spacing)
         val cinemaMode = getString(R.string.album_cinema_mode)
+        val trashVisibility = getString(
+            if (prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)) R.string.trash_hide_hidden
+            else R.string.trash_show_hidden
+        )
         val options = buildList {
             addAll(listOf(filter, group, sort, viewMode))
             if (albumKey != VirtualAlbumRules.TRASH_KEY) addAll(listOf(createFolder, random))
+            if (albumKey == VirtualAlbumRules.TRASH_KEY) add(trashVisibility)
             add(spacing)
             if (CinemaModeRules.supportsAlbum(albumKey)) add(cinemaMode)
         }
@@ -578,6 +571,11 @@ class AlbumMediaActivity : ComponentActivity() {
                 viewMode -> showViewModeDialog()
                 createFolder -> showCreateFolderDialog()
                 random -> startRandomPlayback()
+                trashVisibility -> {
+                    val showHidden = !prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
+                    prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, showHidden).apply()
+                    loadMedia(true)
+                }
                 spacing -> showSpacingDialog()
                 cinemaMode -> toggleAlbumCinemaMode()
             }
@@ -731,9 +729,9 @@ class AlbumMediaActivity : ComponentActivity() {
 
     private fun exitSelectionMode() {
         val wasSelecting = adapter.isSelectionMode()
-        previewSelectionMode = false
         selectionDragActive = false
         selectionDragPosition = RecyclerView.NO_POSITION
+        if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
         adapter.clearSelection()
         updateSelectionUi()
         if (wasSelecting && groupMode == GROUP_NONE) {
@@ -746,7 +744,6 @@ class AlbumMediaActivity : ComponentActivity() {
             adapter.setSelectionMode(false)
         }
         val active = adapter.isSelectionMode() && adapter.selectedCount() > 0
-        if (!active) previewSelectionMode = false
         selectionBar.visibility = View.GONE
         selectionActions.visibility = if (active) View.VISIBLE else View.GONE
         selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
@@ -761,32 +758,13 @@ class AlbumMediaActivity : ComponentActivity() {
             hideKeyboard()
         }
         updateSearchPresentation()
-        updatePreviewSelectionAction()
     }
 
-    private fun requestSelectedMediaPreview() {
-        val selected = adapter.selectedItems()
-        if (selected.isEmpty()) return
-        if (selected.size == 1) {
-            val position = adapter.positionOf(selected.first().uri.toString())
-            if (position >= 0) openDetail(selected.first(), position)
-            return
-        }
-        previewSelectionMode = !previewSelectionMode
-        updatePreviewSelectionAction()
-        if (previewSelectionMode) {
-            Ui.toast(this, getString(R.string.album_choose_media_to_view))
-        }
-    }
-
-    private fun updatePreviewSelectionAction() {
-        if (!::previewSelectionAction.isInitialized) return
-        previewSelectionAction.isSelected = previewSelectionMode
-        previewSelectionAction.background = Ui.actionFeedback(
-            this,
-            Ui.selectionActionIcon(this),
-            selected = previewSelectionMode
-        )
+    private fun beginSelectionDrag(position: Int) {
+        selectionDragActive = true
+        selectionDragPosition = position
+        swipeRefresh.isEnabled = false
+        grid.parent?.requestDisallowInterceptTouchEvent(true)
     }
 
     private fun handleToolbarBack() {
@@ -1063,6 +1041,10 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun showMedia(items: List<MediaItem>, query: String, targetPosition: Int) {
+        if (albumKey == VirtualAlbumRules.TRASH_KEY && items.isEmpty() && query.isBlank()) {
+            finish()
+            return
+        }
         // Drop the temporary exclusion once a fresh delivery confirms the item has left.
         // If it is later moved back into this folder it must become visible again.
         completedRemovalUris.retainAll(items.mapTo(HashSet()) { MediaIdentityRules.canonicalKey(it.uri.toString()) })
@@ -1147,6 +1129,8 @@ class AlbumMediaActivity : ComponentActivity() {
                 if (selectionDragActive) {
                     selectionDragActive = false
                     selectionDragPosition = RecyclerView.NO_POSITION
+                    grid.parent?.requestDisallowInterceptTouchEvent(false)
+                    swipeRefresh.isEnabled = true
                     updateSelectionUi()
                 } else if (dragging) {
                     finishDrag()

@@ -29,8 +29,8 @@ android {
         applicationId = "com.galeria.android"
         minSdk 23
         targetSdk 37
-        versionCode = 8055
-        versionName = "0.8.55"
+        versionCode = 8056
+        versionName = "0.8.56"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 

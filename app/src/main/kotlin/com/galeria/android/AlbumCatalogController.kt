@@ -112,7 +112,9 @@ class AlbumCatalogController(context: Context) {
     ) {
         val sorted = albums.toMutableList()
         AlbumRules.sort(sorted, options.sortMode, options.sortDescending)
-        val ordered = VirtualAlbumRules.pinEssential(sorted)
+        val pinned = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+            .getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty()
+        val ordered = VirtualAlbumRules.pinEssential(sorted, pinned)
         mainHandler.post {
             if (!closed && request == generation) onAlbums(ordered, options.query)
         }
@@ -131,7 +133,8 @@ class AlbumCatalogController(context: Context) {
         options: AlbumCatalogOptions
     ): List<AlbumItem> {
         val physical = prepareAlbums(sourceAlbums, options)
-        val favorites = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val prefs = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val favorites = prefs
             .getStringSet("favorites", emptySet()).orEmpty()
         return VirtualAlbumRules.addCollections(
             physical,
@@ -140,7 +143,9 @@ class AlbumCatalogController(context: Context) {
             MediaStoreRepository.loadTrashedMedia(appContext),
             appContext.getString(R.string.album_recent),
             appContext.getString(R.string.album_favorites),
-            appContext.getString(R.string.album_trash)
+            appContext.getString(R.string.album_trash),
+            options.hiddenKeys,
+            prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
         )
     }
 

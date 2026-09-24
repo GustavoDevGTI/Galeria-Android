@@ -131,6 +131,63 @@ class VirtualAlbumsInstrumentedTest {
         }
     }
 
+    @Test
+    fun hiddenFoldersStayOutOfRecentAndTrashUntilExplicitlyShown() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val resolver = context.contentResolver
+        val suffix = System.nanoTime()
+        val visiblePath = "Pictures/GaleriaVisible-$suffix/"
+        val hiddenPath = "Pictures/GaleriaHidden-$suffix/"
+        fun insert(path: String, name: String) = requireNotNull(resolver.insert(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, path)
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+        )).also { uri ->
+            resolver.openOutputStream(uri)?.use { it.write(byteArrayOf(1, 2, 3, 4)) }
+            resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+        }
+        val visibleUri = insert(visiblePath, "visible-$suffix.png")
+        val hiddenUri = insert(hiddenPath, "hidden-$suffix.png")
+        val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val previousHidden = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty().toSet()
+        val previousTrashVisibility = prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
+        prefs.edit().putStringSet("hidden_folder_keys", previousHidden + hiddenPath)
+            .putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false).commit()
+        try {
+            val source = MediaStoreRepository.refreshMedia(context, force = true)
+            val visible = source.first { MediaIdentityRules.sameUri(it.uri.toString(), visibleUri.toString()) }
+            val hidden = source.first { MediaIdentityRules.sameUri(it.uri.toString(), hiddenUri.toString()) }
+            val hiddenKeys = previousHidden + hiddenPath
+            val physical = AlbumCatalogRules.prepare(MediaStoreRepository.buildAlbums(listOf(visible, hidden)), hiddenKeys, false, false)
+            val collections = VirtualAlbumRules.addCollections(physical, listOf(visible, hidden), emptySet(), emptyList(), hiddenKeys = hiddenKeys)
+            assertEquals(1, collections.first { it.key == VirtualAlbumRules.RECENT_KEY }.count)
+            assertFalse(collections.any { it.key == VirtualAlbumRules.FAVORITES_KEY })
+            assertFalse(VirtualAlbumRules.mediaForAlbum(source, VirtualAlbumRules.RECENT_KEY, emptySet(), hiddenKeys)
+                .any { MediaIdentityRules.sameUri(it.uri.toString(), hiddenUri.toString()) })
+
+            resolver.update(hiddenUri, ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, 1) }, null, null)
+            assertFalse(MediaStoreRepository.loadMediaForAlbum(context, VirtualAlbumRules.TRASH_KEY)
+                .any { MediaIdentityRules.sameUri(it.uri.toString(), hiddenUri.toString()) })
+            prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, true).commit()
+            assertTrue(MediaStoreRepository.loadMediaForAlbum(context, VirtualAlbumRules.TRASH_KEY)
+                .any { MediaIdentityRules.sameUri(it.uri.toString(), hiddenUri.toString()) })
+        } finally {
+            runCatching {
+                resolver.update(hiddenUri, ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, 0) }, null, null)
+                resolver.delete(hiddenUri, null, null)
+                resolver.delete(visibleUri, null, null)
+            }
+            prefs.edit().putStringSet("hidden_folder_keys", previousHidden)
+                .putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, previousTrashVisibility).commit()
+            MediaStoreRepository.invalidateCache()
+            GalleryCatalogStore.markCatalogDirty(context)
+        }
+    }
+
     private fun waitForView(assertion: () -> Unit) {
         val deadline = System.currentTimeMillis() + 10_000L
         var failure: Throwable? = null

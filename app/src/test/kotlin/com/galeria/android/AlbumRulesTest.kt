@@ -146,14 +146,15 @@ class AlbumRulesTest {
                 currentDescending = true
             )
         )
-        assertTrue(
+        assertFalse(
             SortDirectionRules.whenModeSelected(
                 AlbumRules.SORT_NAME,
                 AlbumRules.SORT_NAME,
                 currentDescending = true
             )
         )
-        assertTrue(SortDirectionRules.defaultDescending(AlbumRules.SORT_SIZE))
+        assertTrue(SortDirectionRules.whenModeSelected(AlbumRules.SORT_NAME, AlbumRules.SORT_NAME, false))
+        assertFalse(SortDirectionRules.defaultDescending(AlbumRules.SORT_SIZE))
         assertFalse(SortDirectionRules.supportsDirection(MediaSortRules.SORT_CUSTOM))
     }
 
@@ -271,6 +272,30 @@ class AlbumRulesTest {
             listOf("camera", "screens", VirtualAlbumRules.FAVORITES_KEY, "downloads", VirtualAlbumRules.RECENT_KEY, "travel"),
             VirtualAlbumRules.pinEssential(source).map { it.key }
         )
+    }
+
+    @Test
+    fun userPinnedAlbumsComeBeforeEssentialAlbums() {
+        val source = listOf(
+            album("camera", "Câmera", "DCIM/Camera/"),
+            album("travel", "Viagem", "Pictures/Travel/"),
+            album(VirtualAlbumRules.RECENT_KEY, "Recentes", "")
+        )
+
+        assertEquals(
+            listOf("travel", "camera", VirtualAlbumRules.RECENT_KEY),
+            VirtualAlbumRules.pinEssential(source, setOf("travel")).map { it.key }
+        )
+        assertEquals(
+            listOf(VirtualAlbumRules.RECENT_KEY, "camera", "travel"),
+            VirtualAlbumRules.pinEssential(source, setOf(VirtualAlbumRules.RECENT_KEY)).map { it.key }
+        )
+    }
+
+    @Test
+    fun emptyPhysicalAndVirtualAlbumsAreNotShown() {
+        val source = listOf(AlbumItem("empty", "Vazio", 0, null, 0, 0, 0, "Pictures/Empty/"))
+        assertTrue(VirtualAlbumRules.addCollections(source, emptyList(), emptySet(), emptyList()).isEmpty())
     }
 
     @Test

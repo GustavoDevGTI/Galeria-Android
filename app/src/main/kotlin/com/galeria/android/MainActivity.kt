@@ -373,7 +373,7 @@ class MainActivity : ComponentActivity() {
         selectionActionDock = Ui.selectionActionDock(this)
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         addSelectionAction(R.drawable.ic_share, getString(R.string.action_share)) { shareSelectedAlbums() }
-        addSelectionAction(R.drawable.ic_heart, getString(R.string.action_favorite)) { favoriteSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_pin, getString(R.string.action_pin_album)) { togglePinnedSelectedAlbums() }
         addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { confirmDeleteSelectedAlbums() }
         addSelectionAction(R.drawable.ic_arrow_right, getString(R.string.action_move)) { askMoveSelectedAlbums() }
         selectionActions.visibility = View.GONE
@@ -402,9 +402,13 @@ class MainActivity : ComponentActivity() {
         val createFolder = getString(R.string.action_create_folder)
         val settings = getString(R.string.action_settings)
         val refresh = getString(R.string.action_refresh)
+        val showHiddenTrash = prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
+        val trashVisibility = getString(
+            if (showHiddenTrash) R.string.trash_hide_hidden else R.string.trash_show_hidden
+        )
         Ui.showPopupOptions(
             anchor,
-            listOf(sort, filter, organization, visibility, createFolder, settings, refresh)
+            listOf(sort, filter, organization, visibility, createFolder, trashVisibility, settings, refresh)
         ) { selected ->
             when (selected) {
                 sort -> showSortDialog()
@@ -412,6 +416,10 @@ class MainActivity : ComponentActivity() {
                 organization -> showFolderOrganizationDialog()
                 visibility -> showFolderVisibilityDialog()
                 createFolder -> FolderCreationMenu(this) { loadAlbums() }.show()
+                trashVisibility -> {
+                    prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, !showHiddenTrash).apply()
+                    loadAlbums()
+                }
                 settings -> startActivity(Intent(this, SettingsActivity::class.java))
                 else -> loadAlbums()
             }
@@ -481,24 +489,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun favoriteSelectedAlbums() {
+    private fun togglePinnedSelectedAlbums() {
         val albums = adapter.selectedAlbums()
         if (albums.isEmpty()) return
-        mediaLoader.execute {
-            val items = mediaForAlbums(albums)
-            val favorites = HashSet(prefs.getStringSet("favorites", HashSet()) ?: HashSet())
-            for (item in items) {
-                favorites.add(item.uri.toString())
-            }
-            prefs.edit().putStringSet("favorites", favorites).apply()
-            runOnUiThread {
-                Ui.toast(
-                    this,
-                    resources.getQuantityString(R.plurals.items_added_to_favorites, items.size, items.size)
-                )
-                exitSelectionMode()
-            }
-        }
+        val pinned = HashSet(prefs.getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty())
+        val unpin = albums.all { it.key in pinned }
+        if (unpin) pinned.removeAll(albums.map { it.key }) else pinned.addAll(albums.map { it.key })
+        prefs.edit().putStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, pinned).apply()
+        exitSelectionMode()
+        loadAlbums()
     }
 
     private fun confirmDeleteSelectedAlbums() {
@@ -683,6 +682,7 @@ class MainActivity : ComponentActivity() {
 
     private fun submitAlbumsNow(albums: List<AlbumItem>, query: String) {
         rememberVisibleFolderKeys(albums)
+        adapter.setPinnedKeys(prefs.getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty())
         adapter.submit(albums, query)
         if (forceAlbumCoverRefreshOnNextSubmit) {
             forceAlbumCoverRefreshOnNextSubmit = false

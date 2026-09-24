@@ -64,6 +64,24 @@ class MainActivitySmokeTest {
         }
     }
 
+    @Test
+    fun mainMenuCanRevealHiddenTrashWithoutShowingAnEmptyAlbum() {
+        val prefs = ApplicationProvider.getApplicationContext<Context>()
+            .getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val previous = prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
+        prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false).commit()
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use {
+                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withText(R.string.trash_show_hidden)).perform(clickClickableAncestor())
+                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withText(R.string.trash_hide_hidden)).check(matches(isDisplayed()))
+            }
+        } finally {
+            prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, previous).commit()
+        }
+    }
+
     private fun waitForView(assertion: () -> Unit) {
         val deadline = System.currentTimeMillis() + 10_000L
         var lastFailure: Throwable? = null

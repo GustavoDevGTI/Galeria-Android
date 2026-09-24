@@ -136,17 +136,10 @@ object GridColumnRules {
 }
 
 object SortDirectionRules {
-    fun defaultDescending(mode: String): Boolean = when (mode) {
-        AlbumRules.SORT_NAME,
-        AlbumRules.SORT_PATH,
-        MediaSortRules.SORT_TYPE,
-        MediaSortRules.SORT_CUSTOM,
-        AlbumRules.SORT_RANDOM -> false
-        else -> true
-    }
+    fun defaultDescending(mode: String): Boolean = false
 
     fun whenModeSelected(currentMode: String, selectedMode: String, currentDescending: Boolean): Boolean =
-        if (currentMode == selectedMode) currentDescending else defaultDescending(selectedMode)
+        currentMode == selectedMode && supportsDirection(selectedMode) && !currentDescending
 
     fun supportsDirection(mode: String): Boolean = mode != MediaSortRules.SORT_CUSTOM
 }
@@ -206,19 +199,35 @@ object VirtualAlbumRules {
     const val RECENT_KEY = "virtual_recent"
     const val FAVORITES_KEY = "virtual_favorites"
     const val TRASH_KEY = "virtual_trash"
+    const val PINNED_ALBUMS_PREF = "pinned_album_keys"
+    const val SHOW_HIDDEN_TRASH_PREF = "show_hidden_trash_items"
 
     fun isVirtual(key: String): Boolean = key == RECENT_KEY || key == FAVORITES_KEY || key == TRASH_KEY || key == "all_media"
 
     fun remainsAfterMove(key: String?): Boolean = key == RECENT_KEY || key == FAVORITES_KEY || key == "all_media"
 
-    fun mediaForAlbum(source: List<MediaItem>, albumKey: String?, favoriteUris: Set<String>): List<MediaItem> = when (albumKey) {
-        RECENT_KEY, "all_media", null -> source
+    fun mediaForAlbum(
+        source: List<MediaItem>,
+        albumKey: String?,
+        favoriteUris: Set<String>,
+        hiddenKeys: Set<String> = emptySet()
+    ): List<MediaItem> = when (albumKey) {
+        RECENT_KEY -> source.filterNot { isHiddenMedia(it, hiddenKeys) }
+        "all_media", null -> source
         FAVORITES_KEY -> {
             val favoriteKeys = favoriteUris.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
-            source.filter { MediaIdentityRules.canonicalKey(it.uri.toString()) in favoriteKeys }
+            source.filter {
+                !isHiddenMedia(it, hiddenKeys) && MediaIdentityRules.canonicalKey(it.uri.toString()) in favoriteKeys
+            }
         }
         else -> source.filter { it.albumKey == albumKey }
     }
+
+    fun isHiddenMedia(item: MediaItem, hiddenKeys: Set<String>): Boolean =
+        item.albumKey in hiddenKeys || AlbumRules.isHidden(item.relativePath, item.albumKey)
+
+    fun visibleTrash(items: List<MediaItem>, hiddenKeys: Set<String>, showHidden: Boolean): List<MediaItem> =
+        if (showHidden) items else items.filterNot { isHiddenMedia(it, hiddenKeys) }
 
     fun addCollections(
         physicalAlbums: List<AlbumItem>,
@@ -227,26 +236,31 @@ object VirtualAlbumRules {
         trashedMedia: List<MediaItem>,
         recentName: String = "Recentes",
         favoritesName: String = "Favoritos",
-        trashName: String = "Lixeira"
+        trashName: String = "Lixeira",
+        hiddenKeys: Set<String> = emptySet(),
+        showHiddenTrash: Boolean = false
     ): List<AlbumItem> {
         val availableMedia = if (physicalAlbums.any { it.key == "all_media" }) {
-            visibleMedia
+            visibleMedia.filterNot { isHiddenMedia(it, hiddenKeys) }
         } else {
             val visibleKeys = physicalAlbums.mapTo(HashSet()) { it.key }
-            visibleMedia.filter { it.albumKey in visibleKeys }
+            visibleMedia.filter { it.albumKey in visibleKeys && !isHiddenMedia(it, hiddenKeys) }
         }
         val favoriteKeys = favoriteUris.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
         val favorites = availableMedia.filter { MediaIdentityRules.canonicalKey(it.uri.toString()) in favoriteKeys }
+        val displayedTrash = visibleTrash(trashedMedia, hiddenKeys, showHiddenTrash)
         return buildList {
-            addAll(physicalAlbums.filterNot { isVirtual(it.key) })
-            add(aggregate(RECENT_KEY, recentName, availableMedia))
-            add(aggregate(FAVORITES_KEY, favoritesName, favorites))
-            add(aggregate(TRASH_KEY, trashName, trashedMedia))
+            addAll(physicalAlbums.filter { !isVirtual(it.key) && it.count > 0 })
+            if (availableMedia.isNotEmpty()) add(aggregate(RECENT_KEY, recentName, availableMedia))
+            if (favorites.isNotEmpty()) add(aggregate(FAVORITES_KEY, favoritesName, favorites))
+            if (displayedTrash.isNotEmpty()) add(aggregate(TRASH_KEY, trashName, displayedTrash))
         }
     }
 
-    fun pinEssential(albums: List<AlbumItem>): List<AlbumItem> = albums.withIndex()
-        .sortedWith(compareBy<IndexedValue<AlbumItem>> { essentialPriority(it.value) }.thenBy { it.index })
+    fun pinEssential(albums: List<AlbumItem>, pinnedKeys: Set<String> = emptySet()): List<AlbumItem> = albums.withIndex()
+        .sortedWith(compareBy<IndexedValue<AlbumItem>> {
+            if (it.value.key in pinnedKeys) -1 else essentialPriority(it.value)
+        }.thenBy { it.index })
         .map { it.value }
 
     private fun aggregate(key: String, name: String, media: List<MediaItem>): AlbumItem {

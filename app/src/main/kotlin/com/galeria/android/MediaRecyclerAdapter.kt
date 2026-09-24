@@ -34,6 +34,7 @@ class MediaRecyclerAdapter(
 ) : RecyclerView.Adapter<MediaRecyclerAdapter.Holder>() {
     interface Callbacks {
         fun onMediaClick(position: Int)
+        fun onMediaPreview(position: Int)
         fun onMediaLongClick(view: View, position: Int): Boolean
     }
 
@@ -370,6 +371,18 @@ class MediaRecyclerAdapter(
             topMargin = Ui.dp(context, 6)
         }
         thumb.addView(check, checkParams)
+        val preview = ImageView(context).apply {
+            setImageResource(R.drawable.ic_eye)
+            setColorFilter(Color.WHITE)
+            background = Ui.rounded(0x99000000.toInt(), 8, context)
+            setPadding(Ui.dp(context, 5), Ui.dp(context, 5), Ui.dp(context, 5), Ui.dp(context, 5))
+            isClickable = true
+            isFocusable = true
+        }
+        thumb.addView(preview, FrameLayout.LayoutParams(Ui.dp(context, 36), Ui.dp(context, 36), Gravity.TOP or Gravity.END).apply {
+            marginEnd = Ui.dp(context, 5)
+            topMargin = Ui.dp(context, 5)
+        })
 
         val thumbParams = if (asList) {
             LinearLayout.LayoutParams(Ui.dp(context, 82), Ui.dp(context, 82))
@@ -389,7 +402,7 @@ class MediaRecyclerAdapter(
         if (asList) {
             item.addView(name, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
-        return Holder(item, image, name, check, mediaNameOverlay, mediaDurationOverlay)
+        return Holder(item, image, name, check, preview, mediaNameOverlay, mediaDurationOverlay)
     }
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
@@ -403,6 +416,7 @@ class MediaRecyclerAdapter(
             holder.mediaDurationOverlay.visibility = View.GONE
             holder.itemView.contentDescription = null
             holder.check.visibility = View.GONE
+            holder.preview.visibility = View.GONE
             holder.itemView.setOnClickListener(null)
             holder.itemView.setOnLongClickListener(null)
             return
@@ -438,6 +452,11 @@ class MediaRecyclerAdapter(
             val currentPosition = holder.bindingAdapterPosition
             currentPosition != RecyclerView.NO_POSITION && callbacks.onMediaLongClick(it, currentPosition)
         }
+        holder.preview.contentDescription = context.getString(R.string.action_view_selected_media, item.name)
+        holder.preview.setOnClickListener {
+            val currentPosition = holder.bindingAdapterPosition
+            if (currentPosition != RecyclerView.NO_POSITION) callbacks.onMediaPreview(currentPosition)
+        }
     }
 
     private fun bindSelection(holder: Holder, item: MediaItem) {
@@ -447,6 +466,7 @@ class MediaRecyclerAdapter(
         holder.itemView.scaleY = if (selected) 0.94f else 1f
         holder.itemView.translationZ = if (selected) -Ui.dp(context, 2).toFloat() else 0f
         holder.check.visibility = if (selectionMode || selected) View.VISIBLE else View.GONE
+        holder.preview.visibility = if (selectionMode && selected) View.VISIBLE else View.GONE
         holder.check.text = if (selected) "\u2713" else ""
         holder.check.setTextColor(if (selected) Ui.bg(context) else Color.WHITE)
         holder.check.background = GradientDrawable().apply {
@@ -545,6 +565,7 @@ class MediaRecyclerAdapter(
         val image: ImageView,
         val name: TextView,
         val check: TextView,
+        val preview: ImageView,
         val mediaNameOverlay: TextView,
         val mediaDurationOverlay: TextView
     ) : RecyclerView.ViewHolder(itemView) {

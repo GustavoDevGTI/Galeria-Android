@@ -27,6 +27,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.hamcrest.Matchers.allOf
 
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
@@ -99,20 +100,12 @@ class AlbumMediaHeaderInstrumentedTest {
             }
             onView(withContentDescription("Mais opções")).perform(click())
             onView(withText("Ordenar por")).perform(clickClickableAncestor())
-            onView(withContentDescription("Crescente"))
-                .inRoot(isDialog())
-                .check(matches(isSelected()))
-            onView(withContentDescription("Decrescente"))
-                .inRoot(isDialog())
-                .perform(clickClickableAncestor())
+            onView(allOf(withText("↑"), isDisplayed())).inRoot(isDialog()).check(matches(isDisplayed()))
+            onView(withText("Nome alfabético")).inRoot(isDialog()).perform(clickClickableAncestor())
             onView(withContentDescription("Mais opções")).perform(click())
             onView(withText("Ordenar por")).perform(clickClickableAncestor())
-            onView(withContentDescription("Decrescente"))
-                .inRoot(isDialog())
-                .check(matches(isSelected()))
-            onView(withContentDescription("Crescente"))
-                .inRoot(isDialog())
-                .perform(clickClickableAncestor())
+            onView(allOf(withText("↓"), isDisplayed())).inRoot(isDialog()).check(matches(isDisplayed()))
+            onView(withText("Nome alfabético")).inRoot(isDialog()).perform(clickClickableAncestor())
 
             waitForView {
                 onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))

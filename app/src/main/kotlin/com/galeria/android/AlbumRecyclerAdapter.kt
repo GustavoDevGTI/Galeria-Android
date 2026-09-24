@@ -30,6 +30,7 @@ class AlbumRecyclerAdapter(
     private val allAlbums = ArrayList<AlbumItem>()
     private val visibleAlbums = ArrayList<AlbumItem>()
     private val selectedKeys = HashSet<String>()
+    private var pinnedKeys: Set<String> = emptySet()
     private var filter = ""
     private var selectionMode = false
     private var coverSizePx = 320
@@ -44,6 +45,12 @@ class AlbumRecyclerAdapter(
         if (coverSizePx == bounded) return
         coverSizePx = bounded
         if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_COVER)
+    }
+
+    fun setPinnedKeys(keys: Set<String>) {
+        if (pinnedKeys == keys) return
+        pinnedKeys = keys.toSet()
+        if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_PIN)
     }
 
     fun refreshVisibleCovers() {
@@ -183,6 +190,17 @@ class AlbumRecyclerAdapter(
             topMargin = Ui.dp(context, 6)
         }
         thumb.addView(check, checkParams)
+        val pin = ImageView(context).apply {
+            setImageResource(R.drawable.ic_pin_filled)
+            setColorFilter(Color.WHITE)
+            background = Ui.rounded(0x99000000.toInt(), 8, context)
+            setPadding(Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4))
+            contentDescription = context.getString(R.string.album_pinned)
+        }
+        thumb.addView(pin, FrameLayout.LayoutParams(Ui.dp(context, 28), Ui.dp(context, 28), Gravity.TOP or Gravity.END).apply {
+            marginEnd = Ui.dp(context, 6)
+            topMargin = Ui.dp(context, 6)
+        })
         item.addView(thumb, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         val name = TextView(context).apply {
@@ -196,12 +214,13 @@ class AlbumRecyclerAdapter(
             topMargin = Ui.dp(context, 6)
         }
         item.addView(name, nameParams)
-        return Holder(item, cover, name, check)
+        return Holder(item, cover, name, check, pin)
     }
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val album = visibleAlbums[position]
         bindSelection(holder, album)
+        holder.pin.visibility = if (album.key in pinnedKeys) View.VISIBLE else View.GONE
         holder.name.text = context.getString(R.string.main_album_count_label, album.name, album.count)
         holder.name.setTextColor(Ui.text(context))
         bindCover(holder, album)
@@ -216,6 +235,7 @@ class AlbumRecyclerAdapter(
         }
         val album = visibleAlbums[position]
         if (payloads.contains(PAYLOAD_SELECTION)) bindSelection(holder, album)
+        if (payloads.contains(PAYLOAD_PIN)) holder.pin.visibility = if (album.key in pinnedKeys) View.VISIBLE else View.GONE
         if (payloads.contains(PAYLOAD_COVER)) bindCover(holder, album)
     }
 
@@ -285,12 +305,14 @@ class AlbumRecyclerAdapter(
         itemView: View,
         val cover: SquareImageView,
         val name: TextView,
-        val check: TextView
+        val check: TextView,
+        val pin: ImageView
     ) : RecyclerView.ViewHolder(itemView)
 
     private companion object {
         const val PAYLOAD_SELECTION = "selection"
         const val PAYLOAD_COVER = "cover"
+        const val PAYLOAD_PIN = "pin"
     }
 
 }

@@ -58,6 +58,10 @@ object LegacyTrashStore {
             val entry = decode(encoded) ?: continue
             val file = File(entry.trashPath)
             if (!file.exists() || file.length() <= 0L) continue
+            val originalFolder = File(entry.originalPath).parentFile
+            val relativeFolder = originalFolder?.relativeToOrNull(Environment.getExternalStorageDirectory())
+                ?.invariantSeparatorsPath?.trimEnd('/')?.let { if (it.isEmpty()) "" else "$it/" }
+                ?: originalFolder?.absolutePath.orEmpty()
             validEncoded.add(encoded)
             result.add(
                 MediaItem(
@@ -67,9 +71,9 @@ object LegacyTrashStore {
                     entry.mimeType,
                     entry.trashedAt / 1000L,
                     file.length(),
-                    "$DIRECTORY/",
-                    VirtualAlbumRules.TRASH_KEY,
-                    "Lixeira"
+                    relativeFolder,
+                    relativeFolder,
+                    originalFolder?.name ?: "Lixeira"
                 )
             )
         }

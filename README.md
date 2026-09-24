@@ -282,9 +282,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada lançamento posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.54**.
+A linha começou em `v0.8.0`. Cada lançamento posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.56**.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.54 usa o código `8054`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.56 usa o código `8056`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -343,6 +343,8 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.52`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.52) | 16/09/2026 | Memória de vídeo temporária, temas suaves e alinhamento contextual dos submenus |
 | [`v0.8.53`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.53) | 21/09/2026 | Modo cinema e controles de reprodução |
 | [`v0.8.54`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.54) | 21/09/2026 | Gestos e seleção da grade, ordenação consistente e submenus de escolha imediata |
+| [`v0.8.55`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.55) | 22/09/2026 | Coleções virtuais de Recentes e Favoritos, Lixeira e álbuns essenciais no topo |
+| [`v0.8.56`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.56) | 24/09/2026 | Ocultação coerente nas coleções e Lixeira, álbuns fixados, seleção por arraste e ordenação simplificada |
 
 ## Relatório comparativo de desempenho
 
@@ -358,7 +360,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.54](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.54/Galeria-Android-versao-0.8.54.apk)
+[Baixar Galeria Android - versão 0.8.56](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.56/Galeria-Android-versao-0.8.56.apk)
 
 Build padrão do Gradle:
 
@@ -369,10 +371,10 @@ app\build\outputs\apk\release\app-release.apk
 APK versionado mantido na raiz do projeto e versionado no GitHub:
 
 ```text
-Galeria-Android-versao-0.8.54.apk
+Galeria-Android-versao-0.8.56.apk
 ```
 
-O APK 0.8.54 usa a mesma chave permanente das versões recentes. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela chave permanente serão compatíveis entre si.
+O APK 0.8.56 usa a mesma chave permanente das versões recentes. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela chave permanente serão compatíveis entre si.
 
 ### Fluxo obrigatório de entrega
 
@@ -412,8 +414,13 @@ A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_
 - Submenus de escolha aplicam a opção imediatamente, sem confirmação redundante; escolhas de acesso inicial ficam alinhadas lado a lado
 - Gerenciamento de ocultos atualizado com lista rolável, botões fixos e suporte a pastas fixadas
 - Coleções virtuais de Recentes e Favoritos agregam mídias sem duplicar os arquivos originais
+- Recentes e Favoritos não revelam mídias de pastas ocultas; Favoritos só aparece quando contém pelo menos uma mídia
 - Lixeira com restauração e exclusão definitiva usa o MediaStore no Android 11+ e armazenamento de recuperação próprio nas versões anteriores
+- Itens excluídos de pastas ocultas ficam ocultos também na Lixeira, com alternância explícita no menu da Lixeira e no menu principal quando não houver itens visíveis
 - Câmera, Capturas de tela, Favoritos, Downloads e Recentes permanecem fixos no topo, sem interferir na ordenação dos demais álbuns
+- Álbuns podem ser fixados ou desafixados pela seleção; fixados pelo usuário vêm antes dos álbuns essenciais, e favoritar continua sendo uma ação sobre mídias individuais
+- Seleção contínua por arraste mantém a atualização por puxar desativada até o dedo sair da tela; cada mídia selecionada tem seu próprio botão de visualização sem limpar a seleção
+- A ordenação usa setas na opção ativa: o primeiro toque escolhe a ordem crescente e um novo toque inverte a direção
 - Abertura do submenu de ocultos sem varredura automática: somente álbuns visíveis ou já exibidos entram na lista até o uso de `Carregar ocultos`
 - Player ajustado para manter o vídeo ocupando o máximo possível da tela sem ser reduzido pelos controles
 - Player com controle de som integrado à barra inferior e estado preservado ao navegar entre vídeos

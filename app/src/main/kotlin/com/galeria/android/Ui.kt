@@ -453,6 +453,7 @@ class Ui private constructor() {
                     dialog.dismiss()
                     onConfirm(selected)
                 }
+                row.findViewWithTag<RadioButton>("radio").visibility = View.GONE
                 content.addView(row)
             }
             body.addView(content)
@@ -482,101 +483,50 @@ class Ui private constructor() {
             onConfirm: (Int, Boolean) -> Unit
         ): AlertDialog {
             require(labels.isNotEmpty() && labels.size == modes.size)
-            var selected = checkedIndex.coerceIn(0, labels.lastIndex)
-            var selectedDescending = descending
+            val selected = checkedIndex.coerceIn(0, labels.lastIndex)
             lateinit var dialog: AlertDialog
-            lateinit var content: LinearLayout
-            lateinit var directionRow: LinearLayout
-            lateinit var ascendingButton: TextView
-            lateinit var descendingButton: TextView
-
-            fun styleDirectionButton(button: TextView, active: Boolean) {
-                val activeColor = accent(context)
-                button.isSelected = active
-                button.alpha = if (active) 1f else 0.72f
-                button.setTypeface(Typeface.DEFAULT, if (active) Typeface.BOLD else Typeface.NORMAL)
-                button.setTextColor(
-                    if (active) {
-                        if (luminance(activeColor) >= 0.56) Color.BLACK else Color.WHITE
-                    } else {
-                        menuText(context)
-                    }
-                )
-                button.background = rounded(
-                    if (active) activeColor else blend(menuSurface(context), menuText(context), 0.08f),
-                    10,
-                    context
-                )
-            }
-
-            fun refreshState() {
-                for (index in 0 until content.childCount) {
-                    val row = content.getChildAt(index) as LinearLayout
-                    val radio = row.findViewWithTag<RadioButton>("radio")
-                    radio.isChecked = index == selected
-                    styleDialogChoiceRow(row, radio.isChecked)
-                    row.alpha = if (radio.isChecked) 1f else 0.72f
-                }
-                directionRow.visibility = if (SortDirectionRules.supportsDirection(modes[selected])) {
-                    View.VISIBLE
-                } else {
-                    View.GONE
-                }
-                styleDirectionButton(ascendingButton, !selectedDescending)
-                styleDirectionButton(descendingButton, selectedDescending)
-            }
-
             val body = themedDialogBody(context, title, message)
-            content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
             labels.forEachIndexed { index, label ->
-                content.addView(
-                    themedChoiceRow(context, label, true) {
-                        selectedDescending = SortDirectionRules.defaultDescending(modes[index])
-                        selected = index
-                        refreshState()
+                val active = index == selected
+                val arrow = TextView(context).apply {
+                    tag = "sort_direction_arrow"
+                    text = if (descending) "↓" else "↑"
+                    textSize = 21f
+                    setTextColor(menuText(context))
+                    visibility = if (active && SortDirectionRules.supportsDirection(modes[index])) View.VISIBLE else View.GONE
+                }
+                content.addView(LinearLayout(context).apply {
+                    tag = "sort_option_${modes[index]}"
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    minimumHeight = dp(context, 52)
+                    setPadding(dp(context, 18), dp(context, 4), dp(context, 18), dp(context, 4))
+                    addView(TextView(context).apply {
+                        text = label
+                        textSize = 16f
+                        setTextColor(menuText(context))
+                    }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    addView(arrow)
+                    isClickable = true
+                    isFocusable = true
+                    contentDescription = if (active && SortDirectionRules.supportsDirection(modes[index])) {
+                        "$label, ${context.getString(if (descending) R.string.action_descending else R.string.action_ascending)}"
+                    } else label
+                    alpha = if (active) 1f else 0.82f
+                    styleDialogChoiceRow(this, active)
+                    setOnClickListener {
+                        val nextDescending = SortDirectionRules.whenModeSelected(
+                            modes[selected], modes[index], descending
+                        )
                         dialog.dismiss()
-                        onConfirm(selected, selectedDescending)
-                    }.apply {
-                        tag = "sort_option_${modes[index]}"
+                        onConfirm(index, nextDescending)
                     }
-                )
+                })
             }
             body.addView(content)
-
-            fun directionButton(label: String, value: Boolean) = TextView(context).apply {
-                text = label
-                textSize = 14f
-                gravity = Gravity.CENTER
-                minimumHeight = dp(context, 46)
-                isClickable = true
-                isFocusable = true
-                contentDescription = label
-                setPadding(dp(context, 10), dp(context, 8), dp(context, 10), dp(context, 8))
-                setOnClickListener {
-                    selectedDescending = value
-                    refreshState()
-                    dialog.dismiss()
-                    onConfirm(selected, selectedDescending)
-                }
-            }
-
-            ascendingButton = directionButton(context.getString(R.string.action_ascending), false)
-            descendingButton = directionButton(context.getString(R.string.action_descending), true)
-            directionRow = LinearLayout(context).apply {
-                tag = "sort_direction_options"
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(dp(context, 12), dp(context, 8), dp(context, 12), dp(context, 8))
-                addView(ascendingButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginEnd = dp(context, 4)
-                })
-                addView(descendingButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = dp(context, 4)
-                })
-            }
-            body.addView(directionRow)
             dialog = AlertDialog.Builder(context).setView(body).create()
-            refreshState()
-            showSidePanel(dialog) { refreshState() }
+            showSidePanel(dialog)
             return dialog
         }
 

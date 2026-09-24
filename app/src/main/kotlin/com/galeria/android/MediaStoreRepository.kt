@@ -132,15 +132,23 @@ object MediaStoreRepository {
 
     @JvmStatic
     fun loadMediaForAlbum(context: Context, albumKey: String?, includeHiddenFilesystem: Boolean = false): List<MediaItem> {
-        if (albumKey == VirtualAlbumRules.TRASH_KEY) return loadTrashedMedia(context)
+        val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
+        if (albumKey == VirtualAlbumRules.TRASH_KEY) {
+            return VirtualAlbumRules.visibleTrash(
+                loadTrashedMedia(context),
+                hiddenKeys,
+                prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
+            )
+        }
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
         val includeHidden = StorageAccessRules.includeHiddenFilesystem(includeHiddenFilesystem, allFilesAccess)
         if (GalleryCatalogStore.isCatalogDirty(context, includeHidden)) {
             val items = refreshMedia(context, includeHidden, force = true)
-            return VirtualAlbumRules.mediaForAlbum(items, albumKey, favoriteUris(context))
+            return VirtualAlbumRules.mediaForAlbum(items, albumKey, favoriteUris(context), hiddenKeys)
         }
         if (albumKey == "all_media" || albumKey == VirtualAlbumRules.RECENT_KEY || albumKey == VirtualAlbumRules.FAVORITES_KEY) {
-            return VirtualAlbumRules.mediaForAlbum(loadMedia(context, includeHidden), albumKey, favoriteUris(context))
+            return VirtualAlbumRules.mediaForAlbum(loadMedia(context, includeHidden), albumKey, favoriteUris(context), hiddenKeys)
         }
         val now = System.currentTimeMillis()
         synchronized(cacheLock) {

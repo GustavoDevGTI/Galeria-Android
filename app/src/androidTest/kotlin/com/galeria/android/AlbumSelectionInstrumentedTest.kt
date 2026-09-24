@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.RippleDrawable
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -33,6 +34,7 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.rule.GrantPermissionRule
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -59,20 +61,24 @@ class AlbumSelectionInstrumentedTest {
         val albumPath = "Pictures/GaleriaSelectionTest-$suffix/"
         val firstName = "selecao-primeira-$suffix.png"
         val secondName = "selecao-segunda-$suffix.png"
+        val thirdName = "selecao-terceira-$suffix.png"
         val targetPath = "Pictures/GaleriaSelectionTarget-$suffix/"
         val targetName = "destino-$suffix.png"
         val hiddenPath = "Pictures/GaleriaSelectionHidden-$suffix/"
         val hiddenName = "oculto-$suffix.png"
         val firstUri = insertImage(context, albumPath, firstName)
         val secondUri = insertImage(context, albumPath, secondName)
+        val thirdUri = insertImage(context, albumPath, thirdName)
         val targetUri = insertImage(context, targetPath, targetName)
         val hiddenUri = insertImage(context, hiddenPath, hiddenName)
         val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val originalHiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty())
+        val originalColumns = prefs.getInt("media_grid_columns", 0)
+        val hadColumns = prefs.contains("media_grid_columns")
         prefs.edit().putStringSet(
             "hidden_folder_keys",
             HashSet(originalHiddenKeys).apply { add(hiddenPath) }
-        ).commit()
+        ).putInt("media_grid_columns", 2).commit()
         val dao = GalleryDatabase.get(context).galleryDao()
         val original = runBlocking { withContext(Dispatchers.IO) { dao.media(VISIBLE_SCOPE) } }
         val originalState = runBlocking { withContext(Dispatchers.IO) { dao.state(VISIBLE_SCOPE) } }
@@ -85,6 +91,7 @@ class AlbumSelectionInstrumentedTest {
                         listOf(
                             cached(firstUri, firstName, albumPath, suffix + 1),
                             cached(secondUri, secondName, albumPath, suffix),
+                            cached(thirdUri, thirdName, albumPath, suffix - 1),
                             cached(targetUri, targetName, targetPath, suffix - 1, "Destino"),
                             cached(hiddenUri, hiddenName, hiddenPath, suffix - 2, "Oculto")
                         ),
@@ -98,12 +105,16 @@ class AlbumSelectionInstrumentedTest {
                 putExtra("album_name", "Seleção")
             }
 
-            ActivityScenario.launch<AlbumMediaActivity>(intent).use {
+            ActivityScenario.launch<AlbumMediaActivity>(intent).use { scenario ->
                 waitUntilDisplayed(firstName)
-                onView(withContentDescription(firstName)).perform(longPressAndDragTo(secondName))
-                waitUntilHint(context.resources.getQuantityString(R.plurals.selected_count, 2, 2))
+                onView(withContentDescription(firstName)).perform(longPressAndDragTo(thirdName))
+                waitUntilHint(context.resources.getQuantityString(R.plurals.selected_count, 3, 3))
+                scenario.onActivity { activity ->
+                    val refresh = descendants(activity.window.decorView).filterIsInstance<SwipeRefreshLayout>().first()
+                    assertEquals("Arrastar a seleção não deve atualizar a pasta.", false, refresh.isRefreshing)
+                }
                 onView(withContentDescription("Desmarcar todos")).check(matches(isDisplayed()))
-                listOf("Visualizar", "Compartilhar", "Favoritar", "Excluir", "Mover").forEach { action ->
+                listOf("Compartilhar", "Favoritar", "Excluir", "Mover").forEach { action ->
                     onView(withContentDescription(action)).check { view, noViewFoundException ->
                         if (noViewFoundException != null) throw noViewFoundException
                         val icon = view.findViewWithTag<ImageView>("selection_action_icon")
@@ -115,7 +126,7 @@ class AlbumSelectionInstrumentedTest {
                         assertEquals(true, view.background is RippleDrawable)
                         if (action == "Compartilhar") {
                             val dock = view.parent as LinearLayout
-                            assertEquals("A barra deve ter cinco ações sem divisórias.", 5, dock.childCount)
+                            assertEquals("A barra deve ter quatro ações sem divisórias.", 4, dock.childCount)
                             val fullBar = dock.parent as View
                             assertEquals("O conjunto de ações deve preencher toda a barra inferior.", fullBar.width, dock.width)
                             assertEquals("A barra não deve deixar recorte na lateral esquerda.", 0, fullBar.paddingLeft)
@@ -125,11 +136,10 @@ class AlbumSelectionInstrumentedTest {
                         }
                     }
                 }
-                onView(withContentDescription("Visualizar")).perform(click())
-                onView(withContentDescription(secondName)).perform(click())
+                onView(withContentDescription("Visualizar $secondName sem alterar a seleção")).perform(tapVisibleCenter())
                 waitUntilText(secondName)
                 pressBack()
-                waitUntilHint("2 selecionados")
+                waitUntilHint("3 selecionados")
                 onView(withContentDescription("Mover")).check(matches(isDisplayed())).perform(click())
                 waitUntilText("Mover para")
                 onView(withContentDescription("Álbum Oculto")).check(doesNotExist())
@@ -147,9 +157,13 @@ class AlbumSelectionInstrumentedTest {
             }
             context.contentResolver.delete(firstUri, null, null)
             context.contentResolver.delete(secondUri, null, null)
+            context.contentResolver.delete(thirdUri, null, null)
             context.contentResolver.delete(targetUri, null, null)
             context.contentResolver.delete(hiddenUri, null, null)
-            prefs.edit().putStringSet("hidden_folder_keys", originalHiddenKeys).commit()
+            prefs.edit().putStringSet("hidden_folder_keys", originalHiddenKeys).apply {
+                if (hadColumns) putInt("media_grid_columns", originalColumns)
+                else remove("media_grid_columns")
+            }.commit()
             MediaStoreRepository.invalidateCache()
         }
     }
@@ -175,6 +189,21 @@ class AlbumSelectionInstrumentedTest {
             inject(uiController, downTime, SystemClock.uptimeMillis(), MotionEvent.ACTION_MOVE, endX, endY)
             uiController.loopMainThreadForAtLeast(32L)
             inject(uiController, downTime, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, endX, endY)
+            uiController.loopMainThreadUntilIdle()
+        }
+    }
+
+    private fun tapVisibleCenter(): ViewAction = object : ViewAction {
+        override fun getConstraints(): Matcher<View> = org.hamcrest.Matchers.any(View::class.java)
+
+        override fun getDescription(): String = "toque na parte visível do botão da miniatura"
+
+        override fun perform(uiController: UiController, view: View) {
+            val visible = Rect()
+            check(view.getGlobalVisibleRect(visible) && visible.width() > 0 && visible.height() > 0)
+            val now = SystemClock.uptimeMillis()
+            inject(uiController, now, now, MotionEvent.ACTION_DOWN, visible.exactCenterX(), visible.exactCenterY())
+            inject(uiController, now, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, visible.exactCenterX(), visible.exactCenterY())
             uiController.loopMainThreadUntilIdle()
         }
     }
