@@ -236,7 +236,7 @@ class Ui private constructor() {
             view.contentDescription = if (checked) "Desmarcar todos" else "Selecionar todos"
         }
 
-        const val ACTION_ICON_SIZE_DP = 24
+        const val ACTION_ICON_SIZE_DP = 22
         const val ACTION_TOUCH_HEIGHT_DP = 56
 
         fun actionFeedback(context: Context, color: Int, selected: Boolean = false): RippleDrawable =
@@ -469,6 +469,29 @@ class Ui private constructor() {
                 refreshRows()
             }
             return dialog
+        }
+
+        @JvmStatic
+        fun showActionDialog(
+            context: Context,
+            title: String,
+            labels: List<String>,
+            onSelect: (Int) -> Unit
+        ): AlertDialog {
+            require(labels.isNotEmpty())
+            lateinit var dialog: AlertDialog
+            val body = themedDialogBody(context, title, null)
+            labels.forEachIndexed { index, label ->
+                val row = themedChoiceRow(context, label, true) {
+                    dialog.dismiss()
+                    onSelect(index)
+                }
+                row.findViewWithTag<RadioButton>("radio").visibility = View.GONE
+                styleDialogChoiceRow(row, false)
+                body.addView(row)
+            }
+            dialog = AlertDialog.Builder(context).setView(body).create()
+            return showCenteredPanel(dialog)
         }
 
         @JvmStatic

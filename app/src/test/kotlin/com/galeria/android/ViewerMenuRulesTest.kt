@@ -12,6 +12,7 @@ class ViewerMenuRulesTest {
 
         assertEquals(ViewerMenuRules.OPEN_WITH, options.first())
         assertTrue(options.contains(ViewerMenuRules.INFORMATION))
+        assertFalse(options.contains(ViewerMenuRules.RECOGNIZE_TEXT))
         assertTrue(options.contains(ViewerMenuRules.ENABLE_LOOP))
         assertFalse(options.contains(ViewerMenuRules.SET_AS))
         assertFalse(options.contains(ViewerMenuRules.ROTATE))
@@ -45,6 +46,7 @@ class ViewerMenuRulesTest {
         assertEquals(ViewerMenuRules.RENAME, options.first())
         assertTrue(options.contains(ViewerMenuRules.OPEN_WITH))
         assertTrue(options.contains(ViewerMenuRules.INFORMATION))
+        assertTrue(options.contains(ViewerMenuRules.RECOGNIZE_TEXT))
         assertTrue(options.contains(ViewerMenuRules.SET_AS))
         assertTrue(options.contains(ViewerMenuRules.ROTATE))
         assertTrue(options.contains(ViewerMenuRules.EXPORT_PDF))

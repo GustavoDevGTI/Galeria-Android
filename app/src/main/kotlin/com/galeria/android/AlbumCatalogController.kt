@@ -3,6 +3,7 @@ package com.galeria.android
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.Environment
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
 import androidx.work.WorkInfo
@@ -134,11 +135,15 @@ class AlbumCatalogController(context: Context) {
         media: List<MediaItem>,
         options: AlbumCatalogOptions
     ): List<AlbumItem> {
-        val physical = prepareAlbums(sourceAlbums, options)
+        val markers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
+        val naturallyHiddenKeys = AutomaticHiddenAlbums.keys(appContext, sourceAlbums, markers)
+        val virtualHiddenKeys = options.hiddenKeys + naturallyHiddenKeys
+        val physical = prepareAlbums(sourceAlbums, options, naturallyHiddenKeys)
         val prefs = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val favorites = prefs
             .getStringSet("favorites", emptySet()).orEmpty()
         val trash = MediaStoreRepository.loadTrashedMedia(appContext)
+        val hiddenTrashKeys = virtualHiddenKeys + AutomaticHiddenAlbums.keysForMedia(appContext, trash, markers)
         val collections = VirtualAlbumRules.addCollections(
             physical,
             media,
@@ -147,10 +152,10 @@ class AlbumCatalogController(context: Context) {
             appContext.getString(R.string.album_recent),
             appContext.getString(R.string.album_favorites),
             appContext.getString(R.string.album_trash),
-            options.hiddenKeys,
+            hiddenTrashKeys,
             prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
         )
-        val available = VirtualAlbumRules.availableMedia(physical, media, options.hiddenKeys)
+        val available = VirtualAlbumRules.availableMedia(physical, media, virtualHiddenKeys)
         val favoriteKeys = favorites.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
         val byFolder = media.groupBy { it.albumKey }
         val customOrders = GalleryCatalogStore.allCustomOrders(appContext)
@@ -161,7 +166,7 @@ class AlbumCatalogController(context: Context) {
                     MediaIdentityRules.canonicalKey(it.uri.toString()) in favoriteKeys
                 }
                 VirtualAlbumRules.TRASH_KEY -> VirtualAlbumRules.visibleTrash(
-                    trash, options.hiddenKeys,
+                    trash, hiddenTrashKeys,
                     prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
                 )
                 else -> byFolder[album.key].orEmpty()
@@ -195,13 +200,18 @@ class AlbumCatalogController(context: Context) {
         }
     }
 
-    private fun prepareAlbums(source: List<AlbumItem>, options: AlbumCatalogOptions): List<AlbumItem> {
+    private fun prepareAlbums(
+        source: List<AlbumItem>,
+        options: AlbumCatalogOptions,
+        naturallyHiddenKeys: Set<String>
+    ): List<AlbumItem> {
         return AlbumCatalogRules.prepare(
             source,
             options.hiddenKeys,
             options.showNaturallyHidden,
             options.searchAllFiles,
-            options.temporarilyVisibleKeys
+            options.temporarilyVisibleKeys,
+            naturallyHiddenKeys
         )
     }
 

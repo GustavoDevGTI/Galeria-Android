@@ -3,8 +3,10 @@ package com.galeria.android
 import android.Manifest
 import android.content.ContentValues
 import android.content.Context
-import android.os.Build
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
+import android.os.Build
+import android.net.Uri
 import android.provider.MediaStore
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -46,28 +48,38 @@ class VideoThumbnailFrameInstrumentedTest {
             val item = MediaItem(1L, uri, "thumbnail.mp4", "video/mp4", System.currentTimeMillis() / 1000L,
                 101_674L, "Movies/GaleriaThumbnailTest/", "Movies/GaleriaThumbnailTest/", "GaleriaThumbnailTest")
             val ready = CountDownLatch(1)
-            var selected = -1L
-            val immediate = VideoThumbnailFrames.selectedTime(context, item) {
+            var selected: Uri? = null
+            val immediate = VideoThumbnailFrames.thumbnail(context, item) {
                 selected = it
                 ready.countDown()
             }
             if (immediate != null) selected = immediate else assertTrue(ready.await(15, TimeUnit.SECONDS))
-            assertTrue(selected >= 0L)
+            val file = VideoThumbnailFrames.thumbnailFile(context, item)
+            assertTrue(file.exists() && file.length() > 0L)
+            assertTrue(file.path.startsWith(context.noBackupFilesDir.path))
+            val bitmap = requireNotNull(BitmapFactory.decodeFile(file.path))
             val retriever = MediaMetadataRetriever()
-            try {
+            val sourceLongSide = try {
                 retriever.setDataSource(context, uri)
-                val opening = retriever.getScaledFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST, 64, 64)
-                if (opening != null) {
-                    try {
-                        if (!VideoThumbnailRules.isBlank(opening)) assertEquals(0L, selected)
-                    } finally {
-                        opening.recycle()
-                    }
-                }
+                maxOf(
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0,
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                )
             } finally {
                 retriever.release()
             }
-            assertEquals(selected, VideoThumbnailFrames.selectedTime(context, item) {})
+            assertTrue(sourceLongSide > 0)
+            assertTrue(maxOf(bitmap.width, bitmap.height) >= minOf(sourceLongSide, 960) * 8 / 10)
+            bitmap.recycle()
+            val modified = file.lastModified()
+            assertEquals(selected, VideoThumbnailFrames.thumbnail(context, item) {})
+            assertEquals(selected, VideoThumbnailFrames.cachedThumbnail(context, item))
+            val itemWithResolvedDuration = MediaItem(1L, uri, "thumbnail.mp4", "video/mp4",
+                item.dateAdded, 101_674L, "Movies/GaleriaThumbnailTest/", "Movies/GaleriaThumbnailTest/",
+                "GaleriaThumbnailTest", 5_000L)
+            assertEquals(file, VideoThumbnailFrames.thumbnailFile(context, itemWithResolvedDuration))
+            assertEquals(selected, VideoThumbnailFrames.thumbnail(context, itemWithResolvedDuration) {})
+            assertEquals(modified, file.lastModified())
         } finally {
             context.contentResolver.delete(uri, null, null)
         }

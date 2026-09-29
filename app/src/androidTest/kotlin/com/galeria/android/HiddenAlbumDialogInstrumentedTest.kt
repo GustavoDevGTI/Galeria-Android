@@ -91,6 +91,7 @@ class HiddenAlbumDialogInstrumentedTest {
                 .putStringSet(PREF_HIDDEN_KEYS, setOf("hidden-known", "hidden-never"))
                 .putStringSet(PREF_EVER_VISIBLE, setOf("hidden-known"))
                 .commit()
+            GalleryCatalogStore.clearCatalogDirty(context)
 
             ActivityScenario.launch(MainActivity::class.java).use {
                 waitUntilDisplayedContaining("Câmera")
@@ -175,7 +176,12 @@ class HiddenAlbumDialogInstrumentedTest {
                     waitUntilDialogDisplayedContaining(revealName)
                     onView(allOf(withContentDescription("Exibir por 30 minutos"),
                         withParent(hasDescendant(withText(containsString(revealName))))))
-                        .inRoot(isDialog()).perform(click())
+                        .inRoot(isDialog()).perform(clickClickableAncestor())
+                    assertTrue("O toque no olho deve ativar a visualização temporária.",
+                        TemporaryAlbumVisibility.activeKeys().contains(revealKey))
+                    waitForView {
+                        onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
+                    }
                     waitUntilDisplayedContaining(revealName)
                     assertTrue(prefs.getStringSet(PREF_HIDDEN_KEYS, emptySet()).orEmpty().contains(revealKey))
 
@@ -184,7 +190,12 @@ class HiddenAlbumDialogInstrumentedTest {
                     waitUntilDialogDisplayedContaining(revealName)
                     onView(allOf(withContentDescription("Ocultar novamente"),
                         withParent(hasDescendant(withText(containsString(revealName))))))
-                        .inRoot(isDialog()).perform(click())
+                        .inRoot(isDialog()).perform(clickClickableAncestor())
+                    assertFalse("O segundo toque deve ocultar o álbum novamente.",
+                        TemporaryAlbumVisibility.activeKeys().contains(revealKey))
+                    waitForView {
+                        onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
+                    }
                     waitForView {
                         onView(withText(containsString(revealName))).check(doesNotExist())
                     }
@@ -193,7 +204,10 @@ class HiddenAlbumDialogInstrumentedTest {
                     waitUntilDialogDisplayedContaining(revealName)
                     onView(allOf(withContentDescription("Exibir por 30 minutos"),
                         withParent(hasDescendant(withText(containsString(revealName))))))
-                        .inRoot(isDialog()).perform(click())
+                        .inRoot(isDialog()).perform(clickClickableAncestor())
+                    waitForView {
+                        onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
+                    }
                     waitUntilDisplayedContaining(revealName)
                 }
                 assertFalse(TemporaryAlbumVisibility.activeKeys().contains(revealKey))

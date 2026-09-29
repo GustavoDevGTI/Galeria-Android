@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Environment
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
@@ -69,6 +70,8 @@ class MainActivity : ComponentActivity() {
     private var showSvgs = true
     private var showPortraits = false
     private var showHiddenFolders = false
+    private var hiddenDirectoryMarkers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
+    private var automaticallyHiddenKeys: Set<String> = emptySet()
     private var columnCount = 3
     private var lastColumnGestureMs = 0L
     private var gridTouchDownX = 0f
@@ -621,8 +624,11 @@ class MainActivity : ComponentActivity() {
             keys.add(album.key)
         }
         val items = ArrayList<MediaItem>()
-        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
-        for (item in MediaStoreRepository.loadMedia(applicationContext, shouldIncludeHiddenFilesystem())) {
+        val source = MediaStoreRepository.loadMedia(applicationContext, shouldIncludeHiddenFilesystem())
+        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty() +
+            AutomaticHiddenAlbums.keysForMedia(applicationContext, source,
+                HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
+        for (item in source) {
             if ((keys.contains(item.albumKey) || (allMedia && !VirtualAlbumRules.isHiddenMedia(item, hiddenKeys))) &&
                 matchesMediaFilter(item)) {
                 items.add(item)
@@ -632,6 +638,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadAlbums() {
+        hiddenDirectoryMarkers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
             emptyView.setText(R.string.main_loading_media)
@@ -841,8 +848,11 @@ class MainActivity : ComponentActivity() {
         val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
         mediaLoader.execute {
             val visibleCatalog = GalleryCatalogStore.readAlbums(applicationContext, false)
+            val automaticKeys = AutomaticHiddenAlbums.keys(applicationContext, visibleCatalog,
+                HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
             val migratedVisibleKeys = visibleCatalog
-                .filter { hiddenKeys.contains(it.key) && !isHiddenAlbum(it) }
+                .filter { hiddenKeys.contains(it.key) && it.key !in automaticKeys &&
+                    !AlbumRules.isHidden(it.path, it.key) }
                 .map { it.key }
             val knownKeys = HashSet(previouslyVisibleKeys).apply { addAll(migratedVisibleKeys) }
             if (knownKeys != previouslyVisibleKeys) {
@@ -873,6 +883,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showFolderVisibilityDialog(albums: List<AlbumItem>) {
+        hiddenDirectoryMarkers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
+        automaticallyHiddenKeys = AutomaticHiddenAlbums.keys(applicationContext, albums, hiddenDirectoryMarkers)
         val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
         val pinnedKeys = HashSet(prefs.getStringSet(PREF_PINNED_HIDDEN_FOLDER_KEYS, HashSet()) ?: HashSet())
         val everVisibleKeys = HashSet(
@@ -1033,19 +1045,21 @@ class MainActivity : ComponentActivity() {
                     else R.string.main_reveal_hidden_temporarily
                 )
                 eye.setOnClickListener {
-                    if (isHiddenAlbum(album) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                    val requiresFilesystem = AlbumRules.isHidden(album.path, album.key) ||
+                        hiddenDirectoryMarkers.containsNomedia(album.path)
+                    if (requiresFilesystem && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
                         !MediaActions.hasAllFilesAccess(this@MainActivity)) {
                         Ui.toast(this@MainActivity, getString(R.string.access_hidden_folders_required))
                         accessCoordinator.ensureFullAccess(true)
                         return@setOnClickListener
                     }
-                    val revealed = TemporaryAlbumVisibility.toggle(album.key)
+                    val revealed = TemporaryAlbumVisibility.toggle(album.key, requiresFilesystem)
                     eye.setImageResource(if (revealed) R.drawable.ic_eye else R.drawable.ic_eye_off)
                     eye.setColorFilter(if (revealed) dialogText else dialogMuted)
                     eye.alpha = if (revealed) 1f else 0.65f
                     animateHiddenControl(eye)
                     scheduleRevealExpiry()
-                    eye.postDelayed({
+                    mediaRefreshHandler.postDelayed({
                         if (dialog.isShowing) dialog.dismiss()
                         if (!isFinishing) loadAlbums()
                     }, 190L)
@@ -1131,6 +1145,9 @@ class MainActivity : ComponentActivity() {
                             val previousVisible = HashSet(checkedKeys)
                             mutableAlbums.clear()
                             mutableAlbums.addAll(refreshed)
+                            hiddenDirectoryMarkers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
+                            automaticallyHiddenKeys = AutomaticHiddenAlbums.keys(applicationContext,
+                                refreshed, hiddenDirectoryMarkers)
                             sortVisibilityAlbums()
                             checkedKeys.clear()
                             for (album in mutableAlbums) {
@@ -1353,7 +1370,9 @@ class MainActivity : ComponentActivity() {
         AlbumRules.sort(albums, sortMode, sortDesc)
     }
 
-    private fun isHiddenAlbum(album: AlbumItem): Boolean = AlbumRules.isHidden(album.path, album.key)
+    private fun isHiddenAlbum(album: AlbumItem): Boolean =
+        AlbumRules.isHidden(album.path, album.key) || album.key in automaticallyHiddenKeys ||
+            hiddenDirectoryMarkers.containsNomedia(album.path)
 
     private fun matchesMediaFilter(item: MediaItem): Boolean = MediaFilterRules.matches(
         item.name,
@@ -1424,7 +1443,7 @@ class MainActivity : ComponentActivity() {
     private fun shouldIncludeHiddenFilesystem(): Boolean =
         accessCoordinator.includeHiddenFilesystem(
             showHiddenFolders || prefs.getBoolean("always_show_hidden", false) ||
-                TemporaryAlbumVisibility.activeKeys().isNotEmpty()
+                TemporaryAlbumVisibility.requiresHiddenFilesystem()
         )
 
     private fun scheduleRevealExpiry() {

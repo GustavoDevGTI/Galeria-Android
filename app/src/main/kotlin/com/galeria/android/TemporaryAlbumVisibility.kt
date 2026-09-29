@@ -4,12 +4,13 @@ import android.os.SystemClock
 
 /** A revelação existe apenas neste processo; não é gravada nas preferências. */
 internal class TemporaryAlbumRevealStore(private val nowMillis: () -> Long) {
-    private val expiresAt = LinkedHashMap<String, Long>()
+    private data class Reveal(val expiresAt: Long, val requiresFilesystem: Boolean)
+    private val expiresAt = LinkedHashMap<String, Reveal>()
 
-    @Synchronized fun toggle(key: String): Boolean {
+    @Synchronized fun toggle(key: String, requiresFilesystem: Boolean = false): Boolean {
         prune()
         if (expiresAt.remove(key) != null) return false
-        expiresAt[key] = nowMillis() + DURATION_MILLIS
+        expiresAt[key] = Reveal(nowMillis() + DURATION_MILLIS, requiresFilesystem)
         return true
     }
 
@@ -24,14 +25,19 @@ internal class TemporaryAlbumRevealStore(private val nowMillis: () -> Long) {
 
     @Synchronized fun nextExpiryDelay(): Long? {
         prune()
-        return expiresAt.values.minOrNull()?.let { (it - nowMillis()).coerceAtLeast(1L) }
+        return expiresAt.values.minOfOrNull { it.expiresAt }?.let { (it - nowMillis()).coerceAtLeast(1L) }
+    }
+
+    @Synchronized fun requiresHiddenFilesystem(): Boolean {
+        prune()
+        return expiresAt.values.any { it.requiresFilesystem }
     }
 
     @Synchronized fun clear() = expiresAt.clear()
 
     private fun prune() {
         val now = nowMillis()
-        expiresAt.entries.removeAll { it.value <= now }
+        expiresAt.entries.removeAll { it.value.expiresAt <= now }
     }
 
     companion object {
@@ -42,9 +48,10 @@ internal class TemporaryAlbumRevealStore(private val nowMillis: () -> Long) {
 internal object TemporaryAlbumVisibility {
     private val store = TemporaryAlbumRevealStore(SystemClock::elapsedRealtime)
 
-    fun toggle(key: String): Boolean = store.toggle(key)
+    fun toggle(key: String, requiresFilesystem: Boolean = false): Boolean = store.toggle(key, requiresFilesystem)
     fun activeKeys(): Set<String> = store.activeKeys()
     fun hide(key: String) = store.hide(key)
     fun nextExpiryDelay(): Long? = store.nextExpiryDelay()
+    fun requiresHiddenFilesystem(): Boolean = store.requiresHiddenFilesystem()
     fun clear() = store.clear()
 }

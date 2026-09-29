@@ -30,4 +30,14 @@ class TemporaryAlbumVisibilityTest {
         store.clear()
         assertTrue(store.activeKeys().isEmpty())
     }
+
+    @Test fun manuallyHiddenAlbumDoesNotForceFilesystemScan() {
+        val store = TemporaryAlbumRevealStore { 0L }
+        assertTrue(store.toggle("manual"))
+        assertFalse(store.requiresHiddenFilesystem())
+        assertTrue(store.toggle("nomedia", requiresFilesystem = true))
+        assertTrue(store.requiresHiddenFilesystem())
+        assertFalse(store.toggle("nomedia"))
+        assertFalse(store.requiresHiddenFilesystem())
+    }
 }

@@ -135,9 +135,12 @@ object MediaStoreRepository {
         val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
         if (albumKey == VirtualAlbumRules.TRASH_KEY) {
+            val trash = loadTrashedMedia(context)
+            val visibleAndTrash = loadMedia(context, false) + trash
             return VirtualAlbumRules.visibleTrash(
-                loadTrashedMedia(context),
-                hiddenKeys,
+                trash,
+                hiddenKeys + AutomaticHiddenAlbums.keysForMedia(context, visibleAndTrash,
+                    HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())),
                 prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
             )
         }
@@ -145,10 +148,15 @@ object MediaStoreRepository {
         val includeHidden = StorageAccessRules.includeHiddenFilesystem(includeHiddenFilesystem, allFilesAccess)
         if (GalleryCatalogStore.isCatalogDirty(context, includeHidden)) {
             val items = refreshMedia(context, includeHidden, force = true)
-            return VirtualAlbumRules.mediaForAlbum(items, albumKey, favoriteUris(context), hiddenKeys)
+            val markerKeys = AutomaticHiddenAlbums.keysForMedia(context, items,
+                HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
+            return VirtualAlbumRules.mediaForAlbum(items, albumKey, favoriteUris(context), hiddenKeys + markerKeys)
         }
         if (albumKey == "all_media" || albumKey == VirtualAlbumRules.RECENT_KEY || albumKey == VirtualAlbumRules.FAVORITES_KEY) {
-            return VirtualAlbumRules.mediaForAlbum(loadMedia(context, includeHidden), albumKey, favoriteUris(context), hiddenKeys)
+            val items = loadMedia(context, includeHidden)
+            val markerKeys = AutomaticHiddenAlbums.keysForMedia(context, items,
+                HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
+            return VirtualAlbumRules.mediaForAlbum(items, albumKey, favoriteUris(context), hiddenKeys + markerKeys)
         }
         val now = System.currentTimeMillis()
         synchronized(cacheLock) {

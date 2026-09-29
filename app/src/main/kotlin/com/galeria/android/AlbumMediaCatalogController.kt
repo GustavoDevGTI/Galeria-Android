@@ -3,6 +3,7 @@ package com.galeria.android
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.Environment
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
 import androidx.paging.PagingConfig
@@ -48,7 +49,7 @@ class AlbumMediaCatalogController(context: Context) {
         val request = ++generation
         pagingJob?.cancel()
         if (AlbumMediaRules.shouldUsePaging(options.albumKey, options.groupMode, options.selectionMode)) {
-            val hiddenKeys = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+            val userHiddenKeys = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
                 .getStringSet("hidden_folder_keys", emptySet()).orEmpty().toSet()
             val aggregateAlbum = options.albumKey == null || options.albumKey == "all_media" ||
                 options.albumKey == VirtualAlbumRules.RECENT_KEY
@@ -58,6 +59,15 @@ class AlbumMediaCatalogController(context: Context) {
                         MediaStoreRepository.refreshMedia(appContext, options.includeHidden, force = true)
                     }
                 }
+                val hiddenKeys = userHiddenKeys + if (aggregateAlbum) {
+                    withContext(Dispatchers.IO) {
+                        AutomaticHiddenAlbums.keys(
+                            appContext,
+                            GalleryCatalogStore.readAlbums(appContext, options.includeHidden),
+                            HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
+                        )
+                    }
+                } else emptySet()
                 GalleryCatalogStore.pagedMedia(
                     appContext,
                     options.includeHidden,

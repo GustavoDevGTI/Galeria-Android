@@ -11,7 +11,6 @@ import android.widget.EditText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.closeSoftKeyboard
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
@@ -66,10 +65,11 @@ class ImageMenuInstrumentedTest {
             }
 
             ActivityScenario.launch<DetailActivity>(intent).use {
-                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withContentDescription("Mais opções")).perform(clickClickableAncestor())
                 waitUntilDisplayed(ViewerMenuRules.RENAME)
                 onView(withText(ViewerMenuRules.OPEN_WITH)).check(matches(isDisplayed()))
                 onView(withText(ViewerMenuRules.INFORMATION)).check(matches(isDisplayed()))
+                onView(withText(ViewerMenuRules.RECOGNIZE_TEXT)).check(matches(isDisplayed()))
                 onView(withText(ViewerMenuRules.PRESENTATION)).check(matches(isDisplayed()))
                 onView(withText(ViewerMenuRules.ENABLE_LOOP)).check(doesNotExist())
                 onView(withText(ViewerMenuRules.SHOW_ON_MAP)).check(doesNotExist())
@@ -80,7 +80,7 @@ class ImageMenuInstrumentedTest {
                 onView(withText("1 × 1")).inRoot(isDialog()).check(matches(isDisplayed()))
                 onView(withText("Fechar")).inRoot(isDialog()).perform(clickClickableAncestor())
 
-                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withContentDescription("Mais opções")).perform(clickClickableAncestor())
                 waitUntilDisplayed(ViewerMenuRules.RENAME)
                 onView(withText(ViewerMenuRules.RENAME)).perform(clickClickableAncestor())
                 waitUntilDisplayedInDialog("Renomear imagem")
@@ -90,11 +90,9 @@ class ImageMenuInstrumentedTest {
                 onView(allOf(withText("Renomear"), isClickable())).inRoot(isDialog()).perform(clickClickableAncestor())
                 waitUntilDisplayed("imagem-renomeada.png")
 
-                Thread.sleep(700L)
-                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withContentDescription("Mais opções")).perform(clickClickableAncestor())
                 waitUntilDisplayed(ViewerMenuRules.PRESENTATION)
                 onView(withText(ViewerMenuRules.PRESENTATION)).perform(clickClickableAncestor())
-                Thread.sleep(4_700L)
                 waitUntilTitleChanges(secondName)
             }
         } finally {

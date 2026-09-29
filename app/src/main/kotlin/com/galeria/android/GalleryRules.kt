@@ -305,15 +305,17 @@ object AlbumCatalogRules {
         hiddenKeys: Set<String>,
         includeHidden: Boolean,
         searchAllFiles: Boolean,
-        temporarilyVisibleKeys: Set<String> = emptySet()
+        temporarilyVisibleKeys: Set<String> = emptySet(),
+        naturallyHiddenKeys: Set<String> = emptySet()
     ): List<AlbumItem> {
         val visible = source.filter { album ->
             (album.key in temporarilyVisibleKeys || album.key !in hiddenKeys) &&
-                (album.key in temporarilyVisibleKeys || includeHidden || !AlbumRules.isHidden(album.path, album.key))
+                (album.key in temporarilyVisibleKeys || includeHidden ||
+                    (album.key !in naturallyHiddenKeys && !AlbumRules.isHidden(album.path, album.key)))
         }
         if (!searchAllFiles) return visible
         val isolated = visible.filter { album ->
-            album.key in hiddenKeys || AlbumRules.isHidden(album.path, album.key)
+            album.key in hiddenKeys || album.key in naturallyHiddenKeys || AlbumRules.isHidden(album.path, album.key)
         }
         val publicAlbums = visible - isolated.toSet()
         if (publicAlbums.isEmpty()) return isolated
@@ -514,6 +516,7 @@ object ViewerMenuRules {
     const val PRESENTATION = "Apresentação"
     const val AUDIO_TRACK = "Trilha de áudio"
     const val SUBTITLES = "Legenda"
+    const val RECOGNIZE_TEXT = "Reconhecer texto"
 
     fun options(
         isVideo: Boolean,
@@ -527,6 +530,7 @@ object ViewerMenuRules {
                 add(RENAME)
                 add(OPEN_WITH)
                 add(INFORMATION)
+                add(RECOGNIZE_TEXT)
                 add(HIDE)
                 add(COPY_TO)
                 add(MOVE_TO)

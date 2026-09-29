@@ -1,9 +1,27 @@
 <resources>
+    <string name="settings_advanced_options">Opções avançadas</string>
+    <string name="settings_show_advanced_options">Mostrar opções avançadas</string>
+    <string name="settings_hide_advanced_options">Ocultar opções avançadas</string>
+    <string name="action_recognize_text">Reconhecer texto</string>
+    <string name="ocr_processing">Reconhecendo texto…</string>
+    <string name="ocr_no_text">Nenhum texto encontrado nesta imagem.</string>
+    <string name="ocr_error">Não foi possível reconhecer o texto.</string>
+    <string name="ocr_copy_all">Copiar tudo</string>
+    <string name="ocr_copied">Texto copiado.</string>
+    <string name="action_motion_photo">Ver foto em movimento</string>
+    <string name="motion_photo_error">Não foi possível reproduzir esta foto em movimento.</string>
     <string name="app_name">Galeria</string>
 
     <!-- Ações e rótulos compartilhados -->
     <string name="action_share">Compartilhar</string>
     <string name="action_favorite">Favoritar</string>
+    <string name="action_edit">Editar</string>
+    <string name="image_edit_crop">Cortar</string>
+    <string name="image_edit_rotate">Girar</string>
+    <string name="image_edit_custom">Edição personalizada</string>
+    <string name="image_edit_crop_title">Cortar imagem</string>
+    <string name="image_edit_crop_ready">Imagem pronta para recorte</string>
+    <string name="image_edit_custom_title">Editar imagem</string>
     <string name="action_unfavorite">Remover dos favoritos</string>
     <string name="action_delete">Excluir</string>
     <string name="action_move">Mover</string>

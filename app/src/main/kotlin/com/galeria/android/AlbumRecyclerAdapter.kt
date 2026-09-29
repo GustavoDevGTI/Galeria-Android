@@ -38,7 +38,7 @@ class AlbumRecyclerAdapter(
     private var filter = ""
     private var selectionMode = false
     private var coverSizePx = 320
-    private var coverRevision = 0L
+    private var imageCoverRevision = 0L
 
     init {
         setHasStableIds(true)
@@ -64,7 +64,7 @@ class AlbumRecyclerAdapter(
     }
 
     fun refreshVisibleCovers() {
-        coverRevision++
+        imageCoverRevision++
         if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_COVER)
     }
 
@@ -287,30 +287,33 @@ class AlbumRecyclerAdapter(
         if (cover == null) {
             holder.cover.setImageDrawable(null)
         } else {
-            val selected = if (cover.isVideo()) {
+            val saved = if (cover.isVideo()) {
                 val boundKey = album.key
                 val boundUri = cover.uri
-                VideoThumbnailFrames.selectedTime(context, cover) { millis ->
-                    if (millis > 0L && holder.bindingAdapterPosition in visibleAlbums.indices &&
+                VideoThumbnailFrames.thumbnail(context, cover) { uri ->
+                    if (holder.bindingAdapterPosition in visibleAlbums.indices &&
                         visibleAlbums[holder.bindingAdapterPosition].key == boundKey &&
                         visibleAlbums[holder.bindingAdapterPosition].cover?.uri == boundUri
-                    ) loadCover(holder, cover, millis)
+                    ) loadCover(holder, cover, uri)
                 }
-            } else 0L
-            loadCover(holder, cover, selected ?: 0L)
+            } else null
+            loadCover(holder, cover, saved)
         }
     }
 
-    private fun loadCover(holder: Holder, cover: MediaItem, frameMillis: Long) {
-        val diskKey = "album:${cover.uri}:${cover.size}:${cover.dateAdded}:$frameMillis:$coverRevision"
-        holder.cover.load(cover.uri) {
+    private fun loadCover(holder: Holder, cover: MediaItem, saved: android.net.Uri?) {
+        val version = if (cover.isVideo()) {
+            if (saved == null) "opening" else "saved"
+        } else imageCoverRevision.toString()
+        val diskKey = "album:${cover.uri}:${cover.size}:${cover.dateAdded}:$version"
+        holder.cover.load(saved ?: cover.uri) {
             size(coverSizePx, coverSizePx)
             precision(Precision.INEXACT)
             memoryCacheKey("$diskKey:$coverSizePx")
             diskCacheKey(diskKey)
-            if (cover.isVideo()) {
-                videoFrameMillis(frameMillis)
-                videoFrameOption(MediaMetadataRetriever.OPTION_CLOSEST)
+            if (cover.isVideo() && saved == null) {
+                videoFrameMillis(0L)
+                videoFrameOption(MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
             }
             allowHardware(true)
             crossfade(180)

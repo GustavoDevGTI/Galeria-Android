@@ -26,6 +26,8 @@
                 tools:node="remove" />
         </provider>
         <activity android:name=".ImageEditActivity" />
+        <activity android:name=".VideoEditActivity" />
+        <activity android:name=".MotionPhotoActivity" />
         <activity android:name=".SettingsActivity" />
         <activity android:name=".FolderPickerActivity" />
         <activity android:name=".FileDetailActivity" />

@@ -486,26 +486,26 @@ class MediaRecyclerAdapter(
             holder.image.setImageDrawable(null)
             holder.boundUri = uriKey
         }
-        val selected = if (item.isVideo() && !fastScrollPreview) {
-            VideoThumbnailFrames.selectedTime(context, item) { millis ->
-                if (millis > 0L && holder.boundUri == uriKey) {
-                    loadThumbnail(holder, item, requestSize, millis)
-                }
+        val saved = when {
+            !item.isVideo() -> null
+            fastScrollPreview -> VideoThumbnailFrames.cachedThumbnail(context, item)
+            else -> VideoThumbnailFrames.thumbnail(context, item) { uri ->
+                if (holder.boundUri == uriKey) loadThumbnail(holder, item, requestSize, uri)
             }
-        } else 0L
-        loadThumbnail(holder, item, requestSize, selected ?: 0L)
+        }
+        loadThumbnail(holder, item, requestSize, saved)
     }
 
-    private fun loadThumbnail(holder: Holder, item: MediaItem, requestSize: Int, frameMillis: Long) {
-        val diskKey = "media:${item.uri}:${item.size}:${item.dateAdded}:$frameMillis"
-        holder.image.load(item.uri) {
+    private fun loadThumbnail(holder: Holder, item: MediaItem, requestSize: Int, saved: android.net.Uri?) {
+        val diskKey = "media:${item.uri}:${item.size}:${item.dateAdded}:${if (saved == null) "opening" else "saved"}"
+        holder.image.load(saved ?: item.uri) {
             size(requestSize, requestSize)
             precision(Precision.INEXACT)
             memoryCacheKey("$diskKey:$requestSize")
             diskCacheKey(diskKey)
-            if (item.isVideo()) {
-                videoFrameMillis(frameMillis)
-                videoFrameOption(MediaMetadataRetriever.OPTION_CLOSEST)
+            if (item.isVideo() && saved == null) {
+                videoFrameMillis(0L)
+                videoFrameOption(MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
             }
             allowHardware(true)
             crossfade(180)

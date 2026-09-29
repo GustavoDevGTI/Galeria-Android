@@ -14,6 +14,7 @@ App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, nav
 - WorkManager para varreduras pesadas em segundo plano
 - MediaStore para leitura de mídias do aparelho
 - AndroidX Media3 / ExoPlayer para reprodução de vídeo
+- ML Kit (modelo local) para reconhecimento de texto em imagens
 - Macrobenchmark, Perfetto e Baseline Profile para medição e otimização de startup e rolagem
 
 ## Níveis de acesso
@@ -43,6 +44,10 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Gestos verticais de brilho e volume no modo cinema, além da escolha de trilhas de áudio e legendas incorporadas
 - Preferência de modo cinema e de trilhas aplicável a todos os vídeos de um álbum
 - Barra de ações unificada com ícones mais delicados e favoritos representados por coração em todas as telas
+- Favorito por coração no topo do visualizador, próximo ao menu de opções
+- Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção ao abrir e reprodução sob demanda, sem alterar o original
+- Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção de trechos e cópia integral
+- Configurações essenciais em primeiro plano; demais opções preservadas em seção expansível
 - Navegação fluida entre mídias por gestos horizontais e verticais
 - Arrastes curtos trocam a mídia, com proteção para toques simples e duplos
 - Pré-carregamento das cinco mídias anteriores e posteriores em alta qualidade
@@ -389,6 +394,17 @@ Sempre que o repositório receber uma atualização testável:
 4. Inclua código, testes, README e APK no mesmo commit e faça push para o repositório.
 
 A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_STORE_PASSWORD`, `GALERIA_KEY_ALIAS` e `GALERIA_KEY_PASSWORD`. A chave e as credenciais nunca devem ser adicionadas ao Git.
+
+### Testes locais rápidos (Windows)
+
+Compile uma vez após alterar código ou testes: `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest`.
+Com o emulador aberto, execute somente as classes afetadas, reutilizando os mesmos APKs:
+
+```powershell
+./scripts/run-android-tests.ps1 -Class 'com.galeria.android.HiddenAlbumDialogInstrumentedTest,com.galeria.android.ImageMenuInstrumentedTest' -Repeat 3
+```
+
+O script instala os APKs uma vez, imprime apenas o resultado e o primeiro erro de cada execução e retorna código diferente de zero se algum teste falhar. Use `-SkipInstall` para repetições sem recompilação nem reinstalação; use `-All` para a suíte instrumentada completa. A sequência de duas classes acima também detecta interferência de estado entre testes. Antes de entregar uma alteração, execute testes unitários, lint e a suíte de interface completa; os testes direcionados servem para o ciclo de diagnóstico, não substituem a validação final.
 
 ## Estado atual
 

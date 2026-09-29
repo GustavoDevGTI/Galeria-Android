@@ -29,8 +29,8 @@ android {
         applicationId = "com.galeria.android"
         minSdk 23
         targetSdk 37
-        versionCode = 8058
-        versionName = "0.8.58"
+        versionCode = 8059
+        versionName = "0.8.59"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -96,6 +96,7 @@ dependencies {
     ksp "androidx.room:room-compiler:2.8.5"
     implementation "androidx.work:work-runtime:2.11.2"
     implementation "androidx.profileinstaller:profileinstaller:1.4.1"
+    implementation "com.google.mlkit:text-recognition:16.0.1"
 
     testImplementation "junit:junit:4.13.2"
 

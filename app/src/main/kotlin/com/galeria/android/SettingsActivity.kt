@@ -8,6 +8,7 @@ import android.content.res.ColorStateList
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.CompoundButton
 import android.widget.LinearLayout
@@ -21,12 +22,19 @@ class SettingsActivity : Activity() {
     private lateinit var prefs: SharedPreferences
     private lateinit var content: LinearLayout
     private lateinit var root: LinearLayout
+    private var advancedOptionsExpanded = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        advancedOptionsExpanded = savedInstanceState?.getBoolean("advanced_options_expanded") ?: false
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
         Ui.applySystemBars(this)
         buildLayout()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("advanced_options_expanded", advancedOptionsExpanded)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
@@ -85,6 +93,7 @@ class SettingsActivity : Activity() {
         addOption(getString(R.string.settings_date_time_format), normalizeDisplayValue(prefs.getString("date_time_format", dateTimeValues[0]).orEmpty())) {
             chooseValue(getString(R.string.settings_date_time_format), "date_time_format", dateTimeValues)
         }
+        val advancedStart = content.childCount
         val loadingPriorityValues = resources.getStringArray(R.array.settings_loading_priority_values)
         addOption(getString(R.string.settings_loading_priority), prefs.getString("loading_priority", loadingPriorityValues[0]).orEmpty()) {
             chooseValue(getString(R.string.settings_loading_priority), "loading_priority", loadingPriorityValues)
@@ -175,6 +184,31 @@ class SettingsActivity : Activity() {
 
         addSection(getString(R.string.settings_section_migrating))
         addOption(getString(R.string.settings_export_favorites_path), getString(R.string.settings_no_favorites), null)
+
+        val advancedToggle = Ui.title(
+            this,
+            getString(R.string.settings_advanced_options) + if (advancedOptionsExpanded) "  ▴" else "  ▾",
+            16
+        ).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            minHeight = Ui.dp(this@SettingsActivity, 52)
+            setPadding(Ui.dp(this@SettingsActivity, 16), 0, Ui.dp(this@SettingsActivity, 16), 0)
+            contentDescription = getString(
+                if (advancedOptionsExpanded) R.string.settings_hide_advanced_options
+                else R.string.settings_show_advanced_options
+            )
+            isClickable = true
+            isFocusable = true
+            background = Ui.actionFeedback(this@SettingsActivity, Ui.accent(this@SettingsActivity))
+            setOnClickListener {
+                advancedOptionsExpanded = !advancedOptionsExpanded
+                fillContent()
+            }
+        }
+        content.addView(advancedToggle, advancedStart)
+        for (index in advancedStart + 1 until content.childCount) {
+            content.getChildAt(index).visibility = if (advancedOptionsExpanded) View.VISIBLE else View.GONE
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {

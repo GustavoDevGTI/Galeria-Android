@@ -4,6 +4,8 @@ import android.app.AlertDialog
 import android.app.RecoverableSecurityException
 import android.app.WallpaperManager
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ActivityInfo
@@ -22,6 +24,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Environment
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -42,6 +45,7 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.ProgressBar
 import android.widget.SeekBar
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -83,6 +87,8 @@ import kotlin.math.roundToInt
 class DetailActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private val videoPreviewExecutor = Executors.newSingleThreadExecutor()
+    private val motionPhotoExecutor = Executors.newSingleThreadExecutor()
+    private val motionPhotoScanCache = HashMap<String, MotionPhotoClip?>()
     private val imagePreloadScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO.limitedParallelism(MAX_CONCURRENT_IMAGE_PRELOADS)
     )
@@ -121,6 +127,8 @@ class DetailActivity : ComponentActivity() {
     private lateinit var favoriteButton: ImageButton
     private lateinit var soundButton: ImageButton
     private lateinit var cinemaButton: ImageButton
+    private lateinit var motionPhotoButton: ImageButton
+    private var currentMotionPhotoClip: MotionPhotoClip? = null
     private lateinit var actionsBar: LinearLayout
     private lateinit var cinemaGestureIndicator: LinearLayout
     private lateinit var cinemaGestureLabel: TextView
@@ -351,6 +359,13 @@ class DetailActivity : ComponentActivity() {
         }
         topBar.addView(title, titleParams)
 
+        favoriteButton = iconButton(R.drawable.ic_heart, Ui.dp(this, 44)).apply {
+            contentDescription = getString(R.string.action_favorite)
+            setOnClickListener { toggleFavorite() }
+        }
+        if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) favoriteButton.visibility = View.GONE
+        topBar.addView(favoriteButton, LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)))
+
         val more = iconButton(R.drawable.ic_more_vertical, Ui.dp(this, 48)).apply {
             contentDescription = "Mais opções"
             setOnClickListener { showMediaMenu(it) }
@@ -491,7 +506,30 @@ class DetailActivity : ComponentActivity() {
         bottomBar.addView(timelineRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 38)))
 
         actionsBar = LinearLayout(this).apply { gravity = Gravity.CENTER }
-        favoriteButton = actionButton(R.drawable.ic_heart).apply { setOnClickListener { toggleFavorite() } }
+        val edit = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = Ui.actionFeedback(this@DetailActivity, Color.WHITE)
+            isClickable = true
+            isFocusable = true
+            contentDescription = getString(R.string.action_edit)
+            visibility = if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) View.GONE else View.VISIBLE
+            setOnClickListener {
+                if (currentItem().isVideo()) openCurrentEditor() else showImageEditMenu()
+            }
+            addView(ImageView(this@DetailActivity).apply {
+                setImageResource(R.drawable.ic_edit)
+                imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(Ui.dp(this@DetailActivity, 20), Ui.dp(this@DetailActivity, 20)))
+            addView(TextView(this@DetailActivity).apply {
+                text = getString(R.string.action_edit)
+                textSize = 11f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            })
+        }
         val share = actionButton(R.drawable.ic_share).apply {
             contentDescription = getString(R.string.action_share)
             setOnClickListener { shareCurrent() }
@@ -509,7 +547,6 @@ class DetailActivity : ComponentActivity() {
             setOnClickListener { restoreCurrent() }
         }
         if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) {
-            favoriteButton.visibility = View.GONE
             share.visibility = View.GONE
         }
         soundButton = actionButton(R.drawable.ic_volume_on).apply {
@@ -522,12 +559,25 @@ class DetailActivity : ComponentActivity() {
             visibility = View.GONE
             setOnClickListener { toggleCinemaMode() }
         }
-        actionsBar.addView(favoriteButton, actionParams())
+        motionPhotoButton = actionButton(R.drawable.ic_motion_photo).apply {
+            contentDescription = getString(R.string.action_motion_photo)
+            visibility = View.GONE
+            setOnClickListener {
+                val clip = currentMotionPhotoClip ?: return@setOnClickListener
+                startActivity(Intent(this@DetailActivity, MotionPhotoActivity::class.java).apply {
+                    putExtra(MotionPhotoActivity.EXTRA_URI, currentItem().uri.toString())
+                    putExtra(MotionPhotoActivity.EXTRA_OFFSET, clip.offset)
+                    putExtra(MotionPhotoActivity.EXTRA_LENGTH, clip.length)
+                })
+            }
+        }
+        actionsBar.addView(edit, actionParams())
         actionsBar.addView(share, actionParams())
         actionsBar.addView(restore, actionParams())
         actionsBar.addView(trash, actionParams())
         actionsBar.addView(soundButton, actionParams())
         actionsBar.addView(cinemaButton, actionParams())
+        actionsBar.addView(motionPhotoButton, actionParams())
         bottomBar.addView(actionsBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, Ui.ACTION_TOUCH_HEIGHT_DP)))
 
         root.addView(topBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
@@ -623,6 +673,7 @@ class DetailActivity : ComponentActivity() {
                 ViewerMenuRules.RESIZE -> openImageEditor()
                 ViewerMenuRules.SHOW_ON_MAP -> openCurrentImageOnMap()
                 ViewerMenuRules.PRESENTATION -> startImagePresentation()
+                ViewerMenuRules.RECOGNIZE_TEXT -> recognizeCurrentImageText(item)
             }
         }
     }
@@ -634,6 +685,41 @@ class DetailActivity : ComponentActivity() {
             startActivity(Intent.createChooser(mediaActions.openWithIntent(item), "Abrir $mediaLabel com"))
         } catch (_: ActivityNotFoundException) {
             Ui.toast(this, "Nenhum aplicativo compatível foi encontrado.")
+        }
+    }
+
+    private fun recognizeCurrentImageText(item: MediaItem) {
+        if (!item.isImage()) return
+        Ui.toast(this, getString(R.string.ocr_processing))
+        ImageTextRecognition.recognize(this, item.uri) { result ->
+            if (isFinishing || isDestroyed || currentItem().uri != item.uri) return@recognize
+            result.fold(
+                onSuccess = { recognized ->
+                    if (recognized.isBlank()) {
+                        Ui.toast(this, getString(R.string.ocr_no_text))
+                    } else {
+                        val textView = TextView(this).apply {
+                            text = recognized
+                            textSize = 16f
+                            setTextColor(Ui.text(this@DetailActivity))
+                            setTextIsSelectable(true)
+                            setPadding(Ui.dp(this@DetailActivity, 24), Ui.dp(this@DetailActivity, 12), Ui.dp(this@DetailActivity, 24), Ui.dp(this@DetailActivity, 12))
+                        }
+                        AlertDialog.Builder(this)
+                            .setTitle(R.string.action_recognize_text)
+                            .setView(ScrollView(this).apply { addView(textView) })
+                            .setPositiveButton(R.string.ocr_copy_all) { _, _ ->
+                                (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(
+                                    ClipData.newPlainText(getString(R.string.action_recognize_text), recognized)
+                                )
+                                Ui.toast(this, getString(R.string.ocr_copied))
+                            }
+                            .setNegativeButton(R.string.action_close, null)
+                            .show()
+                    }
+                },
+                onFailure = { Ui.toast(this, getString(R.string.ocr_error)) }
+            )
         }
     }
 
@@ -1104,6 +1190,7 @@ class DetailActivity : ComponentActivity() {
             cinemaButton.visibility = View.GONE
             videoTrackController.unbind()
             activePage?.let { promoteImagePage(item, it) }
+            updateMotionPhotoAction(item)
         }
     }
 
@@ -1236,6 +1323,8 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun showVideo(item: MediaItem, page: FrameLayout) {
+        currentMotionPhotoClip = null
+        motionPhotoButton.visibility = View.GONE
         videoControls.visibility = View.VISIBLE
         timelineRow.visibility = View.VISIBLE
         soundButton.visibility = View.VISIBLE
@@ -1433,6 +1522,30 @@ class DetailActivity : ComponentActivity() {
         videoTrackController.unbind()
         addImagePreviewToPage(item, page)
         promoteImagePage(item, page)
+        updateMotionPhotoAction(item)
+    }
+
+    private fun updateMotionPhotoAction(item: MediaItem) {
+        currentMotionPhotoClip = null
+        motionPhotoButton.visibility = View.GONE
+        if (item.mimeType == "image/jpeg" || item.mimeType == "image/heic" || item.mimeType == "image/heif") {
+            val key = "${item.uri}:${item.size}"
+            if (motionPhotoScanCache.containsKey(key)) {
+                currentMotionPhotoClip = motionPhotoScanCache[key]
+                motionPhotoButton.visibility = if (currentMotionPhotoClip != null) View.VISIBLE else View.GONE
+            } else {
+                motionPhotoExecutor.execute {
+                    val clip = MotionPhotoSupport.detect(applicationContext, item.uri)
+                    runOnUiThread {
+                        motionPhotoScanCache[key] = clip
+                        if (!isFinishing && !isDestroyed && currentItem().uri == item.uri) {
+                            currentMotionPhotoClip = clip
+                            motionPhotoButton.visibility = if (clip != null) View.VISIBLE else View.GONE
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun toggleVideoSound() {
@@ -2118,18 +2231,63 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun openImageEditor() {
+    private fun showImageEditMenu() {
+        val crop = getString(R.string.image_edit_crop)
+        val rotate = getString(R.string.image_edit_rotate)
+        val custom = getString(R.string.image_edit_custom)
+        Ui.showActionDialog(this, getString(R.string.action_edit), listOf(crop, rotate, custom)) { selected ->
+            when (selected) {
+                0 -> openImageEditor(ImageEditActivity.MODE_CROP)
+                1 -> rotateCurrentImage()
+                2 -> openImageEditor()
+            }
+        }
+    }
+
+    private fun openImageEditor(mode: String = ImageEditActivity.MODE_CUSTOM) {
         if (currentItem().isVideo()) {
             Ui.toast(this, "Disponível apenas para imagens.")
             return
         }
         val item = currentItem()
-        val intent = Intent(this, ImageEditActivity::class.java).apply {
-            putExtra("uri", item.uri.toString())
-            putExtra("name", item.name)
-            putExtra("mime", item.mimeType)
+        confirmPublicEditedCopy(item) {
+            startActivity(Intent(this, ImageEditActivity::class.java).apply {
+                putExtra("uri", item.uri.toString())
+                putExtra("name", item.name)
+                putExtra("mime", item.mimeType)
+                putExtra(ImageEditActivity.EXTRA_MODE, mode)
+            })
         }
-        startActivity(intent)
+    }
+
+    private fun openCurrentEditor() {
+        if (!currentItem().isVideo()) {
+            openImageEditor()
+            return
+        }
+        val item = currentItem()
+        confirmPublicEditedCopy(item) {
+            startActivity(Intent(this, VideoEditActivity::class.java).apply {
+                putExtra("uri", item.uri.toString())
+                putExtra("name", item.name)
+            })
+        }
+    }
+
+    private fun confirmPublicEditedCopy(item: MediaItem, open: () -> Unit) {
+        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
+        val markedHidden = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
+            .containsNomedia(item.relativePath)
+        if (!markedHidden && !VirtualAlbumRules.isHiddenMedia(item, hiddenKeys)) {
+            open()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Editar mídia oculta")
+            .setMessage("A cópia editada será salva em Galeria Editada e ficará visível fora da pasta oculta. Deseja continuar?")
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Continuar") { _, _ -> open() }
+            .show()
     }
 
     private fun confirmDeleteCurrent() {
@@ -2410,6 +2568,7 @@ class DetailActivity : ComponentActivity() {
         imagePreloadScope.cancel()
         executor.shutdownNow()
         videoPreviewExecutor.shutdownNow()
+        motionPhotoExecutor.shutdownNow()
         queueController.close()
         mediaActions.close()
     }

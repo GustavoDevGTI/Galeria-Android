@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ContentValues
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Environment
 import android.provider.MediaStore
 import java.io.File
 import java.util.concurrent.Executors
@@ -90,10 +91,13 @@ class DetailMediaActions(
     ) {
         if (closed) return
         executor.execute {
+            val source = MediaStoreRepository.loadAlbums(activity.applicationContext, includeHidden)
+            val markerKeys = AutomaticHiddenAlbums.keys(activity.applicationContext, source,
+                HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
             val targets = AlbumTargetRules.orderedTargets(
-                MediaStoreRepository.loadAlbums(activity.applicationContext, includeHidden),
+                source,
                 exposedKeys,
-                hiddenKeys,
+                hiddenKeys + markerKeys,
                 excludedKeys,
                 prefs.getString("sort_mode", AlbumRules.SORT_MODIFIED) ?: AlbumRules.SORT_MODIFIED,
                 prefs.getBoolean("sort_desc", true)

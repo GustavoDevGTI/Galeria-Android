@@ -3,6 +3,7 @@ package com.galeria.android
 import android.app.Activity
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Environment
 import java.util.concurrent.Executors
 
 data class AlbumSelectionResult(
@@ -80,10 +81,12 @@ class AlbumSelectionActions(
         if (closed) return
         executor.execute {
             val source = MediaStoreRepository.loadAlbums(activity.applicationContext, includeHidden)
+            val markerKeys = AutomaticHiddenAlbums.keys(activity.applicationContext, source,
+                HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
             val targets = AlbumTargetRules.orderedTargets(
                 source,
                 exposedKeys,
-                hiddenKeys,
+                hiddenKeys + markerKeys,
                 setOfNotNull(excludedAlbumKey),
                 prefs.getString("sort_mode", AlbumRules.SORT_MODIFIED) ?: AlbumRules.SORT_MODIFIED,
                 prefs.getBoolean("sort_desc", true)
