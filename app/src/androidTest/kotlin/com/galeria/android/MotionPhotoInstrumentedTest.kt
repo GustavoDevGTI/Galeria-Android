@@ -82,6 +82,15 @@ class MotionPhotoInstrumentedTest {
                 if (!ready) Thread.sleep(100)
             }
             assertTrue("O vídeo embutido não ficou pronto para reprodução", ready)
+            scenario.onActivity { activity ->
+                val timeline = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                assertNotNull("Motion Photo deve ter a mesma linha do tempo", timeline)
+                val player = activity.window.decorView.findViewWithTag<PlayerView>("motion_photo_player").player!!
+                player.pause()
+                timeline.update(0L, player.duration)
+                timeline.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, null)
+                assertTrue(player.currentPosition > 0L)
+            }
         }
     }
 }

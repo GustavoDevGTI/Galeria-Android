@@ -44,7 +44,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.ProgressBar
-import android.widget.SeekBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -136,7 +135,12 @@ class DetailActivity : ComponentActivity() {
     private lateinit var cinemaModeIndicator: TextView
     private lateinit var videoControls: LinearLayout
     private lateinit var timelineRow: LinearLayout
-    private lateinit var seekBar: SeekBar
+    private lateinit var videoTimeline: VideoTimelineView
+    private lateinit var timelineBinding: VideoTimelineBinding
+    private lateinit var textRecognitionButton: ImageButton
+    private var pendingTextDetection: Runnable? = null
+    @Volatile private var textDetectionGeneration = 0
+    private val recognizedTextCache = LruCache<String, String>(16)
     private var speedPopup: PopupWindow? = null
     private var pendingDeleteUri: Uri? = null
     private var pendingHiddenCopy: File? = null
@@ -150,7 +154,6 @@ class DetailActivity : ComponentActivity() {
     private var pendingPdfItem: MediaItem? = null
     private var pendingRenameItem: MediaItem? = null
     private var pendingRenameName: String? = null
-    private var userSeeking = false
     private var switchingItem = false
     private var downY = 0f
     private var downX = 0f
@@ -353,9 +356,12 @@ class DetailActivity : ComponentActivity() {
         title = Ui.title(this, "", 17).apply {
             setTextColor(Color.WHITE)
             setSingleLine(true)
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            maxEms = 18
         }
         val titleParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
             marginStart = Ui.dp(this@DetailActivity, 4)
+            marginEnd = Ui.dp(this@DetailActivity, 20)
         }
         topBar.addView(title, titleParams)
 
@@ -476,34 +482,33 @@ class DetailActivity : ComponentActivity() {
         timelineRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         currentTime = timeLabel("00:00")
         durationTime = timeLabel("00:00")
-        seekBar = SeekBar(this).apply {
-            max = 1000
-            setPadding(Ui.dp(this@DetailActivity, 6), 0, Ui.dp(this@DetailActivity, 6), 0)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
-                    val duration = playbackController.durationMs()
-                    if (fromUser && duration != null) {
-                        currentTime.text = formatTime(duration * progress / 1000L)
-                    }
-                }
-                override fun onStartTrackingTouch(bar: SeekBar?) {
-                    userSeeking = true
-                }
-                override fun onStopTrackingTouch(bar: SeekBar?) {
-                    if (bar != null) playbackController.seekToProgress(bar.progress)
-                    userSeeking = false
-                }
-            })
+        videoTimeline = VideoTimelineView(this)
+        timelineBinding = VideoTimelineBinding(videoTimeline).apply {
+            onPosition = { position, duration ->
+                currentTime.text = formatTime(position)
+                durationTime.text = formatTime(duration)
+            }
+            onScrubbing = { active ->
+                if (active) handler.removeCallbacks(autoAdvanceRunnable)
+                updatePlayPauseButton()
+            }
         }
         speedButton = timeLabel("1x").apply {
             gravity = Gravity.CENTER
             setOnClickListener { showSpeedPopup() }
         }
         timelineRow.addView(currentTime, LinearLayout.LayoutParams(Ui.dp(this, 52), Ui.dp(this, 34)))
-        timelineRow.addView(seekBar, LinearLayout.LayoutParams(0, Ui.dp(this, 34), 1f))
+        timelineRow.addView(TextView(this).apply {
+            text = "/"
+            textSize = 13f
+            setTextColor(0xFFDDDDDD.toInt())
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(Ui.dp(this, 12), Ui.dp(this, 34)))
         timelineRow.addView(durationTime, LinearLayout.LayoutParams(Ui.dp(this, 52), Ui.dp(this, 34)))
+        timelineRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         timelineRow.addView(speedButton, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 34)))
-        bottomBar.addView(timelineRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 38)))
+        videoControls.addView(timelineRow, LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f))
+        bottomBar.addView(videoTimeline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
 
         actionsBar = LinearLayout(this).apply { gravity = Gravity.CENTER }
         val edit = LinearLayout(this).apply {
@@ -578,6 +583,13 @@ class DetailActivity : ComponentActivity() {
         actionsBar.addView(soundButton, actionParams())
         actionsBar.addView(cinemaButton, actionParams())
         actionsBar.addView(motionPhotoButton, actionParams())
+        textRecognitionButton = actionButton(R.drawable.ic_text_recognition).apply {
+            tag = "ocr_text_action"
+            contentDescription = getString(R.string.ocr_text_available)
+            visibility = View.GONE
+            setOnClickListener { recognizeCurrentImageText(currentItem()) }
+        }
+        actionsBar.addView(textRecognitionButton, actionParams())
         bottomBar.addView(actionsBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, Ui.ACTION_TOUCH_HEIGHT_DP)))
 
         root.addView(topBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
@@ -690,37 +702,74 @@ class DetailActivity : ComponentActivity() {
 
     private fun recognizeCurrentImageText(item: MediaItem) {
         if (!item.isImage()) return
+        val key = textCacheKey(item)
+        recognizedTextCache.get(key)?.takeIf { it.isNotBlank() }?.let {
+            showRecognizedText(it)
+            return
+        }
         Ui.toast(this, getString(R.string.ocr_processing))
         ImageTextRecognition.recognize(this, item.uri) { result ->
             if (isFinishing || isDestroyed || currentItem().uri != item.uri) return@recognize
             result.fold(
                 onSuccess = { recognized ->
+                    recognizedTextCache.put(key, recognized)
                     if (recognized.isBlank()) {
                         Ui.toast(this, getString(R.string.ocr_no_text))
                     } else {
-                        val textView = TextView(this).apply {
-                            text = recognized
-                            textSize = 16f
-                            setTextColor(Ui.text(this@DetailActivity))
-                            setTextIsSelectable(true)
-                            setPadding(Ui.dp(this@DetailActivity, 24), Ui.dp(this@DetailActivity, 12), Ui.dp(this@DetailActivity, 24), Ui.dp(this@DetailActivity, 12))
-                        }
-                        AlertDialog.Builder(this)
-                            .setTitle(R.string.action_recognize_text)
-                            .setView(ScrollView(this).apply { addView(textView) })
-                            .setPositiveButton(R.string.ocr_copy_all) { _, _ ->
-                                (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(
-                                    ClipData.newPlainText(getString(R.string.action_recognize_text), recognized)
-                                )
-                                Ui.toast(this, getString(R.string.ocr_copied))
-                            }
-                            .setNegativeButton(R.string.action_close, null)
-                            .show()
+                        textRecognitionButton.visibility = View.VISIBLE
+                        showRecognizedText(recognized)
                     }
                 },
                 onFailure = { Ui.toast(this, getString(R.string.ocr_error)) }
             )
         }
+    }
+
+    private fun showRecognizedText(recognized: String) {
+        val textView = TextView(this).apply {
+            text = recognized
+            textSize = 16f
+            setTextColor(Ui.text(this@DetailActivity))
+            setTextIsSelectable(true)
+            setPadding(Ui.dp(this@DetailActivity, 24), Ui.dp(this@DetailActivity, 12), Ui.dp(this@DetailActivity, 24), Ui.dp(this@DetailActivity, 12))
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.action_recognize_text)
+            .setView(ScrollView(this).apply { addView(textView) })
+            .setPositiveButton(R.string.ocr_copy_all) { _, _ ->
+                (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(
+                    ClipData.newPlainText(getString(R.string.action_recognize_text), recognized)
+                )
+                Ui.toast(this, getString(R.string.ocr_copied))
+            }
+            .setNegativeButton(R.string.action_close, null)
+            .show()
+    }
+
+    private fun textCacheKey(item: MediaItem) = "${item.uri}|${item.size}|${item.dateAdded}"
+
+    private fun scheduleTextDetection(item: MediaItem?) {
+        pendingTextDetection?.let(handler::removeCallbacks)
+        pendingTextDetection = null
+        val generation = ++textDetectionGeneration
+        textRecognitionButton.visibility = View.GONE
+        if (item == null || !item.isImage()) return
+        val key = textCacheKey(item)
+        recognizedTextCache.get(key)?.let {
+            textRecognitionButton.visibility = if (it.isBlank()) View.GONE else View.VISIBLE
+            return
+        }
+        pendingTextDetection = Runnable {
+            ImageTextRecognition.recognize(this, item.uri, detailed = false, isRelevant = {
+                generation == textDetectionGeneration && !isFinishing && !isDestroyed
+            }) { result ->
+                if (generation != textDetectionGeneration || isFinishing || isDestroyed) return@recognize
+                result.onSuccess {
+                    recognizedTextCache.put(key, it)
+                    textRecognitionButton.visibility = if (it.isBlank()) View.GONE else View.VISIBLE
+                }
+            }
+        }.also { handler.postDelayed(it, 650L) }
     }
 
     private fun askRenameCurrentImage() {
@@ -1186,11 +1235,14 @@ class DetailActivity : ComponentActivity() {
             applyCinemaOrientation()
             videoControls.visibility = View.GONE
             timelineRow.visibility = View.GONE
+            videoTimeline.visibility = View.GONE
+            timelineBinding.unbind()
             soundButton.visibility = View.GONE
             cinemaButton.visibility = View.GONE
             videoTrackController.unbind()
             activePage?.let { promoteImagePage(item, it) }
             updateMotionPhotoAction(item)
+            scheduleTextDetection(item)
         }
     }
 
@@ -1277,6 +1329,7 @@ class DetailActivity : ComponentActivity() {
     private fun loadCurrentItem() {
         cancelPendingSingleTap()
         zoomed = false
+        timelineBinding.unbind()
         playbackController.releaseCurrent()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
@@ -1323,10 +1376,12 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun showVideo(item: MediaItem, page: FrameLayout) {
+        scheduleTextDetection(null)
         currentMotionPhotoClip = null
         motionPhotoButton.visibility = View.GONE
         videoControls.visibility = View.VISIBLE
         timelineRow.visibility = View.VISIBLE
+        videoTimeline.visibility = View.VISIBLE
         soundButton.visibility = View.VISIBLE
         cinemaButton.visibility = View.VISIBLE
         updateCinemaButton()
@@ -1339,6 +1394,7 @@ class DetailActivity : ComponentActivity() {
         loadVideoPreview(item, preview)
 
         val playerView = PlayerView(this).apply {
+            tag = "detail_video_player"
             alpha = 0f
             setBackgroundColor(Color.TRANSPARENT)
             setShutterBackgroundColor(Color.TRANSPARENT)
@@ -1347,6 +1403,22 @@ class DetailActivity : ComponentActivity() {
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         }
         page.addView(playerView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+
+        // PlayerView/SurfaceView can consume the stream even with useController=false.
+        // Keep viewer swipes, taps and cinema gestures above the playback surface.
+        page.addView(View(this).apply {
+            tag = "video_gesture_surface"
+            isClickable = true
+            setOnClickListener { handleTap(width / 2f, height / 2f) }
+            setOnTouchListener { view, event ->
+                handleSwipeOrTap(event)
+                if (event.actionMasked == MotionEvent.ACTION_UP && completedViewerTap) {
+                    completedViewerTap = false
+                    handleTap(event.x, event.y)
+                }
+                true
+            }
+        }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         val player = playbackController.start(
             uri = item.uri,
@@ -1380,6 +1452,7 @@ class DetailActivity : ComponentActivity() {
             }
         )
         playerView.player = player
+        timelineBinding.bind(player, item.uri, "${item.size}|${item.dateAdded}")
         if (cinemaMode) videoTrackController.bind(player, cinemaAlbumKey(item)) else videoTrackController.unbind()
         updateSpeedButton()
         updatePlayPauseButton()
@@ -1517,12 +1590,15 @@ class DetailActivity : ComponentActivity() {
     private fun showImage(item: MediaItem, page: FrameLayout) {
         videoControls.visibility = View.GONE
         timelineRow.visibility = View.GONE
+        videoTimeline.visibility = View.GONE
+        timelineBinding.unbind()
         soundButton.visibility = View.GONE
         cinemaButton.visibility = View.GONE
         videoTrackController.unbind()
         addImagePreviewToPage(item, page)
         promoteImagePage(item, page)
         updateMotionPhotoAction(item)
+        scheduleTextDetection(item)
     }
 
     private fun updateMotionPhotoAction(item: MediaItem) {
@@ -1813,10 +1889,22 @@ class DetailActivity : ComponentActivity() {
         var imageTapCandidate = false
         var imageTouchDownX = 0f
         var imageTouchDownY = 0f
+        var textLongPressed = false
+        val textLongPress = Runnable {
+            if (imageTapCandidate && !pagingGesture && currentItem().uri == item.uri && !isFinishing) {
+                textLongPressed = true
+                imageTapCandidate = false
+                image.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                recognizeCurrentImageText(item)
+            }
+        }
         image.setOnTouchListener { _, event ->
             val atBaseScale = isAtBaseZoom(image)
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    textLongPressed = false
+                    image.removeCallbacks(textLongPress)
+                    image.postDelayed(textLongPress, ViewConfiguration.getLongPressTimeout().toLong())
                     pagingGesture = false
                     imageTapCandidate = true
                     imageTouchDownX = event.x
@@ -1825,6 +1913,7 @@ class DetailActivity : ComponentActivity() {
                     false
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> {
+                    image.removeCallbacks(textLongPress)
                     if (dragPreviewPage != null) cancelInteractiveSwipe()
                     pagingGesture = false
                     imageTapCandidate = false
@@ -1835,6 +1924,7 @@ class DetailActivity : ComponentActivity() {
                         abs(event.y - imageTouchDownY) > gestureTouchSlop
                     ) {
                         imageTapCandidate = false
+                        image.removeCallbacks(textLongPress)
                     }
                     if (event.pointerCount > 1 || !atBaseScale) {
                         if (pagingGesture || dragPreviewPage != null) cancelInteractiveSwipe()
@@ -1854,7 +1944,14 @@ class DetailActivity : ComponentActivity() {
                     }
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (pagingGesture) {
+                    image.removeCallbacks(textLongPress)
+                    if (textLongPressed) {
+                        val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+                        image.onTouchEvent(cancel)
+                        cancel.recycle()
+                        textLongPressed = false
+                        true
+                    } else if (pagingGesture) {
                         updateInteractiveSwipe(event)
                         finishInteractiveSwipe()
                         pagingGesture = false
@@ -1873,6 +1970,7 @@ class DetailActivity : ComponentActivity() {
                     }
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    image.removeCallbacks(textLongPress)
                     if (pagingGesture || dragPreviewPage != null) cancelInteractiveSwipe()
                     val consumed = pagingGesture
                     pagingGesture = false
@@ -1883,7 +1981,7 @@ class DetailActivity : ComponentActivity() {
             }
         }
         image.onViewTapListener = OnViewTapListener { _, _ ->
-            toggleHud()
+            if (!textLongPressed) toggleHud()
         }
         image.load(item.uri) {
             memoryCacheKey(viewerNativeKey(item))
@@ -1942,17 +2040,15 @@ class DetailActivity : ComponentActivity() {
             playPauseButton.setImageResource(
                 if (playbackController.isPlaying()) R.drawable.ic_pause else R.drawable.ic_play
             )
+            playPauseButton.contentDescription = getString(if (playbackController.isPlaying()) R.string.video_pause else R.string.video_play)
         }
     }
 
     private fun updateTimeline() {
         if (!currentItem().isVideo()) return
         val timeline = playbackController.timeline() ?: return
-        currentTime.text = formatTime(timeline.positionMs)
+        currentTime.text = formatTime(if (videoTimeline.isScrubbing) videoTimeline.positionMs else timeline.positionMs)
         durationTime.text = if (timeline.durationMs > 0) formatTime(timeline.durationMs) else "00:00"
-        if (!userSeeking && timeline.durationMs > 0) {
-            seekBar.progress = timeline.progress
-        }
     }
 
     private fun formatTime(millis: Long): String {
@@ -2232,16 +2328,11 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun showImageEditMenu() {
-        val crop = getString(R.string.image_edit_crop)
-        val rotate = getString(R.string.image_edit_rotate)
-        val custom = getString(R.string.image_edit_custom)
-        Ui.showActionDialog(this, getString(R.string.action_edit), listOf(crop, rotate, custom)) { selected ->
-            when (selected) {
-                0 -> openImageEditor(ImageEditActivity.MODE_CROP)
-                1 -> rotateCurrentImage()
-                2 -> openImageEditor()
-            }
-        }
+        EditorUi.editMenu(this, listOf(
+            { openImageEditor(ImageEditActivity.MODE_CROP) },
+            { rotateCurrentImage() },
+            { openImageEditor() }
+        ))
     }
 
     private fun openImageEditor(mode: String = ImageEditActivity.MODE_CUSTOM) {
@@ -2529,6 +2620,8 @@ class DetailActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (::timelineBinding.isInitialized) timelineBinding.resumeUpdates()
+        if (::textRecognitionButton.isInitialized) scheduleTextDetection(mediaQueue.getOrNull(currentIndex))
         playbackController.resumeAfterLifecycle()
         handler.removeCallbacks(progressUpdater)
         if (mediaQueue.getOrNull(currentIndex)?.isVideo() == true) {
@@ -2539,6 +2632,9 @@ class DetailActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        if (::timelineBinding.isInitialized) timelineBinding.suspend()
+        pendingTextDetection?.let(handler::removeCallbacks)
+        textDetectionGeneration++
         playbackController.pauseForLifecycle()
         cancelPendingSingleTap()
         handler.removeCallbacks(progressUpdater)
@@ -2552,6 +2648,9 @@ class DetailActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (::timelineBinding.isInitialized) timelineBinding.unbind()
+        pendingTextDetection?.let(handler::removeCallbacks)
+        textDetectionGeneration++
         cancelPendingSingleTap()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)

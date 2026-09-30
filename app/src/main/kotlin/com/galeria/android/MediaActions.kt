@@ -105,6 +105,11 @@ class MediaActions private constructor() {
 
         @JvmStatic
         fun requestDelete(activity: Activity, uri: Uri, requestCode: Int): Int {
+            // Hidden filesystem media has no MediaStore row. TrashRequest only accepts
+            // MediaStore content URIs; use the recoverable filesystem trash for these.
+            if (uri.scheme == "file") {
+                return if (LegacyTrashStore.trash(activity, uri)) RESULT_DONE else RESULT_FAILED
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 if (setTrashed(activity, uri, true)) return RESULT_DONE
                 return try {
@@ -138,7 +143,7 @@ class MediaActions private constructor() {
 
         @JvmStatic
         fun requestRestore(activity: Activity, uri: Uri, requestCode: Int): Int {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            if (uri.scheme == "file" || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
                 return if (LegacyTrashStore.restore(activity, uri)) RESULT_DONE else RESULT_FAILED
             }
             if (setTrashed(activity, uri, false)) return RESULT_DONE

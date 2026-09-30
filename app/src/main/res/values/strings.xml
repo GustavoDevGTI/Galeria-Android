@@ -1,4 +1,10 @@
 <resources>
+    <string name="video_timeline_description">Linha do tempo do vídeo. Arraste para navegar. Segure para ajuste fino.</string>
+    <string name="video_timeline_hint">Arraste · Segure para precisão</string>
+    <string name="video_timeline_fine">Ajuste fino</string>
+    <string name="video_play">Reproduzir vídeo</string>
+    <string name="video_pause">Pausar vídeo</string>
+    <string name="ocr_text_available">Texto detectado: selecionar ou copiar</string>
     <string name="settings_advanced_options">Opções avançadas</string>
     <string name="settings_show_advanced_options">Mostrar opções avançadas</string>
     <string name="settings_hide_advanced_options">Ocultar opções avançadas</string>

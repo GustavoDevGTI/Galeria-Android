@@ -10,7 +10,6 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import android.view.View
 import android.view.ViewGroup
-import android.widget.SeekBar
 import androidx.lifecycle.Lifecycle
 import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ActivityScenario
@@ -64,7 +63,7 @@ class PlaybackResumeInstrumentedTest {
                 }
                 scenario.moveToState(Lifecycle.State.CREATED)
                 scenario.moveToState(Lifecycle.State.RESUMED)
-                val progressValues = mutableSetOf<Int>()
+                val progressValues = mutableSetOf<Long>()
                 val advanced = CountDownLatch(1)
                 var lastState = "not sampled"
                 scenario.onActivity { activity ->
@@ -72,7 +71,7 @@ class PlaybackResumeInstrumentedTest {
                     val deadline = SystemClock.uptimeMillis() + 10_000L
                     val sample = object : Runnable {
                         override fun run() {
-                            val progress = requireNotNull(find<SeekBar>(activity.window.decorView)).progress
+                            val progress = requireNotNull(find<VideoTimelineView>(activity.window.decorView)).positionMs
                             val player = requireNotNull(find<PlayerView>(activity.window.decorView)).player
                             lastState = "playing=${player?.isPlaying}, ready=${player?.playWhenReady}, " +
                                 "state=${player?.playbackState}, position=${player?.currentPosition}, " +

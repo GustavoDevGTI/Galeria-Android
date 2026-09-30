@@ -47,6 +47,10 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Favorito por coração no topo do visualizador, próximo ao menu de opções
 - Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção ao abrir e reprodução sob demanda, sem alterar o original
 - Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção de trechos e cópia integral
+- Ícone de texto exibido automaticamente quando a foto aberta contém texto reconhecido; análise local adiada durante a troca rápida de fotos
+- Linha do tempo com miniaturas em vídeos, Motion Photos e na prévia de corte; tocar ou arrastar atualiza o vídeo durante o gesto
+- Em vídeos longos, segurar a linha do tempo amplia uma janela de 20 segundos para ajuste fino; a posição não depende de uma miniatura para cada segundo
+- Miniaturas da linha do tempo extraídas progressivamente, com uma extração por vez, cache de memória de 12 MB e cache privado em disco limitado
 - Configurações essenciais em primeiro plano; demais opções preservadas em seção expansível
 - Navegação fluida entre mídias por gestos horizontais e verticais
 - Arrastes curtos trocam a mídia, com proteção para toques simples e duplos
@@ -70,7 +74,9 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Fixação de pastas no gerenciamento de ocultos para manter pastas importantes no topo e forçar varredura dos ocultos quando necessário
 - Submenu de ocultos limitado aos álbuns visíveis ou já exibidos anteriormente; novos álbuns ocultos só são procurados pelo botão `Carregar ocultos`
 - Menus e submenus acompanham a cor do tema escolhido, mantendo contraste adequado em temas claros e escuros
-- Editor básico de imagem com recorte e pincel
+- Editor com tema preto e ferramentas por ícones: recorte por cantos/bordas, proporções, espelhamento, giro, filtros e redimensionamento em pixels
+- Texto digitado diretamente sobre a imagem e pincel com seis combinações de espessura/tipo e espectro de cores; cada traço mantém seu estilo
+- OCR acionável ao segurar uma foto e também dentro do editor; leitura detalhada de documentos e cópia do texto sem alterar a imagem
 - Exportação de imagem para PDF
 - Definir imagem como papel de parede
 - Rotação de imagem
@@ -113,7 +119,9 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A suíte funcional atual possui 110 testes: 67 unitários e 43 instrumentados. O módulo de desempenho contém outros 4 casos (3 macrobenchmarks e 1 gerador de perfil).
+A suíte funcional da versão 0.8.60 possui 90 testes unitários e 75 instrumentados. A validação integral da interface desta versão ainda está pendente: a última execução completa anterior aos ajustes finais apresentou 71 aprovações e 4 falhas; a repetição após os ajustes foi interrompida por instabilidade nativa do emulador. O usuário solicitou a publicação para realizar os testes manualmente no aparelho. Consulte o [roteiro de validação manual](docs/TESTES-MANUAIS-0.8.60.md). O módulo de desempenho contém outros 4 casos (3 macrobenchmarks e 1 gerador de perfil).
+
+Inventário histórico de cobertura (expandido nas versões posteriores):
 
 - 51 testes unitários locais para filtros de mídia, abertura externa, identificação e histórico de pastas ocultas, níveis de acesso, preparação e modo de carga do catálogo, preservação de rolagem, operações em lote, colunas da grade, identidade de URIs do MediaStore, ordenação de álbuns, navegação, remoção e repetição na fila, regras de gestos, estado, metadados, reprodução e menus do visualizador
 - 3 testes instrumentados do Room para resumos de álbuns, isolamento dos catálogos e paginação com ordem personalizada
@@ -288,9 +296,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada lançamento posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.58**.
+A linha começou em `v0.8.0`. Cada lançamento posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.60**.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.58 usa o código `8058`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.60 usa o código `8060`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -353,6 +361,8 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.56`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.56) | 24/09/2026 | Ocultação coerente nas coleções e Lixeira, álbuns fixados, seleção por arraste e ordenação simplificada |
 | [`v0.8.57`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.57) | 24/09/2026 | Capas personalizadas, miniaturas de vídeos e metadados reorganizados |
 | [`v0.8.58`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.58) | 24/09/2026 | Revelação temporária e isolada de álbuns ocultos |
+| [`v0.8.59`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.59) | 29/09/2026 | Edição, OCR, Motion Photos e ajustes de catálogo e miniaturas |
+| [`v0.8.60`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.60) | 30/09/2026 | Linha do tempo de vídeo, revisão do editor, OCR e correções de navegação/Lixeira; validação manual pendente |
 
 ## Relatório comparativo de desempenho
 
@@ -368,7 +378,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.58](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.58/Galeria-Android-versao-0.8.58.apk)
+[Baixar Galeria Android - versão 0.8.60](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.60/Galeria-Android-versao-0.8.60.apk)
 
 Build padrão do Gradle:
 
@@ -376,22 +386,22 @@ Build padrão do Gradle:
 app\build\outputs\apk\release\app-release.apk
 ```
 
-APK versionado mantido na raiz do projeto e versionado no GitHub:
+APK de distribuição publicado como anexo no GitHub Releases (os APKs históricos na raiz permanecem preservados):
 
 ```text
-Galeria-Android-versao-0.8.58.apk
+Galeria-Android-versao-0.8.60.apk
 ```
 
-O APK 0.8.58 usa a mesma chave permanente das versões recentes. Quem instalou um APK 0.8 anterior assinado pela antiga chave de depuração precisa desinstalá-lo uma única vez antes desta instalação. As próximas atualizações assinadas pela chave permanente serão compatíveis entre si.
+O APK 0.8.60 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de entrega
 
 Sempre que o repositório receber uma atualização testável:
 
 1. Execute testes unitários, instrumentados, lint e build de release.
-2. Gere o APK release assinado e copie-o para a raiz usando a versão atual no nome.
+2. Gere o APK release assinado e publique-o como anexo no GitHub Releases usando a versão atual no nome, sem adicionar novos binários ao histórico Git.
 3. Atualize neste README a validação, o estado do projeto e o link do APK quando a versão mudar.
-4. Inclua código, testes, README e APK no mesmo commit e faça push para o repositório.
+4. Inclua código, testes e README no commit, faça push e associe o release ao mesmo commit. Registre explicitamente qualquer validação pendente; a versão 0.8.60 foi solicitada para testes manuais no aparelho, sem aprovação integral da suíte de interface.
 
 A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_STORE_PASSWORD`, `GALERIA_KEY_ALIAS` e `GALERIA_KEY_PASSWORD`. A chave e as credenciais nunca devem ser adicionadas ao Git.
 
@@ -405,6 +415,8 @@ Com o emulador aberto, execute somente as classes afetadas, reutilizando os mesm
 ```
 
 O script instala os APKs uma vez, imprime apenas o resultado e o primeiro erro de cada execução e retorna código diferente de zero se algum teste falhar. Use `-SkipInstall` para repetições sem recompilação nem reinstalação; use `-All` para a suíte instrumentada completa. A sequência de duas classes acima também detecta interferência de estado entre testes. Antes de entregar uma alteração, execute testes unitários, lint e a suíte de interface completa; os testes direcionados servem para o ciclo de diagnóstico, não substituem a validação final.
+
+Se o Java no Windows falhar com `Unable to establish loopback connection` antes de executar os testes unitários, use `./gradlew.bat -I scripts/direct-unit-tests.gradle :app:directUnitTests`. Essa alternativa executa as mesmas classes JUnit com o mesmo classpath sem o protocolo de comunicação do worker de testes; falhas de asserção continuam interrompendo a validação. O CI permanece usando `testDebugUnitTest`, com seus relatórios padrão.
 
 ## Estado atual
 

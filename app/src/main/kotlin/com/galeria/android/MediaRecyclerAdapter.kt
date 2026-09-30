@@ -381,9 +381,9 @@ class MediaRecyclerAdapter(
             isClickable = true
             isFocusable = true
         }
-        thumb.addView(preview, FrameLayout.LayoutParams(Ui.dp(context, 36), Ui.dp(context, 36), Gravity.TOP or Gravity.END).apply {
+        thumb.addView(preview, FrameLayout.LayoutParams(Ui.dp(context, 36), Ui.dp(context, 36), Gravity.BOTTOM or Gravity.END).apply {
             marginEnd = Ui.dp(context, 5)
-            topMargin = Ui.dp(context, 5)
+            bottomMargin = Ui.dp(context, 5)
         })
 
         val thumbParams = if (asList) {

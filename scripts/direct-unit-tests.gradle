@@ -1,0 +1,18 @@
+// Local fallback when Windows cannot establish the Gradle test worker loopback connection.
+// Executes the same compiled JUnit tests and runtime classpath; assertion failures fail the build.
+gradle.projectsEvaluated {
+    def app = gradle.rootProject.project(':app')
+    app.tasks.register('directUnitTests', JavaExec) {
+        dependsOn ':app:compileDebugUnitTestKotlin'
+        mainClass = 'org.junit.runner.JUnitCore'
+        doFirst {
+            def test = app.tasks.named('testDebugUnitTest').get()
+            classpath = test.classpath
+            args = test.testClassesDirs.asFileTree.matching { include '**/*Test.class' }.files.collect {
+                def base = test.testClassesDirs.files.find { root -> it.toPath().startsWith(root.toPath()) }
+                base.toPath().relativize(it.toPath()).toString().replace('\\', '.').replace('/', '.').replaceAll(/\.class$/, '')
+            }.findAll { !it.contains('$') }.sort()
+            if (args.isEmpty()) throw new GradleException('Nenhum teste unitário compilado foi encontrado.')
+        }
+    }
+}

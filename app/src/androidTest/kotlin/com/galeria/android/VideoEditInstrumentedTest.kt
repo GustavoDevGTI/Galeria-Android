@@ -69,8 +69,9 @@ class VideoEditInstrumentedTest {
             }).use {
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
                 onView(withText("Cortar vídeo")).check(matches(isDisplayed()))
-                onView(withText("Prévia")).check(matches(isDisplayed())).perform(click())
-                onView(withText("Salvar")).check(matches(isDisplayed()))
+                onView(withContentDescription(R.string.video_timeline_description)).check(matches(isDisplayed()))
+                onView(androidx.test.espresso.matcher.ViewMatchers.withContentDescription("Prévia")).check(matches(isDisplayed())).perform(click())
+                onView(androidx.test.espresso.matcher.ViewMatchers.withContentDescription("Salvar cópia")).check(matches(isDisplayed()))
             }
         } finally {
             context.contentResolver.delete(source, null, null)

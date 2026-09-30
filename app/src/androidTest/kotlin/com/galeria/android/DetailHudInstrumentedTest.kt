@@ -55,8 +55,8 @@ class DetailHudInstrumentedTest {
                 onView(withContentDescription(context.getString(R.string.action_favorite))).check(matches(isDisplayed())).perform(click())
                 onView(withContentDescription(context.getString(R.string.action_unfavorite))).check(matches(isDisplayed()))
                 onView(withText(context.getString(R.string.action_edit))).check(matches(isDisplayed())).perform(click())
-                waitForDisplayed(context.getString(R.string.image_edit_custom))
-                onView(withText(context.getString(R.string.image_edit_custom))).perform(clickClickableAncestor())
+                waitForView { onView(withContentDescription(R.string.image_edit_custom)).check(matches(isDisplayed())) }
+                onView(withContentDescription(R.string.image_edit_custom)).perform(clickClickableAncestor())
                 waitForDisplayed("Editar imagem")
                 pressBack()
                 waitForDisplayed(name)

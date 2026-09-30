@@ -29,8 +29,10 @@ class VideoEditActivity : Activity() {
     private lateinit var endSeek: SeekBar
     private lateinit var startLabel: TextView
     private lateinit var endLabel: TextView
-    private lateinit var saveButton: TextView
-    private lateinit var previewButton: TextView
+    private lateinit var saveButton: android.widget.ImageButton
+    private lateinit var previewButton: android.widget.ImageButton
+    private lateinit var timeline: VideoTimelineView
+    private lateinit var timelineBinding: VideoTimelineBinding
     private var durationMs = 0L
     private var saving = false
     private val previewTick = object : Runnable {
@@ -42,7 +44,13 @@ class VideoEditActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        setTheme(android.R.style.Theme_Material_NoActionBar)
         super.onCreate(savedInstanceState)
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
         sourceUri = Uri.parse(intent.getStringExtra("uri").orEmpty())
         val retriever = MediaMetadataRetriever()
         durationMs = try {
@@ -73,17 +81,22 @@ class VideoEditActivity : Activity() {
         }
         val header = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(Ui.dp(this@VideoEditActivity, 12), statusBarHeight(), Ui.dp(this@VideoEditActivity, 12), Ui.dp(this@VideoEditActivity, 8))
+            setPadding(Ui.dp(this@VideoEditActivity, 12), Ui.dp(this@VideoEditActivity, 6), Ui.dp(this@VideoEditActivity, 12), Ui.dp(this@VideoEditActivity, 8))
         }
-        header.addView(chip("Voltar") { finish() })
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars() or androidx.core.view.WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
+        header.addView(EditorUi.button(this, R.drawable.ic_back, "Voltar") { finish() }, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)))
         header.addView(TextView(this).apply {
             text = "Cortar vídeo"
             textSize = 18f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f))
-        saveButton = chip("Salvar") { saveTrimmedVideo() }
-        header.addView(saveButton)
+        saveButton = EditorUi.button(this, R.drawable.ic_check, "Salvar cópia") { saveTrimmedVideo() }
+        header.addView(saveButton, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)))
         root.addView(header)
 
         root.addView(PlayerView(this).apply {
@@ -93,17 +106,26 @@ class VideoEditActivity : Activity() {
 
         val controls = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(Ui.dp(this@VideoEditActivity, 20), Ui.dp(this@VideoEditActivity, 14), Ui.dp(this@VideoEditActivity, 20), navigationBarHeight() + Ui.dp(this@VideoEditActivity, 14))
+            setPadding(Ui.dp(this@VideoEditActivity, 20), Ui.dp(this@VideoEditActivity, 14), Ui.dp(this@VideoEditActivity, 20), Ui.dp(this@VideoEditActivity, 14))
         }
         controls.addView(TextView(this).apply {
             text = "Selecione o início e o fim. O corte preserva as trilhas suportadas e salva uma cópia."
             textSize = 13f
             setTextColor(0xFFCCCCCC.toInt())
         })
+        val playbackTime = rangeLabel()
+        timeline = VideoTimelineView(this)
+        controls.addView(playbackTime)
+        controls.addView(timeline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
+        timelineBinding = VideoTimelineBinding(timeline).apply {
+            onPosition = { position, duration -> playbackTime.text = "${formatTime(position)} / ${formatTime(duration)}" }
+            onScrubbing = { active -> if (active) handler.removeCallbacks(previewTick) else handler.post(previewTick) }
+            bind(player, sourceUri)
+        }
         startLabel = rangeLabel()
         endLabel = rangeLabel()
-        startSeek = SeekBar(this).apply { max = 1000; progress = 0 }
-        endSeek = SeekBar(this).apply { max = 1000; progress = 1000 }
+        startSeek = SeekBar(this).apply { max = 1000; progress = 0; progressTintList = android.content.res.ColorStateList.valueOf(Color.WHITE); thumbTintList = progressTintList }
+        endSeek = SeekBar(this).apply { max = 1000; progress = 1000; progressTintList = android.content.res.ColorStateList.valueOf(Color.WHITE); thumbTintList = progressTintList }
         controls.addView(startLabel)
         controls.addView(startSeek)
         controls.addView(endLabel)
@@ -128,7 +150,7 @@ class VideoEditActivity : Activity() {
         }
         startSeek.setOnSeekBarChangeListener(listener)
         endSeek.setOnSeekBarChangeListener(listener)
-        previewButton = chip("Prévia") { previewSelection() }
+        previewButton = EditorUi.button(this, R.drawable.ic_play, "Prévia") { previewSelection() }
         controls.addView(previewButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 44)))
         root.addView(controls)
         setContentView(root)
@@ -140,25 +162,13 @@ class VideoEditActivity : Activity() {
         setPadding(0, Ui.dp(this@VideoEditActivity, 10), 0, 0)
     }
 
-    private fun chip(label: String, action: () -> Unit) = TextView(this).apply {
-        text = label
-        textSize = 14f
-        setTextColor(Color.WHITE)
-        gravity = Gravity.CENTER
-        minWidth = Ui.dp(this@VideoEditActivity, 72)
-        setPadding(Ui.dp(this@VideoEditActivity, 12), 0, Ui.dp(this@VideoEditActivity, 12), 0)
-        background = Ui.rounded(0xFF303030.toInt(), 14, this@VideoEditActivity)
-        isClickable = true
-        isFocusable = true
-        setOnClickListener { action() }
-    }
-
     private fun selectedRange(): LongRange = VideoTrimRules.range(durationMs, startSeek.progress, endSeek.progress)
 
     private fun updateRange() {
         val range = selectedRange()
         startLabel.text = "Início  ${formatTime(range.first)}"
         endLabel.text = "Fim  ${formatTime(range.last)}"
+        timeline.setSelectedRange(range)
     }
 
     private fun formatTime(milliseconds: Long): String {
@@ -178,7 +188,7 @@ class VideoEditActivity : Activity() {
         if (saving) return
         saving = true
         saveButton.isEnabled = false
-        saveButton.text = "Salvando…"
+        saveButton.contentDescription = "Salvando…"
         player.pause()
         val range = selectedRange()
         val name = intent.getStringExtra("name").orEmpty()
@@ -188,7 +198,7 @@ class VideoEditActivity : Activity() {
                 if (isDestroyed) return@runOnUiThread
                 saving = false
                 saveButton.isEnabled = true
-                saveButton.text = "Salvar"
+                saveButton.contentDescription = "Salvar cópia"
                 result.onSuccess {
                     Ui.toast(this, "Vídeo cortado salvo em Galeria Editada.")
                     finish()
@@ -205,23 +215,21 @@ class VideoEditActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        if (::timelineBinding.isInitialized) timelineBinding.suspend()
         if (::player.isInitialized) player.pause()
     }
 
     override fun onDestroy() {
+        if (::timelineBinding.isInitialized) timelineBinding.unbind()
         handler.removeCallbacks(previewTick)
         if (::player.isInitialized) player.release()
         executor.shutdownNow()
         super.onDestroy()
     }
 
-    private fun statusBarHeight(): Int {
-        val id = resources.getIdentifier("status_bar_height", "dimen", "android")
-        return if (id > 0) resources.getDimensionPixelSize(id) else Ui.dp(this, 24)
+    override fun onResume() {
+        super.onResume()
+        if (::timelineBinding.isInitialized) timelineBinding.resumeUpdates()
     }
 
-    private fun navigationBarHeight(): Int {
-        val id = resources.getIdentifier("navigation_bar_height", "dimen", "android")
-        return if (id > 0) resources.getDimensionPixelSize(id) else Ui.dp(this, 24)
-    }
 }

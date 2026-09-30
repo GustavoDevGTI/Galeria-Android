@@ -41,6 +41,69 @@ class ImageEditorInstrumentedTest {
         Manifest.permission.READ_MEDIA_VIDEO
     )
 
+    @Test fun brushPreservesEachStrokeColorAndWidthAndTextIsInline() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = insertImage(context, "brush-${System.nanoTime()}.png")
+        try {
+            ActivityScenario.launch<ImageEditActivity>(Intent(context, ImageEditActivity::class.java).apply {
+                putExtra("uri", source.toString()); putExtra("name", "brush.png"); putExtra("mime", "image/png")
+            }).use { scenario ->
+                val deadline = System.currentTimeMillis() + 10000
+                var ready = false
+                while (!ready && System.currentTimeMillis() < deadline) {
+                    scenario.onActivity { ready = it.window.decorView.findViewWithTag<android.view.View>("editor_canvas").contentDescription == "Imagem pronta para edição" }
+                    if (!ready) Thread.sleep(100)
+                }
+                assertTrue(ready)
+                onView(withContentDescription("Pincel")).perform(click())
+                fun draw(colorX: Float, lineY: Float) = scenario.onActivity { activity ->
+                    val canvas = activity.window.decorView.findViewWithTag<android.view.View>("editor_canvas")
+                    val spectrum = descendants(activity.window.decorView).filterIsInstance<EditorColorSpectrum>().first()
+                    fun event(view: android.view.View, action: Int, x: Float, y: Float) {
+                        val now = android.os.SystemClock.uptimeMillis()
+                        android.view.MotionEvent.obtain(now, now, action, x, y, 0).also { view.dispatchTouchEvent(it); it.recycle() }
+                    }
+                    event(spectrum, android.view.MotionEvent.ACTION_DOWN, spectrum.width * colorX, spectrum.height * 0.5f)
+                    event(spectrum, android.view.MotionEvent.ACTION_UP, spectrum.width * colorX, spectrum.height * 0.5f)
+                    val x = canvas.width * 0.3f
+                    val y = canvas.height * lineY
+                    event(canvas, android.view.MotionEvent.ACTION_DOWN, x, y)
+                    event(canvas, android.view.MotionEvent.ACTION_MOVE, canvas.width * 0.7f, y)
+                    event(canvas, android.view.MotionEvent.ACTION_UP, canvas.width * 0.7f, y)
+                }
+                draw(0f, 0.45f)
+                onView(withContentDescription("Pincel")).perform(click(), click())
+                draw(2f / 3f, 0.55f)
+                scenario.onActivity { activity ->
+                    val canvas = activity.window.decorView.findViewWithTag<android.view.View>("editor_canvas")
+                    val bitmap = canvas.javaClass.getDeclaredMethod("renderEditedBitmap").apply { isAccessible = true }.invoke(canvas) as Bitmap
+                    var red = 0; var blue = 0
+                    for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
+                        val color = bitmap.getPixel(x, y)
+                        if (Color.red(color) > 180 && Color.green(color) < 80 && Color.blue(color) < 80) red++
+                        if (Color.blue(color) > 180 && Color.red(color) < 80) blue++
+                    }
+                    bitmap.recycle()
+                    assertTrue("Traço anterior deve manter o vermelho", red > 0)
+                    assertTrue("Segundo traço deve ser azul e mais largo", blue > red)
+                }
+                onView(withContentDescription("Texto")).perform(click())
+                onView(isAssignableFrom(EditText::class.java)).perform(replaceText("Texto na foto"), androidx.test.espresso.action.ViewActions.closeSoftKeyboard())
+                scenario.onActivity { activity ->
+                    val input = activity.window.decorView.findViewWithTag<EditText>("editor_inline_text")
+                    assertNotNull(input)
+                    assertTrue(input.parent === activity.window.decorView.findViewWithTag<android.view.View>("editor_canvas").parent)
+                }
+                val screenshot = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                java.io.File(context.getExternalFilesDir(null), "editor-qa.png").outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                screenshot.recycle()
+            }
+        } finally { context.contentResolver.delete(source, null, null) }
+    }
+
+    private fun descendants(view: android.view.View): List<android.view.View> = listOf(view) +
+        if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
+
     @Test fun cropRotateTextAndFilterSaveCopyWithoutChangingOriginal() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "editor-${System.currentTimeMillis()}.png"
@@ -54,18 +117,19 @@ class ImageEditorInstrumentedTest {
                 putExtra("mime", "image/png")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }).use {
-                waitForText("Cortar")
-                onView(withText("Cortar")).perform(click())
-                onView(withText("Girar")).perform(click())
-                onView(withText("Tamanho")).perform(click())
+                waitForText("Editar imagem")
+                onView(withContentDescription("Cortar")).perform(click())
+                onView(withContentDescription("Girar")).perform(click())
+                onView(withContentDescription("Redimensionar imagem")).perform(scrollTo(), click())
                 onView(isAssignableFrom(EditText::class.java)).perform(replaceText("80"))
                 onView(withText("Aplicar")).perform(click())
-                onView(withText("Texto")).perform(click())
+                onView(withContentDescription("Texto")).perform(scrollTo(), click())
                 onView(isAssignableFrom(EditText::class.java)).perform(replaceText("Teste"))
-                onView(withText("Adicionar")).perform(click())
-                onView(withText("Filtros")).perform(scrollTo(), click())
-                onView(withText("P&B")).perform(click())
-                onView(withText("Salvar")).perform(click())
+                onView(isAssignableFrom(EditText::class.java)).perform(androidx.test.espresso.action.ViewActions.closeSoftKeyboard())
+                onView(withContentDescription("Texto")).perform(click())
+                onView(withContentDescription("Filtros")).perform(scrollTo(), click())
+                onView(withContentDescription("P&B")).perform(click())
+                onView(withContentDescription("Salvar cópia")).perform(click())
             }
             val deadline = System.currentTimeMillis() + 10_000L
             while (output == null && System.currentTimeMillis() < deadline) {
@@ -99,26 +163,25 @@ class ImageEditorInstrumentedTest {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }).use {
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
-                waitForText("Cortar")
-                waitForText("Girar")
-                onView(withText("Girar")).check(matches(isDisplayed()))
-                onView(withText("Edição personalizada")).check(matches(isDisplayed()))
-                onView(withText("Cortar")).perform(clickClickableAncestor())
+                waitForMenu()
+                onView(withContentDescription("Girar")).check(matches(isDisplayed()))
+                onView(withContentDescription("Edição personalizada")).check(matches(isDisplayed()))
+                onView(withContentDescription("Cortar")).perform(clickClickableAncestor())
                 waitForText("Cortar imagem")
                 waitForCropReady()
-                onView(withText("Texto")).check(doesNotExist())
+                onView(withContentDescription("Texto")).check(doesNotExist())
 
                 pressBack()
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
-                waitForText("Edição personalizada")
-                onView(withText("Edição personalizada")).perform(clickClickableAncestor())
+                waitForMenu()
+                onView(withContentDescription("Edição personalizada")).perform(clickClickableAncestor())
                 waitForText("Editar imagem")
-                onView(withText("Texto")).check(matches(isDisplayed()))
+                onView(withContentDescription("Texto")).check(matches(isDisplayed()))
 
                 pressBack()
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
-                waitForText("Girar")
-                onView(withText("Girar")).perform(clickClickableAncestor())
+                waitForMenu()
+                onView(withContentDescription("Girar")).perform(clickClickableAncestor())
                 val deadline = System.currentTimeMillis() + 10_000L
                 var rotated = false
                 while (!rotated && System.currentTimeMillis() < deadline) {
@@ -151,8 +214,9 @@ class ImageEditorInstrumentedTest {
             }).use {
                 waitForText("Cortar imagem")
                 waitForCropReady()
-                onView(withText("Texto")).check(doesNotExist())
-                onView(withText("Salvar")).perform(click())
+                onView(withContentDescription("Texto")).check(doesNotExist())
+                onView(withContentDescription("Imagem pronta para recorte")).perform(cropCorner())
+                onView(withContentDescription("Salvar cópia")).perform(click())
                 val deadline = System.currentTimeMillis() + 10_000L
                 while (output == null && System.currentTimeMillis() < deadline) {
                     output = findImage(context, outputName)
@@ -181,6 +245,34 @@ class ImageEditorInstrumentedTest {
             }
         }
         throw AssertionError("A foto não ficou pronta para recorte")
+    }
+
+    private fun waitForMenu() {
+        val deadline = System.currentTimeMillis() + 10000
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                onView(withContentDescription("Edição personalizada"))
+                    .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog()).check(matches(isDisplayed()))
+                return
+            } catch (_: Throwable) { Thread.sleep(100) }
+        }
+        throw AssertionError("Submenu de edição não ficou visível")
+    }
+
+    private fun cropCorner() = object : androidx.test.espresso.ViewAction {
+        override fun getConstraints() = isDisplayed()
+        override fun getDescription() = "Arrastar canto superior esquerdo do recorte"
+        override fun perform(controller: androidx.test.espresso.UiController, view: android.view.View) {
+            val scale = minOf((view.width - Ui.dp(view.context, 40)) / 160f, (view.height - Ui.dp(view.context, 40)) / 120f)
+            val x = (view.width - 160 * scale) / 2f
+            val y = (view.height - 120 * scale) / 2f
+            val down = android.os.SystemClock.uptimeMillis()
+            listOf(Triple(android.view.MotionEvent.ACTION_DOWN, x, y), Triple(android.view.MotionEvent.ACTION_MOVE, x + 24 * scale, y + 20 * scale), Triple(android.view.MotionEvent.ACTION_UP, x + 24 * scale, y + 20 * scale)).forEach { (action, px, py) ->
+                val event = android.view.MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(), action, px, py, 0)
+                view.dispatchTouchEvent(event); event.recycle()
+            }
+            controller.loopMainThreadUntilIdle()
+        }
     }
 
     private fun insertImage(context: Context, name: String): Uri {

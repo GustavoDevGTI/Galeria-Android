@@ -108,7 +108,8 @@ internal class DetailPlaybackController(
                     restorePosition(player)
                     positionRestored = true
                 }
-                if (playbackState == Player.STATE_ENDED) {
+                // Reaching the end while paused for a timeline preview is not playback completion.
+                if (playbackState == Player.STATE_ENDED && player.playWhenReady) {
                     if (rememberPositionForCurrent) {
                         clearCurrentPosition()
                         player.playWhenReady = false

@@ -70,11 +70,11 @@ class ImageMenuInstrumentedTest {
                 onView(withText(ViewerMenuRules.OPEN_WITH)).check(matches(isDisplayed()))
                 onView(withText(ViewerMenuRules.INFORMATION)).check(matches(isDisplayed()))
                 onView(withText(ViewerMenuRules.RECOGNIZE_TEXT)).check(matches(isDisplayed()))
-                onView(withText(ViewerMenuRules.PRESENTATION)).check(matches(isDisplayed()))
+                onView(withText(ViewerMenuRules.PRESENTATION)).perform(androidx.test.espresso.action.ViewActions.scrollTo()).check(matches(isDisplayed()))
                 onView(withText(ViewerMenuRules.ENABLE_LOOP)).check(doesNotExist())
                 onView(withText(ViewerMenuRules.SHOW_ON_MAP)).check(doesNotExist())
 
-                onView(withText(ViewerMenuRules.INFORMATION)).perform(clickClickableAncestor())
+                onView(withText(ViewerMenuRules.INFORMATION)).perform(androidx.test.espresso.action.ViewActions.scrollTo(), clickClickableAncestor())
                 waitUntilDisplayedInDialog("Informações da imagem")
                 onView(withText("Resolução")).inRoot(isDialog()).check(matches(isDisplayed()))
                 onView(withText("1 × 1")).inRoot(isDialog()).check(matches(isDisplayed()))

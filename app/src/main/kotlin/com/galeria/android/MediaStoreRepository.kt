@@ -203,6 +203,7 @@ object MediaStoreRepository {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return LegacyTrashStore.load(context)
         val items = ArrayList<MediaItem>()
         loadFromFilesCollection(context, items, trashedOnly = true)
+        items.addAll(LegacyTrashStore.load(context))
         return items
     }
 
@@ -433,6 +434,9 @@ object MediaStoreRepository {
 
     private fun isSupportedMediaFile(file: File): Boolean {
         val name = file.name.lowercase(Locale.US)
+        // MediaProvider retains trashed/pending files under these names, including
+        // in .nomedia folders. A filesystem scan must not resurrect them as media.
+        if (name.startsWith(".trashed-") || name.startsWith(".pending-")) return false
         return name.endsWith(".jpg") ||
             name.endsWith(".jpeg") ||
             name.endsWith(".png") ||
