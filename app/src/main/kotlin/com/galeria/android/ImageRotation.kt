@@ -55,6 +55,12 @@ internal object ImageRotation {
         check(supportsInPlace(item))
         context.contentResolver.openFileDescriptor(item.uri, "rw")?.use { descriptor ->
             val exif = ExifInterface(descriptor.fileDescriptor)
+            // Camera orientation is optional (screenshots/Motion Photos may have
+            // no EXIF at all). ExifInterface.rotate does not rotate UNDEFINED.
+            if (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_UNDEFINED) == ExifInterface.ORIENTATION_UNDEFINED) {
+                exif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
+            }
             exif.rotate(90)
             exif.saveAttributes()
         } ?: throw IOException("Não foi possível abrir a imagem para gravação")

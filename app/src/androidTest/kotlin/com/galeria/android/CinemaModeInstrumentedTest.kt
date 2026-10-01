@@ -26,6 +26,7 @@ import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.isSelected
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withText
+import androidx.test.espresso.matcher.RootMatchers.isPlatformPopup
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
@@ -76,8 +77,8 @@ class CinemaModeInstrumentedTest {
             }
 
             onView(withContentDescription("Mais opções")).perform(click())
-            onView(withText("Trilha de áudio")).perform(scrollTo()).check(matches(isDisplayed()))
-            onView(withText("Legenda")).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(withText("Trilha de áudio")).inRoot(isPlatformPopup()).perform(scrollTo()).check(matches(isDisplayed()))
+            onView(withText("Legenda")).inRoot(isPlatformPopup()).perform(scrollTo()).check(matches(isDisplayed()))
             pressBack()
             waitForSystemBars(scenario, visible = false)
             scenario.onActivity { activity ->
@@ -111,6 +112,7 @@ class CinemaModeInstrumentedTest {
             waitForSystemBars(scenario, visible = false)
             assertCinemaButtonState(true)
             onView(withContentDescription("Modo cinema")).perform(click())
+            waitForCinemaTransition(scenario)
             assertCinemaButtonState(false)
             assertTrue(CinemaModePreferences(prefs).isEnabled(albumKey))
             scenario.recreate()
@@ -192,6 +194,22 @@ class CinemaModeInstrumentedTest {
         } while (SystemClock.uptimeMillis() < deadline)
         assertEquals("O clique deve atualizar a orientação da tela.", expected, actual)
         assertTrue("A janela deve recuperar o foco após alterar a orientação.", hasFocus)
+    }
+
+    private fun waitForCinemaTransition(scenario: ActivityScenario<DetailActivity>) {
+        val deadline = SystemClock.uptimeMillis() + 10_000L
+        var ready = false
+        do {
+            scenario.onActivity { activity ->
+                val transitioning = DetailActivity::class.java.getDeclaredField("cinemaTransitionRunning")
+                    .apply { isAccessible = true }.getBoolean(activity)
+                ready = !transitioning && activity.hasWindowFocus() &&
+                    activity.window.decorView.isLaidOut && !activity.window.decorView.isLayoutRequested
+            }
+            if (ready) return
+            SystemClock.sleep(100L)
+        } while (SystemClock.uptimeMillis() < deadline)
+        assertTrue("A troca de modo deve concluir antes de recriar a Activity.", ready)
     }
 
     private fun waitForSystemBars(scenario: ActivityScenario<DetailActivity>, visible: Boolean) {

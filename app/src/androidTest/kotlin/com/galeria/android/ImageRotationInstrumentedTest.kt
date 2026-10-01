@@ -23,6 +23,25 @@ import java.io.FileOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class ImageRotationInstrumentedTest {
+    @Test fun firstRotationWorksWhenTheImageHasNoOrientationTag() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        for ((extension, mime, format) in listOf(
+            Triple("jpg", "image/jpeg", Bitmap.CompressFormat.JPEG),
+            Triple("png", "image/png", Bitmap.CompressFormat.PNG),
+            Triple("webp", "image/webp", Bitmap.CompressFormat.WEBP)
+        )) {
+            val file = File.createTempFile("rotate-undefined-", ".$extension", context.cacheDir)
+            try {
+                val bitmap = Bitmap.createBitmap(160, 120, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+                try { file.outputStream().use { assertTrue(bitmap.compress(format, 95, it)) } }
+                finally { bitmap.recycle() }
+                assertEquals(ExifInterface.ORIENTATION_UNDEFINED, ExifInterface(file).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED))
+                ImageRotation.clockwise(context, MediaItem(0, Uri.fromFile(file), file.name, mime, 0, file.length(), null, null, null))
+                assertEquals("A primeira rotação de $extension deve funcionar sem EXIF prévio", 90, ExifInterface(file).rotationDegrees)
+            } finally { file.delete() }
+        }
+    }
     @Test fun repeatedRotationPreservesPixelsAndExistingExifForWritableFormats() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val formats = listOf(

@@ -123,7 +123,11 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A versão 0.8.61 teve 105 testes unitários aprovados, compilação release assinada aprovada e lint sem erros (125 avisos). A suíte completa de interface foi executada no emulador API 36: **79 de 86 testes aprovados, 7 falhas**. A validação integral permanece pendente: cinema/foco de janela, submenu Editar, cópia do OCR, giro de Motion Photo e navegação intermitente após reabertura. A suíte direcionada anterior teve 12/15 aprovações e o bloqueio por toque cancelado passou em três repetições isoladas; isso não substitui a execução completa. Consulte o [relatório de validação](docs/VALIDACAO-0.8.61.md) e o [checklist manual](docs/TESTES-MANUAIS-0.8.61.md). O módulo de desempenho contém outros 4 casos (3 macrobenchmarks e 1 gerador de perfil).
+A base da versão 0.8.62 passou em **106 testes unitários, 87 testes de interface no emulador API 36 e três repetições extras da classe de navegação (15 verificações)**. O lint não apresentou erros (125 avisos existentes). Nenhuma função, asserção ou teste foi removido para obter aprovação. Consulte [causas, correções e evidências](docs/CORRECOES-VALIDACAO-2026-10-01.md). A validação em aparelho físico e com codecs/formatos reais continua necessária. O módulo de desempenho contém outros 4 casos (3 macrobenchmarks e 1 gerador de perfil).
+
+A build release 0.8.62 foi compilada e sua assinatura verificada com o mesmo certificado permanente da versão anterior. Os testes de interface foram executados na build debug, sobre a mesma base de código, antes do incremento dos metadados de versão; a build release otimizada não foi testada em celular físico.
+
+A release 0.8.61 anterior teve 79/86 aprovações na suíte de interface. O [relatório histórico](docs/VALIDACAO-0.8.61.md) conserva essas sete falhas; a 0.8.62 contém as correções posteriores, sem substituir nem reescrever o APK anterior.
 
 Inventário histórico de cobertura (expandido nas versões posteriores):
 
@@ -175,6 +179,10 @@ gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:connectedDebugAndroidTest
 ```
 
 Os testes locais ficam em `app/src/test/kotlin` e os testes executados no Android ficam em `app/src/androidTest/kotlin`.
+
+O runner local `scripts/run-android-tests.ps1` também permite executar classes específicas, repetir casos e reutilizar APKs já instalados. Conserva a saída integral em `app/build/reports/native-tests` para investigar falhas sem repetir uma execução apenas para recuperar a pilha de erro. Consulte [as correções posteriores à validação da 0.8.61, incluídas na 0.8.62](docs/CORRECOES-VALIDACAO-2026-10-01.md).
+
+Esses resultados não mudam retroativamente a validação nem o conteúdo da release 0.8.61 publicada.
 
 ### Auditoria técnica de 14/09/2026
 
@@ -300,9 +308,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada lançamento posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.61**.
+A linha começou em `v0.8.0`. Cada lançamento posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.62**.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.61 usa o código `8061`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.62 usa o código `8062`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -368,6 +376,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.59`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.59) | 29/09/2026 | Edição, OCR, Motion Photos e ajustes de catálogo e miniaturas |
 | [`v0.8.60`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.60) | 30/09/2026 | Linha do tempo de vídeo, revisão do editor, OCR e correções de navegação/Lixeira; validação manual pendente |
 | [`v0.8.61`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.61) | 01/10/2026 | Correção de transições de mídia, faixa de vídeo contínua sob demanda, rotação, OCR, ocultos e resposta visual dos controles |
+| [`v0.8.62`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.62) | 01/10/2026 | Giro sem EXIF prévio, OCR detalhado mais rápido, abertura segura do editor e correção das sete falhas de validação |
 
 ## Relatório comparativo de desempenho
 
@@ -383,7 +392,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.61](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.61/Galeria-Android-versao-0.8.61.apk)
+[Baixar Galeria Android - versão 0.8.62](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.62/Galeria-Android-versao-0.8.62.apk)
 
 Build padrão do Gradle:
 
@@ -394,10 +403,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado como anexo no GitHub Releases (os APKs históricos na raiz permanecem preservados):
 
 ```text
-Galeria-Android-versao-0.8.61.apk
+Galeria-Android-versao-0.8.62.apk
 ```
 
-O APK 0.8.61 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.8.62 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de entrega
 

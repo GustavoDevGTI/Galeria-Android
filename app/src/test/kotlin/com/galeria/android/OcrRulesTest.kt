@@ -7,6 +7,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OcrRulesTest {
+    @Test fun detailedReadingStopsOnlyForExtensiveHighConfidenceText() {
+        val document = OcrReading("Documento da galeria com informações completas para copiar e conferir. " +
+            "Todas as linhas devem permanecer disponíveis para seleção e extração de texto.", 0.95f)
+        assertTrue(OcrRules.isDetailedReadingComplete(document))
+        assertFalse(OcrRules.isDetailedReadingComplete(document.copy(confidence = 0.5f)))
+        assertFalse(OcrRules.isDetailedReadingComplete(OcrReading("22:37 5G VoLTE", 0.99f)))
+        assertFalse(OcrRules.isDetailedReadingComplete(OcrReading("GALERIA TEXTO COPIAVEL", 0.99f)))
+    }
     @Test fun statusBarDoesNotStopSearchingForDocumentText() {
         val status = OcrReading("22:37 5G VoLTE", 0.98f)
         val document = OcrReading("Resumo da Balança Econômica Anual\nTotal de perdas setoriais", 0.9f)

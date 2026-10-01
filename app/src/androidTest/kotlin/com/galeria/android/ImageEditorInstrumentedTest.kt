@@ -17,6 +17,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.Espresso.pressBack
+import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.action.ViewActions.scrollTo
@@ -168,7 +169,7 @@ class ImageEditorInstrumentedTest {
                 waitForMenu()
                 onView(withContentDescription("Girar")).check(matches(isDisplayed()))
                 onView(withContentDescription("Edição personalizada")).check(matches(isDisplayed()))
-                onView(withContentDescription("Cortar")).perform(clickClickableAncestor())
+                onView(withContentDescription("Cortar")).inRoot(isDialog()).perform(click())
                 waitForText("Cortar imagem")
                 waitForCropReady()
                 onView(withContentDescription("Texto")).check(doesNotExist())
@@ -176,33 +177,38 @@ class ImageEditorInstrumentedTest {
                 pressBack()
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
                 waitForMenu()
-                onView(withContentDescription("Edição personalizada")).perform(clickClickableAncestor())
+                onView(withContentDescription("Edição personalizada")).inRoot(isDialog()).perform(click())
                 waitForText("Editar imagem")
                 onView(withContentDescription("Texto")).check(matches(isDisplayed()))
 
                 pressBack()
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
                 waitForMenu()
-                onView(withContentDescription("Girar")).perform(clickClickableAncestor())
+                onView(withContentDescription("Girar")).inRoot(isDialog()).perform(click())
                 val deadline = System.currentTimeMillis() + 10_000L
                 var rotated = false
+                var rotationState = "Aguardando orientação e imagem"
                 while (!rotated && System.currentTimeMillis() < deadline) {
                     val orientation = context.contentResolver.openInputStream(source)?.use {
                         ExifInterface(it).rotationDegrees
                     }
                     var displayed = false
                     scenario.onActivity { activity ->
-                        displayed = descendants(activity.window.decorView).filterIsInstance<ImageView>().any {
+                        val images = descendants(activity.window.decorView).filterIsInstance<ImageView>().filter {
+                            it.tag is android.net.Uri && MediaIdentityRules.sameUri(it.tag.toString(), source.toString())
+                        }.toList()
+                        rotationState = "EXIF=$orientation, imagens=" + images.joinToString { "${it.tag}: ${it.drawable?.intrinsicWidth}x${it.drawable?.intrinsicHeight}, alpha=${it.alpha}" }
+                        displayed = images.any {
                             val width = it.drawable?.intrinsicWidth ?: 0
                             val height = it.drawable?.intrinsicHeight ?: 0
-                            it.tag == source && it.alpha >= 0.99f &&
+                            it.alpha >= 0.99f &&
                                 height > 0 && kotlin.math.abs(width.toFloat() / height - 0.75f) < 0.02f
                         }
                     }
                     rotated = orientation == 90 && displayed
                     if (!rotated) Thread.sleep(100L)
                 }
-                assertTrue("Girar deve atualizar a orientação EXIF e a imagem exibida, sem reutilizar o cache antigo.", rotated)
+                assertTrue("Girar deve atualizar a orientação EXIF e a imagem exibida, sem reutilizar o cache antigo. $rotationState", rotated)
             }
         } finally {
             context.contentResolver.delete(source, null, null)
@@ -314,14 +320,16 @@ class ImageEditorInstrumentedTest {
 
     private fun waitForText(text: String) {
         val deadline = System.currentTimeMillis() + 10_000L
+        var lastFailure: Throwable? = null
         while (System.currentTimeMillis() < deadline) {
             try {
                 onView(withText(text)).check(matches(isDisplayed()))
                 return
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
+                lastFailure = error
                 Thread.sleep(100L)
             }
         }
-        throw AssertionError("A opção $text não apareceu")
+        throw AssertionError("A opção $text não apareceu", lastFailure)
     }
 }

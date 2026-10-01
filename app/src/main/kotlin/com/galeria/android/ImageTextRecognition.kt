@@ -64,7 +64,7 @@ internal object ImageTextRecognition {
             best = OcrRules.best(best, OcrReading(result.text, confidence.toFloat()))
             // Automatic detection is cheap for clear upright text, but partial
             // status-bar text must not prevent checking the other orientations.
-            if (!detailed && OcrRules.isReliable(best)) break
+            if (if (detailed) OcrRules.isDetailedReadingComplete(best) else OcrRules.isReliable(best)) break
         }
         return best
     }

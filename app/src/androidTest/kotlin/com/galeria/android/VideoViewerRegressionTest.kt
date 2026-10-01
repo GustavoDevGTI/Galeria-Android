@@ -323,12 +323,13 @@ class VideoViewerRegressionTest {
                     ready = if (item.isVideo()) {
                         player?.duration?.let { it > 0L } == true
                     } else {
-                        image?.let { it.drawable != null && it.width > 0 && it.height > 0 } == true
+                        image?.let { it.drawable != null && it.width > 0 && it.height > 0 && it.alpha == 1f } == true
                     }
                 }
             }
             ready
         }
+        awaitAndroidInputReady()
     }
 
     private fun descendants(view: View): Sequence<View> = sequence {

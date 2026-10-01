@@ -23,6 +23,12 @@ internal object OcrRules {
         tokens.findAll(reading.text).count { it.value.count(Char::isLetter) >= 3 } >= 4 &&
             score(reading) >= 60 && (reading.confidence == 0f || reading.confidence >= 0.65f)
 
+    // A full, high-confidence passage does not need three more expensive OCR
+    // passes. Short fragments (including a phone's status bar) still do.
+    fun isDetailedReadingComplete(reading: OcrReading): Boolean =
+        tokens.findAll(reading.text).count { it.value.count(Char::isLetter) >= 3 } >= 12 &&
+            score(reading) >= 180 && reading.confidence >= 0.80f
+
     fun isDarkBackground(pixels: IntArray): Boolean {
         if (pixels.isEmpty()) return false
         val dark = pixels.count { pixel ->

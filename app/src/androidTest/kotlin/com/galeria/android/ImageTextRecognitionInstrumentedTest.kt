@@ -163,7 +163,7 @@ class ImageTextRecognitionInstrumentedTest {
                 }
                 assertTrue("O texto foi reconhecido, mas o ícone não apareceu", visible)
                 onView(withContentDescription(R.string.ocr_text_available)).perform(click())
-                onView(withText(R.string.ocr_copy_all)).perform(click())
+                waitForUi { onView(withText(R.string.ocr_copy_all)).perform(click()) }
                 scenario.onActivity {
                     val clipboard = it.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     assertTrue(clipboard.primaryClip!!.getItemAt(0).text.contains("GALERIA"))

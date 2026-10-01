@@ -3,7 +3,8 @@ param(
     [switch]$All,
     [ValidateRange(1, 100)][int]$Repeat = 1,
     [string]$Device = 'emulator-5554',
-    [switch]$SkipInstall
+    [switch]$SkipInstall,
+    [string]$ReportDirectory
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,6 +24,16 @@ if ($LASTEXITCODE -ne 0 -or $booted -ne '1') {
     throw "Emulador $Device não está pronto."
 }
 
+# The one-time Android full-screen tutorial owns a system window and blocks
+# Espresso's input/focus. Seed its acknowledgement on emulators only, not phones.
+if ((& adb -s $Device shell getprop ro.kernel.qemu).Trim() -eq '1') {
+    & adb -s $Device shell settings put secure immersive_mode_confirmations confirmed
+    if ($LASTEXITCODE -ne 0) { throw 'Não foi possível preparar o aviso de tela cheia do emulador.' }
+}
+if (!$ReportDirectory) { $ReportDirectory = Join-Path $root 'app/build/reports/native-tests' }
+New-Item -ItemType Directory -Path $ReportDirectory -Force | Out-Null
+$reportPrefix = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+
 if (!$SkipInstall) {
     foreach ($apk in @($appApk, $testApk)) {
         $installation = & adb -s $Device install -r $apk
@@ -39,10 +50,13 @@ for ($run = 1; $run -le $Repeat; $run++) {
     $arguments += 'com.galeria.android.test/androidx.test.runner.AndroidJUnitRunner'
     $started = [Diagnostics.Stopwatch]::StartNew()
     $output = & adb @arguments
+    $instrumentationExit = $LASTEXITCODE
     $started.Stop()
+    $reportPath = Join-Path $ReportDirectory "$reportPrefix-run-$run.txt"
+    $output | Set-Content -LiteralPath $reportPath -Encoding UTF8
 
     $summary = $output | Where-Object { $_ -match '^(OK \(\d+ tests?\)|Tests run:|FAILURES!!!)' } | Select-Object -Last 1
-    $success = $LASTEXITCODE -eq 0 -and $output -match 'INSTRUMENTATION_CODE: -1' -and
+    $success = $instrumentationExit -eq 0 -and $output -match 'INSTRUMENTATION_CODE: -1' -and
         $output -match '^OK \(\d+ tests?\)'
     $seconds = [math]::Round($started.Elapsed.TotalSeconds, 1)
     if ($success) {
@@ -50,6 +64,7 @@ for ($run = 1; $run -le $Repeat; $run++) {
     } else {
         $failed++
         Write-Output "Execução $run/$Repeat`: FALHOU ($seconds s) — $summary"
+        Write-Output "Relatório completo: $reportPath"
         $testClass = ''
         $testName = ''
         foreach ($line in $output) {

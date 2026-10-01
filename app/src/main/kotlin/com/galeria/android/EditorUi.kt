@@ -35,6 +35,7 @@ internal object EditorUi {
 
     fun editMenu(activity: Activity, actions: List<() -> Unit>) {
         lateinit var dialog: AlertDialog
+        var chosen: Int? = null
         val body = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(Ui.dp(context, 20), Ui.dp(context, 16), Ui.dp(context, 20), Ui.dp(context, 16))
@@ -45,12 +46,20 @@ internal object EditorUi {
                 val icons = listOf(R.drawable.ic_crop, R.drawable.ic_rotate, R.drawable.ic_edit)
                 val labels = listOf(R.string.image_edit_crop, R.string.image_edit_rotate, R.string.image_edit_custom)
                 icons.forEachIndexed { index, icon ->
-                    addView(button(context, icon, context.getString(labels[index])) { dialog.dismiss(); actions[index]() },
+                    addView(button(context, icon, context.getString(labels[index])) { chosen = index; dialog.dismiss() },
                         LinearLayout.LayoutParams(0, Ui.dp(context, 64), 1f))
                 }
             })
         }
         dialog = AlertDialog.Builder(activity, android.app.AlertDialog.THEME_DEVICE_DEFAULT_DARK).setView(body).create()
+        // Starting a new window inside the old dialog's click dispatch races its
+        // removal/focus restoration. Run the chosen action after it detaches.
+        dialog.setOnDismissListener {
+            val index = chosen ?: return@setOnDismissListener
+            activity.window.decorView.post {
+                if (!activity.isFinishing && !activity.isDestroyed) actions[index]()
+            }
+        }
         dialog.show()
         dialog.window?.apply {
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))

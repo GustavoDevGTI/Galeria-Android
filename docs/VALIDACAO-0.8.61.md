@@ -1,5 +1,7 @@
 # Validação da versão 0.8.61 — 01/10/2026
 
+Este documento conserva os resultados do APK 0.8.61 publicado. As sete falhas foram investigadas e corrigidas posteriormente no código local, com 87/87 testes de interface e 106/106 unitários aprovados. Veja [causas, correções e nova validação](CORRECOES-VALIDACAO-2026-10-01.md). O APK já publicado não foi substituído.
+
 ## Resultados
 
 - Compilação release assinada, debug e APK de testes: aprovadas.
