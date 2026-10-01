@@ -3,7 +3,9 @@
 gradle.projectsEvaluated {
     def app = gradle.rootProject.project(':app')
     app.tasks.register('directUnitTests', JavaExec) {
-        dependsOn ':app:compileDebugUnitTestKotlin'
+        // Compilation uses the compile jar; JUnit executes the separate runtime jar.
+        // Build both so an older runtime cannot masquerade as a missing method.
+        dependsOn ':app:compileDebugUnitTestKotlin', ':app:bundleDebugClassesToRuntimeJar'
         mainClass = 'org.junit.runner.JUnitCore'
         doFirst {
             def test = app.tasks.named('testDebugUnitTest').get()

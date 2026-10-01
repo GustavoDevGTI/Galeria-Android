@@ -6,7 +6,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.SystemClock
+import android.os.Bundle
 import android.view.MotionEvent
+import android.view.View
+import android.widget.SeekBar
 import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ActivityScenario
@@ -42,6 +45,29 @@ class VideoTimelineInstrumentedTest {
                     val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
                     duration = player.duration
                     player.pause()
+                    player.seekTo(0L)
+                    val controls = activity.window.decorView.findViewWithTag<View>("video_playback_controls")
+                    val play = activity.window.decorView.findViewWithTag<View>("video_play_pause")
+                    assertTrue("Play/pause deve estar no centro da barra de reprodução",
+                        controls.width > 0 && abs(play.x + play.width / 2f - controls.width / 2f) <= 1f)
+                    val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                    assertEquals("A faixa só abre por escolha explícita", View.GONE, strip.visibility)
+                    assertTrue(activity.window.decorView.findViewWithTag<SeekBar>("video_progress").isShown)
+                    activity.window.decorView.findViewWithTag<View>("video_timeline_toggle").performClick()
+                }
+                await {
+                    var ready = false
+                    scenario.onActivity {
+                        val strip = it.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                        ready = strip.isShown && strip.width > 0 && strip.positionMs < 100L
+                        if (ready) {
+                            val controls = it.window.decorView.findViewWithTag<View>("video_playback_controls")
+                            val play = it.window.decorView.findViewWithTag<View>("video_play_pause")
+                            assertTrue("Abrir a linha do tempo não deve deslocar play/pause",
+                                abs(play.x + play.width / 2f - controls.width / 2f) <= 1f)
+                        }
+                    }
+                    ready
                 }
                 val down = SystemClock.uptimeMillis()
                 fun gesture(action: Int, fraction: Float) = scenario.onActivity { activity ->
@@ -49,8 +75,13 @@ class VideoTimelineInstrumentedTest {
                     val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, strip.width * fraction, strip.height / 2f, 0)
                     try { assertTrue(strip.dispatchTouchEvent(event)) } finally { event.recycle() }
                 }
-                gesture(MotionEvent.ACTION_DOWN, 0.15f)
-                gesture(MotionEvent.ACTION_MOVE, 0.65f)
+                var dragFraction = 0f
+                scenario.onActivity { activity ->
+                    val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                    dragFraction = (duration * 0.65 / 1000 * Ui.dp(activity, 54) / strip.width).toFloat()
+                }
+                gesture(MotionEvent.ACTION_DOWN, 0.8f)
+                gesture(MotionEvent.ACTION_MOVE, 0.8f - dragFraction)
                 await {
                     var matched = false
                     scenario.onActivity { activity ->
@@ -60,9 +91,13 @@ class VideoTimelineInstrumentedTest {
                     }
                     matched
                 }
-                gesture(MotionEvent.ACTION_UP, 0.65f)
-                gesture(MotionEvent.ACTION_DOWN, 1f)
-                gesture(MotionEvent.ACTION_UP, 1f)
+                gesture(MotionEvent.ACTION_UP, 0.8f - dragFraction)
+                scenario.onActivity { activity ->
+                    val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                    strip.performAccessibilityAction(android.R.id.accessibilityActionSetProgress, Bundle().apply {
+                        putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE, duration / 1000f)
+                    })
+                }
                 Thread.sleep(350L)
                 scenario.onActivity { activity ->
                     val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
@@ -132,7 +167,7 @@ class VideoTimelineInstrumentedTest {
         } finally { file.delete() }
     }
 
-    @Test fun longPressAllowsFineSeekingWithoutOneThumbnailPerSecond() {
+    @Test fun continuousStripScrollsBySecondsAndCancelsWithoutChangingPosition() {
         var selected = 0L
         lateinit var strip: VideoTimelineView
         val file = sample()
@@ -145,21 +180,73 @@ class VideoTimelineInstrumentedTest {
                 }
                 instrumentation.waitForIdleSync()
                 scenario.onActivity {
-                    strip.update(0L, 7_200_000L)
+                    strip.update(3_600_000L, 7_200_000L)
                     MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, strip.width * 0.5f, 60f, 0).let {
                         strip.dispatchTouchEvent(it); it.recycle()
                     }
                 }
-                Thread.sleep(android.view.ViewConfiguration.getLongPressTimeout() + 100L)
                 scenario.onActivity {
-                    MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_MOVE, strip.width * 0.55f, 60f, 0).let {
+                    MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_MOVE, strip.width * 0.5f - Ui.dp(context, 54), 60f, 0).let {
                         strip.dispatchTouchEvent(it); it.recycle()
                     }
                     assertEquals(3_601_000L, selected)
                     strip.cancelGesture()
+                    assertEquals(3_600_000L, strip.positionMs)
                     strip.update(3_600_000L, 7_200_000L)
                     strip.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, null)
                     assertEquals(3_601_000L, selected)
+                }
+            }
+        } finally { file.delete() }
+    }
+
+    @Test fun playbackBarSeeksWithFilmstripClosedAndToggleKeepsBothAvailable() {
+        val file = sample()
+        try {
+            ActivityScenario.launch<DetailActivity>(intent(file)).use { scenario ->
+                await {
+                    var ready = false
+                    scenario.onActivity {
+                        val player = it.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                        ready = player.playbackState == Player.STATE_READY &&
+                            it.window.decorView.findViewWithTag<SeekBar>("video_progress").isEnabled
+                    }
+                    ready
+                }
+                var target = 0L
+                scenario.onActivity { activity ->
+                    val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                    player.pause()
+                    target = player.duration / 2L
+                    val bar = activity.window.decorView.findViewWithTag<SeekBar>("video_progress")
+                    assertEquals(View.GONE, activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline").visibility)
+                    assertTrue(bar.performAccessibilityAction(android.R.id.accessibilityActionSetProgress, Bundle().apply {
+                        putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE, bar.max / 2f)
+                    }))
+                }
+                await {
+                    var matched = false
+                    scenario.onActivity {
+                        val player = it.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                        matched = abs(player.currentPosition - target) < 100L && !player.playWhenReady &&
+                            it.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline").isPrepared
+                    }
+                    matched
+                }
+                scenario.onActivity { activity ->
+                    val toggle = activity.window.decorView.findViewWithTag<View>("video_timeline_toggle")
+                    val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                    assertEquals("A preparação ocorre antes da abertura", View.GONE, strip.visibility)
+                    assertTrue("O trecho visível já deve estar preenchido", strip.isPrepared)
+                    toggle.performClick()
+                    assertEquals(View.VISIBLE, strip.visibility)
+                    assertTrue(activity.window.decorView.findViewWithTag<SeekBar>("video_progress").isShown)
+                    toggle.performClick()
+                    assertEquals(View.GONE, strip.visibility)
+                }
+                scenario.recreate()
+                scenario.onActivity {
+                    assertEquals(View.GONE, it.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline").visibility)
                 }
             }
         } finally { file.delete() }

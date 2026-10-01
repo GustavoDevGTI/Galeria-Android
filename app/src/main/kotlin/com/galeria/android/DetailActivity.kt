@@ -14,7 +14,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.media.AudioManager
@@ -45,6 +44,7 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.ProgressBar
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -52,8 +52,10 @@ import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.core.view.WindowCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import coil3.SingletonImageLoader
 import coil3.load
@@ -137,10 +139,15 @@ class DetailActivity : ComponentActivity() {
     private lateinit var timelineRow: LinearLayout
     private lateinit var videoTimeline: VideoTimelineView
     private lateinit var timelineBinding: VideoTimelineBinding
+    private lateinit var videoProgressRow: LinearLayout
+    private lateinit var timelineButton: ImageButton
+    private var timelineExpanded = false
     private lateinit var textRecognitionButton: ImageButton
     private var pendingTextDetection: Runnable? = null
     @Volatile private var textDetectionGeneration = 0
     private val recognizedTextCache = LruCache<String, String>(16)
+    private val detailedTextCache = LruCache<String, String>(16)
+    private var manualTextRequestKey: String? = null
     private var speedPopup: PopupWindow? = null
     private var pendingDeleteUri: Uri? = null
     private var pendingHiddenCopy: File? = null
@@ -151,10 +158,13 @@ class DetailActivity : ComponentActivity() {
     private val removedUris = arrayListOf<String>()
     private val movedUris = arrayListOf<String>()
     private var pendingRotateItem: MediaItem? = null
+    private var imageRotationRunning = false
     private var pendingPdfItem: MediaItem? = null
     private var pendingRenameItem: MediaItem? = null
     private var pendingRenameName: String? = null
     private var switchingItem = false
+    private var pendingMediaTransitionFinish: Runnable? = null
+    private var pendingMediaTransitionCleanup: ((Boolean) -> Unit)? = null
     private var downY = 0f
     private var downX = 0f
     private val playbackSpeed: Float get() = playbackController.playbackSpeed
@@ -216,6 +226,7 @@ class DetailActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        timelineExpanded = savedInstanceState?.getBoolean("timeline_expanded") ?: false
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 resetSpeedAndFinish()
@@ -471,12 +482,15 @@ class DetailActivity : ComponentActivity() {
                 navBottomInset + Ui.dp(this@DetailActivity, 8)
             )
         }
-        videoControls = LinearLayout(this).apply { gravity = Gravity.CENTER }
+        videoControls = LinearLayout(this).apply {
+            tag = "video_playback_controls"
+            gravity = Gravity.CENTER
+        }
         playPauseButton = iconButton(R.drawable.ic_play, Ui.dp(this, 46)).apply {
+            tag = "video_play_pause"
             background = Ui.rounded(0x66000000, 24, this@DetailActivity)
             setOnClickListener { togglePlayback() }
         }
-        videoControls.addView(playPauseButton, LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 46)))
         bottomBar.addView(videoControls, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48)))
 
         timelineRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
@@ -505,13 +519,40 @@ class DetailActivity : ComponentActivity() {
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(Ui.dp(this, 12), Ui.dp(this, 34)))
         timelineRow.addView(durationTime, LinearLayout.LayoutParams(Ui.dp(this, 52), Ui.dp(this, 34)))
-        timelineRow.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        timelineRow.addView(speedButton, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 34)))
+        // Equal-width side regions keep playback centered independently of the
+        // time labels and the speed control, in portrait and landscape alike.
         videoControls.addView(timelineRow, LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f))
+        videoControls.addView(playPauseButton, LinearLayout.LayoutParams(Ui.dp(this, 46), Ui.dp(this, 46)))
+        val speedRegion = FrameLayout(this).apply {
+            addView(speedButton, FrameLayout.LayoutParams(Ui.dp(this@DetailActivity, 48),
+                Ui.dp(this@DetailActivity, 34), Gravity.END or Gravity.CENTER_VERTICAL))
+        }
+        videoControls.addView(speedRegion, LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f))
+        videoProgressRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val progressBar = SeekBar(this).apply {
+            tag = "video_progress"
+            contentDescription = getString(R.string.video_progress_description)
+            progressTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            thumbTintList = progressTintList
+        }
+        timelineBinding.attachProgressBar(progressBar)
+        videoProgressRow.addView(progressBar, LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f))
+        timelineButton = actionButton(R.drawable.ic_timeline).apply {
+            tag = "video_timeline_toggle"
+            contentDescription = getString(R.string.video_timeline_show)
+            setOnClickListener {
+                videoTimeline.cancelGesture()
+                timelineExpanded = !timelineExpanded
+                updateTimelineVisibility()
+            }
+        }
+        videoProgressRow.addView(timelineButton, LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)))
+        bottomBar.addView(videoProgressRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 44)))
+        videoTimeline.visibility = View.GONE
         bottomBar.addView(videoTimeline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
 
         actionsBar = LinearLayout(this).apply { gravity = Gravity.CENTER }
-        val edit = LinearLayout(this).apply {
+        val edit = ClickFeedbackActionLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             background = Ui.actionFeedback(this@DetailActivity, Color.WHITE)
@@ -607,7 +648,7 @@ class DetailActivity : ComponentActivity() {
         }
 
     private fun iconButton(icon: Int, touchSize: Int): ImageButton =
-        ImageButton(this).apply {
+        ClickFeedbackImageButton(this).apply {
             setImageResource(icon)
             setBackgroundColor(Color.TRANSPARENT)
             setColorFilter(Color.WHITE)
@@ -703,16 +744,25 @@ class DetailActivity : ComponentActivity() {
     private fun recognizeCurrentImageText(item: MediaItem) {
         if (!item.isImage()) return
         val key = textCacheKey(item)
-        recognizedTextCache.get(key)?.takeIf { it.isNotBlank() }?.let {
+        detailedTextCache.get(key)?.takeIf { it.isNotBlank() }?.let {
             showRecognizedText(it)
             return
         }
+        if (manualTextRequestKey == key) return
+        pendingTextDetection?.let(handler::removeCallbacks)
+        pendingTextDetection = null
+        val generation = ++textDetectionGeneration
+        manualTextRequestKey = key
         Ui.toast(this, getString(R.string.ocr_processing))
-        ImageTextRecognition.recognize(this, item.uri) { result ->
-            if (isFinishing || isDestroyed || currentItem().uri != item.uri) return@recognize
+        ImageTextRecognition.recognize(this, item.uri, isRelevant = {
+            generation == textDetectionGeneration && !isFinishing && !isDestroyed
+        }) { result ->
+            manualTextRequestKey = null
+            if (isFinishing || isDestroyed || currentItem().uri != item.uri || textCacheKey(item) != key) return@recognize
             result.fold(
                 onSuccess = { recognized ->
                     recognizedTextCache.put(key, recognized)
+                    detailedTextCache.put(key, recognized)
                     if (recognized.isBlank()) {
                         Ui.toast(this, getString(R.string.ocr_no_text))
                     } else {
@@ -746,12 +796,13 @@ class DetailActivity : ComponentActivity() {
             .show()
     }
 
-    private fun textCacheKey(item: MediaItem) = "${item.uri}|${item.size}|${item.dateAdded}"
+    private fun textCacheKey(item: MediaItem) = "${MediaContentRevision.key(this, item.uri)}|${item.size}|${item.dateAdded}"
 
     private fun scheduleTextDetection(item: MediaItem?) {
         pendingTextDetection?.let(handler::removeCallbacks)
         pendingTextDetection = null
         val generation = ++textDetectionGeneration
+        manualTextRequestKey = null
         textRecognitionButton.visibility = View.GONE
         if (item == null || !item.isImage()) return
         val key = textCacheKey(item)
@@ -1092,7 +1143,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun updateInteractiveSwipe(event: MotionEvent) {
-        if (mediaQueue.size < 2) return
+        if (switchingItem || mediaQueue.size < 2) return
         val deltaY = event.rawY - downY
         val deltaX = event.rawX - downX
         if (dragPreviewPage == null) {
@@ -1137,6 +1188,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun finishInteractiveSwipe() {
+        if (switchingItem) return
         val offset = swipeOffset()
         val shouldCommit = SwipeGestureRules.shouldCommit(dragDistance, gestureTouchSlop)
         if (shouldCommit) {
@@ -1147,6 +1199,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun commitInteractiveSwipe(offset: Int) {
+        if (switchingItem) return
         val incomingPage = dragPreviewPage ?: return
         val outgoingPage = activePage
         switchingItem = true
@@ -1157,6 +1210,7 @@ class DetailActivity : ComponentActivity() {
         speedPopup?.dismiss()
         currentIndex = dragTargetIndex
         preloadGeneration++
+        val completion = registerMediaTransition(outgoingPage, incomingPage, outgoingPlayer, 165L)
         val outgoingTarget = if (dragDirection > 0) -offset.toFloat() else offset.toFloat()
         val interpolator = DecelerateInterpolator(1.35f)
         outgoingPage?.animate()
@@ -1170,22 +1224,63 @@ class DetailActivity : ComponentActivity() {
             .translationY(0f)
             .setInterpolator(interpolator)
             .setDuration(165)
-            .withEndAction {
-                outgoingPage?.let { content.removeView(it) }
-                playbackController.releaseDetached(outgoingPlayer)
-                activePage = incomingPage
-                applyCurrentUiAfterInteractiveSwipe()
-                resetInteractiveSwipeState()
-                switchingItem = false
-                scheduleAdjacentPreload()
-                scheduleShuffleAdvance()
-            }
+            .withEndAction(completion)
             .start()
     }
 
+    // A committed transition owns its pages/player until this idempotent completion.
+    // Do not rely solely on ViewPropertyAnimator's end action: cancellation skips it.
+    private fun registerMediaTransition(
+        outgoingPage: FrameLayout?,
+        incomingPage: FrameLayout,
+        outgoingPlayer: ExoPlayer?,
+        durationMs: Long
+    ): Runnable {
+        lateinit var completion: Runnable
+        completion = Runnable {
+            if (pendingMediaTransitionFinish === completion) finishMediaTransition()
+        }
+        pendingMediaTransitionCleanup = { updateUi ->
+            outgoingPage?.animate()?.cancel()
+            incomingPage.animate().cancel()
+            outgoingPage?.let { content.removeView(it) }
+            playbackController.releaseDetached(outgoingPlayer)
+            incomingPage.translationX = 0f
+            incomingPage.translationY = 0f
+            activePage = incomingPage
+            resetInteractiveSwipeState()
+            try {
+                if (updateUi) applyCurrentUiAfterInteractiveSwipe()
+            } finally {
+                switchingItem = false
+            }
+            if (updateUi) {
+                scheduleAdjacentPreload()
+                scheduleShuffleAdvance()
+            }
+        }
+        pendingMediaTransitionFinish = completion
+        handler.postDelayed(completion, durationMs + 100L)
+        return completion
+    }
+
+    private fun finishMediaTransition(updateUi: Boolean = true) {
+        val cleanup = pendingMediaTransitionCleanup ?: return
+        pendingMediaTransitionFinish?.let(handler::removeCallbacks)
+        // Clear ownership before cancelling animators or rebuilding the current page.
+        pendingMediaTransitionFinish = null
+        pendingMediaTransitionCleanup = null
+        cleanup(updateUi)
+    }
+
     private fun cancelInteractiveSwipe(offset: Int = swipeOffset()) {
+        // The queue index has already advanced; cancelling a drag must not undo
+        // or replace the completion of a confirmed media change.
+        if (switchingItem) return
         val incomingPage = dragPreviewPage
         val incomingTarget = if (dragDirection > 0) offset.toFloat() else -offset.toFloat()
+        val horizontal = dragHorizontal
+        resetInteractiveSwipeState()
         val interpolator = DecelerateInterpolator(1.35f)
         activePage?.animate()
             ?.translationX(0f)
@@ -1194,18 +1289,14 @@ class DetailActivity : ComponentActivity() {
             ?.setDuration(150)
             ?.start()
         incomingPage?.animate()
-            ?.translationX(if (dragHorizontal) incomingTarget else 0f)
-            ?.translationY(if (dragHorizontal) 0f else incomingTarget)
+            ?.translationX(if (horizontal) incomingTarget else 0f)
+            ?.translationY(if (horizontal) 0f else incomingTarget)
             ?.setInterpolator(interpolator)
             ?.setDuration(150)
             ?.withEndAction {
                 content.removeView(incomingPage)
-                resetInteractiveSwipeState()
             }
             ?.start()
-        if (incomingPage == null) {
-            resetInteractiveSwipeState()
-        }
     }
 
     private fun resetInteractiveSwipeState() {
@@ -1236,6 +1327,7 @@ class DetailActivity : ComponentActivity() {
             videoControls.visibility = View.GONE
             timelineRow.visibility = View.GONE
             videoTimeline.visibility = View.GONE
+            videoProgressRow.visibility = View.GONE
             timelineBinding.unbind()
             soundButton.visibility = View.GONE
             cinemaButton.visibility = View.GONE
@@ -1271,7 +1363,8 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun switchItem(direction: Int, horizontal: Boolean) {
-        if (mediaQueue.size < 2) return
+        if (switchingItem || mediaQueue.size < 2) return
+        cancelInteractiveSwipe()
         switchingItem = true
         cancelPendingSingleTap()
         resetZoom(false)
@@ -1301,6 +1394,7 @@ class DetailActivity : ComponentActivity() {
         incomingPage.alpha = 1f
         content.addView(incomingPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         activePage = incomingPage
+        val completion = registerMediaTransition(outgoingPage, incomingPage, outgoingPlayer, 245L)
 
         val interpolator = DecelerateInterpolator(1.4f)
         outgoingPage?.animate()
@@ -1314,19 +1408,13 @@ class DetailActivity : ComponentActivity() {
             .translationY(0f)
             .setInterpolator(interpolator)
             .setDuration(245)
-            .withEndAction {
-                outgoingPage?.let { content.removeView(it) }
-                playbackController.releaseDetached(outgoingPlayer)
-                activePage = incomingPage
-                applyCurrentUiAfterInteractiveSwipe()
-                switchingItem = false
-                scheduleAdjacentPreload()
-                scheduleShuffleAdvance()
-            }
+            .withEndAction(completion)
             .start()
     }
 
     private fun loadCurrentItem() {
+        finishMediaTransition(updateUi = false)
+        resetInteractiveSwipeState()
         cancelPendingSingleTap()
         zoomed = false
         timelineBinding.unbind()
@@ -1381,7 +1469,8 @@ class DetailActivity : ComponentActivity() {
         motionPhotoButton.visibility = View.GONE
         videoControls.visibility = View.VISIBLE
         timelineRow.visibility = View.VISIBLE
-        videoTimeline.visibility = View.VISIBLE
+        videoProgressRow.visibility = View.VISIBLE
+        updateTimelineVisibility()
         soundButton.visibility = View.VISIBLE
         cinemaButton.visibility = View.VISIBLE
         updateCinemaButton()
@@ -1536,6 +1625,7 @@ class DetailActivity : ComponentActivity() {
         val metrics = resources.displayMetrics
         return ImageRequest.Builder(this)
             .data(item.uri)
+            .apply { ImageRotation.configureRequest(this@DetailActivity, item, this) }
             .memoryCacheKey(viewerPreviewKey(item))
             .diskCacheKey(viewerSourceKey(item))
             .size(metrics.widthPixels, metrics.heightPixels)
@@ -1547,12 +1637,12 @@ class DetailActivity : ComponentActivity() {
 
     private fun viewerPreviewKey(item: MediaItem): String {
         val metrics = resources.displayMetrics
-        return "viewer_preview:${item.uri}:${metrics.widthPixels}x${metrics.heightPixels}"
+        return "viewer_preview:${MediaContentRevision.key(this, item.uri)}:${metrics.widthPixels}x${metrics.heightPixels}"
     }
 
-    private fun viewerNativeKey(item: MediaItem): String = "viewer_native:${item.uri}"
+    private fun viewerNativeKey(item: MediaItem): String = "viewer_native:${MediaContentRevision.key(this, item.uri)}"
 
-    private fun viewerSourceKey(item: MediaItem): String = "viewer_source:${item.uri}"
+    private fun viewerSourceKey(item: MediaItem): String = "viewer_source:${MediaContentRevision.key(this, item.uri)}"
 
     private fun wrappedIndex(index: Int): Int {
         return ViewerStateRules.wrappedIndex(index, mediaQueue.size)
@@ -1591,6 +1681,7 @@ class DetailActivity : ComponentActivity() {
         videoControls.visibility = View.GONE
         timelineRow.visibility = View.GONE
         videoTimeline.visibility = View.GONE
+        videoProgressRow.visibility = View.GONE
         timelineBinding.unbind()
         soundButton.visibility = View.GONE
         cinemaButton.visibility = View.GONE
@@ -1605,7 +1696,7 @@ class DetailActivity : ComponentActivity() {
         currentMotionPhotoClip = null
         motionPhotoButton.visibility = View.GONE
         if (item.mimeType == "image/jpeg" || item.mimeType == "image/heic" || item.mimeType == "image/heif") {
-            val key = "${item.uri}:${item.size}"
+            val key = "${MediaContentRevision.key(this, item.uri)}:${item.size}"
             if (motionPhotoScanCache.containsKey(key)) {
                 currentMotionPhotoClip = motionPhotoScanCache[key]
                 motionPhotoButton.visibility = if (currentMotionPhotoClip != null) View.VISIBLE else View.GONE
@@ -1614,7 +1705,8 @@ class DetailActivity : ComponentActivity() {
                     val clip = MotionPhotoSupport.detect(applicationContext, item.uri)
                     runOnUiThread {
                         motionPhotoScanCache[key] = clip
-                        if (!isFinishing && !isDestroyed && currentItem().uri == item.uri) {
+                        if (!isFinishing && !isDestroyed && currentItem().uri == item.uri &&
+                            key == "${MediaContentRevision.key(this, item.uri)}:${item.size}") {
                             currentMotionPhotoClip = clip
                             motionPhotoButton.visibility = if (clip != null) View.VISIBLE else View.GONE
                         }
@@ -1649,6 +1741,7 @@ class DetailActivity : ComponentActivity() {
             videoTrackController.unbind()
         }
         updateCinemaButton()
+        applyViewerSystemBars()
         animateCinemaModeTransition()
     }
 
@@ -1674,6 +1767,7 @@ class DetailActivity : ComponentActivity() {
                 requestedOrientation = previous
             }
         }
+        applyViewerSystemBars()
     }
 
     private fun animateCinemaModeTransition() {
@@ -1743,6 +1837,7 @@ class DetailActivity : ComponentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (!::content.isInitialized) return
+        applyViewerSystemBars()
         cancelPendingSingleTap()
         cinemaGestureController.cancel()
         handler.removeCallbacks(hideCinemaGestureIndicator)
@@ -1862,6 +1957,7 @@ class DetailActivity : ComponentActivity() {
         }
         page.addView(preview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         preview.load(item.uri) {
+            ImageRotation.configureRequest(this@DetailActivity, item, this)
             val metrics = resources.displayMetrics
             size(metrics.widthPixels, metrics.heightPixels)
             precision(Precision.EXACT)
@@ -1899,6 +1995,12 @@ class DetailActivity : ComponentActivity() {
             }
         }
         image.setOnTouchListener { _, event ->
+            if (switchingItem) {
+                image.removeCallbacks(textLongPress)
+                pagingGesture = false
+                imageTapCandidate = false
+                return@setOnTouchListener true
+            }
             val atBaseScale = isAtBaseZoom(image)
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -1984,6 +2086,7 @@ class DetailActivity : ComponentActivity() {
             if (!textLongPressed) toggleHud()
         }
         image.load(item.uri) {
+            ImageRotation.configureRequest(this@DetailActivity, item, this)
             memoryCacheKey(viewerNativeKey(item))
             diskCacheKey(viewerSourceKey(item))
             crossfade(false)
@@ -2044,10 +2147,16 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
+    private fun updateTimelineVisibility() {
+        videoTimeline.setExpanded(timelineExpanded)
+        timelineButton.contentDescription = getString(if (timelineExpanded) R.string.video_timeline_hide else R.string.video_timeline_show)
+        timelineButton.alpha = if (timelineExpanded) 1f else 0.65f
+    }
+
     private fun updateTimeline() {
         if (!currentItem().isVideo()) return
         val timeline = playbackController.timeline() ?: return
-        currentTime.text = formatTime(if (videoTimeline.isScrubbing) videoTimeline.positionMs else timeline.positionMs)
+        currentTime.text = formatTime(timelineBinding.scrubPositionMs ?: timeline.positionMs)
         durationTime.text = if (timeline.durationMs > 0) formatTime(timeline.durationMs) else "00:00"
     }
 
@@ -2072,19 +2181,10 @@ class DetailActivity : ComponentActivity() {
             inSampleSize = max(1, sample)
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
-        return contentResolver.openInputStream(uri).use { input ->
+        val decoded = contentResolver.openInputStream(uri).use { input ->
             BitmapFactory.decodeStream(input, null, options)
         } ?: throw IllegalStateException("bitmap")
-    }
-
-    private fun compressFormat(item: MediaItem): Bitmap.CompressFormat {
-        val mime = item.mimeType.lowercase(Locale.US)
-        val name = item.name.lowercase(Locale.US)
-        if (mime.contains("png") || name.endsWith(".png")) return Bitmap.CompressFormat.PNG
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && (mime.contains("webp") || name.endsWith(".webp"))) {
-            return Bitmap.CompressFormat.WEBP_LOSSY
-        }
-        return Bitmap.CompressFormat.JPEG
+        return ImageRotation.orientDecodedBitmap(this, uri, decoded)
     }
 
     private fun showSpeedPopup() {
@@ -2259,31 +2359,75 @@ class DetailActivity : ComponentActivity() {
             Ui.toast(this, "Disponível apenas para imagens.")
             return
         }
+        if (imageRotationRunning || pendingRotateItem != null) return
+        if (!ImageRotation.supportsInPlace(currentItem())) {
+            Ui.toast(this, getString(R.string.image_rotate_copy_required))
+            openImageEditor(rotateClockwise = true)
+            return
+        }
         pendingRotateItem = currentItem()
         rotateImage(pendingRotateItem!!)
     }
 
-    private fun rotateImage(item: MediaItem) {
+    private fun rotateImage(item: MediaItem, requestPermission: Boolean = true) {
+        imageRotationRunning = true
         executor.execute {
             try {
-                val original = decodeBitmap(item.uri, 2600)
-                val matrix = Matrix().apply { postRotate(90f) }
-                val rotated = Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
-                contentResolver.openOutputStream(item.uri, "w").use { output ->
-                    if (output == null) throw IllegalStateException("output")
-                    rotated.compress(compressFormat(item), 94, output)
+                ImageRotation.clockwise(applicationContext, item)
+                MediaContentRevision.changed(applicationContext, item.uri)
+                MediaStoreRepository.invalidateCache()
+                GalleryCatalogStore.markCatalogDirty(applicationContext)
+                // Refresh provider metadata/thumbnails when a real file path is available.
+                runCatching {
+                    MediaActions.fileFromMediaStore(this, item.uri)?.let { file ->
+                        android.media.MediaScannerConnection.scanFile(applicationContext,
+                            arrayOf(file.absolutePath), arrayOf(item.mimeType)) { _, _ ->
+                            MediaStoreRepository.invalidateCache()
+                            GalleryCatalogStore.markCatalogDirty(applicationContext)
+                        }
+                    }
                 }
                 runOnUiThread {
+                    imageRotationRunning = false
+                    pendingRotateItem = null
                     imageMetadataCache.remove(item.uri.toString())
-                    Ui.toast(this, "Orientação alterada.")
-                    loadCurrentItem()
+                    imagePreloadJobs.values.forEach { it.cancel() }
+                    imagePreloadJobs.clear()
+                    if (!isFinishing && !isDestroyed) {
+                        Ui.toast(this, getString(R.string.image_rotate_done))
+                        if (currentItem().uri == item.uri) loadCurrentItem()
+                        scheduleAdjacentPreload()
+                    }
                 }
-            } catch (_: SecurityException) {
-                runOnUiThread { MediaActions.requestWrite(this, item.uri, REQ_ROTATE_WRITE) }
+            } catch (error: SecurityException) {
+                runOnUiThread {
+                    imageRotationRunning = false
+                    if (!requestPermission || !requestRotationPermission(item, error)) {
+                        pendingRotateItem = null
+                        Ui.toast(this, getString(R.string.image_rotate_permission_error))
+                    }
+                }
             } catch (_: Exception) {
-                runOnUiThread { Ui.toast(this, "Não foi possível alterar a orientação.") }
+                runOnUiThread {
+                    imageRotationRunning = false
+                    pendingRotateItem = null
+                    Ui.toast(this, getString(R.string.image_rotate_error))
+                }
             }
         }
+    }
+
+    private fun requestRotationPermission(item: MediaItem, error: SecurityException): Boolean {
+        if (isFinishing || isDestroyed) return false
+        return try {
+            val sender = if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q && error is RecoverableSecurityException) {
+                error.userAction.actionIntent.intentSender
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && item.uri.scheme == "content" && item.uri.authority == MediaStore.AUTHORITY) {
+                MediaStore.createWriteRequest(contentResolver, listOf(item.uri)).intentSender
+            } else return false
+            startIntentSenderForResult(sender, REQ_ROTATE_WRITE, null, 0, 0, 0)
+            true
+        } catch (_: Exception) { false }
     }
 
     private fun createPdfFromCurrentImage() {
@@ -2335,7 +2479,7 @@ class DetailActivity : ComponentActivity() {
         ))
     }
 
-    private fun openImageEditor(mode: String = ImageEditActivity.MODE_CUSTOM) {
+    private fun openImageEditor(mode: String = ImageEditActivity.MODE_CUSTOM, rotateClockwise: Boolean = false) {
         if (currentItem().isVideo()) {
             Ui.toast(this, "Disponível apenas para imagens.")
             return
@@ -2343,6 +2487,7 @@ class DetailActivity : ComponentActivity() {
         val item = currentItem()
         confirmPublicEditedCopy(item) {
             startActivity(Intent(this, ImageEditActivity::class.java).apply {
+                putExtra(ImageEditActivity.EXTRA_ROTATE_CLOCKWISE, rotateClockwise)
                 putExtra("uri", item.uri.toString())
                 putExtra("name", item.name)
                 putExtra("mime", item.mimeType)
@@ -2536,8 +2681,9 @@ class DetailActivity : ComponentActivity() {
         } else if (requestCode == REQ_ROTATE_WRITE) {
             val item = pendingRotateItem
             if (resultCode == RESULT_OK && item != null) {
-                rotateImage(item)
+                rotateImage(item, requestPermission = false)
             } else {
+                pendingRotateItem = null
                 Ui.toast(this, "Rotação cancelada.")
             }
         } else if (requestCode == REQ_CREATE_PDF) {
@@ -2578,9 +2724,26 @@ class DetailActivity : ComponentActivity() {
             params.screenBrightness = 1f
             window.attributes = params
         }
+        applyViewerSystemBars()
+    }
+
+    private fun applyViewerSystemBars() {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        // Showing the app's playback controls must not reveal system bars in
+        // cinema. Edge swipes still reveal them temporarily for system navigation.
+        if (cinemaMode) controller.hide(WindowInsetsCompat.Type.systemBars())
+        else controller.show(WindowInsetsCompat.Type.systemBars())
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && ::topBar.isInitialized && !isFinishing) applyViewerSystemBars()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        finishMediaTransition()
+        outState.putBoolean("timeline_expanded", timelineExpanded)
         outState.putStringArrayList(MediaOperationNavigation.EXTRA_REMOVED_URIS, ArrayList(removedUris))
         outState.putStringArrayList(MediaOperationNavigation.EXTRA_MOVED_URIS, ArrayList(movedUris))
         val item = mediaQueue.getOrNull(currentIndex)
@@ -2620,6 +2783,7 @@ class DetailActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyViewerSystemBars()
         if (::timelineBinding.isInitialized) timelineBinding.resumeUpdates()
         if (::textRecognitionButton.isInitialized) scheduleTextDetection(mediaQueue.getOrNull(currentIndex))
         playbackController.resumeAfterLifecycle()
@@ -2631,6 +2795,8 @@ class DetailActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        // Settle before pausing so a new video cannot start after lifecycle pause.
+        finishMediaTransition()
         super.onPause()
         if (::timelineBinding.isInitialized) timelineBinding.suspend()
         pendingTextDetection?.let(handler::removeCallbacks)
@@ -2647,6 +2813,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        finishMediaTransition(updateUi = false)
         super.onDestroy()
         if (::timelineBinding.isInitialized) timelineBinding.unbind()
         pendingTextDetection?.let(handler::removeCallbacks)

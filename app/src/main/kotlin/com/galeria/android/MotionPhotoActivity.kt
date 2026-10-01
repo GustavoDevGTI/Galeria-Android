@@ -4,12 +4,13 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.LinearLayout
-import android.widget.ImageButton
+import android.widget.SeekBar
 import androidx.activity.ComponentActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -24,9 +25,11 @@ class MotionPhotoActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private var player: ExoPlayer? = null
     private lateinit var timelineBinding: VideoTimelineBinding
+    private var timelineExpanded = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        timelineExpanded = savedInstanceState?.getBoolean("timeline_expanded") ?: false
         Ui.applySystemBars(this)
         val source = intent.getStringExtra(EXTRA_URI)?.let(Uri::parse)
         val offset = intent.getLongExtra(EXTRA_OFFSET, -1L)
@@ -64,8 +67,13 @@ class MotionPhotoActivity : ComponentActivity() {
                 insets
             }
         }
-        val times = TextView(this).apply { setTextColor(Color.WHITE); textSize = 14f; gravity = Gravity.CENTER }
-        val play = ImageButton(this).apply {
+        val times = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        }
+        val play = ClickFeedbackImageButton(this).apply {
+            tag = "video_play_pause"
             setImageResource(R.drawable.ic_pause)
             imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
             background = Ui.actionFeedback(this@MotionPhotoActivity, Color.WHITE)
@@ -79,13 +87,39 @@ class MotionPhotoActivity : ComponentActivity() {
                 }
             }
         }
-        val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        row.addView(play, LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)))
+        val row = LinearLayout(this).apply {
+            tag = "video_playback_controls"
+            gravity = Gravity.CENTER_VERTICAL
+        }
         row.addView(times, LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f))
+        row.addView(play, LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)))
+        row.addView(View(this), LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f))
         controls.addView(row)
         val timeline = VideoTimelineView(this)
+        val progressBar = SeekBar(this).apply {
+            tag = "video_progress"
+            contentDescription = getString(R.string.video_progress_description)
+            progressTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            thumbTintList = progressTintList
+        }
+        val toggle = Ui.actionIconButton(this, R.drawable.ic_timeline, Color.WHITE).apply {
+            tag = "video_timeline_toggle"
+            contentDescription = getString(if (timelineExpanded) R.string.video_timeline_hide else R.string.video_timeline_show)
+            setOnClickListener {
+                timeline.cancelGesture()
+                timelineExpanded = !timelineExpanded
+                timeline.setExpanded(timelineExpanded)
+                contentDescription = getString(if (timelineExpanded) R.string.video_timeline_hide else R.string.video_timeline_show)
+            }
+        }
+        val progressRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        progressRow.addView(progressBar, LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f))
+        progressRow.addView(toggle, LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)))
+        controls.addView(progressRow)
+        timeline.setExpanded(timelineExpanded)
         controls.addView(timeline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
         timelineBinding = VideoTimelineBinding(timeline).apply {
+            attachProgressBar(progressBar)
             onPosition = { position, duration ->
                 times.text = "${videoTime(position)} / ${videoTime(duration)}"
                 val playing = player?.isPlaying == true
@@ -133,6 +167,11 @@ class MotionPhotoActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("timeline_expanded", timelineExpanded)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onStop() {

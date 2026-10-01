@@ -93,7 +93,10 @@ Esta lista descreve resultados esperados, não resultados já aprovados no apare
 
 ## 9. Modo cinema e funções antigas
 
+- [ ] Regressão da navegação (próxima atualização): no modo normal, passar fotos e vídeos para esquerda/direita e cima/baixo. Repetir depois de voltar do segundo plano e de fechar/reabrir o visualizador. Fazer um segundo toque durante a troca e interromper uma troca indo para outro app: ao retornar, a mídia exibida deve corresponder ao título/player e continuar permitindo navegação nos dois eixos.
 - [ ] Entrar/sair do cinema pela claquete: orientação correta, transição suave e ícone aberto/fechado, sem brilho permanente de botão pressionado.
+- [ ] Regressão das barras do sistema (próxima atualização): no cinema, relógio/notificações e navegação devem ficar ocultos mesmo com os controles de reprodução visíveis. Girar, abrir/fechar o menu de trilhas e retornar do segundo plano: devem continuar ocultos. Um gesto na borda deve revelá-los temporariamente; ao sair do cinema, as barras devem voltar normalmente.
+- [ ] Alinhamento da reprodução (próxima atualização): play/pause deve ficar no centro, com tempos à esquerda e velocidade à direita, tanto no modo normal quanto no cinema. Abrir/fechar a linha do tempo e girar a tela não devem deslocá-lo; conferir também o alinhamento central ao reproduzir uma Motion Photo.
 - [ ] Arrastar verticalmente em cada lateral no cinema: brilho de um lado e volume do outro; não devem interferir no scrubbing da linha do tempo.
 - [ ] Escolher trilha de áudio e legenda num arquivo que realmente as possua. Confirmar a troca ouvindo/lendo o resultado.
 - [ ] Ativar a preferência de cinema e de trilhas para o álbum; abrir outro vídeo compatível, sair e retornar. A preferência deve continuar aplicada somente no escopo esperado.
@@ -109,6 +112,7 @@ Esta lista descreve resultados esperados, não resultados já aprovados no apare
 - [ ] Mover arquivos entre pastas: a origem deve atualizar imediatamente. Ao mover todos, deve abrir o destino; nenhuma pasta vazia deve ficar exibida.
 - [ ] Conferir Favoritos apenas com itens, Recentes sem duplicação física e álbuns fixados antes dos essenciais.
 - [ ] Mídias de pastas ocultas não devem aparecer em Recentes/Favoritos ou outras coleções; conferir também pastas com .nomedia e caches de miniaturas/documentos.
+- [ ] Regressão de caches de documentos (próxima atualização): um cache já reconhecido com pastas como `1d`, `e7` e `9f` deve continuar oculto depois de ganhar mais de três imagens por pasta, atualizar a galeria ou trocar filtros de mídia. Conferir também Recentes, Favoritos e Lixeira com exibição de ocultos desativada; uma pasta comum com nome curto não deve sumir por engano.
 - [ ] Usar o olho para revelar temporariamente um álbum oculto: deve aparecer na página inicial, mantendo o isolamento do conteúdo. Após 30 minutos, incluindo tempo em segundo plano, deve ocultar novamente. Fechar o app pelos recentes e reabrir deve encerrar a revelação antes do prazo.
 - [ ] Conferir animações de olho/pin/checkbox e OK à direita no submenu de ocultos. Escolhas simples em outros submenus devem aplicar sem OK/Cancelar redundantes.
 - [ ] Conferir capas automáticas pela ordenação do álbum e capas manuais; reabrir pastas várias vezes e observar se thumbs permanecem estáveis, nítidas e rápidas.

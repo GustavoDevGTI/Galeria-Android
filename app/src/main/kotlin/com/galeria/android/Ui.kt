@@ -241,13 +241,13 @@ class Ui private constructor() {
 
         fun actionFeedback(context: Context, color: Int, selected: Boolean = false): RippleDrawable =
             RippleDrawable(
-                ColorStateList.valueOf((color and 0x00FFFFFF) or 0x22000000),
+                ColorStateList.valueOf((color and 0x00FFFFFF) or 0x14000000),
                 if (selected) rounded((color and 0x00FFFFFF) or 0x16000000, 18, context) else null,
                 rounded(Color.WHITE, 18, context)
             )
 
         fun actionIconButton(context: Context, icon: Int, color: Int): ImageButton =
-            ImageButton(context).apply {
+            ClickFeedbackImageButton(context).apply {
                 setImageResource(icon)
                 imageTintList = ColorStateList.valueOf(color)
                 scaleType = ImageView.ScaleType.CENTER
@@ -259,7 +259,7 @@ class Ui private constructor() {
 
         @JvmStatic
         fun selectionAction(context: Context, icon: Int, label: String, listener: () -> Unit): LinearLayout =
-            LinearLayout(context).apply {
+            ClickFeedbackActionLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 minimumHeight = dp(context, 64)
@@ -908,10 +908,11 @@ class Ui private constructor() {
                     clipToOutline = true
                     album.cover?.let { media ->
                         load(media.uri) {
+                            ImageRotation.configureRequest(context, media, this)
                             size(dp(context, 48), dp(context, 48))
                             precision(Precision.INEXACT)
-                            memoryCacheKey("album-target:${media.uri}:48")
-                            diskCacheKey("album-target:${media.uri}")
+                            memoryCacheKey("album-target:${MediaContentRevision.key(context, media.uri)}:48")
+                            diskCacheKey("album-target:${MediaContentRevision.key(context, media.uri)}")
                             allowHardware(true)
                             crossfade(160)
                         }

@@ -47,16 +47,17 @@ internal object AutomaticHiddenAlbums {
         rememberedParents: Set<String> = emptySet()
     ): Set<String> {
         val source = albums.toList()
-        val candidates = source.filter { album ->
-            val path = album.path.replace('\\', '/').trimEnd('/')
-            val leaf = path.substringAfterLast('/')
-            album.count in 1..MAX_ITEMS_PER_BUCKET && path.contains('/') && hexBucket.matches(leaf)
-        }
-        val generated = candidates.groupBy(::parentPath)
-            .filter { (parent, siblings) ->
-                parent in rememberedParents || siblings.map { it.path.lowercase() }.distinct().size >= MIN_SIBLINGS
-            }.values
-            .flatMapTo(HashSet()) { siblings -> siblings.map { it.key } }
+        val parents = rememberedParents.mapTo(HashSet(), ::normalizedPath) + detectedParents(source)
+        // The small-bucket threshold is evidence for the initial classification,
+        // not a visibility rule. A known cache must stay hidden as it grows,
+        // is partially indexed, or adds directories inside its hash buckets.
+        val generated = source.filter { album ->
+            val path = normalizedPath(album.path)
+            parents.any { parent ->
+                val prefix = "$parent/"
+                path.startsWith(prefix) && hexBucket.matches(path.removePrefix(prefix).substringBefore('/'))
+            }
+        }.mapTo(HashSet()) { it.key }
         generated.addAll(markers.hiddenAlbumKeys(source))
         return generated
     }
@@ -66,12 +67,7 @@ internal object AutomaticHiddenAlbums {
         synchronized(this) {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val remembered = prefs.getStringSet(PREF_PARENTS, emptySet()).orEmpty()
-            val detected = source.filter {
-                val leaf = it.path.replace('\\', '/').trimEnd('/').substringAfterLast('/')
-                it.count in 1..MAX_ITEMS_PER_BUCKET && it.path.contains('/') && hexBucket.matches(leaf)
-            }.groupBy(::parentPath).filter { (_, siblings) ->
-                siblings.map { it.path.lowercase() }.distinct().size >= MIN_SIBLINGS
-            }.keys
+            val detected = detectedParents(source)
             val parents = remembered + detected
             if (parents != remembered) prefs.edit().putStringSet(PREF_PARENTS, parents).apply()
             return keys(source, markers, parents)
@@ -81,6 +77,13 @@ internal object AutomaticHiddenAlbums {
     fun keysForMedia(context: Context, media: Iterable<MediaItem>, markers: HiddenDirectoryMarkers): Set<String> =
         keys(context, MediaStoreRepository.buildAlbums(media.toList()), markers)
 
-    private fun parentPath(album: AlbumItem): String =
-        album.path.replace('\\', '/').trimEnd('/').substringBeforeLast('/')
+    private fun detectedParents(source: List<AlbumItem>): Set<String> = source.filter {
+        val path = normalizedPath(it.path)
+        it.count in 1..MAX_ITEMS_PER_BUCKET && path.contains('/') &&
+            hexBucket.matches(path.substringAfterLast('/'))
+    }.groupBy { normalizedPath(it.path).substringBeforeLast('/') }
+        .filter { (_, siblings) -> siblings.map { normalizedPath(it.path) }.distinct().size >= MIN_SIBLINGS }
+        .keys
+
+    private fun normalizedPath(path: String): String = path.replace('\\', '/').trimEnd('/')
 }

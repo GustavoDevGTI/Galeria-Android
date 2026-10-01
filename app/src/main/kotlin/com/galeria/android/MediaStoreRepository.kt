@@ -86,6 +86,10 @@ object MediaStoreRepository {
             loadFromHiddenFilesystem(items, allFilesAccess)
         }
         items.sortByDescending { it.dateAdded }
+        // Remember generated-cache parents from the complete scan before any
+        // screen, search, selection or media-type filter takes a smaller subset.
+        AutomaticHiddenAlbums.keysForMedia(context, items,
+            HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
         GalleryCatalogStore.writeMedia(context.applicationContext, items, includeHidden, allFilesAccess)
         cacheResult(items, includeHidden, allFilesAccess)
         GalleryCatalogStore.clearCatalogDirty(context, includeHidden, revision)

@@ -45,6 +45,7 @@ import kotlin.math.min
 class ImageEditActivity : Activity() {
     companion object {
         const val EXTRA_MODE = "image_edit_mode"
+        const val EXTRA_ROTATE_CLOCKWISE = "image_edit_rotate_clockwise"
         const val MODE_CUSTOM = "custom"
         const val MODE_CROP = "crop"
     }
@@ -307,6 +308,7 @@ class ImageEditActivity : Activity() {
                 runOnUiThread {
                     if (isDestroyed || isFinishing) { bitmap.recycle(); return@runOnUiThread }
                     editor.setBitmap(bitmap)
+                    if (intent.getBooleanExtra(EXTRA_ROTATE_CLOCKWISE, false)) editor.rotateClockwise()
                     if (cropOnly) editor.tool = EditorTool.CROP
                     editor.contentDescription = if (cropOnly) getString(R.string.image_edit_crop_ready) else "Imagem pronta para edição"
                     refreshToolButtons()
@@ -319,7 +321,7 @@ class ImageEditActivity : Activity() {
 
     @Throws(Exception::class)
     private fun decodeBitmap(uri: Uri, maxSide: Int): Bitmap {
-        if (Build.VERSION.SDK_INT >= 28) {
+        if (Build.VERSION.SDK_INT >= 28 && !ImageRotation.isEditedPng(this, uri, mimeType, sourceName)) {
             return android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(contentResolver, uri)) { decoder, info, _ ->
                 decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
                 val scale = minOf(1f, maxSide.toFloat() / maxOf(info.size.width, info.size.height))

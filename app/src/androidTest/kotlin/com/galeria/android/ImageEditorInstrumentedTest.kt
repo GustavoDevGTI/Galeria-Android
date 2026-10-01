@@ -11,6 +11,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.widget.EditText
+import android.widget.ImageView
+import androidx.exifinterface.media.ExifInterface
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
@@ -161,7 +163,7 @@ class ImageEditorInstrumentedTest {
                 putExtra("path", "Pictures/GaleriaEditorTest/")
                 putExtra("album_key", "Pictures/GaleriaEditorTest/")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }).use {
+            }).use { scenario ->
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
                 waitForMenu()
                 onView(withContentDescription("Girar")).check(matches(isDisplayed()))
@@ -185,13 +187,22 @@ class ImageEditorInstrumentedTest {
                 val deadline = System.currentTimeMillis() + 10_000L
                 var rotated = false
                 while (!rotated && System.currentTimeMillis() < deadline) {
-                    val dimensions = context.contentResolver.openInputStream(source)?.use {
-                        BitmapFactory.decodeStream(it)?.let { bitmap -> bitmap.width to bitmap.height }
+                    val orientation = context.contentResolver.openInputStream(source)?.use {
+                        ExifInterface(it).rotationDegrees
                     }
-                    rotated = dimensions == (120 to 160)
+                    var displayed = false
+                    scenario.onActivity { activity ->
+                        displayed = descendants(activity.window.decorView).filterIsInstance<ImageView>().any {
+                            val width = it.drawable?.intrinsicWidth ?: 0
+                            val height = it.drawable?.intrinsicHeight ?: 0
+                            it.tag == source && it.alpha >= 0.99f &&
+                                height > 0 && kotlin.math.abs(width.toFloat() / height - 0.75f) < 0.02f
+                        }
+                    }
+                    rotated = orientation == 90 && displayed
                     if (!rotated) Thread.sleep(100L)
                 }
-                assertTrue("Girar deve alterar a orientação da foto temporária.", rotated)
+                assertTrue("Girar deve atualizar a orientação EXIF e a imagem exibida, sem reutilizar o cache antigo.", rotated)
             }
         } finally {
             context.contentResolver.delete(source, null, null)

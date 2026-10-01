@@ -12,6 +12,9 @@ import android.view.View
 import androidx.media3.ui.PlayerView
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
@@ -44,6 +47,8 @@ class CinemaModeInstrumentedTest {
         ActivityScenario.launch<DetailActivity>(intent).use { scenario ->
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
             waitForOrientation(scenario, Configuration.ORIENTATION_PORTRAIT)
+            waitForSystemBars(scenario, visible = true)
+            assertPlaybackCentered(scenario)
             onView(withContentDescription("Modo cinema"))
                 .check(matches(isDisplayed()))
                 .check(matches(not(isSelected())))
@@ -62,6 +67,8 @@ class CinemaModeInstrumentedTest {
                 assertEquals(View.VISIBLE, indicator.visibility)
             }
             waitForOrientation(scenario, Configuration.ORIENTATION_LANDSCAPE)
+            waitForSystemBars(scenario, visible = false)
+            assertPlaybackCentered(scenario)
             assertCinemaButtonState(true)
             scenario.onActivity { activity ->
                 val playerAfter = find<PlayerView>(activity.window.decorView)?.player
@@ -72,6 +79,7 @@ class CinemaModeInstrumentedTest {
             onView(withText("Trilha de áudio")).perform(scrollTo()).check(matches(isDisplayed()))
             onView(withText("Legenda")).perform(scrollTo()).check(matches(isDisplayed()))
             pressBack()
+            waitForSystemBars(scenario, visible = false)
             scenario.onActivity { activity ->
                 val cinemaButton = descendants(activity.window.decorView)
                     .first { it.contentDescription == "Modo cinema" }
@@ -82,6 +90,8 @@ class CinemaModeInstrumentedTest {
                 assertEquals(View.VISIBLE, indicator.visibility)
             }
             waitForOrientation(scenario, Configuration.ORIENTATION_PORTRAIT)
+            waitForSystemBars(scenario, visible = true)
+            assertPlaybackCentered(scenario)
             assertCinemaButtonState(false)
             scenario.onActivity { activity ->
                 assertSame(playerBefore, find<PlayerView>(activity.window.decorView)?.player)
@@ -98,12 +108,42 @@ class CinemaModeInstrumentedTest {
 
         ActivityScenario.launch<DetailActivity>(videoIntent(context, uri, albumKey)).use { scenario ->
             waitForOrientation(scenario, Configuration.ORIENTATION_LANDSCAPE)
+            waitForSystemBars(scenario, visible = false)
             assertCinemaButtonState(true)
             onView(withContentDescription("Modo cinema")).perform(click())
             assertCinemaButtonState(false)
             assertTrue(CinemaModePreferences(prefs).isEnabled(albumKey))
             scenario.recreate()
             assertCinemaButtonState(false)
+            waitForSystemBars(scenario, visible = true)
+        }
+    }
+
+    @Test
+    fun cinemaHidesSystemBarsAgainAfterFocusResumeAndRecreation() = withVideo { context, uri, albumKey ->
+        CinemaModePreferences(context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE))
+            .setEnabled(albumKey, true)
+        ActivityScenario.launch<DetailActivity>(videoIntent(context, uri, albumKey)).use { scenario ->
+            waitForOrientation(scenario, Configuration.ORIENTATION_LANDSCAPE)
+            waitForSystemBars(scenario, visible = false)
+            // Simulate bars being restored while another window has focus. On
+            // returning to the viewer, cinema must explicitly hide them again.
+            scenario.onActivity { activity ->
+                WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+                    .show(WindowInsetsCompat.Type.systemBars())
+            }
+            waitForSystemBars(scenario, visible = true)
+            scenario.onActivity {
+                it.onWindowFocusChanged(false)
+                it.onWindowFocusChanged(true)
+            }
+            waitForSystemBars(scenario, visible = false)
+            scenario.moveToState(Lifecycle.State.STARTED)
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            waitForSystemBars(scenario, visible = false)
+            scenario.recreate()
+            waitForSystemBars(scenario, visible = false)
+            assertCinemaButtonState(true)
         }
     }
 
@@ -141,12 +181,44 @@ class CinemaModeInstrumentedTest {
     private fun waitForOrientation(scenario: ActivityScenario<DetailActivity>, expected: Int) {
         val deadline = SystemClock.uptimeMillis() + 10_000L
         var actual = Configuration.ORIENTATION_UNDEFINED
+        var hasFocus = false
         do {
-            scenario.onActivity { actual = it.resources.configuration.orientation }
-            if (actual == expected) return
+            scenario.onActivity {
+                actual = it.resources.configuration.orientation
+                hasFocus = it.hasWindowFocus()
+            }
+            if (actual == expected && hasFocus) return
             SystemClock.sleep(100L)
         } while (SystemClock.uptimeMillis() < deadline)
         assertEquals("O clique deve atualizar a orientação da tela.", expected, actual)
+        assertTrue("A janela deve recuperar o foco após alterar a orientação.", hasFocus)
+    }
+
+    private fun waitForSystemBars(scenario: ActivityScenario<DetailActivity>, visible: Boolean) {
+        val deadline = SystemClock.uptimeMillis() + 5_000L
+        var status: Boolean? = null
+        var navigation: Boolean? = null
+        do {
+            scenario.onActivity { activity ->
+                val insets = ViewCompat.getRootWindowInsets(activity.window.decorView)
+                status = insets?.isVisible(WindowInsetsCompat.Type.statusBars())
+                navigation = insets?.isVisible(WindowInsetsCompat.Type.navigationBars())
+            }
+            if (status == visible && navigation == visible) return
+            SystemClock.sleep(100L)
+        } while (SystemClock.uptimeMillis() < deadline)
+        assertEquals("Visibilidade da barra de notificações.", visible, status)
+        assertEquals("Visibilidade da barra de navegação.", visible, navigation)
+    }
+
+    private fun assertPlaybackCentered(scenario: ActivityScenario<DetailActivity>) {
+        scenario.onActivity { activity ->
+            val row = activity.window.decorView.findViewWithTag<View>("video_playback_controls")
+            val play = activity.window.decorView.findViewWithTag<View>("video_play_pause")
+            assertTrue("Os controles devem estar medidos.", row.width > 0 && play.width > 0)
+            assertTrue("Play/pause deve ficar centralizado na barra, inclusive após rotação.",
+                kotlin.math.abs(play.x + play.width / 2f - row.width / 2f) <= 1f)
+        }
     }
 
     @Test

@@ -49,6 +49,14 @@ class MediaRecyclerAdapter(
     private var pagingMode = false
     private var fastScrollPreview = false
     private var gridThumbnailSizePx = 360
+    private var contentGeneration = MediaContentRevision.generation()
+
+    fun refreshChangedThumbnails() {
+        val generation = MediaContentRevision.generation()
+        if (contentGeneration == generation) return
+        contentGeneration = generation
+        if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_THUMBNAIL_SIZE)
+    }
 
     init {
         setHasStableIds(true)
@@ -497,8 +505,9 @@ class MediaRecyclerAdapter(
     }
 
     private fun loadThumbnail(holder: Holder, item: MediaItem, requestSize: Int, saved: android.net.Uri?) {
-        val diskKey = "media:${item.uri}:${item.size}:${item.dateAdded}:${if (saved == null) "opening" else "saved"}"
+        val diskKey = "media:${MediaContentRevision.key(context, item.uri)}:${item.size}:${item.dateAdded}:${if (saved == null) "opening" else "saved"}"
         holder.image.load(saved ?: item.uri) {
+            ImageRotation.configureRequest(context, item, this)
             size(requestSize, requestSize)
             precision(Precision.INEXACT)
             memoryCacheKey("$diskKey:$requestSize")

@@ -1,7 +1,12 @@
 <resources>
-    <string name="video_timeline_description">Linha do tempo do vídeo. Arraste para navegar. Segure para ajuste fino.</string>
-    <string name="video_timeline_hint">Arraste · Segure para precisão</string>
-    <string name="video_timeline_fine">Ajuste fino</string>
+    <string name="video_timeline_description">Linha do tempo do vídeo. Deslize as miniaturas para navegar por segundo.</string>
+    <string name="video_timeline_show">Mostrar linha do tempo</string>
+    <string name="video_timeline_hide">Fechar linha do tempo</string>
+    <string name="video_progress_description">Posição da reprodução</string>
+    <string name="image_rotate_done">Orientação alterada.</string>
+    <string name="image_rotate_error">Não foi possível alterar a orientação.</string>
+    <string name="image_rotate_permission_error">Não foi possível obter permissão para girar esta foto.</string>
+    <string name="image_rotate_copy_required">Este formato precisa ser salvo como cópia. Confira o giro e toque em Salvar cópia.</string>
     <string name="video_play">Reproduzir vídeo</string>
     <string name="video_pause">Pausar vídeo</string>
     <string name="ocr_text_available">Texto detectado: selecionar ou copiar</string>

@@ -8,18 +8,16 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.net.Uri
-import android.os.Bundle
 import android.os.Build
+import android.os.Bundle
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlin.math.abs
-import kotlin.math.ceil
-import kotlin.math.roundToLong
 
-/** Overview by default; hold to spread a 20-second window under the finger. */
+/** Scrolls a virtual, second-by-second filmstrip under a fixed playhead. */
 internal class VideoTimelineView(context: Context) : View(context) {
     var onScrubStart: (() -> Unit)? = null
     var onScrubMove: ((Long) -> Unit)? = null
@@ -32,28 +30,26 @@ internal class VideoTimelineView(context: Context) : View(context) {
         private set
     private var source: VideoTimelineFrames? = null
     private var sourceIdentity: String? = null
-    private var startMs = 0L
-    private var spanMs = 0L
-    private var fine = false
     private var downX = 0f
-    private var lastX = 0f
+    private var downPosition = 0L
     private var moved = false
     private var samples = emptyList<Long>()
     private val frames = HashMap<Long, Bitmap>()
+    private val failedFrames = HashSet<Long>()
+    private var expansionRequested = false
+    private var preparationEnabled = true
+    private val unavailableFrame by lazy { context.getDrawable(R.drawable.ic_movie) }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val srcRect = Rect()
     private val dstRect = RectF()
     private var range: LongRange? = null
-    private val finePress = Runnable {
-        if (isScrubbing && durationMs > 20_000L) {
-            fine = true
-            spanMs = VideoTimelineRules.fineSpan(durationMs)
-            startMs = VideoTimelineRules.windowStart(positionMs, spanMs, durationMs)
-            performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-            requestFrames()
-            invalidate()
+    private val cellWidth get() = dp(54).toFloat()
+    val isPrepared: Boolean
+        get() {
+            if (source == null || durationMs <= 0L) return false
+            val visible = visibleTimes(viewportWidth())
+            return visible.isNotEmpty() && visible.all { it in frames || it in failedFrames }
         }
-    }
 
     init {
         tag = "video_timeline"
@@ -70,57 +66,125 @@ internal class VideoTimelineView(context: Context) : View(context) {
         source = uri?.let { VideoTimelineFrames(context, it, revision) }
         sourceIdentity = identity
         frames.clear()
+        failedFrames.clear()
         samples = emptyList()
         durationMs = 0L
         positionMs = 0L
         range = null
+        if (expansionRequested) { animate().cancel(); alpha = 1f; visibility = GONE }
         invalidate()
     }
 
     fun update(position: Long, duration: Long) {
-        val nextDuration = duration.coerceAtLeast(0L)
-        if (durationMs != nextDuration) {
-            durationMs = nextDuration
-            if (!isScrubbing) { startMs = 0; spanMs = nextDuration }
-            requestFrames()
-        }
+        durationMs = duration.coerceAtLeast(0L)
         if (!isScrubbing) positionMs = position.coerceIn(0L, durationMs)
+        requestFrames()
         invalidate()
     }
 
     fun setSelectedRange(selected: LongRange?) { range = selected; invalidate() }
 
+    /** Preparing the viewport starts with playback; opening never reveals loading cells. */
+    fun setExpanded(expanded: Boolean) {
+        expansionRequested = expanded
+        if (!expanded) {
+            cancelGesture()
+            animate().cancel()
+            alpha = 1f
+            visibility = GONE
+        } else {
+            if (!isPrepared) { animate().cancel(); alpha = 1f; visibility = GONE }
+            requestFrames()
+            revealIfPrepared()
+        }
+    }
+
+    fun setPreparationEnabled(enabled: Boolean) {
+        preparationEnabled = enabled
+        if (enabled) requestFrames() else {
+            source?.request(emptyList()) { _, _ -> }
+            samples = emptyList()
+        }
+    }
+
+    private fun revealIfPrepared() {
+        if (!expansionRequested || !preparationEnabled || visibility == VISIBLE || !isPrepared) return
+        visibility = VISIBLE
+        alpha = 0f
+        animate().alpha(1f).setDuration(120L).start()
+    }
+
+    private fun viewportWidth(): Int {
+        val container = parent as? View
+        val available = container?.let { it.width - it.paddingLeft - it.paddingRight } ?: 0
+        return available.takeIf { it > 0 } ?: width.takeIf { it > 0 } ?:
+            (resources.displayMetrics.widthPixels - dp(32)).coerceAtLeast(1)
+    }
+
+    private fun visibleTimes(viewport: Int): List<Long> =
+        VideoTimelineRules.visibleIndices(positionMs, durationMs, viewport, cellWidth)
+            .filter { index ->
+                val offset = (index.toDouble() * VideoTimelineRules.FRAME_INTERVAL_MS - positionMs) /
+                    VideoTimelineRules.FRAME_INTERVAL_MS * cellWidth
+                abs(offset) <= (viewport + cellWidth) / 2.0
+            }.map { VideoTimelineRules.frameTime(it, durationMs) }.distinct()
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { requestFrames() }
 
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        // View can invoke this during construction, before the fields are initialized.
+        if (visibility == VISIBLE) post { requestFrames() }
+        else if (source != null) cancelGesture()
+    }
+
     private fun requestFrames() {
-        if (width <= 0 || durationMs <= 0) return
-        val next = VideoTimelineRules.samples(startMs, spanMs, durationMs, ceil(width / dp(54).toDouble()).toInt())
-        if (next == samples) return
+        if (!preparationEnabled || !isAttachedToWindow || windowVisibility != VISIBLE || durationMs <= 0L) return
+        val indices = VideoTimelineRules.visibleIndices(positionMs, durationMs, viewportWidth(), cellWidth)
+        // A few seconds ahead keep the closed strip ready as playback advances.
+        val last = (indices.last + 3L).coerceAtMost(VideoTimelineRules.frameCount(durationMs) - 1L)
+        val next = (indices.first..last).map { VideoTimelineRules.frameTime(it, durationMs) }.distinct()
+        if (next == samples) { revealIfPrepared(); return }
         samples = next
         frames.keys.retainAll(next.toSet())
-        source?.request(next) { time, bitmap ->
-            if (time in samples) { frames[time] = bitmap; invalidate() }
+        failedFrames.retainAll(next.toSet())
+        val priority = next.sortedBy { abs(it - positionMs) }
+        source?.request(priority, onFailure = { time ->
+            if (time in samples) { failedFrames.add(time); revealIfPrepared(); invalidate() }
+        }) { time, bitmap ->
+            if (time in samples) { frames[time] = bitmap; revealIfPrepared(); invalidate() }
         }
+        revealIfPrepared()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val top = dp(7).toFloat()
         val bottom = height - dp(7).toFloat()
-        val cell = width.toFloat() / samples.size.coerceAtLeast(1)
-        for ((index, time) in samples.withIndex()) {
-            dstRect.set(index * cell, top, (index + 1) * cell - dp(1), bottom)
+        for (index in VideoTimelineRules.visibleIndices(positionMs, durationMs, width, cellWidth)) {
+            val time = VideoTimelineRules.frameTime(index, durationMs)
+            val center = width / 2f + ((index.toDouble() * VideoTimelineRules.FRAME_INTERVAL_MS - positionMs) /
+                VideoTimelineRules.FRAME_INTERVAL_MS * cellWidth).toFloat()
+            dstRect.set(center - cellWidth / 2f, top, center + cellWidth / 2f - dp(1), bottom)
+            if (dstRect.right < 0f || dstRect.left > width) continue
             val bitmap = frames[time]
             paint.color = 0xFF303237.toInt()
             canvas.drawRoundRect(dstRect, dp(3).toFloat(), dp(3).toFloat(), paint)
             if (bitmap != null) {
                 val scale = maxOf(dstRect.width() / bitmap.width, dstRect.height() / bitmap.height)
-                val cropWidth = (dstRect.width() / scale).toInt().coerceAtLeast(1)
-                val cropHeight = (dstRect.height() / scale).toInt().coerceAtLeast(1)
+                val cropWidth = (dstRect.width() / scale).toInt().coerceIn(1, bitmap.width)
+                val cropHeight = (dstRect.height() / scale).toInt().coerceIn(1, bitmap.height)
                 val left = (bitmap.width - cropWidth) / 2
                 val y = (bitmap.height - cropHeight) / 2
                 srcRect.set(left, y, left + cropWidth, y + cropHeight)
                 canvas.drawBitmap(bitmap, srcRect, dstRect, paint)
+            } else if (time in failedFrames) {
+                unavailableFrame?.apply {
+                    val x = dstRect.centerX().toInt()
+                    val y = dstRect.centerY().toInt()
+                    setBounds(x - dp(9), y - dp(9), x + dp(9), y + dp(9))
+                    draw(canvas)
+                }
             }
         }
         range?.let { selected ->
@@ -128,57 +192,42 @@ internal class VideoTimelineView(context: Context) : View(context) {
             canvas.drawRect(0f, top, xAt(selected.first), bottom, paint)
             canvas.drawRect(xAt(selected.last), top, width.toFloat(), bottom, paint)
         }
-        val x = xAt(positionMs).coerceIn(dp(2).toFloat(), (width - dp(2)).coerceAtLeast(dp(2)).toFloat())
+        val x = width / 2f
         paint.color = Color.BLACK
         canvas.drawRoundRect(x - dp(3), top - dp(4), x + dp(3), bottom + dp(4), dp(3).toFloat(), dp(3).toFloat(), paint)
         paint.color = Color.WHITE
         canvas.drawRoundRect(x - dp(1), top - dp(4), x + dp(1), bottom + dp(4), dp(1).toFloat(), dp(1).toFloat(), paint)
-        if (isScrubbing && durationMs > 20_000L) {
-            val label = context.getString(if (fine) R.string.video_timeline_fine else R.string.video_timeline_hint)
-            paint.textSize = dp(11).toFloat()
-            val textWidth = paint.measureText(label)
-            val left = (width - textWidth) / 2f
-            paint.color = 0xDD161719.toInt()
-            canvas.drawRoundRect(left - dp(8), bottom - dp(20), left + textWidth + dp(8), bottom, dp(8).toFloat(), dp(8).toFloat(), paint)
-            paint.color = Color.WHITE
-            canvas.drawText(label, left, bottom - dp(5), paint)
-        }
     }
 
     private fun xAt(time: Long): Float =
-        ((time - startMs).toDouble() / spanMs.coerceAtLeast(1) * width).toFloat().coerceIn(0f, width.toFloat())
+        (width / 2.0 + (time - positionMs).toDouble() /
+            VideoTimelineRules.FRAME_INTERVAL_MS * cellWidth).toFloat().coerceIn(0f, width.toFloat())
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!isEnabled || durationMs <= 0 || width <= 0) return false
+        if (!isEnabled || durationMs <= 0L || width <= 0) return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
                 isScrubbing = true
-                fine = false
                 moved = false
                 downX = event.x
-                lastX = event.x
+                downPosition = positionMs
                 onScrubStart?.invoke()
-                choose(VideoTimelineRules.positionAt(event.x / width.toDouble(), startMs, spanMs, durationMs))
-                postDelayed(finePress, ViewConfiguration.getLongPressTimeout().toLong())
             }
             MotionEvent.ACTION_MOVE -> {
-                if (abs(event.x - downX) > ViewConfiguration.get(context).scaledTouchSlop) {
-                    moved = true
-                    if (!fine) removeCallbacks(finePress)
+                if (!isScrubbing) return true
+                if (abs(event.x - downX) > ViewConfiguration.get(context).scaledTouchSlop) moved = true
+                if (moved) choose(VideoTimelineRules.positionAfterDrag(downPosition, downX - event.x, cellWidth, durationMs))
+            }
+            MotionEvent.ACTION_UP -> {
+                if (!isScrubbing) return true
+                if (!moved) {
+                    choose(VideoTimelineRules.positionAfterDrag(downPosition, event.x - width / 2f, cellWidth, durationMs))
                 }
-                if (fine) {
-                    choose((positionMs + ((event.x - lastX) / width * spanMs).roundToLong()).coerceIn(0L, durationMs))
-                    startMs = VideoTimelineRules.windowStart(positionMs, spanMs, durationMs)
-                    requestFrames()
-                } else choose(VideoTimelineRules.positionAt(event.x / width.toDouble(), startMs, spanMs, durationMs))
-                lastX = event.x
+                finishGesture(false)
+                if (!moved) performClick()
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                val cancelled = event.actionMasked == MotionEvent.ACTION_CANCEL
-                finishGesture(cancelled)
-                if (!cancelled && !moved) performClick()
-            }
+            MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> finishGesture(true)
         }
         return true
     }
@@ -186,18 +235,16 @@ internal class VideoTimelineView(context: Context) : View(context) {
     private fun choose(position: Long) {
         positionMs = position
         onScrubMove?.invoke(positionMs)
+        requestFrames()
         invalidate()
     }
 
     private fun finishGesture(cancelled: Boolean) {
-        removeCallbacks(finePress)
         if (!isScrubbing) return
         isScrubbing = false
-        fine = false
+        if (cancelled) positionMs = downPosition
         onScrubStop?.invoke(positionMs, cancelled)
         parent?.requestDisallowInterceptTouchEvent(false)
-        startMs = 0L
-        spanMs = durationMs
         requestFrames()
         invalidate()
     }
@@ -247,6 +294,7 @@ internal class VideoTimelineView(context: Context) : View(context) {
         source = null
         sourceIdentity = null
         frames.clear()
+        failedFrames.clear()
         super.onDetachedFromWindow()
     }
 

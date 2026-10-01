@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Matrix
 import android.net.Uri
 import android.content.Intent
 import android.content.ClipboardManager
@@ -22,9 +23,72 @@ import org.junit.runner.RunWith
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.text.Normalizer
+import java.util.Locale
 
 @RunWith(AndroidJUnit4::class)
 class ImageTextRecognitionInstrumentedTest {
+    @Test fun sidewaysDarkScreenshotOffersTheDocumentNotOnlyStatusBarText() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val photo = File.createTempFile("ocr-sideways-", ".jpg", context.cacheDir)
+        instrumentation.context.assets.open("ocr-sideways-dark.jpg").use { input ->
+            photo.outputStream().use { input.copyTo(it) }
+        }
+        val original = photo.readBytes()
+        try {
+            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+                putExtra("uri", Uri.fromFile(photo).toString())
+                putExtra("mime", "image/jpeg")
+                putExtra("name", photo.name)
+            }).use { scenario ->
+                waitForUi(timeoutMs = 45000) {
+                    onView(withContentDescription(R.string.ocr_text_available)).perform(click())
+                }
+                waitForUi(timeoutMs = 45000) { onView(withText(R.string.ocr_copy_all)).perform(click()) }
+                scenario.onActivity {
+                    val clipboard = it.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val text = clipboard.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
+                    val normalized = Normalizer.normalize(text, Normalizer.Form.NFD)
+                        .replace(Regex("\\p{M}+"), "").uppercase(Locale.ROOT)
+                    assertTrue("Não pode retornar apenas horário/ícones: $text", text.length > 250)
+                    assertTrue("Título ausente: $text", normalized.contains("RESUMO") && normalized.contains("BALANCA"))
+                    assertTrue("Conteúdo das duas colunas ausente: $text", normalized.contains("IMPOSTOS") && normalized.contains("FAMILIAS"))
+                }
+            }
+            assertTrue("OCR não deve modificar a imagem", original.contentEquals(photo.readBytes()))
+        } finally { photo.delete() }
+    }
+
+    @Test fun automaticDetectionFindsUpsideDownTextDespiteUprightClock() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val upright = Bitmap.createBitmap(1400, 400, Bitmap.Config.ARGB_8888)
+        Canvas(upright).apply {
+            drawColor(0xff222326.toInt())
+            drawText("DOCUMENTO GALERIA TEXTO COPIAVEL", 35f, 220f,
+                Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 60f })
+        }
+        val rotated = Bitmap.createBitmap(upright, 0, 0, upright.width, upright.height,
+            Matrix().apply { postRotate(180f) }, false)
+        upright.recycle()
+        Canvas(rotated).drawText("12:34", 20f, 45f,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 30f })
+        val photo = File.createTempFile("ocr-clock-", ".png", context.cacheDir)
+        photo.outputStream().use { rotated.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        rotated.recycle()
+        try {
+            val done = CountDownLatch(1)
+            var result: Result<String>? = null
+            ImageTextRecognition.recognize(context, Uri.fromFile(photo), detailed = false) {
+                result = it
+                done.countDown()
+            }
+            assertTrue("A detecção automática não terminou", done.await(45, TimeUnit.SECONDS))
+            val text = requireNotNull(result).getOrThrow()
+            assertTrue("Deve reconhecer o texto principal, não apenas o relógio: $text", text.contains("DOCUMENTO") && text.contains("GALERIA"))
+        } finally { photo.delete() }
+    }
+
     @Test fun documentLongPressAndCustomEditorOfferCopyableText() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -66,8 +130,8 @@ class ImageTextRecognitionInstrumentedTest {
         } finally { photo.delete() }
     }
 
-    private fun waitForUi(action: () -> Unit) {
-        val deadline = System.currentTimeMillis() + 20000
+    private fun waitForUi(timeoutMs: Long = 20000, action: () -> Unit) {
+        val deadline = System.currentTimeMillis() + timeoutMs
         var last: Throwable? = null
         while (System.currentTimeMillis() < deadline) {
             try { action(); return } catch (error: Throwable) { last = error; Thread.sleep(150) }

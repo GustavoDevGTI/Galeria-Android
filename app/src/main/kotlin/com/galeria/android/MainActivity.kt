@@ -132,6 +132,7 @@ class MainActivity : ComponentActivity() {
         }
         loadSettings()
         applyThemeColors()
+        if (::adapter.isInitialized) adapter.refreshChangedCovers()
         if (accessCoordinator.hasMediaLibraryAccess()) {
             if (GalleryCatalogStore.isCatalogDirty(applicationContext, shouldIncludeHiddenFilesystem())) {
                 if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = true

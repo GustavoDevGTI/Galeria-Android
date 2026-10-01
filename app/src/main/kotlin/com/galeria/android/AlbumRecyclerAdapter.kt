@@ -39,6 +39,14 @@ class AlbumRecyclerAdapter(
     private var selectionMode = false
     private var coverSizePx = 320
     private var imageCoverRevision = 0L
+    private var contentGeneration = MediaContentRevision.generation()
+
+    fun refreshChangedCovers() {
+        val generation = MediaContentRevision.generation()
+        if (contentGeneration == generation) return
+        contentGeneration = generation
+        refreshVisibleCovers()
+    }
 
     init {
         setHasStableIds(true)
@@ -305,8 +313,9 @@ class AlbumRecyclerAdapter(
         val version = if (cover.isVideo()) {
             if (saved == null) "opening" else "saved"
         } else imageCoverRevision.toString()
-        val diskKey = "album:${cover.uri}:${cover.size}:${cover.dateAdded}:$version"
+        val diskKey = "album:${MediaContentRevision.key(context, cover.uri)}:${cover.size}:${cover.dateAdded}:$version"
         holder.cover.load(saved ?: cover.uri) {
+            ImageRotation.configureRequest(context, cover, this)
             size(coverSizePx, coverSizePx)
             precision(Precision.INEXACT)
             memoryCacheKey("$diskKey:$coverSizePx")

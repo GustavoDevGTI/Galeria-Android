@@ -176,6 +176,7 @@ class AlbumMediaActivity : ComponentActivity() {
             return
         }
         if (::adapter.isInitialized) {
+            adapter.refreshChangedThumbnails()
             loadMedia(true)
         }
     }

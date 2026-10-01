@@ -127,16 +127,20 @@ class AlbumCatalogController(context: Context) {
         val filteredMedia = media.filter { item ->
             MediaFilterRules.matches(item.name, item.mimeType, options.filterOptions)
         }
-        return withVirtualAlbums(MediaStoreRepository.buildAlbums(filteredMedia), filteredMedia, options)
+        return withVirtualAlbums(MediaStoreRepository.buildAlbums(filteredMedia), filteredMedia, options,
+            classificationSource = MediaStoreRepository.buildAlbums(media))
     }
 
     private fun withVirtualAlbums(
         sourceAlbums: List<AlbumItem>,
         media: List<MediaItem>,
-        options: AlbumCatalogOptions
+        options: AlbumCatalogOptions,
+        classificationSource: List<AlbumItem> = sourceAlbums
     ): List<AlbumItem> {
         val markers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
-        val naturallyHiddenKeys = AutomaticHiddenAlbums.keys(appContext, sourceAlbums, markers)
+        // Filters may leave fewer than eight shards. Classify the original catalog,
+        // never only the folders surviving the current image/video filter.
+        val naturallyHiddenKeys = AutomaticHiddenAlbums.keys(appContext, classificationSource, markers)
         val virtualHiddenKeys = options.hiddenKeys + naturallyHiddenKeys
         val physical = prepareAlbums(sourceAlbums, options, naturallyHiddenKeys)
         val prefs = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)

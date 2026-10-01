@@ -77,14 +77,22 @@ class MotionPhotoInstrumentedTest {
                 scenario.onActivity { activity ->
                     val state = activity.window.decorView.findViewWithTag<PlayerView>("motion_photo_player")
                         ?.player?.playbackState
-                    ready = state == Player.STATE_READY || state == Player.STATE_ENDED
+                    ready = (state == Player.STATE_READY || state == Player.STATE_ENDED) &&
+                        activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline").isPrepared
                 }
                 if (!ready) Thread.sleep(100)
             }
             assertTrue("O vídeo embutido não ficou pronto para reprodução", ready)
             scenario.onActivity { activity ->
+                val controls = activity.window.decorView.findViewWithTag<android.view.View>("video_playback_controls")
+                val play = activity.window.decorView.findViewWithTag<android.view.View>("video_play_pause")
+                assertTrue("Play/pause da Motion Photo deve seguir o alinhamento central dos vídeos",
+                    controls.width > 0 && kotlin.math.abs(play.x + play.width / 2f - controls.width / 2f) <= 1f)
                 val timeline = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
                 assertNotNull("Motion Photo deve ter a mesma linha do tempo", timeline)
+                assertEquals(android.view.View.GONE, timeline.visibility)
+                activity.window.decorView.findViewWithTag<android.view.View>("video_timeline_toggle").performClick()
+                assertEquals(android.view.View.VISIBLE, timeline.visibility)
                 val player = activity.window.decorView.findViewWithTag<PlayerView>("motion_photo_player").player!!
                 player.pause()
                 timeline.update(0L, player.duration)

@@ -27,12 +27,15 @@ internal class VideoTimelineFrames(context: Context, private val uri: Uri, revis
     private var writtenFrames = 0
     private val failed = HashSet<Long>()
     private var notify: ((Long, Bitmap) -> Unit)? = null
+    private var notifyFailure: ((Long) -> Unit)? = null
 
-    @Synchronized fun request(times: List<Long>, onFrame: (Long, Bitmap) -> Unit) {
+    @Synchronized fun request(times: List<Long>, onFailure: ((Long) -> Unit)? = null, onFrame: (Long, Bitmap) -> Unit) {
         if (closed) return
         wanted = times.distinct()
         notify = onFrame
+        notifyFailure = onFailure
         requestVersion++
+        if (wanted.isEmpty() && !running) return
         if (running) return
         running = true
         worker.execute { drain() }
@@ -49,19 +52,21 @@ internal class VideoTimelineFrames(context: Context, private val uri: Uri, revis
                 if (version != deliveredVersion) {
                     delivered.clear()
                     deliveredVersion = version
+                    wanted.filter { it in failed }.forEach { time -> reportFailure(time) }
                 }
                 val time = wanted.firstOrNull { it !in delivered && it !in failed } ?: break
                 val cacheKey = "$key-$time"
                 val bitmap = runCatching {
                     memory.get(cacheKey) ?: loadFrame(cacheKey, time)?.also { memory.put(cacheKey, it) }
                 }.getOrNull()
-                if (bitmap == null) failed.add(time) else {
+                if (bitmap == null) { failed.add(time); reportFailure(time) } else {
                     delivered.add(time)
                     main.post { if (!closed && time in wanted) notify?.invoke(time, bitmap) }
                 }
             }
         } catch (_: Exception) {
             failed.addAll(wanted)
+            wanted.forEach { reportFailure(it) }
             deliveredVersion = requestVersion
         } finally {
             retriever?.let { runCatching { it.release() } }
@@ -70,10 +75,14 @@ internal class VideoTimelineFrames(context: Context, private val uri: Uri, revis
                 running = false
                 // A new viewport can arrive just as the loop ends.
                 if (!closed && (deliveredVersion != requestVersion || wanted.any { it !in delivered && it !in failed })) {
-                    notify?.let { request(wanted, it) }
+                    notify?.let { request(wanted, notifyFailure, it) }
                 }
             }
         }
+    }
+
+    private fun reportFailure(time: Long) {
+        main.post { if (!closed && time in wanted) notifyFailure?.invoke(time) }
     }
 
     private fun fingerprint(): String {
@@ -137,10 +146,15 @@ internal class VideoTimelineFrames(context: Context, private val uri: Uri, revis
         }
     }
 
-    fun close() { closed = true; wanted = emptyList(); notify = null }
+    fun close() { closed = true; wanted = emptyList(); notify = null; notifyFailure = null }
 
     companion object {
-        private val worker = Executors.newSingleThreadExecutor()
+        private val worker = Executors.newSingleThreadExecutor { task ->
+            Thread({
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                task.run()
+            }, "video-timeline-frames")
+        }
         private val main = Handler(Looper.getMainLooper())
         private val memory = object : LruCache<String, Bitmap>(12 * 1024 * 1024) {
             override fun sizeOf(key: String, value: Bitmap) = value.byteCount

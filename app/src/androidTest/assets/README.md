@@ -8,3 +8,14 @@ SHA-256: `6aecd03e411743feec6e9d2bb0209ada82f176ad45a4a44cbd2df0ee8290c8f6`.
 Usada exclusivamente no APK de testes, sem acesso à rede durante a execução.
 Licença Apache 2.0 do projeto de origem incluída em `LICENSE-AndroidX-Media.txt`.
 Projeto de origem: https://github.com/androidx/media/tree/release
+
+## Regressão do OCR
+
+`ocr-sideways-dark.jpg` é a captura enviada pelo usuário em 30/09/2026 para
+reproduzir a falha de reconhecimento. Possui texto de lado, fundo escuro e
+um horário na orientação diferente da área principal. O teste exige conteúdo
+do documento, não apenas os símbolos da barra de status.
+
+SHA-256: `34c54ccd5c5bc2cd5342e98e0b5806146002866bfed7c8dd71730cf5977445cd`.
+
+Usada exclusivamente no APK de testes. O OCR não pode modificar o arquivo.

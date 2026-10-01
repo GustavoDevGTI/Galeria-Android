@@ -17,7 +17,7 @@ import android.widget.TextView
 
 /** Editor controls deliberately do not inherit the gallery's user-selected accent. */
 internal object EditorUi {
-    fun button(context: Context, icon: Int, label: String, action: () -> Unit) = ImageButton(context).apply {
+    fun button(context: Context, icon: Int, label: String, action: () -> Unit): ImageButton = ClickFeedbackImageButton(context).apply {
         setImageResource(icon)
         setColorFilter(Color.WHITE)
         contentDescription = label
@@ -25,7 +25,7 @@ internal object EditorUi {
         val padding = Ui.dp(context, 12)
         setPadding(padding, padding, padding, padding)
         background = android.graphics.drawable.RippleDrawable(
-            android.content.res.ColorStateList.valueOf(0x44FFFFFF),
+            android.content.res.ColorStateList.valueOf(0x14FFFFFF),
             ColorDrawable(Color.TRANSPARENT), Ui.rounded(Color.WHITE, 12, context)
         )
         minimumWidth = Ui.dp(context, 48)

@@ -56,4 +56,64 @@ class HiddenDirectoryMarkersTest {
         assertEquals(setOf("00"), AutomaticHiddenAlbums.keys(shards.take(1), markers,
             rememberedParents = setOf("Documents/Cache")))
     }
+
+    @Test
+    fun rememberedCacheStaysHiddenWhenBucketsGrowAndOnlyOneRemainsIndexed() {
+        val markers = HiddenDirectoryMarkers(temporary.newFolder("storage"))
+        for (count in listOf(4, 50, 500)) {
+            val bucket = AlbumItem("1d", "1d", count, null, 1, 1, 10, "Documents/Cache/1d/")
+            assertEquals(setOf("1d"), AutomaticHiddenAlbums.keys(listOf(bucket), markers,
+                rememberedParents = setOf("Documents/Cache")))
+        }
+    }
+
+    @Test
+    fun newlyDetectedCacheAlsoHidesItsLargerBuckets() {
+        val markers = HiddenDirectoryMarkers(temporary.newFolder("storage"))
+        val small = (0 until 8).map {
+            val name = "%02x".format(it)
+            AlbumItem(name, name, 1, null, 1, 1, 10, "Documents/Cache/$name/")
+        }
+        val large = AlbumItem("ff", "ff", 25, null, 1, 1, 10, "Documents/Cache/ff/")
+        assertEquals((small + large).mapTo(HashSet()) { it.key },
+            AutomaticHiddenAlbums.keys(small + large, markers))
+    }
+
+    @Test
+    fun knownHashSubfoldersRemainHiddenWithoutHidingAdjacentOrdinaryFolders() {
+        val markers = HiddenDirectoryMarkers(temporary.newFolder("storage"))
+        val source = listOf(
+            AlbumItem("nested", "Pages", 30, null, 1, 1, 10, "Documents\\Cache\\1d\\Pages\\"),
+            AlbumItem("notes", "Notes", 1, null, 1, 1, 10, "Documents/Cache/Notes/"),
+            AlbumItem("other", "1d", 1, null, 1, 1, 10, "Documents/CacheOther/1d/"),
+            AlbumItem("camera", "1d", 1, null, 1, 1, 10, "DCIM/1d/")
+        )
+        assertEquals(setOf("nested"), AutomaticHiddenAlbums.keys(source, markers,
+            rememberedParents = setOf("Documents/Cache/")))
+    }
+
+    @Test
+    fun largeHexAlbumsAloneAreNotEnoughToClassifyOrdinaryFoldersAsCaches() {
+        val markers = HiddenDirectoryMarkers(temporary.newFolder("storage"))
+        val source = (0 until 8).map {
+            val name = "%02x".format(it)
+            AlbumItem(name, name, 10, null, 1, 1, 10, "Pictures/Albums/$name/")
+        }
+        assertTrue(AutomaticHiddenAlbums.keys(source, markers).isEmpty())
+    }
+
+    @Test
+    fun temporaryRevealStillIsolatesKnownCacheFromAllMediaSummary() {
+        val markers = HiddenDirectoryMarkers(temporary.newFolder("storage"))
+        val source = listOf(
+            AlbumItem("cache", "1d", 50, null, 1, 1, 10, "Documents/Cache/1d/"),
+            AlbumItem("camera", "Camera", 2, null, 1, 1, 10, "DCIM/Camera/")
+        )
+        val hidden = AutomaticHiddenAlbums.keys(source, markers, setOf("Documents/Cache"))
+        assertEquals(listOf("camera"), AlbumCatalogRules.prepare(source, emptySet(), false, false,
+            naturallyHiddenKeys = hidden).map { it.key })
+        val revealed = AlbumCatalogRules.prepare(source, emptySet(), false, true, setOf("cache"), hidden)
+        assertEquals(listOf("all_media", "cache"), revealed.map { it.key })
+        assertEquals(2, revealed.first().count)
+    }
 }
