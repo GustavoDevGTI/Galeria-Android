@@ -7,10 +7,17 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
+import android.os.Environment
 import android.provider.MediaStore
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.Switch
+import android.widget.TextView
+import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.matcher.ViewMatchers.withText
+import androidx.test.espresso.matcher.RootMatchers.isDialog
+import androidx.test.espresso.action.ViewActions.click
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -40,18 +47,29 @@ class AlbumMutationInstrumentedTest {
     private val suffix = System.nanoTime()
     private val source = "Pictures/MutationSource-$suffix/"
     private val target = "Pictures/MutationTarget-$suffix/"
+    private val auxiliaryFiles = mutableListOf<java.io.File>()
+    private val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+    private var previousTrashEnabled: Boolean? = null
 
     @Before fun allowFileManagement() {
+        previousTrashEnabled = if (prefs.contains(TrashPreferences.ENABLED))
+            prefs.getBoolean(TrashPreferences.ENABLED, true) else null
+        prefs.edit().putBoolean(TrashPreferences.ENABLED, true).commit()
         // As with GrantPermissionRule, don't revoke during instrumentation: Android kills
         // the tested process on revocation. This grant belongs to the test installation.
         shell("appops set ${context.packageName} MANAGE_EXTERNAL_STORAGE allow")
     }
 
     @After fun cleanup() {
+        prefs.edit().apply {
+            previousTrashEnabled?.let { putBoolean(TrashPreferences.ENABLED, it) }
+                ?: remove(TrashPreferences.ENABLED)
+        }.commit()
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).toList().forEach(Activity::finish)
         }
         created.forEach { context.contentResolver.delete(it, null, null) }
+        auxiliaryFiles.asReversed().forEach { it.delete() }
         MediaStoreRepository.invalidateCache()
         GalleryCatalogStore.markCatalogDirty(context)
         io { MediaStoreRepository.refreshMedia(context, false, force = true) }
@@ -102,6 +120,9 @@ class AlbumMutationInstrumentedTest {
         insert(source, "one.png")
         insert(source, "two.png")
         insert(target, "existing.png")
+        val folder = java.io.File(Environment.getExternalStorageDirectory(), source)
+        auxiliaryFiles += java.io.File(folder, "notes.txt").apply { writeText("Not gallery media") }
+        auxiliaryFiles += java.io.File(folder, "nested-album").apply { mkdir() }
         prepareCatalog()
         launchAlbum().use { scenario ->
             waitForCount(scenario, 2)
@@ -206,6 +227,97 @@ class AlbumMutationInstrumentedTest {
     }
 
     private fun prepareCatalog() = io { MediaStoreRepository.refreshMedia(context, false, force = true) }
+
+    @Test fun disablingTrashPersistsAndDeletesPermanentlyWithoutPurgingOldTrash() {
+        val previous = insert(target, "previous-trash.png")
+        assertEquals(1, context.contentResolver.update(previous, ContentValues().apply {
+            put(MediaStore.MediaColumns.IS_TRASHED, 1)
+        }, null, null))
+        val doomed = insert(source, "delete-permanently.png")
+        prepareCatalog()
+        ActivityScenario.launch(SettingsActivity::class.java).use { settings ->
+            settings.onActivity { activity ->
+                val toggle = descendants(activity.window.decorView).filterIsInstance<Switch>().first { switch ->
+                    descendants(switch.parent as View).filterIsInstance<TextView>()
+                        .any { it.text.toString() == context.getString(R.string.settings_use_trash) }
+                }
+                assertTrue(toggle.isChecked)
+                toggle.performClick()
+                assertFalse(TrashPreferences.isEnabled(activity))
+            }
+            settings.recreate()
+            settings.onActivity { assertFalse(TrashPreferences.isEnabled(it)) }
+        }
+        launchAlbum().use { scenario ->
+            waitForCount(scenario, 1)
+            scenario.onActivity { activity ->
+                val adapter = adapter(activity)
+                adapter.setSelectionMode(true)
+                adapter.selectPosition(0)
+                invoke(activity, "confirmDeleteSelected", emptyArray())
+            }
+            onView(withText(R.string.action_delete_permanently)).inRoot(isDialog()).perform(click())
+            waitForActivity<MainActivity>()
+            assertFalse(java.io.File(Environment.getExternalStorageDirectory(), source + "delete-permanently.png").exists())
+            val trash = io { MediaStoreRepository.loadTrashedMedia(context) }
+            assertTrue(trash.any { MediaIdentityRules.sameUri(it.uri.toString(), previous.toString()) })
+            assertFalse(trash.any { MediaIdentityRules.sameUri(it.uri.toString(), doomed.toString()) })
+        }
+    }
+
+    @Test fun deletingLastMediaReturnsToAlbumsAndKeepsRecoverableTrash() {
+        val doomed = insert(source, "last.png")
+        prepareCatalog()
+        launchAlbum().use { scenario ->
+            waitForCount(scenario, 1)
+            scenario.onActivity { activity ->
+                invoke(activity, "deleteSelected", arrayOf(List::class.java, Boolean::class.javaPrimitiveType!!),
+                    adapter(activity).currentOrder(), false)
+                assertTrue(activity.isFinishing)
+            }
+            waitForActivity<MainActivity>()
+            assertTrue(io { MediaStoreRepository.loadTrashedMedia(context) }.any {
+                MediaIdentityRules.sameUri(it.uri.toString(), doomed.toString())
+            })
+        }
+    }
+
+    @Test fun hiddenDialogCountsRefreshWithoutRevealingOrUnhidingAlbums() {
+        val first = insert(source, "first.png")
+        insert(source, "second.png")
+        auxiliaryFiles += java.io.File(Environment.getExternalStorageDirectory(), source + ".nomedia")
+            .apply { createNewFile() }
+        prepareCatalog()
+        val oldHidden = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty().toSet()
+        prefs.edit().putStringSet("hidden_folder_keys", oldHidden + source).commit()
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                val stale = AlbumItem(source, "Contagem oculta", 99, null, 0, 0, 0, source)
+                val refreshed = io { AlbumCountRefresh.refresh(context, listOf(stale)) }
+                assertEquals(2, refreshed.single().count)
+                scenario.onActivity { activity ->
+                    invoke(activity, "showFolderVisibilityDialog", arrayOf(List::class.java), refreshed)
+                }
+                onView(withText("Contagem oculta (2)")).inRoot(isDialog()).check { view, error ->
+                    if (error != null) throw error
+                    assertNotNull(view)
+                }
+                context.contentResolver.delete(first, null, null)
+                waitUntil {
+                    runCatching {
+                        onView(withText("Contagem oculta (1)")).inRoot(isDialog()).check { view, error ->
+                            if (error != null) throw error
+                            assertNotNull(view)
+                        }
+                    }.isSuccess
+                }
+                assertTrue(source in prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty())
+                assertFalse(source in TemporaryAlbumVisibility.activeKeys())
+            }
+        } finally {
+            prefs.edit().putStringSet("hidden_folder_keys", oldHidden).commit()
+        }
+    }
     private fun launchAlbum() = ActivityScenario.launch<AlbumMediaActivity>(Intent(context, AlbumMediaActivity::class.java).apply {
         putExtra("album_key", source)
         putExtra("album_name", "Origem")

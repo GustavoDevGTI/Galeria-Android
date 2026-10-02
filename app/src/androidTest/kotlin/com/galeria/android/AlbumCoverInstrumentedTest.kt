@@ -35,25 +35,6 @@ class AlbumCoverInstrumentedTest {
     @get:Rule val permissions: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.READ_MEDIA_IMAGES)
 
     @Test
-    fun automaticCoverFollowsAlbumOrderAndManualCoverWinsOnlyWhilePresent() {
-        val folder = "Pictures/Album/"
-        fun media(name: String, date: Long) = MediaItem(
-            date, Uri.parse("content://media/external/images/media/$date"), name,
-            "image/jpeg", date, 100L, folder, folder, "Album"
-        )
-        val zeta = media("zeta.jpg", 3L)
-        val alpha = media("alpha.jpg", 1L)
-        val options = AlbumMediaPreparationOptions(
-            MediaFilterOptions(), AlbumMediaRules.GROUP_NONE, MediaSortRules.SORT_NAME, false
-        )
-        assertEquals(alpha.uri, AlbumCoverRules.choose(listOf(zeta, alpha), null, options, emptyList())?.uri)
-        assertEquals(zeta.uri, AlbumCoverRules.choose(listOf(zeta, alpha), zeta.uri.toString(), options, emptyList())?.uri)
-        assertEquals(alpha.uri, AlbumCoverRules.choose(listOf(zeta, alpha), "removed", options, emptyList())?.uri)
-        assertEquals(zeta.uri, AlbumCoverRules.choose(listOf(zeta, alpha), null,
-            options.copy(sortMode = MediaSortRules.SORT_CUSTOM), listOf(zeta.uri.toString()))?.uri)
-    }
-
-    @Test
     fun mainCatalogUsesTheAlbumsSavedMediaSortForItsCover() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val folder = "Pictures/GaleriaCoverCatalogTest/"

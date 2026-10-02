@@ -75,7 +75,8 @@ internal class DetailPlaybackController(
     private var pendingRestoredPositionMs = restoredPositionMs
     private var pendingRestoredPlayWhenReady = restoredPlayWhenReady
     private var rememberPositionForCurrent = false
-    private var playWhenReadyBeforePause: Boolean? = null
+    private val commands = ExoPlaybackCommands()
+    val commandChannel: PlaybackCommandController.Channel get() = checkNotNull(commands.channel)
 
     private var currentPlayer: ExoPlayer? = null
 
@@ -94,6 +95,7 @@ internal class DetailPlaybackController(
     ): ExoPlayer {
         val player = ExoPlayer.Builder(appContext).build()
         currentPlayer = player
+        commands.bind(player)
         currentVideoKey = "video_pos_${uri.hashCode()}"
         positionRestored = false
         rememberPositionForCurrent = rememberPosition
@@ -104,7 +106,7 @@ internal class DetailPlaybackController(
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (player !== currentPlayer) return
-                if (playbackState == Player.STATE_READY && !positionRestored) {
+                if (playbackState == Player.STATE_READY && !positionRestored && commandChannel.active) {
                     restorePosition(player)
                     positionRestored = true
                 }
@@ -112,8 +114,8 @@ internal class DetailPlaybackController(
                 if (playbackState == Player.STATE_ENDED && player.playWhenReady) {
                     if (rememberPositionForCurrent) {
                         clearCurrentPosition()
-                        player.playWhenReady = false
-                        player.seekTo(0L)
+                        commandChannel.pause()
+                        commandChannel.seek(0L)
                     } else {
                         listener.onPlaybackEnded()
                     }
@@ -130,29 +132,21 @@ internal class DetailPlaybackController(
             }
         })
         player.prepare()
-        player.playWhenReady = pendingRestoredPlayWhenReady ?: defaultPlayWhenReady
+        if (pendingRestoredPlayWhenReady ?: defaultPlayWhenReady) commandChannel.play() else commandChannel.pause()
         pendingRestoredPlayWhenReady = null
         return player
     }
 
     fun togglePlayback() {
-        val player = currentPlayer ?: return
-        if (player.isPlaying) {
-            player.pause()
-        } else {
-            if (player.playbackState == Player.STATE_ENDED) player.seekTo(0L)
-            player.play()
-        }
+        commands.channel?.toggle()
     }
 
     fun seekBy(deltaMs: Long) {
-        val player = currentPlayer ?: return
-        player.seekTo(DetailPlaybackRules.seekTarget(player.currentPosition, deltaMs, player.duration))
+        commands.channel?.seekBy(deltaMs)
     }
 
     fun seekToProgress(progress: Int) {
-        val player = currentPlayer ?: return
-        if (player.duration > 0L) player.seekTo(player.duration * progress.coerceIn(0, 1000) / 1000L)
+        commands.channel?.seekProgress(progress)
     }
 
     fun setSpeed(speed: Float) {
@@ -216,6 +210,7 @@ internal class DetailPlaybackController(
     fun detachCurrent(): ExoPlayer? {
         saveCurrentPosition()
         val player = currentPlayer
+        commands.detach()
         currentPlayer = null
         currentVideoKey = null
         rememberPositionForCurrent = false
@@ -224,6 +219,7 @@ internal class DetailPlaybackController(
 
     fun releaseCurrent() {
         val player = currentPlayer
+        commands.detach()
         currentPlayer = null
         currentVideoKey = null
         rememberPositionForCurrent = false
@@ -235,19 +231,22 @@ internal class DetailPlaybackController(
     }
 
     fun pauseForLifecycle() {
+        commands.suspend()
         saveCurrentPosition()
-        playWhenReadyBeforePause = currentPlayer?.playWhenReady
-        currentPlayer?.pause()
     }
 
     fun resumeAfterLifecycle() {
-        if (playWhenReadyBeforePause == true) currentPlayer?.play()
-        playWhenReadyBeforePause = null
+        commands.resume(restorePlayback = true)
+        currentPlayer?.let { player ->
+            if (!positionRestored && player.playbackState == Player.STATE_READY) {
+                restorePosition(player)
+                positionRestored = true
+            }
+        }
     }
 
     fun savedPlayWhenReady(): Boolean? {
-        val player = currentPlayer ?: return null
-        return playWhenReadyBeforePause ?: player.playWhenReady
+        return commands.channel?.desiredPlayback
     }
 
     fun resetSpeed() {
@@ -257,7 +256,7 @@ internal class DetailPlaybackController(
     private fun restorePosition(player: ExoPlayer) {
         val restored = pendingRestoredPositionMs
         if (restored != null) {
-            if (restored > 0L) player.seekTo(restored)
+            if (restored > 0L) commandChannel.seek(restored)
             pendingRestoredPositionMs = null
             return
         }
@@ -274,7 +273,7 @@ internal class DetailPlaybackController(
             nowMs = System.currentTimeMillis()
         )
         if (restoredPosition > 0L) {
-            player.seekTo(restoredPosition)
+            commandChannel.seek(restoredPosition)
         } else {
             clearCurrentPosition()
         }

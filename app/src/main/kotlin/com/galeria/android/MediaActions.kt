@@ -105,6 +105,9 @@ class MediaActions private constructor() {
 
         @JvmStatic
         fun requestDelete(activity: Activity, uri: Uri, requestCode: Int): Int {
+            if (!TrashPreferences.isEnabled(activity)) {
+                return requestPermanentDelete(activity, uri, requestCode)
+            }
             // Hidden filesystem media has no MediaStore row. TrashRequest only accepts
             // MediaStore content URIs; use the recoverable filesystem trash for these.
             if (uri.scheme == "file") {

@@ -19,11 +19,14 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import java.io.File
 import java.util.concurrent.Executors
 
 class MotionPhotoActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
-    private var player: ExoPlayer? = null
+    private val commands = ExoPlaybackCommands()
+    private lateinit var session: MotionPhotoPlaybackSession<File, ExoPlayer>
+    private val player: ExoPlayer? get() = if (::session.isInitialized) session.player else null
     private lateinit var timelineBinding: VideoTimelineBinding
     private var timelineExpanded = false
 
@@ -79,12 +82,7 @@ class MotionPhotoActivity : ComponentActivity() {
             background = Ui.actionFeedback(this@MotionPhotoActivity, Color.WHITE)
             contentDescription = getString(R.string.video_pause)
             setOnClickListener {
-                player?.let { current ->
-                    if (current.isPlaying) current.pause() else {
-                        if (current.playbackState == Player.STATE_ENDED) current.seekTo(0L)
-                        current.play()
-                    }
-                }
+                commands.channel?.toggle()
             }
         }
         val row = LinearLayout(this).apply {
@@ -130,41 +128,45 @@ class MotionPhotoActivity : ComponentActivity() {
         root.addView(controls, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         setContentView(root)
 
-        executor.execute {
-            val media = runCatching {
-                MotionPhotoSupport.cachedClip(applicationContext, source, MotionPhotoClip(offset, length))
-            }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                media.onSuccess { file ->
-                    val created = ExoPlayer.Builder(this).build()
-                    player = created
-                    playerView.player = created
-                    created.addListener(object : Player.Listener {
-                        override fun onPlaybackStateChanged(state: Int) {
-                            if (state == Player.STATE_READY || state == Player.STATE_ENDED) {
-                                progress.visibility = android.view.View.GONE
-                            }
+        session = MotionPhotoPlaybackSession(
+            hostActive = { !isFinishing && !isDestroyed },
+            create = { ExoPlayer.Builder(this).build() },
+            bindAndPrepare = { created, file ->
+                val channel = commands.bind(created)
+                playerView.player = created
+                created.addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(state: Int) {
+                        if (state == Player.STATE_READY || state == Player.STATE_ENDED) {
+                            progress.visibility = View.GONE
                         }
-
-                        override fun onPlayerError(error: PlaybackException) {
-                            progress.visibility = android.view.View.GONE
-                            Ui.toast(this@MotionPhotoActivity, getString(R.string.motion_photo_error))
-                        }
-                    })
-                    created.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
-                    timelineBinding.bind(created, Uri.fromFile(file), "${file.length()}|${file.lastModified()}")
-                    created.prepare()
-                    if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
-                        created.play()
-                    } else {
-                        timelineBinding.suspend()
                     }
-                }.onFailure {
-                    progress.visibility = android.view.View.GONE
-                    Ui.toast(this, getString(R.string.motion_photo_error))
-                    finish()
+                    override fun onPlayerError(error: PlaybackException) {
+                        progress.visibility = View.GONE
+                        Ui.toast(this@MotionPhotoActivity, getString(R.string.motion_photo_error))
+                    }
+                })
+                created.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
+                timelineBinding.bind(created, Uri.fromFile(file), channel, "${file.length()}|${file.lastModified()}")
+                created.prepare()
+            },
+            play = { commands.channel?.play() },
+            pause = { commands.channel?.pause() },
+            release = { it.release() },
+            resumeUpdates = { commands.resume(); timelineBinding.resumeUpdates() },
+            suspendUpdates = { commands.suspend(); timelineBinding.suspend() },
+            unbind = { commands.close(); timelineBinding.unbind() },
+            failed = {
+                progress.visibility = View.GONE
+                Ui.toast(this, getString(R.string.motion_photo_error))
+                finish()
+            }
+        )
+        session.load { complete ->
+            executor.execute {
+                val media = runCatching {
+                    MotionPhotoSupport.cachedClip(applicationContext, source, MotionPhotoClip(offset, length))
                 }
+                runOnUiThread { complete(media) }
             }
         }
     }
@@ -176,21 +178,22 @@ class MotionPhotoActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        if (::timelineBinding.isInitialized) timelineBinding.suspend()
-        player?.pause()
+        if (::session.isInitialized) session.stop()
     }
 
     override fun onStart() {
         super.onStart()
-        if (::timelineBinding.isInitialized) timelineBinding.resumeUpdates()
+        if (::session.isInitialized) session.start()
     }
 
     private fun videoTime(ms: Long): String = "%02d:%02d".format(ms.coerceAtLeast(0L) / 60_000L, ms.coerceAtLeast(0L) / 1000L % 60L)
 
     override fun onDestroy() {
-        if (::timelineBinding.isInitialized) timelineBinding.unbind()
-        player?.release()
-        player = null
+        if (::session.isInitialized) session.close()
+        else {
+            commands.close()
+            if (::timelineBinding.isInitialized) timelineBinding.unbind()
+        }
         executor.shutdown()
         super.onDestroy()
     }

@@ -10,9 +10,13 @@ internal object MediaOperationNavigation {
     const val EXTRA_DESTINATION_KEY = "operation_destination_key"
     const val EXTRA_DESTINATION_NAME = "operation_destination_name"
 
-    // A filtered/partially authorized query is not evidence that a physical folder is empty.
-    fun isEmptyFolder(folder: File?): Boolean =
-        folder?.listFiles()?.none { it.name != ".nomedia" } == true
+    // Albums contain the media directly in this folder, not documents or nested albums.
+    // Read the filesystem, never the filtered/paged grid. An unreadable folder is unknown.
+    fun mediaCount(folder: File?): Int? = folder?.listFiles()?.count {
+        it.isFile && MediaStoreRepository.isSupportedMediaFile(it)
+    }
+
+    fun isEmptyMediaFolder(folder: File?): Boolean = mediaCount(folder) == 0
 
     fun destinationIntent(context: Context, source: Intent, key: String, name: String): Intent =
         Intent(context, AlbumMediaActivity::class.java).apply {

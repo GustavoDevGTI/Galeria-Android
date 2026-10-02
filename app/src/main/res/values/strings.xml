@@ -458,4 +458,7 @@
         <item>@string/settings_value_landscape</item>
         <item>@string/settings_value_sensor</item>
     </string-array>
+    <string name="settings_use_trash">Usar lixeira</string>
+    <string name="settings_use_trash_hint">Desativada: novas exclusões são definitivas. Os itens já na lixeira continuam disponíveis para recuperação.</string>
+    <string name="main_delete_albums_permanently_message">Excluir definitivamente as mídias de %1$s? %2$s Não será possível recuperá-las.</string>
 </resources>

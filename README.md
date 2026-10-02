@@ -123,6 +123,8 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
+A versão 0.8.63 reúne o isolamento dos controladores do visualizador, a validação por área e as [correções de álbuns, lixeira e contagem de ocultos](docs/CORRECOES-ALBUNS-2026-10-02.md). A validação final passou em **227 unitários e 92 instrumentados**, com zero ignorados e lint sem erros (126 avisos). O APK release foi compilado com otimização e teve versão, integridade e assinatura permanente conferidas; detalhes nas [notas da release](docs/RELEASE-0.8.63.md). Veja também o [guia de validação por área](docs/TESTES-VALIDACAO.md).
+
 A base da versão 0.8.62 passou em **106 testes unitários, 87 testes de interface no emulador API 36 e três repetições extras da classe de navegação (15 verificações)**. O lint não apresentou erros (125 avisos existentes). Nenhuma função, asserção ou teste foi removido para obter aprovação. Consulte [causas, correções e evidências](docs/CORRECOES-VALIDACAO-2026-10-01.md). A validação em aparelho físico e com codecs/formatos reais continua necessária. O módulo de desempenho contém outros 4 casos (3 macrobenchmarks e 1 gerador de perfil).
 
 A build release 0.8.62 foi compilada e sua assinatura verificada com o mesmo certificado permanente da versão anterior. Os testes de interface foram executados na build debug, sobre a mesma base de código, antes do incremento dos metadados de versão; a build release otimizada não foi testada em celular físico.
@@ -377,6 +379,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.60`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.60) | 30/09/2026 | Linha do tempo de vídeo, revisão do editor, OCR e correções de navegação/Lixeira; validação manual pendente |
 | [`v0.8.61`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.61) | 01/10/2026 | Correção de transições de mídia, faixa de vídeo contínua sob demanda, rotação, OCR, ocultos e resposta visual dos controles |
 | [`v0.8.62`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.62) | 01/10/2026 | Giro sem EXIF prévio, OCR detalhado mais rápido, abertura segura do editor e correção das sete falhas de validação |
+| [`v0.8.63`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.63) | 02/10/2026 | Isolamento dos controladores, validação por área, navegação ao esvaziar álbuns, opção de lixeira, contagem de ocultos e ícones |
 
 ## Relatório comparativo de desempenho
 
@@ -392,7 +395,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.62](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.62/Galeria-Android-versao-0.8.62.apk)
+[Baixar Galeria Android - versão 0.8.63](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.63/Galeria-Android-versao-0.8.63.apk)
 
 Build padrão do Gradle:
 
@@ -403,16 +406,16 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado como anexo no GitHub Releases (os APKs históricos na raiz permanecem preservados):
 
 ```text
-Galeria-Android-versao-0.8.62.apk
+Galeria-Android-versao-0.8.63.apk
 ```
 
-O APK 0.8.62 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.8.63 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de entrega
 
-Sempre que o repositório receber uma atualização testável:
+Antes de uma entrega/publicação autorizada:
 
-1. Execute testes unitários, instrumentados, lint e build de release.
+1. Finalize código e versão; execute `./scripts/run-validation.ps1 -Delivery` e `./scripts/assert-delivery-validation.ps1`. Depois gere/verifique o release assinado. A aprovação automatizada é de debug e não substitui a validação do APK release/aparelhos reais.
 2. Gere o APK release assinado e publique-o como anexo no GitHub Releases usando a versão atual no nome, sem adicionar novos binários ao histórico Git.
 3. Atualize neste README a validação, o estado do projeto e o link do APK quando a versão mudar.
 4. Inclua código, testes e README no commit, faça push e associe o release ao mesmo commit. Registre explicitamente qualquer validação pendente; as versões 0.8.60 e 0.8.61 não possuem aprovação integral da suíte de interface.
@@ -420,6 +423,20 @@ Sempre que o repositório receber uma atualização testável:
 A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_STORE_PASSWORD`, `GALERIA_KEY_ALIAS` e `GALERIA_KEY_PASSWORD`. A chave e as credenciais nunca devem ser adicionadas ao Git.
 
 ### Testes locais rápidos (Windows)
+
+O fluxo recomendado agora usa PowerShell 7:
+
+```powershell
+./scripts/run-validation.ps1 -UnitOnly
+./scripts/run-validation.ps1 -Area Ocr
+./scripts/run-validation.ps1 -Area Viewer,Playback
+```
+
+Lógica é validada sem emulador; as áreas selecionam interface e integrações relevantes. Para fechar a entrega, `-Delivery` sempre exige regressão completa. A checagem invalida evidências depois de mudanças nos fontes/APKs ou de novas falhas. Não publica automaticamente, não usa chaves e não altera proteção de branches.
+
+[Áreas, comandos, evidências e limites do portão de entrega](docs/TESTES-VALIDACAO.md).
+
+O runner anterior continua disponível para diagnóstico específico:
 
 Compile uma vez após alterar código ou testes: `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest`.
 Com o emulador aberto, execute somente as classes afetadas, reutilizando os mesmos APKs:

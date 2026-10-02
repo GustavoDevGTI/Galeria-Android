@@ -87,6 +87,8 @@ class MainActivity : ComponentActivity() {
     private var pendingAlbumSubmission: PendingAlbumSubmission? = null
     private var forceAlbumCoverRefreshOnNextSubmit = false
     private var visibilityDialogAdapter: BaseAdapter? = null
+    private var refreshVisibilityDialogCounts: (() -> Unit)? = null
+    private val visibilityCountRefreshRunnable = Runnable { refreshVisibilityDialogCounts?.invoke() }
     private val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val revealExpiryRunnable = Runnable {
         visibilityDialogAdapter?.notifyDataSetChanged()
@@ -105,6 +107,10 @@ class MainActivity : ComponentActivity() {
     private val mediaObserver = object : ContentObserver(mediaRefreshHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             mediaObserverRefreshPending = true
+            if (mainScreenResumed && refreshVisibilityDialogCounts != null) {
+                mediaRefreshHandler.removeCallbacks(visibilityCountRefreshRunnable)
+                mediaRefreshHandler.postDelayed(visibilityCountRefreshRunnable, 180L)
+            }
             if (mainScreenResumed && hasWindowFocus()) scheduleMediaRefresh()
         }
     }
@@ -520,11 +526,12 @@ class MainActivity : ComponentActivity() {
         val albums = adapter.selectedAlbums()
         if (albums.isEmpty()) return
         val visibleCount = albums.sumOf { it.count }
+        val permanent = !TrashPreferences.isEnabled(this)
         Ui.showConfirmationDialog(
             this,
             getString(R.string.main_delete_albums_title),
             getString(
-                R.string.main_delete_albums_message,
+                if (permanent) R.string.main_delete_albums_permanently_message else R.string.main_delete_albums_message,
                 resources.getQuantityString(R.plurals.albums_count, albums.size, albums.size),
                 resources.getQuantityString(
                     R.plurals.approximately_items_removed,
@@ -532,7 +539,7 @@ class MainActivity : ComponentActivity() {
                     visibleCount
                 )
             ),
-            getString(R.string.action_move_to_trash)
+            getString(if (permanent) R.string.action_delete_permanently else R.string.action_move_to_trash)
         ) { deleteSelectedAlbums(albums) }
     }
 
@@ -552,7 +559,9 @@ class MainActivity : ComponentActivity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 val deleted = completed.size
                 adapter.removeCompletedItems(completed, moved = false)
-                Ui.toast(this, resources.getQuantityString(R.plurals.items_moved_to_trash, deleted, deleted))
+                Ui.toast(this, resources.getQuantityString(
+                    if (TrashPreferences.isEnabled(this)) R.plurals.items_moved_to_trash else R.plurals.items_deleted,
+                    deleted, deleted))
                 exitSelectionMode()
                 loadAlbums()
             }
@@ -709,6 +718,7 @@ class MainActivity : ComponentActivity() {
         adapter.setPinnedKeys(prefs.getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty())
         adapter.setTemporarilyVisibleKeys(TemporaryAlbumVisibility.activeKeys())
         adapter.submit(albums, query)
+        refreshVisibilityDialogCounts?.invoke()
         if (forceAlbumCoverRefreshOnNextSubmit) {
             forceAlbumCoverRefreshOnNextSubmit = false
             adapter.refreshVisibleCovers()
@@ -864,18 +874,23 @@ class MainActivity : ComponentActivity() {
                 knownKeys
             )
             val rememberedByKey = LinkedHashMap<String, AlbumItem>()
-            for (album in visibleCatalog) {
-                if (allowedKeys.contains(album.key)) rememberedByKey[album.key] = album
-            }
             for (album in GalleryCatalogStore.readAlbums(applicationContext, true)) {
                 if (allowedKeys.contains(album.key)) rememberedByKey[album.key] = album
             }
-            val rememberedAlbums = rememberedByKey.values
+            // Prefer refreshed metadata over snapshots retained by the screen.
+            for (album in currentAlbums) {
+                if (allowedKeys.contains(album.key) && !rememberedByKey.containsKey(album.key)) {
+                    rememberedByKey[album.key] = album
+                }
+            }
+            for (album in visibleCatalog) {
+                if (allowedKeys.contains(album.key)) rememberedByKey[album.key] = album
+            }
+            val rememberedAlbums = AlbumCountRefresh.refresh(applicationContext, rememberedByKey.values.toList())
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
                 val albumsByKey = LinkedHashMap<String, AlbumItem>()
                 for (album in rememberedAlbums) albumsByKey[album.key] = album
-                for (album in currentAlbums) albumsByKey[album.key] = album
                 val albums = albumsByKey.values.toMutableList()
                 sortAlbums(albums)
                 showFolderVisibilityDialog(albums)
@@ -1174,6 +1189,34 @@ class MainActivity : ComponentActivity() {
         }
         renderAlbums()
 
+        var countsRefreshPending = false
+        var countsRefreshAgain = false
+        val refreshCounts: () -> Unit = {
+            if (countsRefreshPending) {
+                countsRefreshAgain = true
+            } else {
+                countsRefreshPending = true
+                val snapshot = mutableAlbums.toList()
+                mediaLoader.execute {
+                    val updated = AlbumCountRefresh.refresh(applicationContext, snapshot)
+                    runOnUiThread {
+                        countsRefreshPending = false
+                        if (!isFinishing && visibilityDialogAdapter === listAdapter) {
+                            mutableAlbums.clear()
+                            mutableAlbums.addAll(updated)
+                            sortVisibilityAlbums()
+                            renderAlbums()
+                            if (countsRefreshAgain) {
+                                countsRefreshAgain = false
+                                refreshVisibilityDialogCounts?.invoke()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        refreshVisibilityDialogCounts = refreshCounts
+
         fun loadHiddenAlbums() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
                 requestHiddenScanAccess()
@@ -1337,7 +1380,11 @@ class MainActivity : ComponentActivity() {
         dialog = AlertDialog.Builder(this)
             .setView(panel)
             .create()
-        dialog.setOnDismissListener { visibilityDialogAdapter = null }
+        dialog.setOnDismissListener {
+            visibilityDialogAdapter = null
+            refreshVisibilityDialogCounts = null
+            mediaRefreshHandler.removeCallbacks(visibilityCountRefreshRunnable)
+        }
         Ui.showCenteredPanel(dialog, fullHeight = true)
     }
 

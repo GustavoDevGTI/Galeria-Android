@@ -202,6 +202,13 @@ object MediaStoreRepository {
     fun loadAlbums(context: Context, includeHiddenFilesystem: Boolean = false): List<AlbumItem> =
         buildAlbums(loadMedia(context, includeHiddenFilesystem)).sortedByDescending { it.latestDate }
 
+    internal fun currentIndexedAlbumCounts(context: Context): Map<String, Int>? {
+        if (MediaActions.mediaLibraryAccess(context) != MediaActions.MediaLibraryAccess.FULL) return null
+        val items = ArrayList<MediaItem>()
+        if (!loadFromFilesCollection(context, items)) return null
+        return items.groupingBy { it.albumKey.orEmpty() }.eachCount()
+    }
+
     @JvmStatic
     fun loadTrashedMedia(context: Context): List<MediaItem> {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return LegacyTrashStore.load(context)
@@ -216,7 +223,7 @@ object MediaStoreRepository {
         output: MutableList<MediaItem>,
         albumKey: String? = null,
         trashedOnly: Boolean = false
-    ) {
+    ): Boolean {
         val collection = MediaStore.Files.getContentUri("external")
         val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             arrayOf(
@@ -286,7 +293,8 @@ object MediaStoreRepository {
             } else {
                 resolver.query(collection, projection, selection.toString(), args.toTypedArray(), "${MediaStore.MediaColumns.DATE_ADDED} DESC")
             }
-            cursor?.use { cursor ->
+            if (cursor == null) return false
+            cursor.use { cursor ->
                 val idIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
                 val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
                 val mimeIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
@@ -334,8 +342,10 @@ object MediaStoreRepository {
                     )
                 }
             }
+            return true
         } catch (_: SecurityException) {
             // Recent Android versions may grant only photos or only videos.
+            return false
         }
     }
 
@@ -436,7 +446,7 @@ object MediaStoreRepository {
         return "${parent.name}/"
     }
 
-    private fun isSupportedMediaFile(file: File): Boolean {
+    internal fun isSupportedMediaFile(file: File): Boolean {
         val name = file.name.lowercase(Locale.US)
         // MediaProvider retains trashed/pending files under these names, including
         // in .nomedia folders. A filesystem scan must not resurrect them as media.

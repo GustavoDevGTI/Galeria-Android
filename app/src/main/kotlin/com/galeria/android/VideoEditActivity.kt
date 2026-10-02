@@ -23,6 +23,7 @@ import java.util.concurrent.Executors
 class VideoEditActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
+    private val commands = ExoPlaybackCommands()
     private lateinit var sourceUri: Uri
     private lateinit var player: ExoPlayer
     private lateinit var startSeek: SeekBar
@@ -38,7 +39,7 @@ class VideoEditActivity : Activity() {
     private val previewTick = object : Runnable {
         override fun run() {
             if (!::player.isInitialized || durationMs <= 0L) return
-            if (player.isPlaying && player.currentPosition >= selectedRange().last) player.pause()
+            if (player.isPlaying && player.currentPosition >= selectedRange().last) commands.channel?.pause()
             if (player.isPlaying) handler.postDelayed(this, 100L)
         }
     }
@@ -70,6 +71,7 @@ class VideoEditActivity : Activity() {
             setMediaItem(PlayerMediaItem.fromUri(sourceUri))
             prepare()
         }
+        commands.bind(player)
         buildLayout()
         updateRange()
     }
@@ -120,7 +122,7 @@ class VideoEditActivity : Activity() {
         timelineBinding = VideoTimelineBinding(timeline).apply {
             onPosition = { position, duration -> playbackTime.text = "${formatTime(position)} / ${formatTime(duration)}" }
             onScrubbing = { active -> if (active) handler.removeCallbacks(previewTick) else handler.post(previewTick) }
-            bind(player, sourceUri)
+            bind(player, sourceUri, checkNotNull(commands.channel))
         }
         startLabel = rangeLabel()
         endLabel = rangeLabel()
@@ -141,8 +143,8 @@ class VideoEditActivity : Activity() {
                 } else {
                     endSeek.progress = progress.coerceAtLeast(startSeek.progress + minimumProgress)
                 }
-                player.pause()
-                player.seekTo(if (seekBar === startSeek) selectedRange().first else selectedRange().last)
+                commands.channel?.pause()
+                commands.channel?.seek(if (seekBar === startSeek) selectedRange().first else selectedRange().last)
                 updateRange()
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
@@ -178,8 +180,8 @@ class VideoEditActivity : Activity() {
 
     private fun previewSelection() {
         val range = selectedRange()
-        player.seekTo(range.first)
-        player.play()
+        commands.channel?.seek(range.first)
+        commands.channel?.play()
         handler.removeCallbacks(previewTick)
         handler.post(previewTick)
     }
@@ -189,7 +191,7 @@ class VideoEditActivity : Activity() {
         saving = true
         saveButton.isEnabled = false
         saveButton.contentDescription = "Salvando…"
-        player.pause()
+        commands.channel?.pause()
         val range = selectedRange()
         val name = intent.getStringExtra("name").orEmpty()
         executor.execute {
@@ -215,11 +217,12 @@ class VideoEditActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        commands.suspend()
         if (::timelineBinding.isInitialized) timelineBinding.suspend()
-        if (::player.isInitialized) player.pause()
     }
 
     override fun onDestroy() {
+        commands.close()
         if (::timelineBinding.isInitialized) timelineBinding.unbind()
         handler.removeCallbacks(previewTick)
         if (::player.isInitialized) player.release()
@@ -229,6 +232,7 @@ class VideoEditActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        commands.resume()
         if (::timelineBinding.isInitialized) timelineBinding.resumeUpdates()
     }
 

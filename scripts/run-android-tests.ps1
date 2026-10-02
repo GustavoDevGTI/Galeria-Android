@@ -4,10 +4,12 @@ param(
     [ValidateRange(1, 100)][int]$Repeat = 1,
     [string]$Device = 'emulator-5554',
     [switch]$SkipInstall,
-    [string]$ReportDirectory
+    [string]$ReportDirectory,
+    [ValidateRange(0, 100000)][int]$ExpectedTests = 0
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'validation-common.ps1')
 if ($All -eq [bool]$Class) {
     throw 'Informe -Class (uma ou mais classes, separadas por vírgula) ou -All.'
 }
@@ -34,6 +36,13 @@ if (!$ReportDirectory) { $ReportDirectory = Join-Path $root 'app/build/reports/n
 New-Item -ItemType Directory -Path $ReportDirectory -Force | Out-Null
 $reportPrefix = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
 
+# A restored emulator snapshot may report boot_completed=1 while SystemUI is
+# blocked by its own ANR dialog. Reject it before installing/running the suite.
+$deviceWindow = & adb -s $Device shell dumpsys window
+if ($LASTEXITCODE -ne 0) { throw 'Não foi possível verificar a janela ativa do Android.' }
+$deviceWindow | Set-Content -LiteralPath (Join-Path $ReportDirectory "$reportPrefix-device-window-start.txt") -Encoding UTF8
+Assert-GalleryDeviceWindow ($deviceWindow -join "`n")
+
 if (!$SkipInstall) {
     foreach ($apk in @($appApk, $testApk)) {
         $installation = & adb -s $Device install -r $apk
@@ -56,8 +65,8 @@ for ($run = 1; $run -le $Repeat; $run++) {
     $output | Set-Content -LiteralPath $reportPath -Encoding UTF8
 
     $summary = $output | Where-Object { $_ -match '^(OK \(\d+ tests?\)|Tests run:|FAILURES!!!)' } | Select-Object -Last 1
-    $success = $instrumentationExit -eq 0 -and $output -match 'INSTRUMENTATION_CODE: -1' -and
-        $output -match '^OK \(\d+ tests?\)'
+    $result = ConvertFrom-GalleryInstrumentation $output $instrumentationExit $ExpectedTests
+    $success = $result.Success
     $seconds = [math]::Round($started.Elapsed.TotalSeconds, 1)
     if ($success) {
         Write-Output "Execução $run/$Repeat`: PASSOU ($seconds s) — $summary"
@@ -65,6 +74,7 @@ for ($run = 1; $run -le $Repeat; $run++) {
         $failed++
         Write-Output "Execução $run/$Repeat`: FALHOU ($seconds s) — $summary"
         Write-Output "Relatório completo: $reportPath"
+        Write-Output "Motivo: $($result.Reason)"
         $testClass = ''
         $testName = ''
         foreach ($line in $output) {
@@ -77,4 +87,7 @@ for ($run = 1; $run -le $Repeat; $run++) {
     }
 }
 
-if ($failed -gt 0) { exit 1 }
+if ($failed -gt 0) {
+    Register-GalleryValidationFailure $root "$failed execuções instrumentadas falharam; relatórios em $ReportDirectory"
+    exit 1
+}

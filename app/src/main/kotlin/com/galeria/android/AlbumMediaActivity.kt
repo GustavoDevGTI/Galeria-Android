@@ -41,6 +41,8 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Random
 import kotlin.math.abs
@@ -64,18 +66,14 @@ class AlbumMediaActivity : ComponentActivity() {
     private lateinit var cinemaPreferences: CinemaModePreferences
     private var gridSpacingDp = 3
     private var gridColumnCount = 0
-    private var horizontalPinchScale = 1f
-    private var lastHorizontalPinchSpan = 0f
-    private var pinchGestureActive = false
-    private var pinchGestureConsumed = false
+    private val gridGestureController = AlbumGridGestureController()
     private var gridTouchDownX = 0f
     private var gridTouchDownY = 0f
     private var gridTouchClickCandidate = false
     private val gridTouchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop.toFloat() }
     private var gridDensityAnimationGeneration = 0
     private var dragging = false
-    private var selectionDragActive = false
-    private var selectionDragPosition = RecyclerView.NO_POSITION
+    private val selectionDragActive: Boolean get() = gridGestureController.selectionActive
     private var dragPosition = -1
     private var savedFirstVisible = 0
     private var draggedView: View? = null
@@ -106,6 +104,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private var warmedGridPoolViewType = -1
     private var firstResume = true
     private val completedRemovalUris = hashSetOf<String>()
+    private var pendingDeletePermanent = false
     private val createdAtElapsedRealtime = SystemClock.elapsedRealtime()
     private val searchHandler = Handler(Looper.getMainLooper())
     private val searchReload = Runnable {
@@ -151,6 +150,7 @@ class AlbumMediaActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         completedRemovalUris.addAll(savedInstanceState?.getStringArrayList("completed_removal_uris").orEmpty())
+        pendingDeletePermanent = savedInstanceState?.getBoolean("pending_delete_permanent") ?: false
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
         cinemaPreferences = CinemaModePreferences(prefs)
         Ui.applySystemBars(this)
@@ -764,8 +764,7 @@ class AlbumMediaActivity : ComponentActivity() {
 
     private fun exitSelectionMode() {
         val wasSelecting = adapter.isSelectionMode()
-        selectionDragActive = false
-        selectionDragPosition = RecyclerView.NO_POSITION
+        gridGestureController.endSelection()
         if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
         adapter.clearSelection()
         updateSelectionUi()
@@ -796,8 +795,7 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun beginSelectionDrag(position: Int) {
-        selectionDragActive = true
-        selectionDragPosition = position
+        gridGestureController.beginSelection(position)
         swipeRefresh.isEnabled = false
         grid.parent?.requestDisallowInterceptTouchEvent(true)
     }
@@ -885,7 +883,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun confirmDeleteSelected() {
         val selected = adapter.selectedItems()
         if (selected.isEmpty()) return
-        val permanent = albumKey == VirtualAlbumRules.TRASH_KEY
+        val permanent = TrashPreferences.deletePermanently(this, albumKey)
         Ui.showConfirmationDialog(
             this,
             getString(if (permanent) R.string.trash_delete_selected_title else R.string.album_delete_selected_title),
@@ -913,7 +911,8 @@ class AlbumMediaActivity : ComponentActivity() {
             requestFileManagementAccess()
             return
         }
-        val result = if (permanent) selectionCoordinator.permanentlyDelete(selected, REQ_DELETE)
+        pendingDeletePermanent = permanent || !TrashPreferences.isEnabled(this)
+        val result = if (pendingDeletePermanent) selectionCoordinator.permanentlyDelete(selected, REQ_DELETE)
             else selectionCoordinator.delete(selected, REQ_DELETE)
         completedRemovalUris.addAll(result.completedItems.map { MediaIdentityRules.canonicalKey(it.uri.toString()) })
         adapter.removeCompletedItems(result.completedItems.map { it.uri.toString() })
@@ -921,12 +920,13 @@ class AlbumMediaActivity : ComponentActivity() {
         Ui.toast(
             this,
             resources.getQuantityString(
-                if (permanent) R.plurals.items_deleted else R.plurals.items_moved_to_trash,
+                if (pendingDeletePermanent) R.plurals.items_deleted else R.plurals.items_moved_to_trash,
                 result.completed,
                 result.completed
             )
         )
         exitSelectionMode()
+        if (result.completed > 0) finishIfAlbumEmpty()
     }
 
     private fun restoreSelected() {
@@ -1113,24 +1113,25 @@ class AlbumMediaActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putStringArrayList("completed_removal_uris", ArrayList(completedRemovalUris))
+        outState.putBoolean("pending_delete_permanent", pendingDeletePermanent)
         super.onSaveInstanceState(outState)
     }
 
     private fun spacingKey(): String = "grid_spacing_global"
 
+    private fun gridGestureRoute(event: MotionEvent): AlbumGridGestureController.Route =
+        gridGestureController.route(
+            pointerDown = event.actionMasked == MotionEvent.ACTION_POINTER_DOWN,
+            pointers = event.pointerCount,
+            listMode = listMode,
+            reordering = dragging
+        )
+
     private fun shouldHandleGridGesture(event: MotionEvent): Boolean =
-        pinchGestureActive ||
-            pinchGestureConsumed ||
-            (!listMode && !dragging && event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && event.pointerCount > 1) ||
-            selectionDragActive ||
-            dragging
+        gridGestureRoute(event) != AlbumGridGestureController.Route.SCROLL
 
     private fun handleGridGesture(event: MotionEvent) {
-        if (
-            pinchGestureActive ||
-            pinchGestureConsumed ||
-            (!listMode && !dragging && event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && event.pointerCount > 1)
-        ) {
+        if (gridGestureRoute(event) == AlbumGridGestureController.Route.PINCH) {
             handleGridPinch(event)
             return
         }
@@ -1139,16 +1140,7 @@ class AlbumMediaActivity : ComponentActivity() {
                 val targetView = grid.findChildViewUnder(event.x, event.y)
                 val target = targetView?.let(grid::getChildAdapterPosition) ?: RecyclerView.NO_POSITION
                 if (selectionDragActive) {
-                    if (target != RecyclerView.NO_POSITION && target != selectionDragPosition) {
-                        val start = min(selectionDragPosition, target).coerceAtLeast(0)
-                        val end = max(selectionDragPosition, target)
-                        var changed = false
-                        for (position in start..end) {
-                            changed = adapter.selectPosition(position) || changed
-                        }
-                        selectionDragPosition = target
-                        if (changed) updateSelectionUi()
-                    }
+                    if (gridGestureController.selectThrough(target, adapter::selectPosition)) updateSelectionUi()
                     val edge = Ui.dp(this, SELECTION_DRAG_EDGE_DP)
                     when {
                         event.y < edge -> grid.scrollBy(0, -Ui.dp(this, SELECTION_DRAG_SCROLL_DP))
@@ -1169,8 +1161,7 @@ class AlbumMediaActivity : ComponentActivity() {
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_CANCEL -> {
                 if (selectionDragActive) {
-                    selectionDragActive = false
-                    selectionDragPosition = RecyclerView.NO_POSITION
+                    gridGestureController.endSelection()
                     grid.parent?.requestDisallowInterceptTouchEvent(false)
                     swipeRefresh.isEnabled = true
                     updateSelectionUi()
@@ -1189,46 +1180,25 @@ class AlbumMediaActivity : ComponentActivity() {
         when (event.actionMasked) {
             MotionEvent.ACTION_POINTER_DOWN -> {
                 if (listMode || dragging || event.pointerCount < 2) return
-                selectionDragActive = false
-                selectionDragPosition = RecyclerView.NO_POSITION
-                horizontalPinchScale = 1f
-                lastHorizontalPinchSpan = horizontalPointerSpan(event)
-                pinchGestureActive = true
-                pinchGestureConsumed = true
+                gridGestureController.beginPinch(horizontalPointerSpan(event))
                 grid.stopScroll()
                 grid.parent?.requestDisallowInterceptTouchEvent(true)
                 if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = false
             }
-            MotionEvent.ACTION_MOVE -> if (pinchGestureActive) {
-                val currentSpan = horizontalPointerSpan(event)
-                if (lastHorizontalPinchSpan > 0f && currentSpan > 0f) {
-                    val factor = currentSpan / lastHorizontalPinchSpan
-                    if (factor.isFinite() && factor in 0.5f..2f) {
-                        horizontalPinchScale *= factor
-                        val delta = GridColumnRules.columnDelta(horizontalPinchScale)
-                        if (delta != 0) {
-                            horizontalPinchScale = 1f
-                            changeGridColumnCount(
-                                delta,
-                                horizontalPointerCenterX(event),
-                                horizontalPointerCenterY(event)
-                            )
-                        }
-                    }
-                }
-                lastHorizontalPinchSpan = currentSpan
+            MotionEvent.ACTION_MOVE -> if (gridGestureController.pinchActive) {
+                val delta = gridGestureController.movePinch(horizontalPointerSpan(event))
+                if (delta != 0) changeGridColumnCount(
+                    delta,
+                    horizontalPointerCenterX(event),
+                    horizontalPointerCenterY(event)
+                )
             }
             MotionEvent.ACTION_POINTER_UP -> {
-                pinchGestureActive = false
-                horizontalPinchScale = 1f
-                lastHorizontalPinchSpan = 0f
+                gridGestureController.pointerUp()
             }
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_CANCEL -> {
-                pinchGestureActive = false
-                pinchGestureConsumed = false
-                horizontalPinchScale = 1f
-                lastHorizontalPinchSpan = 0f
+                gridGestureController.endPinch()
                 grid.parent?.requestDisallowInterceptTouchEvent(false)
                 if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
             }
@@ -1258,6 +1228,30 @@ class AlbumMediaActivity : ComponentActivity() {
 
     private fun updateEmptyState() {
         emptyView.visibility = if (adapter.getCount() == 0) View.VISIBLE else View.GONE
+    }
+
+    private fun finishIfAlbumEmpty() {
+        val key = albumKey ?: return
+        fun returnToAlbums() {
+            if (isFinishing || isDestroyed) return
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            })
+            finish()
+        }
+        if (!VirtualAlbumRules.isVirtual(key) && key != "all_media") {
+            if (MediaOperationNavigation.isEmptyMediaFolder(File(Environment.getExternalStorageDirectory(), key))) {
+                returnToAlbums()
+            }
+        } else {
+            // A search, type filter or one paging page must not decide whether an album is empty.
+            lifecycleScope.launch {
+                val empty = withContext(Dispatchers.IO) {
+                    MediaStoreRepository.loadMediaForAlbum(applicationContext, key, shouldIncludeHiddenFilesystem()).isEmpty()
+                }
+                if (empty) returnToAlbums()
+            }
+        }
     }
 
     private fun startRandomPlayback() {
@@ -1474,12 +1468,13 @@ class AlbumMediaActivity : ComponentActivity() {
                 Ui.toast(
                     this,
                     getString(
-                        if (albumKey == VirtualAlbumRules.TRASH_KEY) R.string.album_item_deleted
+                        if (pendingDeletePermanent) R.string.album_item_deleted
                         else R.string.item_moved_to_trash
                     )
                 )
             }
             loadMedia(true)
+            if (resultCode == RESULT_OK) finishIfAlbumEmpty()
         } else if (requestCode == REQ_RESTORE) {
             if (resultCode == RESULT_OK) {
                 MediaStoreRepository.invalidateCache()
@@ -1499,6 +1494,7 @@ class AlbumMediaActivity : ComponentActivity() {
                 openMoveDestination(destinationKey, data.getStringExtra(MediaOperationNavigation.EXTRA_DESTINATION_NAME) ?: destinationKey)
             } else {
                 loadMedia(true)
+                if (removed.isNotEmpty()) finishIfAlbumEmpty()
             }
         }
     }

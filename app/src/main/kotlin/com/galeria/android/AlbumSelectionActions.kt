@@ -66,7 +66,7 @@ class AlbumSelectionActions(
             MediaActions.moveToFolder(activity, item, folder) == MediaActions.RESULT_DONE
         }
         val emptied = sourceFolders.filter { (key, folder) ->
-            completed.any { it.albumKey == key } && MediaOperationNavigation.isEmptyFolder(folder)
+            completed.any { it.albumKey == key } && MediaOperationNavigation.isEmptyMediaFolder(folder)
         }.keys
         return AlbumSelectionResult(completed.size, selected.size, completed, emptied)
     }

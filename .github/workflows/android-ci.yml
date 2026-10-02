@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -37,8 +38,19 @@ jobs:
       - name: Allow Gradle wrapper execution
         run: chmod +x gradlew
 
+      - name: Validate test tooling contracts
+        shell: pwsh
+        run: ./scripts/test-validation-tools.ps1
+
       - name: Validate Android project
-        run: ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --stacktrace
+
+      - name: Check non-empty unit and lint results
+        shell: pwsh
+        run: |
+          . ./scripts/validation-common.ps1
+          Get-GalleryUnitResult 'app/build/test-results/testDebugUnitTest' 225
+          Get-GalleryLintResult 'app/build/reports/lint-results-debug.xml'
 
       - name: Upload validation reports
         if: always()
@@ -57,5 +69,14 @@ jobs:
         with:
           name: galeria-debug-${{ github.run_attempt }}
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload instrumentation APK
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: galeria-debug-tests-${{ github.run_attempt }}
+          path: app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 7

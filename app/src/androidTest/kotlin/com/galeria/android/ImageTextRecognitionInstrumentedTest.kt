@@ -105,17 +105,21 @@ class ImageTextRecognitionInstrumentedTest {
         try {
             ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
                 putExtra("uri", Uri.fromFile(photo).toString()); putExtra("mime", "image/png"); putExtra("name", photo.name)
-            }).use {
+            }).use { scenario ->
                 waitForUi {
                     onView(androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(com.github.panpf.zoomimage.CoilZoomImageView::class.java))
                         .check { view, error ->
                             if (error != null) throw error
-                            assertTrue("Aguardar foto e janela prontas antes do toque", view.alpha == 1f && view.hasWindowFocus())
+                            val image = view as com.github.panpf.zoomimage.CoilZoomImageView
+                            assertTrue("Aguardar foto e janela prontas antes do toque",
+                                image.drawable != null && view.width > 0 && view.height > 0 && view.alpha == 1f && view.hasWindowFocus())
                         }
                 }
+                awaitAndroidInputReady()
                 onView(androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(com.github.panpf.zoomimage.CoilZoomImageView::class.java))
                     .perform(androidx.test.espresso.action.ViewActions.longClick())
-                waitForUi { onView(withText(R.string.ocr_copy_all)).perform(click()) }
+                awaitViewerOcrIdle(scenario)
+                onView(withText(R.string.ocr_copy_all)).perform(click())
             }
             ActivityScenario.launch<ImageEditActivity>(Intent(context, ImageEditActivity::class.java).apply {
                 putExtra("uri", Uri.fromFile(photo).toString()); putExtra("mime", "image/png"); putExtra("name", photo.name)
@@ -176,10 +180,7 @@ class ImageTextRecognitionInstrumentedTest {
                 putExtra("uri", Uri.fromFile(photo).toString()); putExtra("mime", "image/jpeg"); putExtra("name", photo.name)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }).use { scenario ->
-                val done = CountDownLatch(1)
-                ImageTextRecognition.recognize(context, Uri.fromFile(photo)) { done.countDown() }
-                assertTrue(done.await(15, TimeUnit.SECONDS))
-                Thread.sleep(1000L)
+                awaitViewerOcrIdle(scenario)
                 scenario.onActivity { assertTrue(it.window.decorView.findViewWithTag<View>("ocr_text_action").visibility == View.GONE) }
             }
         } finally { photo.delete() }

@@ -377,18 +377,12 @@ object GalleryCatalogStore {
     }
 
     private fun catalogFingerprint(items: List<MediaItem>): Long {
-        var fingerprint = 1125899906842597L
+        var fingerprint = CatalogFingerprintRules.INITIAL
         for (item in items) {
-            fingerprint = fingerprint * 31 + item.uri.toString().hashCode()
-            fingerprint = fingerprint * 31 + item.id
-            fingerprint = fingerprint * 31 + item.name.hashCode()
-            fingerprint = fingerprint * 31 + item.mimeType.hashCode()
-            fingerprint = fingerprint * 31 + item.relativePath.hashCode()
-            fingerprint = fingerprint * 31 + item.albumKey.hashCode()
-            fingerprint = fingerprint * 31 + item.albumName.hashCode()
-            fingerprint = fingerprint * 31 + item.dateAdded
-            fingerprint = fingerprint * 31 + item.size
-            fingerprint = fingerprint * 31 + item.duration
+            fingerprint = CatalogFingerprintRules.append(
+                fingerprint, item.uri.toString(), item.id, item.name, item.mimeType,
+                item.relativePath, item.albumKey, item.albumName, item.dateAdded, item.size, item.duration
+            )
         }
         return fingerprint
     }

@@ -7,18 +7,16 @@ import android.widget.SeekBar
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.SeekParameters
 
-/** Coalesces seeks and preserves playback state independently of thumbnail availability. */
+/** UI adapter: reports gestures through its owner's command channel; only reads
+ * the player for position/duration. Never creates, releases or commands it. */
 @OptIn(UnstableApi::class)
 internal class VideoTimelineBinding(private val view: VideoTimelineView) {
     private val handler = Handler(Looper.getMainLooper())
     private var player: ExoPlayer? = null
-    private var resume = false
-    private var beforeSeek = 0L
-    private var originalSeek = SeekParameters.DEFAULT
-    private var pendingPosition: Long? = null
-    private var seekScheduled = false
+    private var commands: PlaybackCommandController.Channel? = null
+    private var scrub: PlaybackCommandController.Scrub? = null
+    private var suspended = false
     private var progressBar: SeekBar? = null
     private var progressTracking = false
     private var progressPosition = 0L
@@ -26,11 +24,6 @@ internal class VideoTimelineBinding(private val view: VideoTimelineView) {
     var onScrubbing: ((Boolean) -> Unit)? = null
     val scrubPositionMs: Long?
         get() = if (view.isScrubbing) view.positionMs else if (progressTracking) progressPosition else null
-    private val seek = Runnable {
-        seekScheduled = false
-        pendingPosition?.let { player?.seekTo(it) }
-        pendingPosition = null
-    }
     private val tick = object : Runnable {
         override fun run() {
             val current = player ?: return
@@ -61,6 +54,7 @@ internal class VideoTimelineBinding(private val view: VideoTimelineView) {
         bar.isEnabled = false
         bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onStartTrackingTouch(seekBar: SeekBar) {
+                if (suspended) return
                 progressTracking = true
                 progressPosition = player?.currentPosition ?: 0L
                 beginSeek()
@@ -68,6 +62,7 @@ internal class VideoTimelineBinding(private val view: VideoTimelineView) {
 
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
+                if (suspended) return
                 val duration = player?.duration?.coerceAtLeast(0L) ?: return
                 if (duration <= 0L) return
                 progressPosition = VideoTimelineRules.progressPosition(progress, seekBar.max, duration)
@@ -86,60 +81,53 @@ internal class VideoTimelineBinding(private val view: VideoTimelineView) {
     }
 
     private fun beginSeek() {
-        player?.let {
-            resume = it.playWhenReady
-            beforeSeek = it.currentPosition
-            originalSeek = it.seekParameters
-            it.pause()
-            it.setSeekParameters(SeekParameters.EXACT)
-            onScrubbing?.invoke(true)
-        }
+        if (suspended || scrub?.active == true) return
+        scrub = commands?.beginScrub()
+        if (scrub != null) onScrubbing?.invoke(true)
     }
 
     private fun moveSeek(position: Long) {
-        pendingPosition = position
-        if (!seekScheduled) { seekScheduled = true; handler.postDelayed(seek, 60L) }
+        if (suspended || scrub?.active != true) return
+        scrub?.move(position)
         onPosition?.invoke(position, player?.duration?.coerceAtLeast(0L) ?: 0L)
     }
 
     private fun finishSeek(position: Long, cancelled: Boolean) {
-        handler.removeCallbacks(seek)
-        seekScheduled = false
-        pendingPosition = null
-        player?.let {
-            it.seekTo(if (cancelled) beforeSeek else position.coerceAtMost((it.duration - 1L).coerceAtLeast(0L)))
-            it.setSeekParameters(originalSeek)
-            if (resume) it.play()
-        }
+        val gesture = scrub ?: return
+        scrub = null
+        gesture.finish(position, cancelled, allowResume = !suspended)
         onScrubbing?.invoke(false)
     }
 
-    fun bind(player: ExoPlayer, uri: Uri, revision: String = "") {
+    fun bind(player: ExoPlayer, uri: Uri, commands: PlaybackCommandController.Channel, revision: String = "") {
         unbind()
         this.player = player
+        this.commands = commands
+        suspended = false
         view.setSource(uri, revision)
         view.setPreparationEnabled(true)
         handler.post(tick)
     }
 
     fun suspend() {
-        resume = false
+        suspended = true
         view.setPreparationEnabled(false)
         if (progressTracking) { progressTracking = false; finishSeek(progressPosition, true) }
         view.cancelGesture()
         handler.removeCallbacks(tick)
-        handler.removeCallbacks(seek)
-        seekScheduled = false
+        scrub?.let { finishSeek(0L, true) }
     }
 
     fun resumeUpdates() {
         handler.removeCallbacks(tick)
+        suspended = false
         if (player != null) { view.setPreparationEnabled(true); handler.post(tick) }
     }
 
     fun unbind() {
         suspend()
         player = null
+        commands = null
         view.setSource(null)
     }
 }

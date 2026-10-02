@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.SeekBar
 import androidx.media3.common.Player
+import androidx.lifecycle.Lifecycle
 import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -27,6 +28,99 @@ import kotlin.math.abs
 class VideoTimelineInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context: Context get() = instrumentation.targetContext
+
+    @Test fun playPauseOverridesFingerStillOnTimelineWithoutRestartingOnRelease() {
+        withCommandFixture { scenario ->
+            val down = SystemClock.uptimeMillis()
+            scenario.onActivity { activity ->
+                val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                player.play()
+                touchTimeline(activity, down, MotionEvent.ACTION_DOWN, 0.8f)
+                touchTimeline(activity, down, MotionEvent.ACTION_MOVE, 0.7f)
+                assertFalse(player.playWhenReady)
+                activity.window.decorView.findViewWithTag<View>("video_play_pause").performClick()
+                assertFalse("Play/pause deve cancelar a intenção de retomar do arraste", player.playWhenReady)
+                touchTimeline(activity, down, MotionEvent.ACTION_UP, 0.6f)
+                assertFalse("Soltar o gesto antigo não pode dar play", player.playWhenReady)
+            }
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { activity ->
+                val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                assertFalse(player.playWhenReady)
+                activity.window.decorView.findViewWithTag<View>("video_play_pause").performClick()
+                assertTrue("Um novo clique continua funcional", player.playWhenReady)
+            }
+        }
+    }
+
+    @Test fun backgroundDuringDragKeepsSamePlayerAndLateReleaseCannotUndoPause() {
+        withCommandFixture { scenario ->
+            val down = SystemClock.uptimeMillis()
+            lateinit var original: Player
+            scenario.onActivity { activity ->
+                original = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                original.play()
+                touchTimeline(activity, down, MotionEvent.ACTION_DOWN, 0.8f)
+                touchTimeline(activity, down, MotionEvent.ACTION_MOVE, 0.7f)
+                assertFalse(original.playWhenReady)
+            }
+            scenario.moveToState(Lifecycle.State.CREATED)
+            instrumentation.runOnMainSync { assertFalse("Sem reprodução em segundo plano", original.playWhenReady) }
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            scenario.onActivity { activity ->
+                val current = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                assertSame(original, current)
+                assertTrue("A pausa temporária do arraste não perde a intenção de reprodução", current.playWhenReady)
+                activity.window.decorView.findViewWithTag<View>("video_play_pause").performClick()
+                assertFalse(current.playWhenReady)
+                val position = current.currentPosition
+                touchTimeline(activity, down, MotionEvent.ACTION_UP, 0.1f)
+                assertFalse("UP antigo não pode desfazer a pausa explícita", current.playWhenReady)
+                assertEquals("UP cancelado não deve buscar outra posição", position, current.currentPosition)
+            }
+        }
+    }
+
+    private fun touchTimeline(activity: DetailActivity, down: Long, action: Int, fraction: Float) {
+        val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+        val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, strip.width * fraction, strip.height / 2f, 0)
+        try { strip.dispatchTouchEvent(event) } finally { event.recycle() }
+    }
+
+    private fun withCommandFixture(test: (ActivityScenario<DetailActivity>) -> Unit) {
+        val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val keys = listOf("autoplay_videos", "loop_videos", "remember_video_position")
+        val previous = prefs.all
+        prefs.edit().putBoolean(keys[0], false).putBoolean(keys[1], true).putBoolean(keys[2], false).commit()
+        val file = sample()
+        try {
+            ActivityScenario.launch<DetailActivity>(intent(file)).use { scenario ->
+                await {
+                    var ready = false
+                    scenario.onActivity { activity ->
+                        val current = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                        ready = current.playbackState == Player.STATE_READY && current.duration > 0L
+                    }
+                    ready
+                }
+                scenario.onActivity { it.window.decorView.findViewWithTag<View>("video_timeline_toggle").performClick() }
+                await {
+                    var visible = false
+                    scenario.onActivity {
+                        val strip = it.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                        visible = strip.isShown && strip.width > 0
+                    }
+                    visible
+                }
+                test(scenario)
+            }
+        } finally {
+            file.delete()
+            prefs.edit().apply {
+                keys.forEach { key -> if (previous.containsKey(key)) putBoolean(key, previous[key] as Boolean) else remove(key) }
+            }.commit()
+        }
+    }
 
     @Test fun dragSeeksBeforeFingerIsReleasedAndRestoresPlaybackState() {
         val file = sample()
@@ -149,30 +243,37 @@ class VideoTimelineInstrumentedTest {
         val file = sample()
         try {
             val times = listOf(0L, 250L, 500L)
-            val results = ArrayList<Bitmap>()
+            val results = ArrayList<List<Pair<Long, Bitmap>>>()
             repeat(2) {
                 val ready = CountDownLatch(times.size)
-                val seen = HashSet<Long>()
+                val received = ArrayList<Pair<Long, Bitmap>>()
                 val source = VideoTimelineFrames(context, Uri.fromFile(file), "test")
-                source.request(times) { time, bitmap ->
-                    assertTrue(bitmap.width <= 320 && bitmap.height <= 320)
-                    if (seen.add(time)) { results.add(bitmap); ready.countDown() }
+                try {
+                    source.request(times) { time, bitmap ->
+                        received.add(time to bitmap)
+                        ready.countDown()
+                    }
+                    assertTrue("As miniaturas não foram carregadas", ready.await(15, TimeUnit.SECONDS))
+                    instrumentation.waitForIdleSync()
+                    // Ordered comparison, not a set: reversed delivery must fail.
+                    assertEquals(times, received.map { it.first })
+                    assertTrue(received.all { (_, bitmap) -> bitmap.width in 1..320 && bitmap.height in 1..320 })
+                    results.add(received.toList())
+                } finally {
+                    source.close()
                 }
-                assertTrue("As miniaturas não foram carregadas", ready.await(15, TimeUnit.SECONDS))
-                source.close()
-                assertEquals(times.toSet(), seen)
             }
-            assertEquals(6, results.size)
-            assertSame("A segunda abertura deve reutilizar o cache", results[0], results[3])
+            times.indices.forEach { index ->
+                assertSame("A segunda abertura deve reutilizar cada quadro do cache",
+                    results[0][index].second, results[1][index].second)
+            }
         } finally { file.delete() }
     }
 
     @Test fun continuousStripScrollsBySecondsAndCancelsWithoutChangingPosition() {
         var selected = 0L
         lateinit var strip: VideoTimelineView
-        val file = sample()
-        try {
-            ActivityScenario.launch<DetailActivity>(intent(file)).use { scenario ->
+        ActivityScenario.launch(TestViewHostActivity::class.java).use { scenario ->
                 scenario.onActivity { activity ->
                     strip = VideoTimelineView(activity)
                     activity.addContentView(strip, android.view.ViewGroup.LayoutParams(1000, 120))
@@ -196,8 +297,7 @@ class VideoTimelineInstrumentedTest {
                     strip.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, null)
                     assertEquals(3_601_000L, selected)
                 }
-            }
-        } finally { file.delete() }
+        }
     }
 
     @Test fun playbackBarSeeksWithFilmstripClosedAndToggleKeepsBothAvailable() {

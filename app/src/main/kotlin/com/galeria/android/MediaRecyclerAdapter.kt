@@ -382,7 +382,7 @@ class MediaRecyclerAdapter(
         }
         thumb.addView(check, checkParams)
         val preview = ImageView(context).apply {
-            setImageResource(R.drawable.ic_eye)
+            setImageResource(R.drawable.ic_view_media)
             setColorFilter(Color.WHITE)
             background = Ui.rounded(0x99000000.toInt(), 8, context)
             setPadding(Ui.dp(context, 5), Ui.dp(context, 5), Ui.dp(context, 5), Ui.dp(context, 5))

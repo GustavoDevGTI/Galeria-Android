@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.view.View
+import android.view.MotionEvent
+import android.view.inspector.WindowInspector
 import androidx.media3.ui.PlayerView
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.core.view.ViewCompat
@@ -69,6 +71,7 @@ class CinemaModeInstrumentedTest {
             }
             waitForOrientation(scenario, Configuration.ORIENTATION_LANDSCAPE)
             waitForSystemBars(scenario, visible = false)
+            waitForCinemaTransition(scenario)
             assertPlaybackCentered(scenario)
             assertCinemaButtonState(true)
             scenario.onActivity { activity ->
@@ -76,7 +79,7 @@ class CinemaModeInstrumentedTest {
                 assertSame("A troca de modo não deve recriar o player.", playerBefore, playerAfter)
             }
 
-            onView(withContentDescription("Mais opções")).perform(click())
+            clickMoreAndRequirePopup(scenario)
             onView(withText("Trilha de áudio")).inRoot(isPlatformPopup()).perform(scrollTo()).check(matches(isDisplayed()))
             onView(withText("Legenda")).inRoot(isPlatformPopup()).perform(scrollTo()).check(matches(isDisplayed()))
             pressBack()
@@ -92,6 +95,7 @@ class CinemaModeInstrumentedTest {
             }
             waitForOrientation(scenario, Configuration.ORIENTATION_PORTRAIT)
             waitForSystemBars(scenario, visible = true)
+            waitForCinemaTransition(scenario)
             assertPlaybackCentered(scenario)
             assertCinemaButtonState(false)
             scenario.onActivity { activity ->
@@ -99,6 +103,30 @@ class CinemaModeInstrumentedTest {
                 assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, activity.requestedOrientation)
             }
             assertFalse(CinemaModePreferences(context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)).isEnabled(albumKey))
+        }
+    }
+
+    @Test
+    fun pausingDuringModeAnimationSettlesOrientationAndAllowsNextClick() = withVideo { context, uri, albumKey ->
+        ActivityScenario.launch<DetailActivity>(videoIntent(context, uri, albumKey)).use { scenario ->
+            scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+            waitForOrientation(scenario, Configuration.ORIENTATION_PORTRAIT)
+            scenario.onActivity { activity ->
+                descendants(activity.window.decorView).first { it.contentDescription == "Modo cinema" }.performClick()
+                assertTrue(activity.cinemaController.transitioning)
+            }
+            scenario.moveToState(Lifecycle.State.STARTED)
+            scenario.onActivity { assertFalse("Pausar deve concluir a transição, não deixar o botão bloqueado", it.cinemaController.transitioning) }
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            waitForOrientation(scenario, Configuration.ORIENTATION_LANDSCAPE)
+            waitForCinemaTransition(scenario)
+            waitForSystemBars(scenario, visible = false)
+            assertCinemaButtonState(true)
+            onView(withContentDescription("Modo cinema")).perform(click())
+            waitForOrientation(scenario, Configuration.ORIENTATION_PORTRAIT)
+            waitForCinemaTransition(scenario)
+            waitForSystemBars(scenario, visible = true)
+            assertCinemaButtonState(false)
         }
     }
 
@@ -180,6 +208,37 @@ class CinemaModeInstrumentedTest {
             }
     }
 
+    private fun clickMoreAndRequirePopup(scenario: ActivityScenario<DetailActivity>) {
+        // View focus/layout do not prove Android's input transition is finished.
+        // Keep a real injected click, without retrying or calling performClick.
+        awaitAndroidInputReady()
+        val actions = arrayListOf<Int>()
+        var bounds = ""
+        scenario.onActivity { activity ->
+            val more = descendants(activity.window.decorView).first { it.contentDescription == "Mais opções" }
+            val location = IntArray(2).also(more::getLocationOnScreen)
+            bounds = "${location.toList()}, ${more.width}x${more.height}"
+            more.setOnTouchListener { _, event -> actions.add(event.actionMasked); false }
+        }
+        try { onView(withContentDescription("Mais opções")).perform(click()) }
+        finally {
+            scenario.onActivity { activity ->
+                descendants(activity.window.decorView).first { it.contentDescription == "Mais opções" }.setOnTouchListener(null)
+            }
+        }
+        val deadline = SystemClock.uptimeMillis() + 5_000L
+        var popup = false
+        do {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                popup = WindowInspector.getGlobalWindowViews().any { it.javaClass.name.endsWith("PopupDecorView") }
+            }
+            if (popup) break
+            SystemClock.sleep(50L)
+        } while (SystemClock.uptimeMillis() < deadline)
+        assertTrue("O toque deve alcançar o botão: actions=$actions; bounds=$bounds", actions.contains(MotionEvent.ACTION_DOWN) && actions.contains(MotionEvent.ACTION_UP))
+        assertTrue("Um único toque deve abrir o menu de cinema: actions=$actions; bounds=$bounds", popup)
+    }
+
     private fun waitForOrientation(scenario: ActivityScenario<DetailActivity>, expected: Int) {
         val deadline = SystemClock.uptimeMillis() + 10_000L
         var actual = Configuration.ORIENTATION_UNDEFINED
@@ -201,10 +260,16 @@ class CinemaModeInstrumentedTest {
         var ready = false
         do {
             scenario.onActivity { activity ->
-                val transitioning = DetailActivity::class.java.getDeclaredField("cinemaTransitionRunning")
-                    .apply { isAccessible = true }.getBoolean(activity)
+                val transitioning = activity.cinemaController.transitioning
+                // Orientation/focus can be ready while the final layout and
+                // content fade are still running. Do not tap the menu mid-flight.
+                val surfaces = listOf("content", "topBar", "bottomBar").map { name ->
+                    DetailActivity::class.java.getDeclaredField(name)
+                        .apply { isAccessible = true }.get(activity) as View
+                }
                 ready = !transitioning && activity.hasWindowFocus() &&
-                    activity.window.decorView.isLaidOut && !activity.window.decorView.isLayoutRequested
+                    activity.window.decorView.isLaidOut && !activity.window.decorView.isLayoutRequested &&
+                    surfaces.all { it.isLaidOut && !it.isLayoutRequested && kotlin.math.abs(it.alpha - 1f) < 0.001f }
             }
             if (ready) return
             SystemClock.sleep(100L)
@@ -240,24 +305,72 @@ class CinemaModeInstrumentedTest {
     }
 
     @Test
-    fun trackPreferencesAreRestoredWhenPlayerIsBound() = withVideo { context, _, albumKey ->
+    fun trackPreferencesAreRestoredWhenPlayerIsBound() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val albumKey = "Movies/TrackSelectionTest-${System.nanoTime()}/"
         val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
-        val preferences = CinemaModePreferences(prefs).apply {
-            setAudioPreference(albumKey, "language:pt")
-            setSubtitlePreference(albumKey, "language:en")
-            setSubtitlesEnabled(albumKey, true)
+        val preferences = CinemaModePreferences(prefs)
+        val controller = VideoTrackController(preferences)
+        var player: ExoPlayer? = null
+        var audioToken = ""
+        val subtitleToken = "language:en"
+        fun awaitTracks(message: String, condition: () -> Boolean) {
+            val deadline = SystemClock.uptimeMillis() + 10_000L
+            var ready = false
+            do {
+                instrumentation.runOnMainSync { ready = condition() }
+                if (ready) return
+                SystemClock.sleep(50L)
+            } while (SystemClock.uptimeMillis() < deadline)
+            assertTrue(message, ready)
         }
-        InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            val player = ExoPlayer.Builder(context).build()
-            val controller = VideoTrackController(preferences)
+        TrackPlaybackFixture(context, instrumentation.context.assets).use { fixture ->
             try {
-                controller.bind(player, albumKey)
-                org.junit.Assert.assertEquals("language:pt", controller.audioPreference())
-                org.junit.Assert.assertEquals("language:en", controller.subtitlePreference())
-                assertTrue(controller.subtitlesEnabled())
+                fun bindPlayer() = instrumentation.runOnMainSync {
+                    controller.unbind()
+                    player?.release()
+                    player = ExoPlayer.Builder(context).build().also {
+                        controller.bind(it, albumKey)
+                        it.setMediaItem(fixture.mediaItem)
+                        it.prepare()
+                    }
+                }
+                bindPlayer()
+                awaitTracks("Duas trilhas de áudio e duas legendas devem ser carregadas") {
+                    player?.playbackState == androidx.media3.common.Player.STATE_READY &&
+                        controller.audioChoices().size == 2 && controller.subtitleChoices().size == 2
+                }
+                instrumentation.runOnMainSync {
+                    val audio = controller.audioChoices().last()
+                    audioToken = audio.preferenceToken
+                    assertEquals(2, controller.audioChoices().map { it.preferenceToken }.distinct().size)
+                    controller.selectAudio(audio)
+                    controller.selectSubtitle(controller.subtitleChoices().first { it.preferenceToken == subtitleToken })
+                }
+                fun chosenTracksAreActive() =
+                    controller.audioChoices().filter { it.selected }.map { it.preferenceToken } == listOf(audioToken) &&
+                        controller.subtitleChoices().filter { it.selected }.map { it.preferenceToken } == listOf(subtitleToken)
+                awaitTracks("A seleção deve alterar as trilhas ativas do player", ::chosenTracksAreActive)
+                instrumentation.runOnMainSync { controller.disableSubtitles() }
+                awaitTracks("Desativar legenda deve remover a trilha de texto ativa") {
+                    !controller.subtitlesEnabled() && controller.subtitleChoices().none { it.selected }
+                }
+                instrumentation.runOnMainSync {
+                    controller.selectSubtitle(controller.subtitleChoices().first { it.preferenceToken == subtitleToken })
+                    assertEquals(audioToken, preferences.audioPreference(albumKey))
+                    assertEquals(subtitleToken, preferences.subtitlePreference(albumKey))
+                }
+                awaitTracks("Reativar legenda deve restaurar a seleção real", ::chosenTracksAreActive)
+                bindPlayer()
+                awaitTracks("Um novo player deve restaurar as trilhas salvas, não apenas as strings") {
+                    player?.playbackState == androidx.media3.common.Player.STATE_READY && chosenTracksAreActive()
+                }
             } finally {
-                controller.unbind()
-                player.release()
+                instrumentation.runOnMainSync { controller.unbind(); player?.release() }
+                val hash = albumKey.hashCode()
+                prefs.edit().remove("cinema_audio_$hash").remove("cinema_subtitle_$hash")
+                    .remove("cinema_subtitles_enabled_$hash").commit()
             }
         }
     }

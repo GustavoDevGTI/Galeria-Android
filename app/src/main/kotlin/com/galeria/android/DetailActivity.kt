@@ -54,6 +54,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.core.view.WindowCompat
+import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -89,7 +90,6 @@ class DetailActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private val videoPreviewExecutor = Executors.newSingleThreadExecutor()
     private val motionPhotoExecutor = Executors.newSingleThreadExecutor()
-    private val motionPhotoScanCache = HashMap<String, MotionPhotoClip?>()
     private val imagePreloadScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO.limitedParallelism(MAX_CONCURRENT_IMAGE_PRELOADS)
     )
@@ -129,7 +129,23 @@ class DetailActivity : ComponentActivity() {
     private lateinit var soundButton: ImageButton
     private lateinit var cinemaButton: ImageButton
     private lateinit var motionPhotoButton: ImageButton
-    private var currentMotionPhotoClip: MotionPhotoClip? = null
+    private val motionPhotoController by lazy {
+        ViewerMotionPhotoController(
+            detector = object : ViewerMotionPhotoController.Detector {
+                override fun detect(source: ViewerMotionPhotoController.Source, isRelevant: () -> Boolean,
+                    complete: (MotionPhotoClip?) -> Unit) {
+                    motionPhotoExecutor.execute {
+                        if (!isRelevant()) return@execute
+                        val clip = MotionPhotoSupport.detect(applicationContext, source.uri.toUri())
+                        runOnUiThread { complete(clip) }
+                    }
+                }
+            },
+            currentSource = { mediaQueue.getOrNull(currentIndex)?.let(::motionPhotoSource) },
+            hostActive = { !isFinishing && !isDestroyed },
+            changed = { clip -> motionPhotoButton.visibility = if (clip != null) View.VISIBLE else View.GONE }
+        )
+    }
     private lateinit var actionsBar: LinearLayout
     private lateinit var cinemaGestureIndicator: LinearLayout
     private lateinit var cinemaGestureLabel: TextView
@@ -143,13 +159,43 @@ class DetailActivity : ComponentActivity() {
     private lateinit var timelineButton: ImageButton
     private var timelineExpanded = false
     private lateinit var textRecognitionButton: ImageButton
-    private var pendingTextDetection: Runnable? = null
-    @Volatile private var textDetectionGeneration = 0
-    private val recognizedTextCache = LruCache<String, String>(16)
-    private val detailedTextCache = LruCache<String, String>(16)
-    private var manualTextRequestKey: String? = null
+    private val textRecognitionController by lazy {
+        ViewerTextRecognitionController(
+            scheduler = object : ViewerTextRecognitionController.Scheduler {
+                override fun post(work: Runnable, delayMs: Long) { handler.postDelayed(work, delayMs) }
+                override fun cancel(work: Runnable) { handler.removeCallbacks(work) }
+            },
+            recognizer = object : ViewerTextRecognitionController.Recognizer {
+                override fun recognize(image: ViewerTextRecognitionController.Image, detailed: Boolean,
+                    isRelevant: () -> Boolean, complete: (Result<String>) -> Unit) {
+                    ImageTextRecognition.recognize(this@DetailActivity, Uri.parse(image.uri), isRelevant, detailed, complete)
+                }
+            },
+            currentImage = { mediaQueue.getOrNull(currentIndex)?.takeIf { it.isImage() }?.let(::textSource) },
+            hostActive = { !isFinishing && !isDestroyed },
+            listener = object : ViewerTextRecognitionController.Listener {
+                override fun availabilityChanged(available: Boolean) {
+                    textRecognitionButton.visibility = if (available) View.VISIBLE else View.GONE
+                }
+                override fun manualStarted() { Ui.toast(this@DetailActivity, getString(R.string.ocr_processing)) }
+                override fun manualCompleted(result: Result<String>, cached: Boolean) {
+                    result.fold(
+                        onSuccess = { text ->
+                            if (text.isBlank()) Ui.toast(this@DetailActivity, getString(R.string.ocr_no_text))
+                            else {
+                                if (!cached) textRecognitionButton.visibility = View.VISIBLE
+                                showRecognizedText(text)
+                            }
+                        },
+                        onFailure = { Ui.toast(this@DetailActivity, getString(R.string.ocr_error)) }
+                    )
+                }
+            }
+        )
+    }
     private var speedPopup: PopupWindow? = null
     private var pendingDeleteUri: Uri? = null
+    private var pendingDeletePermanent = false
     private var pendingHiddenCopy: File? = null
     private var pendingMoveItem: MediaItem? = null
     private var pendingMoveFolder: String? = null
@@ -162,33 +208,53 @@ class DetailActivity : ComponentActivity() {
     private var pendingPdfItem: MediaItem? = null
     private var pendingRenameItem: MediaItem? = null
     private var pendingRenameName: String? = null
-    private var switchingItem = false
-    private var pendingMediaTransitionFinish: Runnable? = null
-    private var pendingMediaTransitionCleanup: ((Boolean) -> Unit)? = null
-    private var downY = 0f
-    private var downX = 0f
+    internal val mediaTransitionController = MediaTransitionController(object : MediaTransitionController.Scheduler {
+        override fun schedule(completion: Runnable, delayMs: Long) { handler.postDelayed(completion, delayMs) }
+        override fun cancel(completion: Runnable) { handler.removeCallbacks(completion) }
+    })
+    private val switchingItem: Boolean get() = mediaTransitionController.isBusy
+    private val swipeGestureController = ViewerSwipeGestureController()
     private val playbackSpeed: Float get() = playbackController.playbackSpeed
     private val videoMuted: Boolean get() = playbackController.muted
     private var hudVisible = true
     private var restoredShuffleDelayMs: Long? = null
     private var shuffleAdvanceDeadlineMs = 0L
     private var dragPreviewPage: FrameLayout? = null
-    private var dragHorizontal = true
-    private var dragDirection = 0
+    private val dragHorizontal: Boolean get() = swipeGestureController.axis == SwipeAxis.HORIZONTAL
+    private val dragDirection: Int get() = swipeGestureController.direction
     private var dragTargetIndex = -1
-    private var dragDistance = 0f
     private var lastTapTime = 0L
     private var lastTapX = 0f
     private var lastTapY = 0f
     private var pendingSingleTap: Runnable? = null
     private var completedViewerTap = false
     private var sourceAlbumKey: String? = null
-    private var cinemaMode = false
-    private var restoredCinemaMode: Boolean? = null
-    private var orientationBeforeCinema: Int? = null
-    private var cinemaTransitionRunning = false
-    private var pendingCinemaOrientationChange: Runnable? = null
-    private var pendingCinemaTransitionFinish: Runnable? = null
+    private val cinemaMode: Boolean get() = cinemaController.enabled
+    internal val cinemaController by lazy {
+        ViewerCinemaController(
+            scheduler = object : ViewerCinemaController.Scheduler {
+                override fun post(work: Runnable, delayMs: Long) { handler.postDelayed(work, delayMs) }
+                override fun cancel(work: Runnable) { handler.removeCallbacks(work) }
+            },
+            requestedOrientation = { requestedOrientation },
+            landscapeOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+            effects = object : ViewerCinemaController.Effects {
+                override fun modeChanged(enabled: Boolean) {
+                    cinemaGestureController.cancel()
+                    handler.removeCallbacks(hideCinemaGestureIndicator)
+                    cinemaGestureIndicator.visibility = View.GONE
+                    if (enabled) playbackController.player()?.let { videoTrackController.bind(it, cinemaAlbumKey(currentItem())) }
+                    else videoTrackController.unbind()
+                    updateCinemaButton()
+                    applyViewerSystemBars()
+                }
+                override fun orientationChanged(orientation: Int) { requestedOrientation = orientation }
+                override fun barsChanged(enabled: Boolean) { setViewerSystemBars(enabled) }
+                override fun transitionStarted(enabled: Boolean) { animateCinemaModeTransition() }
+                override fun transitionFinished() { completeCinemaModeTransition() }
+            }
+        )
+    }
     private val cinemaGestureController = VideoCinemaGestureController()
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
     private val hideCinemaGestureIndicator = Runnable {
@@ -237,12 +303,11 @@ class DetailActivity : ComponentActivity() {
         cinemaPreferences = CinemaModePreferences(prefs)
         videoTrackController = VideoTrackController(cinemaPreferences)
         sourceAlbumKey = intent.getStringExtra("album_key")
-        restoredCinemaMode = savedInstanceState
-            ?.takeIf { it.containsKey(STATE_CINEMA_MODE) }
-            ?.getBoolean(STATE_CINEMA_MODE)
-        orientationBeforeCinema = savedInstanceState
-            ?.takeIf { it.containsKey(STATE_ORIENTATION_BEFORE_CINEMA) }
-            ?.getInt(STATE_ORIENTATION_BEFORE_CINEMA)
+        pendingDeletePermanent = savedInstanceState?.getBoolean("pending_delete_permanent") ?: false
+        cinemaController.restore(
+            savedInstanceState?.takeIf { it.containsKey(STATE_CINEMA_MODE) }?.getBoolean(STATE_CINEMA_MODE),
+            savedInstanceState?.takeIf { it.containsKey(STATE_ORIENTATION_BEFORE_CINEMA) }?.getInt(STATE_ORIENTATION_BEFORE_CINEMA)
+        )
         playbackController = DetailPlaybackController(
             context = applicationContext,
             prefs = prefs,
@@ -609,7 +674,7 @@ class DetailActivity : ComponentActivity() {
             contentDescription = getString(R.string.action_motion_photo)
             visibility = View.GONE
             setOnClickListener {
-                val clip = currentMotionPhotoClip ?: return@setOnClickListener
+                val clip = motionPhotoController.clipFor(motionPhotoSource(currentItem())) ?: return@setOnClickListener
                 startActivity(Intent(this@DetailActivity, MotionPhotoActivity::class.java).apply {
                     putExtra(MotionPhotoActivity.EXTRA_URI, currentItem().uri.toString())
                     putExtra(MotionPhotoActivity.EXTRA_OFFSET, clip.offset)
@@ -743,36 +808,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun recognizeCurrentImageText(item: MediaItem) {
         if (!item.isImage()) return
-        val key = textCacheKey(item)
-        detailedTextCache.get(key)?.takeIf { it.isNotBlank() }?.let {
-            showRecognizedText(it)
-            return
-        }
-        if (manualTextRequestKey == key) return
-        pendingTextDetection?.let(handler::removeCallbacks)
-        pendingTextDetection = null
-        val generation = ++textDetectionGeneration
-        manualTextRequestKey = key
-        Ui.toast(this, getString(R.string.ocr_processing))
-        ImageTextRecognition.recognize(this, item.uri, isRelevant = {
-            generation == textDetectionGeneration && !isFinishing && !isDestroyed
-        }) { result ->
-            manualTextRequestKey = null
-            if (isFinishing || isDestroyed || currentItem().uri != item.uri || textCacheKey(item) != key) return@recognize
-            result.fold(
-                onSuccess = { recognized ->
-                    recognizedTextCache.put(key, recognized)
-                    detailedTextCache.put(key, recognized)
-                    if (recognized.isBlank()) {
-                        Ui.toast(this, getString(R.string.ocr_no_text))
-                    } else {
-                        textRecognitionButton.visibility = View.VISIBLE
-                        showRecognizedText(recognized)
-                    }
-                },
-                onFailure = { Ui.toast(this, getString(R.string.ocr_error)) }
-            )
-        }
+        textRecognitionController.requestManual(textSource(item))
     }
 
     private fun showRecognizedText(recognized: String) {
@@ -798,29 +834,11 @@ class DetailActivity : ComponentActivity() {
 
     private fun textCacheKey(item: MediaItem) = "${MediaContentRevision.key(this, item.uri)}|${item.size}|${item.dateAdded}"
 
+    private fun textSource(item: MediaItem) =
+        ViewerTextRecognitionController.Image(item.uri.toString(), textCacheKey(item))
+
     private fun scheduleTextDetection(item: MediaItem?) {
-        pendingTextDetection?.let(handler::removeCallbacks)
-        pendingTextDetection = null
-        val generation = ++textDetectionGeneration
-        manualTextRequestKey = null
-        textRecognitionButton.visibility = View.GONE
-        if (item == null || !item.isImage()) return
-        val key = textCacheKey(item)
-        recognizedTextCache.get(key)?.let {
-            textRecognitionButton.visibility = if (it.isBlank()) View.GONE else View.VISIBLE
-            return
-        }
-        pendingTextDetection = Runnable {
-            ImageTextRecognition.recognize(this, item.uri, detailed = false, isRelevant = {
-                generation == textDetectionGeneration && !isFinishing && !isDestroyed
-            }) { result ->
-                if (generation != textDetectionGeneration || isFinishing || isDestroyed) return@recognize
-                result.onSuccess {
-                    recognizedTextCache.put(key, it)
-                    textRecognitionButton.visibility = if (it.isBlank()) View.GONE else View.VISIBLE
-                }
-            }
-        }.also { handler.postDelayed(it, 650L) }
+        textRecognitionController.detect(item?.takeIf { it.isImage() }?.let(::textSource))
     }
 
     private fun askRenameCurrentImage() {
@@ -1037,9 +1055,7 @@ class DetailActivity : ComponentActivity() {
                     completedViewerTap = false
                     finishInteractiveSwipe()
                 } else {
-                    val deltaY = event.rawY - downY
-                    val deltaX = event.rawX - downX
-                    completedViewerTap = SwipeGestureRules.isTap(deltaX, deltaY, gestureTouchSlop)
+                    completedViewerTap = swipeGestureController.isTap(event.rawX, event.rawY, gestureTouchSlop)
                 }
                 return true
             }
@@ -1137,33 +1153,24 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun beginPointerGesture(event: MotionEvent) {
-        downY = event.rawY
-        downX = event.rawX
-        dragDistance = 0f
+        swipeGestureController.start(event.rawX, event.rawY)
     }
 
     private fun updateInteractiveSwipe(event: MotionEvent) {
         if (switchingItem || mediaQueue.size < 2) return
-        val deltaY = event.rawY - downY
-        val deltaX = event.rawX - downX
         if (dragPreviewPage == null) {
-            val intent = SwipeGestureRules.intent(deltaX, deltaY, gestureTouchSlop) ?: return
-            dragHorizontal = intent.axis == SwipeAxis.HORIZONTAL
-            dragDirection = intent.direction
-            dragTargetIndex = wrappedIndex(currentIndex + dragDirection)
+            val intent = swipeGestureController.resolveIntent(event.rawX, event.rawY, gestureTouchSlop) ?: return
+            dragTargetIndex = wrappedIndex(currentIndex + intent.direction)
             beginInteractiveSwipe()
         }
         val offset = swipeOffset()
-        val delta = if (dragHorizontal) deltaX else deltaY
-        dragDistance = (if (dragDirection > 0) -delta else delta).coerceIn(0f, offset.toFloat())
-        val currentTranslation = if (dragDirection > 0) -dragDistance else dragDistance
-        val incomingTranslation = if (dragDirection > 0) offset - dragDistance else -offset + dragDistance
+        val translation = swipeGestureController.translate(event.rawX, event.rawY, offset.toFloat())
         if (dragHorizontal) {
-            activePage?.translationX = currentTranslation
-            dragPreviewPage?.translationX = incomingTranslation
+            activePage?.translationX = translation.current
+            dragPreviewPage?.translationX = translation.incoming
         } else {
-            activePage?.translationY = currentTranslation
-            dragPreviewPage?.translationY = incomingTranslation
+            activePage?.translationY = translation.current
+            dragPreviewPage?.translationY = translation.incoming
         }
     }
 
@@ -1190,7 +1197,7 @@ class DetailActivity : ComponentActivity() {
     private fun finishInteractiveSwipe() {
         if (switchingItem) return
         val offset = swipeOffset()
-        val shouldCommit = SwipeGestureRules.shouldCommit(dragDistance, gestureTouchSlop)
+        val shouldCommit = swipeGestureController.shouldCommit(gestureTouchSlop)
         if (shouldCommit) {
             commitInteractiveSwipe(offset)
         } else {
@@ -1202,7 +1209,9 @@ class DetailActivity : ComponentActivity() {
         if (switchingItem) return
         val incomingPage = dragPreviewPage ?: return
         val outgoingPage = activePage
-        switchingItem = true
+        if (!mediaTransitionController.begin()) return
+        scheduleTextDetection(null)
+        motionPhotoController.select(null)
         zoomed = false
         val outgoingPlayer = playbackController.detachCurrent()
         handler.removeCallbacks(progressUpdater)
@@ -1236,11 +1245,7 @@ class DetailActivity : ComponentActivity() {
         outgoingPlayer: ExoPlayer?,
         durationMs: Long
     ): Runnable {
-        lateinit var completion: Runnable
-        completion = Runnable {
-            if (pendingMediaTransitionFinish === completion) finishMediaTransition()
-        }
-        pendingMediaTransitionCleanup = { updateUi ->
+        return mediaTransitionController.register(durationMs, cleanup = { updateUi ->
             outgoingPage?.animate()?.cancel()
             incomingPage.animate().cancel()
             outgoingPage?.let { content.removeView(it) }
@@ -1249,28 +1254,17 @@ class DetailActivity : ComponentActivity() {
             incomingPage.translationY = 0f
             activePage = incomingPage
             resetInteractiveSwipeState()
-            try {
-                if (updateUi) applyCurrentUiAfterInteractiveSwipe()
-            } finally {
-                switchingItem = false
-            }
+            if (updateUi) applyCurrentUiAfterInteractiveSwipe()
+        }, onSettled = { updateUi ->
             if (updateUi) {
                 scheduleAdjacentPreload()
                 scheduleShuffleAdvance()
             }
-        }
-        pendingMediaTransitionFinish = completion
-        handler.postDelayed(completion, durationMs + 100L)
-        return completion
+        })
     }
 
     private fun finishMediaTransition(updateUi: Boolean = true) {
-        val cleanup = pendingMediaTransitionCleanup ?: return
-        pendingMediaTransitionFinish?.let(handler::removeCallbacks)
-        // Clear ownership before cancelling animators or rebuilding the current page.
-        pendingMediaTransitionFinish = null
-        pendingMediaTransitionCleanup = null
-        cleanup(updateUi)
+        mediaTransitionController.finish(updateUi)
     }
 
     private fun cancelInteractiveSwipe(offset: Int = swipeOffset()) {
@@ -1301,9 +1295,8 @@ class DetailActivity : ComponentActivity() {
 
     private fun resetInteractiveSwipeState() {
         dragPreviewPage = null
-        dragDirection = 0
         dragTargetIndex = -1
-        dragDistance = 0f
+        swipeGestureController.resetDrag()
     }
 
     private fun swipeOffset(): Int =
@@ -1322,8 +1315,7 @@ class DetailActivity : ComponentActivity() {
             activePage = createCurrentPage()
             content.addView(activePage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         } else {
-            cinemaMode = false
-            applyCinemaOrientation()
+            cinemaController.open(isVideo = false)
             videoControls.visibility = View.GONE
             timelineRow.visibility = View.GONE
             videoTimeline.visibility = View.GONE
@@ -1365,7 +1357,9 @@ class DetailActivity : ComponentActivity() {
     private fun switchItem(direction: Int, horizontal: Boolean) {
         if (switchingItem || mediaQueue.size < 2) return
         cancelInteractiveSwipe()
-        switchingItem = true
+        if (!mediaTransitionController.begin()) return
+        scheduleTextDetection(null)
+        motionPhotoController.select(null)
         cancelPendingSingleTap()
         resetZoom(false)
         handler.removeCallbacks(progressUpdater)
@@ -1430,13 +1424,7 @@ class DetailActivity : ComponentActivity() {
     private fun createCurrentPage(): FrameLayout {
         val page = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         val item = currentItem()
-        val restoredMode = restoredCinemaMode.also { restoredCinemaMode = null }
-        cinemaMode = if (item.isVideo()) {
-            restoredMode ?: cinemaPreferences.isEnabled(cinemaAlbumKey(item))
-        } else {
-            false
-        }
-        applyCinemaOrientation()
+        cinemaController.open(item.isVideo(), item.isVideo() && cinemaPreferences.isEnabled(cinemaAlbumKey(item)))
         title.text = item.name
         updateFavoriteButton()
         if (item.isVideo()) {
@@ -1465,8 +1453,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun showVideo(item: MediaItem, page: FrameLayout) {
         scheduleTextDetection(null)
-        currentMotionPhotoClip = null
-        motionPhotoButton.visibility = View.GONE
+        motionPhotoController.select(null)
         videoControls.visibility = View.VISIBLE
         timelineRow.visibility = View.VISIBLE
         videoProgressRow.visibility = View.VISIBLE
@@ -1541,7 +1528,7 @@ class DetailActivity : ComponentActivity() {
             }
         )
         playerView.player = player
-        timelineBinding.bind(player, item.uri, "${item.size}|${item.dateAdded}")
+        timelineBinding.bind(player, item.uri, playbackController.commandChannel, "${item.size}|${item.dateAdded}")
         if (cinemaMode) videoTrackController.bind(player, cinemaAlbumKey(item)) else videoTrackController.unbind()
         updateSpeedButton()
         updatePlayPauseButton()
@@ -1693,28 +1680,13 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun updateMotionPhotoAction(item: MediaItem) {
-        currentMotionPhotoClip = null
-        motionPhotoButton.visibility = View.GONE
-        if (item.mimeType == "image/jpeg" || item.mimeType == "image/heic" || item.mimeType == "image/heif") {
-            val key = "${MediaContentRevision.key(this, item.uri)}:${item.size}"
-            if (motionPhotoScanCache.containsKey(key)) {
-                currentMotionPhotoClip = motionPhotoScanCache[key]
-                motionPhotoButton.visibility = if (currentMotionPhotoClip != null) View.VISIBLE else View.GONE
-            } else {
-                motionPhotoExecutor.execute {
-                    val clip = MotionPhotoSupport.detect(applicationContext, item.uri)
-                    runOnUiThread {
-                        motionPhotoScanCache[key] = clip
-                        if (!isFinishing && !isDestroyed && currentItem().uri == item.uri &&
-                            key == "${MediaContentRevision.key(this, item.uri)}:${item.size}") {
-                            currentMotionPhotoClip = clip
-                            motionPhotoButton.visibility = if (clip != null) View.VISIBLE else View.GONE
-                        }
-                    }
-                }
-            }
-        }
+        motionPhotoController.select(motionPhotoSource(item))
     }
+
+    private fun motionPhotoSource(item: MediaItem): ViewerMotionPhotoController.Source? =
+        if (item.mimeType in setOf("image/jpeg", "image/heic", "image/heif")) {
+            ViewerMotionPhotoController.Source(item.uri.toString(), "${MediaContentRevision.key(this, item.uri)}:${item.size}")
+        } else null
 
     private fun toggleVideoSound() {
         if (!currentItem().isVideo()) return
@@ -1730,19 +1702,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun toggleCinemaMode() {
-        if (!currentItem().isVideo() || switchingItem || cinemaTransitionRunning) return
-        cinemaMode = !cinemaMode
-        cinemaGestureController.cancel()
-        handler.removeCallbacks(hideCinemaGestureIndicator)
-        cinemaGestureIndicator.visibility = View.GONE
-        if (cinemaMode) {
-            playbackController.player()?.let { videoTrackController.bind(it, cinemaAlbumKey(currentItem())) }
-        } else {
-            videoTrackController.unbind()
-        }
-        updateCinemaButton()
-        applyViewerSystemBars()
-        animateCinemaModeTransition()
+        cinemaController.toggle(currentItem().isVideo(), switchingItem)
     }
 
     private fun updateCinemaButton() {
@@ -1757,24 +1717,8 @@ class DetailActivity : ComponentActivity() {
         )
     }
 
-    private fun applyCinemaOrientation() {
-        if (cinemaMode) {
-            if (orientationBeforeCinema == null) orientationBeforeCinema = requestedOrientation
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        } else {
-            orientationBeforeCinema?.let { previous ->
-                orientationBeforeCinema = null
-                requestedOrientation = previous
-            }
-        }
-        applyViewerSystemBars()
-    }
-
     private fun animateCinemaModeTransition() {
-        cinemaTransitionRunning = true
         cinemaButton.isEnabled = false
-        pendingCinemaOrientationChange?.let(handler::removeCallbacks)
-        pendingCinemaTransitionFinish?.let(handler::removeCallbacks)
         handler.removeCallbacks(hideCinemaModeIndicator)
 
         cinemaModeIndicator.animate().cancel()
@@ -1804,23 +1748,12 @@ class DetailActivity : ComponentActivity() {
         listOf(content, topBar, bottomBar).forEach { view ->
             view.animate().cancel()
             view.animate().alpha(CINEMA_TRANSITION_DIM_ALPHA)
-                .setDuration(CINEMA_ROTATION_DELAY_MS)
+                .setDuration(ViewerCinemaController.ROTATION_DELAY_MS)
                 .start()
         }
-
-        pendingCinemaOrientationChange = Runnable {
-            pendingCinemaOrientationChange = null
-            applyCinemaOrientation()
-        }.also { handler.postDelayed(it, CINEMA_ROTATION_DELAY_MS) }
-        pendingCinemaTransitionFinish = Runnable {
-            pendingCinemaTransitionFinish = null
-            completeCinemaModeTransition()
-        }.also { handler.postDelayed(it, CINEMA_TRANSITION_FALLBACK_MS) }
     }
 
     private fun completeCinemaModeTransition() {
-        pendingCinemaTransitionFinish?.let(handler::removeCallbacks)
-        pendingCinemaTransitionFinish = null
         listOf(content, topBar, bottomBar).forEach { view ->
             view.animate().cancel()
             view.animate().alpha(1f)
@@ -1828,7 +1761,6 @@ class DetailActivity : ComponentActivity() {
                 .setInterpolator(DecelerateInterpolator())
                 .start()
         }
-        cinemaTransitionRunning = false
         cinemaButton.isEnabled = true
         handler.removeCallbacks(hideCinemaModeIndicator)
         handler.postDelayed(hideCinemaModeIndicator, CINEMA_MESSAGE_VISIBLE_MS)
@@ -1852,7 +1784,7 @@ class DetailActivity : ComponentActivity() {
             Ui.dp(this, 14), Ui.dp(this, 4),
             navigationBarSideInset() + Ui.dp(this, 14), navigationBarBottomInset() + Ui.dp(this, 8)
         )
-        if (cinemaTransitionRunning) completeCinemaModeTransition()
+        cinemaController.settle()
     }
 
     private fun cinemaGesturesEnabled(): Boolean =
@@ -1898,8 +1830,7 @@ class DetailActivity : ComponentActivity() {
         }
         handler.removeCallbacks(hideCinemaGestureIndicator)
         handler.removeCallbacks(hideCinemaModeIndicator)
-        pendingCinemaOrientationChange?.let(handler::removeCallbacks)
-        pendingCinemaTransitionFinish?.let(handler::removeCallbacks)
+        cinemaController.settle()
         cinemaGestureProgress.progress = (bounded * 100).roundToInt()
         cinemaGestureIndicator.visibility = View.VISIBLE
     }
@@ -1981,15 +1912,9 @@ class DetailActivity : ComponentActivity() {
         }
         page.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         image.tag = item.uri
-        var pagingGesture = false
-        var imageTapCandidate = false
-        var imageTouchDownX = 0f
-        var imageTouchDownY = 0f
-        var textLongPressed = false
+        val imageGestures = ImageGestureArbiter()
         val textLongPress = Runnable {
-            if (imageTapCandidate && !pagingGesture && currentItem().uri == item.uri && !isFinishing) {
-                textLongPressed = true
-                imageTapCandidate = false
+            if (imageGestures.claimText { currentItem().uri == item.uri && !isFinishing }) {
                 image.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
                 recognizeCurrentImageText(item)
             }
@@ -1997,93 +1922,82 @@ class DetailActivity : ComponentActivity() {
         image.setOnTouchListener { _, event ->
             if (switchingItem) {
                 image.removeCallbacks(textLongPress)
-                pagingGesture = false
-                imageTapCandidate = false
+                imageGestures.cancel()
                 return@setOnTouchListener true
             }
             val atBaseScale = isAtBaseZoom(image)
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    textLongPressed = false
+                    imageGestures.start(event.x, event.y)
                     image.removeCallbacks(textLongPress)
                     image.postDelayed(textLongPress, ViewConfiguration.getLongPressTimeout().toLong())
-                    pagingGesture = false
-                    imageTapCandidate = true
-                    imageTouchDownX = event.x
-                    imageTouchDownY = event.y
                     beginPointerGesture(event)
                     false
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> {
                     image.removeCallbacks(textLongPress)
                     if (dragPreviewPage != null) cancelInteractiveSwipe()
-                    pagingGesture = false
-                    imageTapCandidate = false
+                    imageGestures.pointerDown()
                     false
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    if (abs(event.x - imageTouchDownX) > gestureTouchSlop ||
-                        abs(event.y - imageTouchDownY) > gestureTouchSlop
-                    ) {
-                        imageTapCandidate = false
-                        image.removeCallbacks(textLongPress)
-                    }
-                    if (event.pointerCount > 1 || !atBaseScale) {
-                        if (pagingGesture || dragPreviewPage != null) cancelInteractiveSwipe()
-                        pagingGesture = false
+                    val wasPaging = imageGestures.paging
+                    val route = imageGestures.move(event.x, event.y, event.pointerCount, atBaseScale, gestureTouchSlop)
+                    if (!imageGestures.tapCandidate) image.removeCallbacks(textLongPress)
+                    if (route == ImageGestureArbiter.MoveRoute.IMAGE_ZOOM) {
+                        if (wasPaging || dragPreviewPage != null) cancelInteractiveSwipe()
                         false
                     } else {
                         updateInteractiveSwipe(event)
-                        if (!pagingGesture && dragPreviewPage != null) {
-                            pagingGesture = true
+                        if (dragPreviewPage != null && imageGestures.claimPaging()) {
                             val cancelEvent = MotionEvent.obtain(event).apply {
                                 action = MotionEvent.ACTION_CANCEL
                             }
                             image.onTouchEvent(cancelEvent)
                             cancelEvent.recycle()
                         }
-                        pagingGesture
+                        imageGestures.paging
                     }
                 }
                 MotionEvent.ACTION_UP -> {
                     image.removeCallbacks(textLongPress)
-                    if (textLongPressed) {
-                        val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
-                        image.onTouchEvent(cancel)
-                        cancel.recycle()
-                        textLongPressed = false
-                        true
-                    } else if (pagingGesture) {
-                        updateInteractiveSwipe(event)
-                        finishInteractiveSwipe()
-                        pagingGesture = false
-                        true
-                    } else {
-                        if (imageTapCandidate) {
+                    val release = imageGestures.release()
+                    val consumed = when (release) {
+                        ImageGestureArbiter.Release.TEXT -> {
+                            val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+                            image.onTouchEvent(cancel)
+                            cancel.recycle()
+                            true
+                        }
+                        ImageGestureArbiter.Release.GALLERY -> {
+                            updateInteractiveSwipe(event)
+                            finishInteractiveSwipe()
+                            true
+                        }
+                        ImageGestureArbiter.Release.TAP -> {
                             image.suppressAccessibilityClickAction = true
                             try {
                                 image.performClick()
                             } finally {
                                 image.suppressAccessibilityClickAction = false
                             }
+                            false
                         }
-                        imageTapCandidate = false
-                        false
+                        ImageGestureArbiter.Release.IMAGE -> false
                     }
+                    imageGestures.finishRelease(release)
+                    consumed
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     image.removeCallbacks(textLongPress)
-                    if (pagingGesture || dragPreviewPage != null) cancelInteractiveSwipe()
-                    val consumed = pagingGesture
-                    pagingGesture = false
-                    imageTapCandidate = false
-                    consumed
+                    if (imageGestures.paging || dragPreviewPage != null) cancelInteractiveSwipe()
+                    imageGestures.cancel()
                 }
-                else -> pagingGesture
+                else -> imageGestures.paging
             }
         }
         image.onViewTapListener = OnViewTapListener { _, _ ->
-            if (!textLongPressed) toggleHud()
+            if (!imageGestures.textLongPressed) toggleHud()
         }
         image.load(item.uri) {
             ImageRotation.configureRequest(this@DetailActivity, item, this)
@@ -2527,7 +2441,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun confirmDeleteCurrent() {
-        val permanent = sourceAlbumKey == VirtualAlbumRules.TRASH_KEY
+        val permanent = TrashPreferences.deletePermanently(this, sourceAlbumKey)
         Ui.showConfirmationDialog(
             this,
             if (permanent) getString(R.string.trash_delete_selected_title) else getString(R.string.move_item_to_trash_title),
@@ -2540,7 +2454,8 @@ class DetailActivity : ComponentActivity() {
     private fun deleteCurrent() {
         val item = currentItem()
         pendingDeleteUri = item.uri
-        val permanent = sourceAlbumKey == VirtualAlbumRules.TRASH_KEY
+        val permanent = TrashPreferences.deletePermanently(this, sourceAlbumKey)
+        pendingDeletePermanent = permanent
         val result = mediaActions.delete(item, REQ_DELETE, permanent)
         if (result == MediaActions.RESULT_DONE) {
             Ui.toast(this, getString(if (permanent) R.string.album_item_deleted else R.string.item_moved_to_trash))
@@ -2578,8 +2493,8 @@ class DetailActivity : ComponentActivity() {
     private fun completeMovedItem(item: MediaItem, folder: String, sourceFolder: File?) {
         movedUris.add(item.uri.toString())
         val sourceKey = intent.getStringExtra("album_key")
-        if (!sourceKey.isNullOrEmpty() && sourceKey != "all_media" &&
-            MediaOperationNavigation.isEmptyFolder(sourceFolder)) {
+        if (!sourceKey.isNullOrEmpty() && !VirtualAlbumRules.remainsAfterMove(sourceKey) &&
+            MediaOperationNavigation.isEmptyMediaFolder(sourceFolder)) {
             val key = pendingMoveDestinationKey ?: MediaActions.destinationRelativePath(folder, item.isVideo())
             val name = pendingMoveDestinationName ?: key.trimEnd('/').substringAfterLast('/')
             updateOperationResult(key, name)
@@ -2629,7 +2544,7 @@ class DetailActivity : ComponentActivity() {
                 Ui.toast(
                     this,
                     getString(
-                        if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) R.string.album_item_deleted
+                        if (pendingDeletePermanent) R.string.album_item_deleted
                         else R.string.item_moved_to_trash
                     )
                 )
@@ -2728,11 +2643,15 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun applyViewerSystemBars() {
+        cinemaController.refreshBars()
+    }
+
+    private fun setViewerSystemBars(cinema: Boolean) {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         // Showing the app's playback controls must not reveal system bars in
         // cinema. Edge swipes still reveal them temporarily for system navigation.
-        if (cinemaMode) controller.hide(WindowInsetsCompat.Type.systemBars())
+        if (cinema) controller.hide(WindowInsetsCompat.Type.systemBars())
         else controller.show(WindowInsetsCompat.Type.systemBars())
     }
 
@@ -2742,7 +2661,9 @@ class DetailActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("pending_delete_permanent", pendingDeletePermanent)
         finishMediaTransition()
+        cinemaController.settle()
         outState.putBoolean("timeline_expanded", timelineExpanded)
         outState.putStringArrayList(MediaOperationNavigation.EXTRA_REMOVED_URIS, ArrayList(removedUris))
         outState.putStringArrayList(MediaOperationNavigation.EXTRA_MOVED_URIS, ArrayList(movedUris))
@@ -2759,7 +2680,7 @@ class DetailActivity : ComponentActivity() {
         outState.putFloat(STATE_PLAYBACK_SPEED, playbackSpeed)
         outState.putBoolean(STATE_VIDEO_MUTED, videoMuted)
         outState.putBoolean(STATE_CINEMA_MODE, cinemaMode)
-        orientationBeforeCinema?.let { outState.putInt(STATE_ORIENTATION_BEFORE_CINEMA, it) }
+        cinemaController.previousOrientation?.let { outState.putInt(STATE_ORIENTATION_BEFORE_CINEMA, it) }
         playbackController.savedPlayWhenReady()?.let { playWhenReady ->
             outState.putLong(STATE_VIDEO_POSITION, playbackController.rememberedPosition())
             outState.putBoolean(
@@ -2783,9 +2704,12 @@ class DetailActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        textRecognitionController.resume()
+        motionPhotoController.resume()
         applyViewerSystemBars()
         if (::timelineBinding.isInitialized) timelineBinding.resumeUpdates()
         if (::textRecognitionButton.isInitialized) scheduleTextDetection(mediaQueue.getOrNull(currentIndex))
+        if (::motionPhotoButton.isInitialized) mediaQueue.getOrNull(currentIndex)?.let(::updateMotionPhotoAction)
         playbackController.resumeAfterLifecycle()
         handler.removeCallbacks(progressUpdater)
         if (mediaQueue.getOrNull(currentIndex)?.isVideo() == true) {
@@ -2797,11 +2721,12 @@ class DetailActivity : ComponentActivity() {
     override fun onPause() {
         // Settle before pausing so a new video cannot start after lifecycle pause.
         finishMediaTransition()
+        cinemaController.settle()
         super.onPause()
-        if (::timelineBinding.isInitialized) timelineBinding.suspend()
-        pendingTextDetection?.let(handler::removeCallbacks)
-        textDetectionGeneration++
         playbackController.pauseForLifecycle()
+        if (::timelineBinding.isInitialized) timelineBinding.suspend()
+        textRecognitionController.pause()
+        motionPhotoController.pause()
         cancelPendingSingleTap()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
@@ -2816,17 +2741,14 @@ class DetailActivity : ComponentActivity() {
         finishMediaTransition(updateUi = false)
         super.onDestroy()
         if (::timelineBinding.isInitialized) timelineBinding.unbind()
-        pendingTextDetection?.let(handler::removeCallbacks)
-        textDetectionGeneration++
+        textRecognitionController.close()
+        motionPhotoController.close()
+        cinemaController.close()
         cancelPendingSingleTap()
         handler.removeCallbacks(progressUpdater)
         handler.removeCallbacks(autoAdvanceRunnable)
         handler.removeCallbacks(hideCinemaGestureIndicator)
         handler.removeCallbacks(hideCinemaModeIndicator)
-        pendingCinemaOrientationChange?.let(handler::removeCallbacks)
-        pendingCinemaTransitionFinish?.let(handler::removeCallbacks)
-        pendingCinemaOrientationChange = null
-        pendingCinemaTransitionFinish = null
         videoTrackController.unbind()
         playbackController.releaseCurrent()
         imagePreloadJobs.values.forEach { it.cancel() }
@@ -2896,8 +2818,6 @@ class DetailActivity : ComponentActivity() {
         private const val CINEMA_BUTTON_TAG = "viewer_cinema_mode_button"
         private const val CINEMA_TRANSITION_TAG = "viewer_cinema_transition_message"
         private const val CINEMA_INDICATOR_HIDE_MS = 650L
-        private const val CINEMA_ROTATION_DELAY_MS = 170L
-        private const val CINEMA_TRANSITION_FALLBACK_MS = 520L
         private const val CINEMA_MESSAGE_APPEAR_MS = 150L
         private const val CINEMA_CONTENT_FADE_MS = 230L
         private const val CINEMA_MESSAGE_VISIBLE_MS = 1_200L

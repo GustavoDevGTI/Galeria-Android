@@ -64,6 +64,11 @@ class DetailShuffleRotationInstrumentedTest {
                 Thread.sleep(600L)
 
                 waitUntilDisplayed(secondName)
+                // A transition may display its destination yet accidentally
+                // forget to schedule the next automatic advance. Check cycles,
+                // not only the first change, without calling internal handlers.
+                waitUntilDisplayed(firstName)
+                waitUntilDisplayed(secondName)
             }
         } finally {
             resolver.delete(firstUri, null, null)

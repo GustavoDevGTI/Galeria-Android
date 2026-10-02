@@ -4,9 +4,14 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import androidx.test.core.app.ActivityScenario
+import androidx.lifecycle.Lifecycle
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.action.GeneralClickAction
+import androidx.test.espresso.action.Tap
+import androidx.test.espresso.action.Press
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
@@ -51,7 +56,15 @@ class MotionPhotoInstrumentedTest {
             putExtra("name", photo.name)
             putExtra("mime", "image/jpeg")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }).use {
+        }).use { scenario ->
+            var originalIndex = -1
+            var originalUri = ""
+            scenario.onActivity { activity ->
+                val queue = DetailActivity::class.java.getDeclaredField("queueController")
+                    .apply { isAccessible = true }.get(activity) as DetailMediaQueueController
+                originalIndex = queue.currentIndex
+                originalUri = queue.items[queue.currentIndex].uri.toString()
+            }
             val deadline = System.currentTimeMillis() + 10_000L
             while (true) {
                 val visible = runCatching {
@@ -63,6 +76,31 @@ class MotionPhotoInstrumentedTest {
             }
             onView(withContentDescription(R.string.action_motion_photo)).perform(click())
             onView(withText(R.string.album_back)).check(matches(isDisplayed()))
+            awaitAndroidInputReady()
+            onView(withText(R.string.album_back)).perform(GeneralClickAction(Tap.SINGLE, { view ->
+                val location = IntArray(2).also(view::getLocationOnScreen)
+                // Tap the visible label, not the status-bar padding included in
+                // this edge-to-edge TextView's bounding box. Still inject touch.
+                floatArrayOf(location[0] + view.paddingLeft + (view.width - view.paddingLeft - view.paddingRight) / 2f,
+                    location[1] + view.paddingTop + (view.height - view.paddingTop - view.paddingBottom) / 2f)
+            }, Press.FINGER, null))
+            val returnDeadline = SystemClock.uptimeMillis() + 10_000L
+            var returned = false
+            while (!returned && SystemClock.uptimeMillis() < returnDeadline) {
+                if (scenario.state == Lifecycle.State.RESUMED) {
+                    scenario.onActivity { returned = it.hasWindowFocus() }
+                }
+                if (!returned) SystemClock.sleep(50L)
+            }
+            assertTrue("Voltar da Motion Photo deve retomar o visualizador original", returned)
+            awaitAndroidInputReady()
+            onView(withContentDescription(R.string.action_motion_photo)).check(matches(isDisplayed()))
+            scenario.onActivity { activity ->
+                val queue = DetailActivity::class.java.getDeclaredField("queueController")
+                    .apply { isAccessible = true }.get(activity) as DetailMediaQueueController
+                assertEquals("Motion Photo não deve avançar a fila da galeria", originalIndex, queue.currentIndex)
+                assertEquals(originalUri, queue.items[queue.currentIndex].uri.toString())
+            }
         }
 
         ActivityScenario.launch<MotionPhotoActivity>(Intent(context, MotionPhotoActivity::class.java).apply {
@@ -98,6 +136,21 @@ class MotionPhotoInstrumentedTest {
                 timeline.update(0L, player.duration)
                 timeline.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, null)
                 assertTrue(player.currentPosition > 0L)
+            }
+            var ownedPlayer: Player? = null
+            scenario.onActivity { activity ->
+                ownedPlayer = activity.window.decorView.findViewWithTag<PlayerView>("motion_photo_player").player
+                ownedPlayer!!.play()
+            }
+            scenario.moveToState(Lifecycle.State.CREATED)
+            scenario.onActivity {
+                assertTrue("Motion Photo deve pausar em segundo plano", ownedPlayer?.playWhenReady == false)
+            }
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            scenario.onActivity { activity ->
+                org.junit.Assert.assertSame(ownedPlayer,
+                    activity.window.decorView.findViewWithTag<PlayerView>("motion_photo_player").player)
+                assertTrue("Retornar não deve forçar reprodução que ficou pausada", ownedPlayer?.playWhenReady == false)
             }
         }
     }

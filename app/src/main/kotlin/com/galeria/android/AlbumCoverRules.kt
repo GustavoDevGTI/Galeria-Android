@@ -12,16 +12,11 @@ object AlbumCoverRules {
         manualUri: String?,
         options: AlbumMediaPreparationOptions,
         customOrder: List<String>
-    ): MediaItem? {
-        if (media.isEmpty()) return null
-        if (manualUri != null) media.firstOrNull {
-            MediaIdentityRules.sameUri(it.uri.toString(), manualUri)
-        }?.let { return it }
-        return AlbumMediaRules.prepare(media, options, customOrder).firstOrNull()
-            ?: AlbumMediaRules.prepare(
-                media,
-                options.copy(filterOptions = MediaFilterOptions(true, true, true, true, true)),
-                customOrder
-            ).firstOrNull()
+    ): MediaItem? = AlbumCoverSelection.choose(media, manualUri, { it.uri.toString() }) { items, unfiltered ->
+        AlbumMediaRules.prepare(
+            items,
+            if (unfiltered) options.copy(filterOptions = MediaFilterOptions(true, true, true, true, true)) else options,
+            customOrder
+        )
     }
 }

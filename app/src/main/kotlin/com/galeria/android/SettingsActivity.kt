@@ -93,6 +93,13 @@ class SettingsActivity : Activity() {
         addOption(getString(R.string.settings_date_time_format), normalizeDisplayValue(prefs.getString("date_time_format", dateTimeValues[0]).orEmpty())) {
             chooseValue(getString(R.string.settings_date_time_format), "date_time_format", dateTimeValues)
         }
+        addSwitch(
+            getString(R.string.settings_use_trash),
+            getString(R.string.settings_use_trash_hint),
+            TrashPreferences.ENABLED,
+            true,
+            null
+        )
         val advancedStart = content.childCount
         val loadingPriorityValues = resources.getStringArray(R.array.settings_loading_priority_values)
         addOption(getString(R.string.settings_loading_priority), prefs.getString("loading_priority", loadingPriorityValues[0]).orEmpty()) {
