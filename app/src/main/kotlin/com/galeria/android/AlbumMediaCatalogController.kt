@@ -54,7 +54,17 @@ class AlbumMediaCatalogController(context: Context) {
             val aggregateAlbum = options.albumKey == null || options.albumKey == "all_media" ||
                 options.albumKey == VirtualAlbumRules.RECENT_KEY
             pagingJob = scope.launch {
-                if (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)) {
+                if (MediaStoreRepository.isPhysicalAlbum(options.albumKey)) {
+                    withContext(Dispatchers.IO) {
+                        val key = options.albumKey!!
+                        if (options.includeHidden || GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden) ||
+                            !GalleryCatalogStore.hasAlbumMedia(appContext, options.includeHidden, key) ||
+                            !GalleryCatalogStore.hasFreshCatalog(appContext, options.includeHidden,
+                                MediaActions.hasAllFilesAccess(appContext), 180_000L)) {
+                            MediaStoreRepository.refreshAlbumMedia(appContext, key, options.includeHidden)
+                        }
+                    }
+                } else if (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)) {
                     withContext(Dispatchers.IO) {
                         MediaStoreRepository.refreshMedia(appContext, options.includeHidden, force = true)
                     }
@@ -95,10 +105,14 @@ class AlbumMediaCatalogController(context: Context) {
         }
 
         executor.execute {
-            if (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)) {
+            if (closed || request != generation) return@execute
+            val physicalAlbum = MediaStoreRepository.isPhysicalAlbum(options.albumKey)
+            if (!physicalAlbum && GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)) {
                 MediaStoreRepository.refreshMedia(appContext, options.includeHidden, force = true)
             }
-            val cachedAlbum = if (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)) {
+            val cachedAlbum = if (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden) ||
+                (physicalAlbum && !GalleryCatalogStore.hasFreshCatalog(appContext, options.includeHidden,
+                    MediaActions.hasAllFilesAccess(appContext), 180_000L))) {
                 emptyList()
             } else {
                 options.albumKey
@@ -106,7 +120,11 @@ class AlbumMediaCatalogController(context: Context) {
                     ?.let { GalleryCatalogStore.readAlbumMedia(appContext, options.includeHidden, it) }
                     .orEmpty()
             }
-            val source = if (cachedAlbum.isNotEmpty()) {
+            val source = if (cachedAlbum.isNotEmpty() && !options.includeHidden) {
+                cachedAlbum
+            } else if (physicalAlbum) {
+                MediaStoreRepository.queryAlbumMedia(appContext, options.albumKey!!, options.includeHidden)
+            } else if (cachedAlbum.isNotEmpty()) {
                 cachedAlbum
             } else {
                 MediaStoreRepository.loadMediaForAlbum(appContext, options.albumKey, options.includeHidden)
@@ -133,17 +151,19 @@ class AlbumMediaCatalogController(context: Context) {
         includeHidden: Boolean,
         onComplete: (Boolean) -> Unit
     ) {
-        val workId = MediaScanScheduler.enqueue(appContext, includeHidden, replace = true)
-        val workInfo = WorkManager.getInstance(appContext).getWorkInfoByIdLiveData(workId)
-        val observer = object : Observer<WorkInfo?> {
-            override fun onChanged(value: WorkInfo?) {
-                value ?: return
-                if (!value.state.isFinished) return
-                workInfo.removeObserver(this)
-                if (!closed) onComplete(value.state == WorkInfo.State.SUCCEEDED)
+        MediaScanScheduler.enqueue(appContext, includeHidden, replace = true, onEnqueued = { workId ->
+            if (closed) return@enqueue
+            val workInfo = WorkManager.getInstance(appContext).getWorkInfoByIdLiveData(workId)
+            val observer = object : Observer<WorkInfo?> {
+                override fun onChanged(value: WorkInfo?) {
+                    value ?: return
+                    if (!value.state.isFinished) return
+                    workInfo.removeObserver(this)
+                    if (!closed) onComplete(value.state == WorkInfo.State.SUCCEEDED)
+                }
             }
-        }
-        workInfo.observe(owner, observer)
+            workInfo.observe(owner, observer)
+        }, onFailure = { if (!closed) onComplete(false) })
     }
 
     fun saveCustomOrder(albumKey: String?, order: List<MediaItem>, onSaved: () -> Unit) {

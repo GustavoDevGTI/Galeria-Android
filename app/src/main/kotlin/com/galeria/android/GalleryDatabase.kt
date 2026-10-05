@@ -9,6 +9,7 @@ import androidx.paging.PagingConfig
 import androidx.paging.PagingData
 import androidx.paging.PagingSource
 import androidx.paging.map
+import androidx.core.content.edit
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -85,6 +86,9 @@ abstract class GalleryDao {
     )
     abstract fun mediaForAlbum(scope: String, albumKey: String): List<CachedMediaEntity>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM cached_media WHERE scope = :scope AND albumKey = :albumKey)")
+    abstract fun hasAlbumMedia(scope: String, albumKey: String): Boolean
+
     @Query(
         """
         SELECT
@@ -160,6 +164,9 @@ abstract class GalleryDao {
     @Query("DELETE FROM cached_media WHERE scope = :scope")
     abstract fun deleteMedia(scope: String)
 
+    @Query("DELETE FROM cached_media WHERE scope = :scope AND albumKey = :albumKey")
+    abstract fun deleteAlbumMedia(scope: String, albumKey: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract fun insertMedia(items: List<CachedMediaEntity>)
 
@@ -189,6 +196,12 @@ abstract class GalleryDao {
         deleteMedia(scope)
         if (items.isNotEmpty()) insertMedia(items)
         saveState(state)
+    }
+
+    @Transaction
+    open fun replaceAlbumMedia(scope: String, albumKey: String, items: List<CachedMediaEntity>) {
+        deleteAlbumMedia(scope, albumKey)
+        if (items.isNotEmpty()) insertMedia(items)
     }
 
     @Transaction
@@ -250,6 +263,9 @@ object GalleryCatalogStore {
         GalleryDatabase.get(context).galleryDao()
             .mediaForAlbum(scope(includeHidden), albumKey)
             .map { it.toMediaItem() }
+
+    internal fun hasAlbumMedia(context: Context, includeHidden: Boolean, albumKey: String): Boolean =
+        GalleryDatabase.get(context).galleryDao().hasAlbumMedia(scope(includeHidden), albumKey)
 
     fun readAlbums(context: Context, includeHidden: Boolean): List<AlbumItem> =
         GalleryDatabase.get(context).galleryDao().albumSummaries(scope(includeHidden)).map { summary ->
@@ -344,7 +360,8 @@ object GalleryCatalogStore {
         }.flow.map { page -> page.map { it.toMediaItem() } }
     }
 
-    fun writeMedia(context: Context, items: List<MediaItem>, includeHidden: Boolean, allFilesAccess: Boolean) {
+    fun writeMedia(context: Context, items: List<MediaItem>, includeHidden: Boolean, allFilesAccess: Boolean,
+        changeToken: String? = null) {
         val scope = scope(includeHidden)
         val dao = GalleryDatabase.get(context).galleryDao()
         val preferences = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
@@ -356,6 +373,7 @@ object GalleryCatalogStore {
             dao.saveState(state)
             preferences.edit()
                 .putString(versionKey(includeHidden), currentMediaStoreVersion(context))
+                .putString(generationKey(includeHidden), changeToken ?: mediaStoreChangeToken(context))
                 .putInt(modelVersionKey(includeHidden), CATALOG_MODEL_VERSION)
                 .apply()
             updateSnapshot(includeHidden, items)
@@ -371,6 +389,7 @@ object GalleryCatalogStore {
         preferences.edit()
             .putLong(fingerprintKey(includeHidden), fingerprint)
             .putString(versionKey(includeHidden), currentMediaStoreVersion(context))
+            .putString(generationKey(includeHidden), changeToken ?: mediaStoreChangeToken(context))
             .putInt(modelVersionKey(includeHidden), CATALOG_MODEL_VERSION)
             .apply()
         updateSnapshot(includeHidden, items)
@@ -407,15 +426,46 @@ object GalleryCatalogStore {
         val state = GalleryDatabase.get(context).galleryDao().state(scope(includeHidden)) ?: return false
         if (state.allFilesAccess != allFilesAccess) return false
         val age = System.currentTimeMillis() - state.scannedAt
+        val generation = mediaStoreChangeToken(context)
+        if (generation.isNotEmpty()) {
+            val unchanged = generation == preferences.getString(generationKey(includeHidden), "")
+            return unchanged && (!includeHidden || age <= maxAgeMs)
+        }
         if (includeHidden) return age <= maxAgeMs
         val currentVersion = currentMediaStoreVersion(context)
         val storedVersion = preferences.getString(versionKey(false), "")
             .orEmpty()
         return if (currentVersion.isNotEmpty() && storedVersion.isNotEmpty()) {
-            currentVersion == storedVersion
+            currentVersion == storedVersion && age <= maxAgeMs
         } else {
             age <= maxAgeMs
         }
+    }
+
+    fun writeAlbumMedia(context: Context, items: List<MediaItem>, includeHidden: Boolean, albumKey: String) {
+        synchronized(mutationLock) {
+            val dao = GalleryDatabase.get(context).galleryDao()
+            val entities = items.map { item -> CachedMediaEntity(scope(includeHidden), item.uri.toString(), item.id,
+                item.name, item.mimeType, item.dateAdded, item.size, item.relativePath,
+                item.albumKey, item.albumName, item.duration) }
+            if (dao.mediaForAlbum(scope(includeHidden), albumKey).associateBy { it.uri } ==
+                entities.associateBy { it.uri }) return
+            // A targeted update is not proof that the entire device is reconciled.
+            mutationRevision++
+            dao.replaceAlbumMedia(scope(includeHidden), albumKey, entities)
+            updateSnapshot(includeHidden, snapshot(includeHidden).filterNot { it.albumKey == albumKey } + items)
+            context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE).edit {
+                remove(fingerprintKey(includeHidden))
+            }
+        }
+    }
+
+    internal fun writeMediaIfCurrent(context: Context, items: List<MediaItem>, includeHidden: Boolean,
+        allFilesAccess: Boolean, expectedRevision: Long, changeToken: String? = null): Boolean = synchronized(mutationLock) {
+        if (mutationRevision != expectedRevision) return@synchronized false
+        writeMedia(context, items, includeHidden, allFilesAccess, changeToken)
+        clearCatalogDirty(context, includeHidden, expectedRevision)
+        true
     }
 
     fun saveResolvedDuration(context: Context, uri: String, duration: Long) {
@@ -443,6 +493,17 @@ object GalleryCatalogStore {
     private fun scope(includeHidden: Boolean) = if (includeHidden) COMPLETE_SCOPE else VISIBLE_SCOPE
 
     private fun versionKey(includeHidden: Boolean) = "media_store_version_${scope(includeHidden)}"
+
+    private fun generationKey(includeHidden: Boolean) = "media_store_generation_${scope(includeHidden)}"
+
+    internal fun mediaStoreChangeToken(context: Context): String =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching {
+                MediaStore.getExternalVolumeNames(context).sorted().joinToString("|") { volume ->
+                    "$volume:${MediaStore.getVersion(context, volume)}:${MediaStore.getGeneration(context, volume)}"
+                }
+            }.getOrDefault("")
+        } else ""
 
     private fun currentMediaStoreVersion(context: Context): String =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

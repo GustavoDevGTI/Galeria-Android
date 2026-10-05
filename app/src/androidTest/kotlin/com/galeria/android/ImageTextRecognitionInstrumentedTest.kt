@@ -124,8 +124,10 @@ class ImageTextRecognitionInstrumentedTest {
             ActivityScenario.launch<ImageEditActivity>(Intent(context, ImageEditActivity::class.java).apply {
                 putExtra("uri", Uri.fromFile(photo).toString()); putExtra("mime", "image/png"); putExtra("name", photo.name)
             }).use { scenario ->
+                awaitAndroidInputReady()
                 onView(withContentDescription(R.string.action_recognize_text)).perform(androidx.test.espresso.action.ViewActions.scrollTo(), click())
-                waitForUi { onView(withText(R.string.ocr_copy_all)).perform(click()) }
+                awaitEditorOcrIdle(scenario)
+                onView(withText(R.string.ocr_copy_all)).perform(click())
                 scenario.onActivity {
                     val clipboard = it.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     assertTrue(clipboard.primaryClip!!.getItemAt(0).text.contains("DOCUMENTO GALERIA"))
@@ -159,15 +161,26 @@ class ImageTextRecognitionInstrumentedTest {
                 putExtra("uri", Uri.fromFile(photo).toString()); putExtra("mime", "image/jpeg"); putExtra("name", photo.name)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }).use { scenario ->
-                val deadline = System.currentTimeMillis() + 20_000L
-                var visible = false
-                while (!visible && System.currentTimeMillis() < deadline) {
-                    scenario.onActivity { visible = it.window.decorView.findViewWithTag<View>("ocr_text_action").visibility == View.VISIBLE }
-                    if (!visible) Thread.sleep(100L)
+                waitForUi {
+                    onView(androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(com.github.panpf.zoomimage.CoilZoomImageView::class.java))
+                        .check { view, error ->
+                            if (error != null) throw error
+                            assertTrue("Aguardar carregamento da foto antes do pedido automático",
+                                (view as com.github.panpf.zoomimage.CoilZoomImageView).drawable != null && view.hasWindowFocus())
+                        }
                 }
-                assertTrue("O texto foi reconhecido, mas o ícone não apareceu", visible)
+                awaitViewerOcrIdle(scenario)
+                scenario.onActivity {
+                    assertTrue("O texto foi reconhecido, mas o ícone não apareceu",
+                        it.window.decorView.findViewWithTag<View>("ocr_text_action").visibility == View.VISIBLE)
+                }
                 onView(withContentDescription(R.string.ocr_text_available)).perform(click())
-                waitForUi { onView(withText(R.string.ocr_copy_all)).perform(click()) }
+                awaitViewerOcrIdle(scenario)
+                waitForUi {
+                    onView(withText(R.string.ocr_copy_all)).inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
+                        .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed()))
+                }
+                onView(withText(R.string.ocr_copy_all)).perform(click())
                 scenario.onActivity {
                     val clipboard = it.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     assertTrue(clipboard.primaryClip!!.getItemAt(0).text.contains("GALERIA"))

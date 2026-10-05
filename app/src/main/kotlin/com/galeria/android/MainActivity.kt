@@ -88,6 +88,8 @@ class MainActivity : ComponentActivity() {
     private var forceAlbumCoverRefreshOnNextSubmit = false
     private var visibilityDialogAdapter: BaseAdapter? = null
     private var refreshVisibilityDialogCounts: (() -> Unit)? = null
+    private var mergeVisibleAlbumsIntoDialog: ((List<AlbumItem>) -> Unit)? = null
+    private val revealedFolderObservers = HashMap<String, android.os.FileObserver>()
     private val visibilityCountRefreshRunnable = Runnable { refreshVisibilityDialogCounts?.invoke() }
     private val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val revealExpiryRunnable = Runnable {
@@ -99,13 +101,16 @@ class MainActivity : ComponentActivity() {
         mediaObserverRefreshScheduled = false
         if (!isFinishing && mainScreenResumed && hasWindowFocus() && accessCoordinator.hasMediaLibraryAccess()) {
             mediaObserverRefreshPending = false
-            refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
+            GalleryCatalogStore.markCatalogDirty(applicationContext)
+            MediaStoreRepository.invalidateCache()
+            loadAlbums()
         } else {
             mediaObserverRefreshPending = true
         }
     }
     private val mediaObserver = object : ContentObserver(mediaRefreshHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
+            if (isFinishing || isDestroyed) return
             mediaObserverRefreshPending = true
             if (mainScreenResumed && refreshVisibilityDialogCounts != null) {
                 mediaRefreshHandler.removeCallbacks(visibilityCountRefreshRunnable)
@@ -175,11 +180,21 @@ class MainActivity : ComponentActivity() {
         super.onPause()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && mainScreenResumed && ::accessCoordinator.isInitialized &&
+            accessCoordinator.hasMediaLibraryAccess()) {
+            if (mediaObserverRefreshPending) scheduleMediaRefresh()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
         mediaRefreshHandler.removeCallbacks(revealExpiryRunnable)
         if (!isChangingConfigurations) TemporaryAlbumVisibility.clear()
+        revealedFolderObservers.values.forEach { it.stopWatching() }
+        revealedFolderObservers.clear()
         try {
             contentResolver.unregisterContentObserver(mediaObserver)
         } catch (_: Exception) {
@@ -688,6 +703,7 @@ class MainActivity : ComponentActivity() {
                 deferredCatalogRefreshPending = false
             } else if (!hasWindowFocus()) {
                 deferredCatalogRefreshPending = false
+                mediaObserverRefreshPending = true
             } else {
                 refreshCatalogWithWorker(includeHidden, force = false)
             }
@@ -714,11 +730,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun submitAlbumsNow(albums: List<AlbumItem>, query: String) {
+        observeRevealedFolders()
         rememberVisibleFolderKeys(albums)
         adapter.setPinnedKeys(prefs.getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty())
         adapter.setTemporarilyVisibleKeys(TemporaryAlbumVisibility.activeKeys())
         adapter.submit(albums, query)
-        refreshVisibilityDialogCounts?.invoke()
+        mergeVisibleAlbumsIntoDialog?.invoke(albums) ?: refreshVisibilityDialogCounts?.invoke()
         if (forceAlbumCoverRefreshOnNextSubmit) {
             forceAlbumCoverRefreshOnNextSubmit = false
             adapter.refreshVisibleCovers()
@@ -853,6 +870,9 @@ class MainActivity : ComponentActivity() {
     private fun showFolderVisibilityDialog() {
         val currentAlbums = adapter.visibleAlbumsSnapshot().filter { it.key != "all_media" }
         rememberVisibleFolderKeys(currentAlbums)
+        // Open before any database/filesystem recount. The updater belongs to this
+        // dialog and ignores deliveries after dismissal or replacement.
+        val updateRemembered = showFolderVisibilityDialog(currentAlbums)
         val previouslyVisibleKeys = HashSet(
             prefs.getStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet()) ?: HashSet()
         )
@@ -886,19 +906,19 @@ class MainActivity : ComponentActivity() {
             for (album in visibleCatalog) {
                 if (allowedKeys.contains(album.key)) rememberedByKey[album.key] = album
             }
-            val rememberedAlbums = AlbumCountRefresh.refresh(applicationContext, rememberedByKey.values.toList())
+            val rememberedAlbums = rememberedByKey.values.toList()
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
                 val albumsByKey = LinkedHashMap<String, AlbumItem>()
                 for (album in rememberedAlbums) albumsByKey[album.key] = album
                 val albums = albumsByKey.values.toMutableList()
                 sortAlbums(albums)
-                showFolderVisibilityDialog(albums)
+                updateRemembered(albums)
             }
         }
     }
 
-    private fun showFolderVisibilityDialog(albums: List<AlbumItem>) {
+    private fun showFolderVisibilityDialog(albums: List<AlbumItem>): (List<AlbumItem>) -> Unit {
         hiddenDirectoryMarkers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
         automaticallyHiddenKeys = AutomaticHiddenAlbums.keys(applicationContext, albums, hiddenDirectoryMarkers)
         val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
@@ -1202,8 +1222,13 @@ class MainActivity : ComponentActivity() {
                     runOnUiThread {
                         countsRefreshPending = false
                         if (!isFinishing && visibilityDialogAdapter === listAdapter) {
+                            val countedKeys = snapshot.mapTo(HashSet()) { it.key }
+                            val countsByKey = updated.associateBy { it.key }
+                            val reconciled = mutableAlbums.mapNotNull { album ->
+                                if (album.key in countedKeys) countsByKey[album.key] else album
+                            }
                             mutableAlbums.clear()
-                            mutableAlbums.addAll(updated)
+                            mutableAlbums.addAll(reconciled)
                             sortVisibilityAlbums()
                             renderAlbums()
                             if (countsRefreshAgain) {
@@ -1383,9 +1408,31 @@ class MainActivity : ComponentActivity() {
         dialog.setOnDismissListener {
             visibilityDialogAdapter = null
             refreshVisibilityDialogCounts = null
+            mergeVisibleAlbumsIntoDialog = null
             mediaRefreshHandler.removeCallbacks(visibilityCountRefreshRunnable)
         }
         Ui.showCenteredPanel(dialog, fullHeight = true)
+        // Counts are reconciled asynchronously; checkbox/pin/reveal choices are
+        // never overwritten by a late metadata delivery.
+        refreshCounts()
+        val update: (List<AlbumItem>) -> Unit = { remembered ->
+            if (dialog.isShowing && visibilityDialogAdapter === listAdapter) {
+                val existing = mutableAlbums.associateBy { it.key }
+                for (album in remembered) {
+                    if (!VirtualAlbumRules.isVirtual(album.key) && album.key !in existing) {
+                        mutableAlbums.add(album)
+                        if (!hiddenKeys.contains(album.key) && (showHiddenFolders || !isHiddenAlbum(album))) {
+                            checkedKeys.add(album.key)
+                        }
+                    }
+                }
+                sortVisibilityAlbums()
+                renderAlbums()
+                refreshCounts()
+            }
+        }
+        mergeVisibleAlbumsIntoDialog = update
+        return update
     }
 
     private fun setColumnCount(nextCount: Int) {
@@ -1443,9 +1490,9 @@ class MainActivity : ComponentActivity() {
             force = force,
             onSuccess = {
                 deferredCatalogRefreshPending = false
-                mediaObserverRefreshPending = false
                 forceAlbumCoverRefreshOnNextSubmit = force
                 if (!isFinishing) loadAlbums()
+                if (mainScreenResumed && hasWindowFocus() && mediaObserverRefreshPending) scheduleMediaRefresh()
             },
             onFailure = {
                 deferredCatalogRefreshPending = false
@@ -1499,6 +1546,28 @@ class MainActivity : ComponentActivity() {
         if (!mainScreenResumed) return
         TemporaryAlbumVisibility.nextExpiryDelay()?.let {
             mediaRefreshHandler.postDelayed(revealExpiryRunnable, it)
+        }
+    }
+
+    private fun observeRevealedFolders() {
+        val wanted = if (MediaActions.hasAllFilesAccess(this)) TemporaryAlbumVisibility.activeKeys() else emptySet()
+        val removed = revealedFolderObservers.keys.filterNot { it in wanted }
+        removed.forEach { revealedFolderObservers.remove(it)?.stopWatching() }
+        val root = Environment.getExternalStorageDirectory()
+        for (key in wanted) {
+            if (key in revealedFolderObservers || !MediaStoreRepository.isPhysicalAlbum(key)) continue
+            val directory = java.io.File(root, key)
+            if (!runCatching { directory.canonicalPath.startsWith(root.canonicalPath + java.io.File.separator) }.getOrDefault(false)) continue
+            val observer = object : android.os.FileObserver(directory.absolutePath,
+                CREATE or DELETE or MOVED_FROM or MOVED_TO or CLOSE_WRITE or ATTRIB or DELETE_SELF or MOVE_SELF) {
+                override fun onEvent(event: Int, path: String?) {
+                    mediaRefreshHandler.post {
+                        if (!isFinishing && !isDestroyed) mediaObserver.onChange(false, null)
+                    }
+                }
+            }
+            observer.startWatching()
+            revealedFolderObservers[key] = observer
         }
     }
 

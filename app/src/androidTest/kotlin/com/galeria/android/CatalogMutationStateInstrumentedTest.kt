@@ -45,6 +45,13 @@ class CatalogMutationStateInstrumentedTest {
         assertTrue(GalleryCatalogStore.isCatalogDirty(context, false))
     }
 
+    @Test fun olderScanCannotOverwriteRowsAfterANewerMutation() {
+        val revision = GalleryCatalogStore.currentMutationRevision()
+        GalleryCatalogStore.markCatalogDirty(context)
+        assertFalse(GalleryCatalogStore.writeMediaIfCurrent(context, emptyList(), false, false, revision))
+        assertTrue(GalleryCatalogStore.isCatalogDirty(context, false))
+    }
+
     @Test fun legacyDirtyFlagKeepsOtherScopePendingAfterFirstRefresh() {
         preferences.edit().putBoolean(prefix, true).commit()
         GalleryCatalogStore.clearCatalogDirty(context, false, GalleryCatalogStore.currentMutationRevision())

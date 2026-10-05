@@ -25,6 +25,8 @@ object MediaStoreRepository {
     private var cachedHiddenAtMs: Long = 0L
     private var cachedWithAllFilesAccess: Boolean = false
     private var cacheInvalidated: Boolean = false
+    @Volatile private var completedVisibleScans = 0L
+    @Volatile private var completedHiddenScans = 0L
 
     @JvmStatic
     fun loadMedia(context: Context, includeHiddenFilesystem: Boolean = false): List<MediaItem> {
@@ -65,35 +67,45 @@ object MediaStoreRepository {
         context: Context,
         includeHiddenFilesystem: Boolean = false,
         force: Boolean = false
-    ): List<MediaItem> = synchronized(scanLock) {
-        val allFilesAccess = MediaActions.hasAllFilesAccess(context)
-        val includeHidden = StorageAccessRules.includeHiddenFilesystem(includeHiddenFilesystem, allFilesAccess)
-        if (!force && !cacheInvalidated && GalleryCatalogStore.hasFreshCatalog(
-                context.applicationContext,
-                includeHidden,
-                allFilesAccess,
-                30_000L
-            )
-        ) {
-            val stored = GalleryCatalogStore.readMedia(context.applicationContext, includeHidden)
-            cacheResult(stored, includeHidden, allFilesAccess)
-            return@synchronized stored
+    ): List<MediaItem> {
+        val requestHidden = StorageAccessRules.includeHiddenFilesystem(
+            includeHiddenFilesystem, MediaActions.hasAllFilesAccess(context))
+        val completedAtRequest = if (requestHidden) completedHiddenScans else completedVisibleScans
+        return synchronized(scanLock) {
+            val allFilesAccess = MediaActions.hasAllFilesAccess(context)
+            val includeHidden = StorageAccessRules.includeHiddenFilesystem(includeHiddenFilesystem, allFilesAccess)
+            val alreadyCompleted = (if (includeHidden) completedHiddenScans else completedVisibleScans) > completedAtRequest
+            if ((!force || alreadyCompleted) && !cacheInvalidated && GalleryCatalogStore.hasFreshCatalog(
+                    context.applicationContext, includeHidden, allFilesAccess, 30_000L)) {
+                val stored = GalleryCatalogStore.readMedia(context.applicationContext, includeHidden)
+                cacheResult(stored, includeHidden, allFilesAccess)
+                stored
+            } else scanCurrentMedia(context, includeHidden, allFilesAccess)
         }
+    }
+
+    private tailrec fun scanCurrentMedia(context: Context, includeHidden: Boolean, allFilesAccess: Boolean): List<MediaItem> {
         val revision = GalleryCatalogStore.currentMutationRevision()
+        val changeToken = GalleryCatalogStore.mediaStoreChangeToken(context)
         val items = ArrayList<MediaItem>()
         loadFromFilesCollection(context, items)
         if (includeHidden) {
-            loadFromHiddenFilesystem(items, allFilesAccess)
+            loadFromHiddenFilesystem(context, items, allFilesAccess)
         }
         items.sortByDescending { it.dateAdded }
         // Remember generated-cache parents from the complete scan before any
         // screen, search, selection or media-type filter takes a smaller subset.
         AutomaticHiddenAlbums.keysForMedia(context, items,
             HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
-        GalleryCatalogStore.writeMedia(context.applicationContext, items, includeHidden, allFilesAccess)
+        if (changeToken != GalleryCatalogStore.mediaStoreChangeToken(context) ||
+            !GalleryCatalogStore.writeMediaIfCurrent(context.applicationContext, items, includeHidden, allFilesAccess, revision, changeToken)) {
+            // A targeted album refresh/mutation finished during the scan. Never
+            // overwrite its newer rows or certify the obsolete global snapshot.
+            return scanCurrentMedia(context, includeHidden, allFilesAccess)
+        }
         cacheResult(items, includeHidden, allFilesAccess)
-        GalleryCatalogStore.clearCatalogDirty(context, includeHidden, revision)
-        items
+        if (includeHidden) completedHiddenScans++ else completedVisibleScans++
+        return items
     }
 
     private fun cacheResult(items: List<MediaItem>, includeHiddenFilesystem: Boolean, allFilesAccess: Boolean) {
@@ -136,6 +148,8 @@ object MediaStoreRepository {
 
     @JvmStatic
     fun loadMediaForAlbum(context: Context, albumKey: String?, includeHiddenFilesystem: Boolean = false): List<MediaItem> {
+        // A physical album must not wait for a device-wide dirty catalog or scan.
+        if (isPhysicalAlbum(albumKey)) return queryAlbumMedia(context, albumKey!!, includeHiddenFilesystem)
         val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
         if (albumKey == VirtualAlbumRules.TRASH_KEY) {
@@ -176,7 +190,7 @@ object MediaStoreRepository {
             loadFromFilesCollection(context, directItems, albumKey)
             if (includeHidden) {
                 val hiddenItems = ArrayList<MediaItem>()
-                loadFromHiddenFilesystem(hiddenItems, allFilesAccess)
+                loadFromHiddenFilesystem(context, hiddenItems, allFilesAccess)
                 for (item in hiddenItems) {
                     if (item.albumKey == albumKey) {
                         directItems.add(item)
@@ -200,13 +214,78 @@ object MediaStoreRepository {
 
     @JvmStatic
     fun loadAlbums(context: Context, includeHiddenFilesystem: Boolean = false): List<AlbumItem> =
-        buildAlbums(loadMedia(context, includeHiddenFilesystem)).sortedByDescending { it.latestDate }
+        buildAlbums(queryOverviewMedia(context, includeHiddenFilesystem, emptySet(), includeHiddenFilesystem))
+            .sortedByDescending { it.latestDate }
+
+    internal fun isPhysicalAlbum(key: String?): Boolean =
+        !key.isNullOrEmpty() && key != "all_media" && key != "root" && !VirtualAlbumRules.isVirtual(key)
+
+    internal fun queryIndexedMedia(context: Context): List<MediaItem> =
+        ArrayList<MediaItem>().also { loadFromFilesCollection(context, it) }
+
+    /** UI reconciliation: indexed media plus only the hidden directories requested
+     * by the screen. Discovery of unknown hidden directories remains explicit. */
+    internal fun queryOverviewMedia(context: Context, includeHidden: Boolean,
+        temporarilyVisible: Set<String>, showNaturallyHidden: Boolean): List<MediaItem> {
+        val indexed = queryIndexedMedia(context)
+        if (!StorageAccessRules.includeHiddenFilesystem(includeHidden, MediaActions.hasAllFilesAccess(context))) return indexed
+        val requested = temporarilyVisible.toMutableSet()
+        if (showNaturallyHidden) {
+            requested.addAll(GalleryCatalogStore.readAlbums(context, true).map { it.key })
+        }
+        val scoped = requested.filter(::isPhysicalAlbum).associateWith { queryAlbumMedia(context, it, true) }
+        return indexed.filterNot { it.albumKey in scoped } + scoped.values.flatten()
+    }
+
+    /** Query just this directory, even when a full reconciliation is pending. */
+    internal fun queryAlbumMedia(context: Context, key: String, includeHiddenFilesystem: Boolean): List<MediaItem> {
+        val items = ArrayList<MediaItem>()
+        loadFromFilesCollection(context, items, key)
+        if (StorageAccessRules.includeHiddenFilesystem(includeHiddenFilesystem, MediaActions.hasAllFilesAccess(context))) {
+            val root = Environment.getExternalStorageDirectory()
+            val parts = key.replace('\\', '/').split('/').filter { it.isNotEmpty() }
+            if (!key.startsWith('/') && parts.none { it == "." || it == ".." }) {
+                val directory = File(root, key)
+                // Canonical containment also rejects links pointing outside storage.
+                if (runCatching { directory.canonicalPath.startsWith(root.canonicalPath + File.separator) }.getOrDefault(false)) {
+                    val known = items.mapTo(HashSet()) { dedupeKey(it.relativePath, it.name, it.size) }
+                    val durations = HiddenVideoDurationCache(context)
+                    directory.listFiles()?.forEach { file ->
+                        if (file.isFile && file.length() > 0 && isSupportedMediaFile(file)) {
+                            appendFilesystemMedia(root, file, items, known, durations)
+                        }
+                    }
+                }
+            }
+        }
+        items.sortByDescending { it.dateAdded }
+        return items
+    }
+
+    internal fun refreshAlbumMedia(context: Context, key: String, includeHidden: Boolean) {
+        val items = queryAlbumMedia(context, key, includeHidden)
+        GalleryCatalogStore.writeAlbumMedia(context, items, includeHidden, key)
+    }
 
     internal fun currentIndexedAlbumCounts(context: Context): Map<String, Int>? {
         if (MediaActions.mediaLibraryAccess(context) != MediaActions.MediaLibraryAccess.FULL) return null
-        val items = ArrayList<MediaItem>()
-        if (!loadFromFilesCollection(context, items)) return null
-        return items.groupingBy { it.albumKey.orEmpty() }.eachCount()
+        val projection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            arrayOf(MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.BUCKET_ID)
+        } else arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.BUCKET_ID)
+        return runCatching {
+            val counts = HashMap<String, Int>()
+            context.contentResolver.query(MediaStore.Files.getContentUri("external"), projection,
+                "(${MediaStore.Files.FileColumns.MEDIA_TYPE} IN (?,?) OR ${MediaStore.MediaColumns.MIME_TYPE} LIKE ? OR ${MediaStore.MediaColumns.MIME_TYPE} LIKE ?) AND ${MediaStore.MediaColumns.SIZE} > 0",
+                arrayOf("1", "3", "image/%", "video/%"), null)?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val path = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) cursor.getString(0)
+                        else pathFromData(cursor.getString(0))
+                    val key = path?.takeIf { it.isNotEmpty() } ?: cursor.getString(1).orEmpty()
+                    counts[key] = (counts[key] ?: 0) + 1
+                }
+            } ?: return null
+            counts
+        }.getOrNull()
     }
 
     @JvmStatic
@@ -353,7 +432,7 @@ object MediaStoreRepository {
         context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
             .getStringSet("favorites", emptySet()).orEmpty()
 
-    private fun loadFromHiddenFilesystem(output: MutableList<MediaItem>, allFilesAccess: Boolean) {
+    private fun loadFromHiddenFilesystem(context: Context, output: MutableList<MediaItem>, allFilesAccess: Boolean) {
         if (!allFilesAccess) {
             return
         }
@@ -365,7 +444,7 @@ object MediaStoreRepository {
         for (item in output) {
             known.add(dedupeKey(item.relativePath, item.name, item.size))
         }
-        scanDirectory(root, root, output, known, 0, false)
+        scanDirectory(root, root, output, known, 0, false, HiddenVideoDurationCache(context))
     }
 
     private fun scanDirectory(
@@ -374,7 +453,8 @@ object MediaStoreRepository {
         output: MutableList<MediaItem>,
         known: MutableSet<String>,
         depth: Int,
-        insideHiddenArea: Boolean
+        insideHiddenArea: Boolean,
+        durations: HiddenVideoDurationCache
     ) {
         if (dir == null || depth > 24 || shouldSkipDirectory(root, dir)) {
             return
@@ -383,29 +463,9 @@ object MediaStoreRepository {
         val files = dir.listFiles() ?: return
         for (file in files) {
             if (file.isDirectory) {
-                scanDirectory(root, file, output, known, depth + 1, hiddenArea)
+                scanDirectory(root, file, output, known, depth + 1, hiddenArea, durations)
             } else if (hiddenArea && file.isFile && file.length() > 0 && isSupportedMediaFile(file)) {
-                val relativePath = relativeFolder(root, file)
-                val key = dedupeKey(relativePath, file.name, file.length())
-                if (!known.add(key)) {
-                    continue
-                }
-                val albumName = cleanAlbumName(relativePath, file.parentFile?.name ?: "Galeria")
-                val mimeType = mimeFor(file)
-                output.add(
-                    MediaItem(
-                        -file.absolutePath.hashCode().toLong().absoluteValue,
-                        Uri.fromFile(file),
-                        file.name,
-                        mimeType,
-                        maxOf(1L, file.lastModified() / 1000L),
-                        file.length(),
-                        relativePath,
-                        if (relativePath.isEmpty()) file.parent else relativePath,
-                        albumName,
-                        if (mimeType.startsWith("video/")) durationForFile(file) else 0L
-                    )
-                )
+                appendFilesystemMedia(root, file, output, known, durations)
             }
         }
     }
@@ -495,6 +555,18 @@ object MediaStoreRepository {
             return "image/svg+xml"
         }
         return if (isVideoExtension(ext)) "video/*" else "image/*"
+    }
+
+    private fun appendFilesystemMedia(root: File, file: File, output: MutableList<MediaItem>,
+        known: MutableSet<String>, durations: HiddenVideoDurationCache) {
+        val path = relativeFolder(root, file)
+        if (!known.add(dedupeKey(path, file.name, file.length()))) return
+        val mime = mimeFor(file)
+        output.add(MediaItem(-file.absolutePath.hashCode().toLong().absoluteValue, Uri.fromFile(file),
+            file.name, mime, maxOf(1L, file.lastModified() / 1000L), file.length(), path,
+            if (path.isEmpty()) file.parent.orEmpty() else path,
+            cleanAlbumName(path, file.parentFile?.name ?: "Galeria"),
+            if (mime.startsWith("video/")) durations.duration(file, ::durationForFile) else 0L))
     }
 
     private fun durationForFile(file: File): Long = runCatching {

@@ -21,9 +21,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.rule.GrantPermissionRule
 import androidx.work.WorkManager
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
+import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matchers.containsString
 import org.hamcrest.Matchers.allOf
 import androidx.test.espresso.matcher.ViewMatchers.hasDescendant
@@ -45,62 +43,92 @@ class HiddenAlbumDialogInstrumentedTest {
     @Test
     fun openingDialogDoesNotRevealHiddenAlbumNeverShownBefore() {
         val context = ApplicationProvider.getApplicationContext<Context>()
+        // Dedicated test installation, as in AlbumMutationInstrumentedTest.
+        // Revocation during instrumentation would kill its process.
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(
+            "appops set ${context.packageName} MANAGE_EXTERNAL_STORAGE allow"
+        ).use { descriptor -> java.io.FileInputStream(descriptor.fileDescriptor).use { it.readBytes() } }
         WorkManager.getInstance(context).cancelAllWork().result.get()
-        val dao = GalleryDatabase.get(context).galleryDao()
         val prefs = context.getSharedPreferences("gallery_albums", Context.MODE_PRIVATE)
-        val catalogPrefs = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
-        val originalMediaStoreVersion = catalogPrefs.getString(PREF_MEDIA_STORE_VERSION_VISIBLE, null)
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
-        val originalVisible = io { dao.media(VISIBLE_SCOPE) }
-        val originalComplete = io { dao.media(COMPLETE_SCOPE) }
-        val originalVisibleState = io { dao.state(VISIBLE_SCOPE) }
-        val originalCompleteState = io { dao.state(COMPLETE_SCOPE) }
+        val suffix = System.nanoTime()
+        val cameraName = "GaleriaDialogCamera-$suffix"
+        val knownName = "GaleriaDialogKnown-$suffix"
+        val neverName = "GaleriaDialogNever-$suffix"
+        val cameraKey = "Pictures/$cameraName/"
+        val knownKey = "Pictures/.$knownName/"
+        val neverKey = "Pictures/.$neverName/"
+        val fixtureUris = mutableListOf<android.net.Uri>()
+        val hiddenFiles = mutableListOf<java.io.File>()
         val originalEverVisible = prefs.getStringSet(PREF_EVER_VISIBLE, null)?.let(::HashSet)
         val originalHidden = prefs.getStringSet(PREF_HIDDEN_KEYS, null)?.let(::HashSet)
         val originalShowHidden = prefs.getBoolean(PREF_SHOW_HIDDEN, false)
         val originalInitialRequest = prefs.getBoolean(PREF_INITIAL_REQUEST, false)
         val originalAllFilesPrompt = prefs.getBoolean(PREF_ALL_FILES_PROMPT, false)
+        val originalSort = prefs.getString("sort_mode", null)
+        val originalDescending = prefs.getBoolean("sort_desc", true)
+        val hadDescending = prefs.contains("sort_desc")
 
         try {
-            io {
-                dao.replaceMedia(
-                    VISIBLE_SCOPE,
-                    listOf(media(VISIBLE_SCOPE, "camera", "Câmera", "DCIM/Camera/", 3)),
-                    CatalogStateEntity(VISIBLE_SCOPE, System.currentTimeMillis(), allFilesAccess)
-                )
-                dao.replaceMedia(
-                    COMPLETE_SCOPE,
-                    listOf(
-                        media(COMPLETE_SCOPE, "camera", "Câmera", "DCIM/Camera/", 3),
-                        media(COMPLETE_SCOPE, "hidden-known", "Oculto conhecido", "Pictures/.known/", 2),
-                        media(COMPLETE_SCOPE, "hidden-never", "Oculto nunca exibido", "Pictures/.never/", 1)
-                    ),
-                    CatalogStateEntity(COMPLETE_SCOPE, System.currentTimeMillis(), allFilesAccess)
-                )
+            // Use real indexed media: a valid cached catalog can legitimately
+            // become stale while the preceding test's MediaStore work finishes.
+            // The privacy contract must survive that reconciliation, not depend
+            // on synthetic rows which do not exist on the device.
+            for (key in listOf(cameraKey, knownKey, neverKey)) {
+                if (key != cameraKey) {
+                    // MediaStore sanitizes dot-directory names on insertion.
+                    // Create genuinely hidden filesystem fixtures instead.
+                    val directory = java.io.File(android.os.Environment.getExternalStorageDirectory(), key)
+                    assertTrue(directory.mkdirs())
+                    hiddenFiles.add(directory)
+                    val marker = java.io.File(directory, ".nomedia")
+                    assertTrue(marker.createNewFile())
+                    hiddenFiles.add(marker)
+                    val file = java.io.File(directory, "dialog-$suffix.png")
+                    hiddenFiles.add(file)
+                    file.outputStream().use(::writeFixtureImage)
+                    assertTrue(file.setLastModified(System.currentTimeMillis() + 3_600_000L))
+                    continue
+                }
+                val uri = requireNotNull(context.contentResolver.insert(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    ContentValues().apply {
+                        put(MediaStore.Images.Media.DISPLAY_NAME, "dialog-$suffix.png")
+                        put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                        put(MediaStore.Images.Media.RELATIVE_PATH, key)
+                        put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000 + 3600)
+                        put(MediaStore.Images.Media.IS_PENDING, 1)
+                    }
+                ))
+                fixtureUris.add(uri)
+                requireNotNull(context.contentResolver.openOutputStream(uri)).use(::writeFixtureImage)
+                context.contentResolver.update(uri, ContentValues().apply {
+                    put(MediaStore.Images.Media.IS_PENDING, 0)
+                }, null, null)
             }
-            catalogPrefs.edit()
-                .putString(
-                    PREF_MEDIA_STORE_VERSION_VISIBLE,
-                    MediaStore.getVersion(context, MediaStore.VOLUME_EXTERNAL)
-                )
-                .commit()
+            val actualMedia = MediaStoreRepository.refreshMedia(context, force = true)
+            val hiddenMedia = listOf(knownKey, neverKey).flatMap { MediaStoreRepository.queryAlbumMedia(context, it, true) }
+            GalleryCatalogStore.writeMedia(context, actualMedia.filterNot { it.albumKey in setOf(knownKey, neverKey) } + hiddenMedia,
+                true, allFilesAccess)
             prefs.edit()
                 .putBoolean(PREF_INITIAL_REQUEST, true)
                 .putBoolean(PREF_ALL_FILES_PROMPT, true)
                 .putBoolean(PREF_SHOW_HIDDEN, false)
-                .putStringSet(PREF_HIDDEN_KEYS, setOf("hidden-known", "hidden-never"))
-                .putStringSet(PREF_EVER_VISIBLE, setOf("hidden-known"))
+                .putString("sort_mode", "modified")
+                .putBoolean("sort_desc", true)
+                .putStringSet(PREF_HIDDEN_KEYS, setOf(knownKey, neverKey))
+                .putStringSet(PREF_EVER_VISIBLE, setOf(knownKey))
                 .commit()
             GalleryCatalogStore.clearCatalogDirty(context)
 
             ActivityScenario.launch(MainActivity::class.java).use {
-                waitUntilDisplayedContaining("Câmera")
+                waitUntilDisplayedContaining(cameraName)
                 onView(withContentDescription("Mais opções")).perform(click())
                 waitUntilDisplayed("Exibir/ocultar pastas")
                 onView(withText("Exibir ocultos")).check(doesNotExist())
                 onView(withText("Exibir/ocultar pastas")).perform(clickClickableAncestor())
 
-                waitUntilDialogDisplayedContaining("Oculto conhecido")
+                waitUntilDialogDisplayedContaining(knownName)
                 onView(withText("Exibir/ocultar pastas")).inRoot(isDialog()).check { view, noViewFoundException ->
                     if (noViewFoundException != null) throw noViewFoundException
                     val root = view.rootView
@@ -118,8 +146,8 @@ class HiddenAlbumDialogInstrumentedTest {
                         kotlin.math.abs(location[0] - rightGap) <= Ui.dp(view.context, 8)
                     )
                 }
-                onView(withText(containsString("Câmera"))).inRoot(isDialog()).check(matches(isDisplayed()))
-                onView(withText(containsString("Oculto nunca exibido"))).inRoot(isDialog()).check(doesNotExist())
+                onView(withText(containsString(cameraName))).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText(containsString(neverName))).inRoot(isDialog()).check(doesNotExist())
                 onView(withText("Carregar ocultos")).inRoot(isDialog()).check(matches(isDisplayed()))
                 onView(withText("OK")).inRoot(isDialog()).check { view, exception ->
                     if (exception != null) throw exception
@@ -166,7 +194,7 @@ class HiddenAlbumDialogInstrumentedTest {
                 val revealKey = MediaStoreRepository.refreshMedia(context, force = true)
                     .first { MediaIdentityRules.sameUri(it.uri.toString(), revealUri.toString()) }.albumKey
                 prefs.edit()
-                    .putStringSet(PREF_HIDDEN_KEYS, setOf(revealKey, "hidden-known", "hidden-never"))
+                    .putStringSet(PREF_HIDDEN_KEYS, setOf(revealKey, knownKey, neverKey))
                     .putStringSet(PREF_EVER_VISIBLE,
                         prefs.getStringSet(PREF_EVER_VISIBLE, emptySet()).orEmpty() + revealKey)
                     .commit()
@@ -217,49 +245,29 @@ class HiddenAlbumDialogInstrumentedTest {
                 GalleryCatalogStore.markCatalogDirty(context)
             }
         } finally {
-            io {
-                dao.replaceMedia(
-                    VISIBLE_SCOPE,
-                    originalVisible,
-                    originalVisibleState ?: CatalogStateEntity(VISIBLE_SCOPE, System.currentTimeMillis(), false)
-                )
-                dao.replaceMedia(
-                    COMPLETE_SCOPE,
-                    originalComplete,
-                    originalCompleteState ?: CatalogStateEntity(COMPLETE_SCOPE, System.currentTimeMillis(), true)
-                )
-            }
+            fixtureUris.forEach { context.contentResolver.delete(it, null, null) }
+            hiddenFiles.asReversed().forEach { assertTrue("Remover apenas a fixture própria: $it", it.delete()) }
             val editor = prefs.edit()
                 .putBoolean(PREF_SHOW_HIDDEN, originalShowHidden)
                 .putBoolean(PREF_INITIAL_REQUEST, originalInitialRequest)
                 .putBoolean(PREF_ALL_FILES_PROMPT, originalAllFilesPrompt)
+            if (originalSort == null) editor.remove("sort_mode") else editor.putString("sort_mode", originalSort)
+            if (hadDescending) editor.putBoolean("sort_desc", originalDescending) else editor.remove("sort_desc")
             if (originalEverVisible == null) editor.remove(PREF_EVER_VISIBLE) else editor.putStringSet(PREF_EVER_VISIBLE, originalEverVisible)
             if (originalHidden == null) editor.remove(PREF_HIDDEN_KEYS) else editor.putStringSet(PREF_HIDDEN_KEYS, originalHidden)
             editor.commit()
-            if (originalMediaStoreVersion == null) {
-                catalogPrefs.edit().remove(PREF_MEDIA_STORE_VERSION_VISIBLE).commit()
-            } else {
-                catalogPrefs.edit().putString(PREF_MEDIA_STORE_VERSION_VISIBLE, originalMediaStoreVersion).commit()
-            }
             MediaStoreRepository.invalidateCache()
             GalleryCatalogStore.markCatalogDirty(context)
         }
     }
 
-    private fun media(scope: String, key: String, name: String, path: String, date: Long) = CachedMediaEntity(
-        scope = scope,
-        uri = "content://hidden-dialog/$scope/$key",
-        mediaId = date,
-        name = "$key.jpg",
-        mimeType = "image/jpeg",
-        dateAdded = date,
-        size = 100,
-        relativePath = path,
-        albumKey = key,
-        albumName = name
-    )
-
-    private fun <T> io(block: () -> T): T = runBlocking { withContext(Dispatchers.IO) { block() } }
+    private fun writeFixtureImage(stream: java.io.OutputStream) {
+        val bitmap = android.graphics.Bitmap.createBitmap(64, 64, android.graphics.Bitmap.Config.ARGB_8888)
+        try {
+            bitmap.eraseColor(android.graphics.Color.BLUE)
+            assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream))
+        } finally { bitmap.recycle() }
+    }
 
     private fun waitUntilDisplayed(text: String) = waitForView {
         onView(withText(text)).check(matches(isDisplayed()))
@@ -289,14 +297,10 @@ class HiddenAlbumDialogInstrumentedTest {
     }
 
     private companion object {
-        const val VISIBLE_SCOPE = "visible"
-        const val COMPLETE_SCOPE = "complete"
         const val PREF_EVER_VISIBLE = "ever_visible_folder_keys"
         const val PREF_HIDDEN_KEYS = "hidden_folder_keys"
         const val PREF_SHOW_HIDDEN = "show_hidden_folders"
         const val PREF_INITIAL_REQUEST = "initial_all_files_requested"
         const val PREF_ALL_FILES_PROMPT = "all_files_prompted"
-        const val CATALOG_META_PREFS = "gallery_catalog_meta"
-        const val PREF_MEDIA_STORE_VERSION_VISIBLE = "media_store_version_visible"
     }
 }

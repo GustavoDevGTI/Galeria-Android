@@ -49,6 +49,9 @@ class AlbumCoverInstrumentedTest {
         val visibleWasDirty = GalleryCatalogStore.isCatalogDirty(context, false)
         val completeWasDirty = GalleryCatalogStore.isCatalogDirty(context, true)
         val dao = GalleryDatabase.get(context).galleryDao()
+        val catalogPrefs = context.getSharedPreferences("gallery_catalog_meta", Context.MODE_PRIVATE)
+        val previousGeneration = catalogPrefs.getString("media_store_generation_visible", null)
+        val previousModel = catalogPrefs.getInt("catalog_model_version_visible", 0)
         val originalMedia = dao.media("visible")
         val originalState = dao.state("visible")
         val alpha = "content://media/external/file/900001"
@@ -58,7 +61,12 @@ class AlbumCoverInstrumentedTest {
         )
         try {
             dao.replaceMedia("visible", listOf(entity(zeta, "zeta.jpg", 3L), entity(alpha, "alpha.jpg", 1L)),
-                CatalogStateEntity("visible", System.currentTimeMillis(), false))
+                CatalogStateEntity("visible", System.currentTimeMillis(), MediaActions.hasAllFilesAccess(context)))
+            // The fixture deliberately represents a valid cached catalog. Stamp
+            // all freshness inputs; ordinary MediaStore insertions are covered
+            // separately by reopeningDetectsMediaChangesWithoutADirtyFlagOrManualRefresh.
+            catalogPrefs.edit().putString("media_store_generation_visible", GalleryCatalogStore.mediaStoreChangeToken(context))
+                .putInt("catalog_model_version_visible", 3).commit()
             GalleryCatalogStore.clearCatalogDirty(context, false)
             prefs.edit().putString(sortKey, MediaSortRules.SORT_NAME).putBoolean(directionKey, false)
                 .remove(manualKey).commit()
@@ -86,6 +94,11 @@ class AlbumCoverInstrumentedTest {
             prefs.edit().putString(manualKey, zeta).commit()
             assertEquals(zeta, cover())
         } finally {
+            catalogPrefs.edit().apply {
+                if (previousGeneration == null) remove("media_store_generation_visible")
+                else putString("media_store_generation_visible", previousGeneration)
+                putInt("catalog_model_version_visible", previousModel)
+            }.commit()
             dao.replaceMedia("visible", originalMedia,
                 originalState ?: CatalogStateEntity("visible", System.currentTimeMillis(), false))
             prefs.edit().apply {

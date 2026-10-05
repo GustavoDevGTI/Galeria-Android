@@ -10,6 +10,10 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executors
+import android.os.Handler
+import android.os.Looper
+import androidx.work.WorkInfo
 
 class MediaScanWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result = try {
@@ -31,9 +35,31 @@ class MediaScanWorker(context: Context, params: WorkerParameters) : Worker(conte
 }
 
 object MediaScanScheduler {
-    fun enqueue(context: Context, includeHidden: Boolean, replace: Boolean): UUID {
+    private val schedulingExecutor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    fun enqueue(context: Context, includeHidden: Boolean, replace: Boolean,
+        onEnqueued: (UUID) -> Unit, onFailure: () -> Unit) {
+        val app = context.applicationContext
+        schedulingExecutor.execute {
+            try {
+                val manager = WorkManager.getInstance(app)
+                val name = if (includeHidden) "gallery_complete_scan" else "gallery_visible_scan"
+                // Resolve KEEP to the actual existing ID, never observe an ID
+                // WorkManager discarded. Do not cancel a scan already running.
+                val active = manager.getWorkInfosForUniqueWork(name).get()
+                    .firstOrNull { !it.state.isFinished }
+                val id = if (active != null && (!replace || active.state == WorkInfo.State.RUNNING)) active.id
+                    else createRequest(manager, name, includeHidden, replace)
+                mainHandler.post { onEnqueued(id) }
+            } catch (_: Exception) {
+                mainHandler.post { onFailure() }
+            }
+        }
+    }
+
+    private fun createRequest(manager: WorkManager, name: String, includeHidden: Boolean, replace: Boolean): UUID {
         val requestBuilder = OneTimeWorkRequestBuilder<MediaScanWorker>()
-            .setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
             .setInputData(
                 workDataOf(
                     MediaScanWorker.KEY_INCLUDE_HIDDEN to includeHidden,
@@ -42,15 +68,16 @@ object MediaScanScheduler {
             )
         if (!replace) {
             requestBuilder
+                .setConstraints(Constraints.Builder().setRequiresStorageNotLow(true).build())
                 .addTag(MAINTENANCE_SCAN_TAG)
                 .setInitialDelay(MAINTENANCE_SCAN_DELAY_SECONDS, TimeUnit.SECONDS)
         }
         val request = requestBuilder.build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            if (includeHidden) "gallery_complete_scan" else "gallery_visible_scan",
+        manager.enqueueUniqueWork(
+            name,
             if (replace) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
             request
-        )
+        ).result.get()
         return request.id
     }
 

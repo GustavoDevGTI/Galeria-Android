@@ -123,6 +123,8 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
+A versão 0.8.64 otimiza o carregamento dos álbuns e do painel de ocultos, separa consultas urgentes das varreduras gerais e melhora a atualização automática do catálogo. Com os metadados finais da versão, passaram **227 unitários e 100 instrumentados**, sem falhas/ignorados e com lint sem erros (126 avisos). O APK release otimizado foi compilado e teve versão, integridade e assinatura permanente conferidas. Consulte [as mudanças e os testes](docs/OTIMIZACAO-CATALOGO-2026-10-05.md), [as notas da release](docs/RELEASE-0.8.64.md) e o [guia de validação por área](docs/TESTES-VALIDACAO.md).
+
 A versão 0.8.63 reúne o isolamento dos controladores do visualizador, a validação por área e as [correções de álbuns, lixeira e contagem de ocultos](docs/CORRECOES-ALBUNS-2026-10-02.md). A validação final passou em **227 unitários e 92 instrumentados**, com zero ignorados e lint sem erros (126 avisos). O APK release foi compilado com otimização e teve versão, integridade e assinatura permanente conferidas; detalhes nas [notas da release](docs/RELEASE-0.8.63.md). Veja também o [guia de validação por área](docs/TESTES-VALIDACAO.md).
 
 A base da versão 0.8.62 passou em **106 testes unitários, 87 testes de interface no emulador API 36 e três repetições extras da classe de navegação (15 verificações)**. O lint não apresentou erros (125 avisos existentes). Nenhuma função, asserção ou teste foi removido para obter aprovação. Consulte [causas, correções e evidências](docs/CORRECOES-VALIDACAO-2026-10-01.md). A validação em aparelho físico e com codecs/formatos reais continua necessária. O módulo de desempenho contém outros 4 casos (3 macrobenchmarks e 1 gerador de perfil).
@@ -380,6 +382,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.61`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.61) | 01/10/2026 | Correção de transições de mídia, faixa de vídeo contínua sob demanda, rotação, OCR, ocultos e resposta visual dos controles |
 | [`v0.8.62`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.62) | 01/10/2026 | Giro sem EXIF prévio, OCR detalhado mais rápido, abertura segura do editor e correção das sete falhas de validação |
 | [`v0.8.63`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.63) | 02/10/2026 | Isolamento dos controladores, validação por área, navegação ao esvaziar álbuns, opção de lixeira, contagem de ocultos e ícones |
+| [`v0.8.64`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.64) | 05/10/2026 | Abertura imediata de ocultos, atualização automática, carregamento local do álbum e reaproveitamento de metadados |
 
 ## Relatório comparativo de desempenho
 
@@ -395,7 +398,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.63](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.63/Galeria-Android-versao-0.8.63.apk)
+[Baixar Galeria Android - versão 0.8.64](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.64/Galeria-Android-versao-0.8.64.apk)
 
 Build padrão do Gradle:
 
@@ -406,10 +409,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado como anexo no GitHub Releases (os APKs históricos na raiz permanecem preservados):
 
 ```text
-Galeria-Android-versao-0.8.63.apk
+Galeria-Android-versao-0.8.64.apk
 ```
 
-O APK 0.8.63 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.8.64 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de entrega
 

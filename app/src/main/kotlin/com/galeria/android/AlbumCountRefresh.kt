@@ -15,12 +15,11 @@ internal object AlbumCountRefresh {
             val hidden = AlbumRules.isHidden(album.path, album.key) || markers.containsNomedia(album.path)
             // A legacy bucket ID is not necessarily a path. Don't associate it with
             // a directory unless the catalog actually identifies it by that path.
-            val diskCount = if (album.key == album.path && MediaActions.hasAllFilesAccess(context)) {
-                MediaOperationNavigation.mediaCount(File(root, album.path))
-            } else null
             val count = if (!hidden && album.key == album.path && indexedCounts != null) {
                 indexedCounts[album.key] ?: 0
-            } else diskCount ?: album.count // Inaccessible metadata is unknown, never assumed empty.
+            } else if (album.key == album.path && MediaActions.hasAllFilesAccess(context)) {
+                MediaOperationNavigation.mediaCount(File(root, album.path)) ?: album.count
+            } else album.count // Inaccessible metadata is unknown, never assumed empty.
             if (count == 0) null else AlbumItem(album.key, album.name, count, album.cover,
                 album.latestDate, album.firstDate, album.totalSize, album.path)
         }

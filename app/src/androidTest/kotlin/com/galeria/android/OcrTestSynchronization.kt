@@ -39,3 +39,20 @@ internal fun awaitOcrWorkerIdle() {
     check(drained.await(60, TimeUnit.SECONDS)) { "A fila de OCR não terminou em 60 s." }
     InstrumentationRegistry.getInstrumentation().waitForIdleSync()
 }
+
+/** The editor exposes a real in-flight flag. Wait for its callback, then require
+ * the copy dialog/content in the test; a failed recognition still fails. */
+internal fun awaitEditorOcrIdle(scenario: ActivityScenario<ImageEditActivity>) {
+    val running = ImageEditActivity::class.java.getDeclaredField("ocrRunning").apply { isAccessible = true }
+    val deadline = SystemClock.uptimeMillis() + 60_000L
+    do {
+        var idle = false
+        scenario.onActivity { idle = !running.getBoolean(it) }
+        if (idle) {
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            return
+        }
+        SystemClock.sleep(50L)
+    } while (SystemClock.uptimeMillis() < deadline)
+    throw AssertionError("O pedido real de OCR do editor não concluiu em 60 s.")
+}

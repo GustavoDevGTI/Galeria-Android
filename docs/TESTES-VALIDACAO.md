@@ -38,10 +38,10 @@ O caminho por área executa todos os unitários, pois as regras são rápidas e 
 | ImageEditing | Cortar/girar/editor, menu, OCR no editor e Motion Photos | 10 |
 | VideoEditing | Corte de vídeo, ações e preservação das trilhas | 3 |
 | Editing | União de ImageEditing e VideoEditing | 13 |
-| Albums | Pinça, seleção, fast scroll, ordenação, mutações e coleções | 18 |
-| Catalog | Ocultos, catálogo, banco/migração, arquivos, capas e thumbnails | 28 |
+| Albums | Pinça, seleção, fast scroll, ordenação, mutações e coleções | 25 |
+| Catalog | Ocultos, catálogo, banco/migração, arquivos, capas e thumbnails | 36 |
 | Appearance | Feedback, submenus, configurações, tema, HUD, metadados, cabeçalho e tela principal | 15 |
-| All | Descoberta de todos os casos de interface, sem filtro por área | 92 |
+| All | Descoberta de todos os casos de interface, sem filtro por área | 100 |
 
 Os grupos podem se sobrepor. Ao combinar áreas, uma classe inteira substitui seleções de seus métodos, evitando executar o mesmo caso duas vezes. Os totais são calculados dos fontes atuais e conferidos com o resultado instrumentado; não ficam fixos nessa tabela. Para novos testes parametrizados ou outra linguagem/estrutura de fontes, adapte e valide a descoberta antes de usá-la: atualmente ela conta `@Test` em arquivos Kotlin da suíte existente, sem parametrização.
 
@@ -56,7 +56,9 @@ Os grupos podem se sobrepor. Ao combinar áreas, uma classe inteira substitui se
 
 Três testes instrumentados foram migrados, não eliminados: os dois cálculos de invalidação do catálogo estão em `CatalogFingerprintRulesTest`, e a escolha automática/manual da capa está em `AlbumCoverSelectionTest`. A base passou de 222 unitários + 92 instrumentados para **225 + 89**, mantendo os mesmos 314 casos do app. Banco, SharedPreferences, MediaStore e interface continuam com integração Android. Os testes do estado dirty do catálogo foram mantidos porque verificam também a persistência real, não apenas aritmética.
 
-As correções seguintes de mutações/ocultos acrescentam dois casos de regras de pasta vazia e três integrações: configuração de exclusão definitiva sem apagar lixo anterior, retorno à lista após excluir o último item e contagem atualizada no painel de ocultos após uma mudança real no MediaStore. A base atual é **227 unitários + 92 instrumentados**. O teste existente de mover tudo também mantém documento/subpasta na origem para verificar que somente as mídias daquele álbum determinam o redirecionamento. Nenhuma cobertura anterior foi removida para acomodar esses casos.
+As correções seguintes de mutações/ocultos acrescentaram dois casos de regras de pasta vazia e três integrações: configuração de exclusão definitiva sem apagar lixo anterior, retorno à lista após excluir o último item e contagem atualizada no painel de ocultos após uma mudança real no MediaStore. A base dessa etapa era **227 unitários + 92 instrumentados**. O teste existente de mover tudo também mantém documento/subpasta na origem para verificar que somente as mídias daquele álbum determinam o redirecionamento. Nenhuma cobertura anterior foi removida para acomodar esses casos.
+
+A otimização de 05/10 acrescenta oito integrações, chegando a **227 unitários + 100 instrumentados**. Elas verificam independência de filas/varreduras globais, atualização automática e retorno de foco, geração do MediaStore após reabertura, cache de duração, agendamento único e rejeição de gravação obsoleta. O teste do painel também exige que álbuns entregues posteriormente entrem no submenu já aberto. Veja [a descrição da otimização](OTIMIZACAO-CATALOGO-2026-10-05.md).
 
 O teste isolado do gesto da timeline usa uma Activity vazia da variante **debug**, sem abrir o visualizador/player. Essa Activity não é compilada no release. O teste de trilhas usa dois áudios e duas legendas em arquivos privados, verifica a seleção ativa, desativação/reativação da legenda e restauração num novo ExoPlayer. Não depende de inserir/remover mídia no catálogo. Isso verifica seleção real de trilhas, não a qualidade sonora ou todos os codecs de fabricantes.
 

@@ -71,11 +71,16 @@ class AlbumFastScrollInstrumentedTest {
         val originalColumns = prefs.getInt(PREF_GRID_COLUMNS, 0)
         val hadColumns = prefs.contains(PREF_GRID_COLUMNS)
         val originalMediaStoreVersion = catalogPrefs.getString(PREF_MEDIA_STORE_VERSION_VISIBLE, null)
+        val originalGeneration = catalogPrefs.getString("media_store_generation_visible", null)
+        val originalModel = catalogPrefs.getInt("catalog_model_version_visible", 0)
         val visibleWasDirty = GalleryCatalogStore.isCatalogDirty(context, false)
         val completeWasDirty = GalleryCatalogStore.isCatalogDirty(context, true)
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
 
         try {
+            // Drain any already-running scan before installing the large cached
+            // fixture. This case exercises grid/scrolling, not real-device indexing.
+            MediaStoreRepository.refreshMedia(context, force = true)
             io {
                 dao.replaceMedia(
                     VISIBLE_SCOPE,
@@ -85,6 +90,8 @@ class AlbumFastScrollInstrumentedTest {
             }
             GalleryCatalogStore.clearCatalogDirty(context, false)
             catalogPrefs.edit()
+                .putInt("catalog_model_version_visible", 3)
+                .putString("media_store_generation_visible", GalleryCatalogStore.mediaStoreChangeToken(context))
                 .putString(
                     PREF_MEDIA_STORE_VERSION_VISIBLE,
                     MediaStore.getVersion(context, MediaStore.VOLUME_EXTERNAL)
@@ -96,6 +103,8 @@ class AlbumFastScrollInstrumentedTest {
                 .putString("album_group_mode_$optionSuffix", "none")
                 .commit()
             MediaStoreRepository.invalidateCache()
+            assertTrue("O catálogo sintético deve estar válido antes de abrir a grade",
+                io { GalleryCatalogStore.hasFreshCatalog(context, false, allFilesAccess, 180_000L) })
 
             val intent = Intent(context, AlbumMediaActivity::class.java).apply {
                 putExtra("album_key", albumKey)
@@ -144,6 +153,11 @@ class AlbumFastScrollInstrumentedTest {
                 }
             }
         } finally {
+            catalogPrefs.edit().apply {
+                putInt("catalog_model_version_visible", originalModel)
+                if (originalGeneration == null) remove("media_store_generation_visible")
+                else putString("media_store_generation_visible", originalGeneration)
+            }.commit()
             io {
                 dao.replaceMedia(
                     VISIBLE_SCOPE,

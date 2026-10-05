@@ -100,11 +100,13 @@ class AlbumMediaActivity : ComponentActivity() {
     private var pendingPagingData: PagingData<MediaItem>? = null
     private var pendingMediaRefresh = false
     private var mediaRefreshScheduled = false
+    private var albumScreenResumed = false
     private var gridPoolWarmupRemaining = 0
     private var warmedGridPoolViewType = -1
     private var firstResume = true
     private val completedRemovalUris = hashSetOf<String>()
     private var pendingDeletePermanent = false
+    private var folderObserver: android.os.FileObserver? = null
     private val createdAtElapsedRealtime = SystemClock.elapsedRealtime()
     private val searchHandler = Handler(Looper.getMainLooper())
     private val searchReload = Runnable {
@@ -113,7 +115,11 @@ class AlbumMediaActivity : ComponentActivity() {
     private val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val mediaRefreshRunnable = Runnable {
         mediaRefreshScheduled = false
-        if (!isFinishing) {
+        if (!isFinishing && !isDestroyed) {
+            if (!albumScreenResumed) {
+                pendingMediaRefresh = true
+                return@Runnable
+            }
             if (::grid.isInitialized && grid.scrollState != RecyclerView.SCROLL_STATE_IDLE) {
                 pendingMediaRefresh = true
             } else {
@@ -143,7 +149,8 @@ class AlbumMediaActivity : ComponentActivity() {
     }
     private val mediaObserver = object : ContentObserver(mediaRefreshHandler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
-            scheduleMediaRefresh()
+            if (isFinishing || isDestroyed) return
+            if (albumScreenResumed) scheduleMediaRefresh() else pendingMediaRefresh = true
         }
     }
 
@@ -165,23 +172,43 @@ class AlbumMediaActivity : ComponentActivity() {
             override fun handleOnBackPressed() = handleToolbarBack()
         })
         registerMediaObserver()
+        if (MediaStoreRepository.isPhysicalAlbum(albumKey) && MediaActions.hasAllFilesAccess(this)) {
+            val storage = Environment.getExternalStorageDirectory()
+            val directory = java.io.File(storage, albumKey!!)
+            if (runCatching { directory.canonicalPath.startsWith(storage.canonicalPath + java.io.File.separator) }.getOrDefault(false)) {
+                folderObserver = object : android.os.FileObserver(directory.absolutePath,
+                    CREATE or DELETE or MOVED_FROM or MOVED_TO or CLOSE_WRITE or ATTRIB or DELETE_SELF or MOVE_SELF) {
+                    override fun onEvent(event: Int, path: String?) {
+                        mediaRefreshHandler.post { if (!isFinishing && !isDestroyed) scheduleMediaRefresh() }
+                    }
+                }.also { it.startWatching() }
+            }
+        }
         mediaRefreshHandler.postDelayed(initialMediaLoad, INITIAL_MEDIA_DELAY_MS)
     }
 
     override fun onResume() {
         super.onResume()
+        albumScreenResumed = true
         Ui.applySystemBars(this)
         if (firstResume) {
             firstResume = false
+            if (pendingMediaRefresh) scheduleMediaRefresh()
             return
         }
         if (::adapter.isInitialized) {
+            if (pendingMediaRefresh) {
+                GalleryCatalogStore.markCatalogDirty(applicationContext)
+                MediaStoreRepository.invalidateCache()
+                pendingMediaRefresh = false
+            }
             adapter.refreshChangedThumbnails()
             loadMedia(true)
         }
     }
 
     override fun onDestroy() {
+        folderObserver?.stopWatching()
         searchHandler.removeCallbacks(searchReload)
         if (::grid.isInitialized) grid.removeCallbacks(gridPoolWarmup)
         if (::grid.isInitialized) grid.removeCallbacks(finishFastScrollPreview)
@@ -196,7 +223,21 @@ class AlbumMediaActivity : ComponentActivity() {
         selectionCoordinator.close()
     }
 
+    override fun onPause() {
+        albumScreenResumed = false
+        if (mediaRefreshScheduled) pendingMediaRefresh = true
+        mediaRefreshScheduled = false
+        mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
+        super.onPause()
+    }
+
     private fun refreshCatalogWithWorker() {
+        if (MediaStoreRepository.isPhysicalAlbum(albumKey)) {
+            GalleryCatalogStore.markCatalogDirty(applicationContext)
+            MediaStoreRepository.invalidateCache()
+            loadMedia(true)
+            return
+        }
         catalogController.refreshCatalog(this, shouldIncludeHiddenFilesystem()) { succeeded ->
             if (isFinishing || isDestroyed) return@refreshCatalog
             if (succeeded) {

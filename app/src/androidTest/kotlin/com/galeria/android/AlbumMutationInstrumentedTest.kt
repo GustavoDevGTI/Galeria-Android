@@ -228,6 +228,190 @@ class AlbumMutationInstrumentedTest {
 
     private fun prepareCatalog() = io { MediaStoreRepository.refreshMedia(context, false, force = true) }
 
+    @Test fun physicalAlbumLoadsWhileGlobalScanIsBlockedAndCatalogIsDirty() {
+        insert(source, "scoped.png")
+        insert(target, "unrelated.png")
+        prepareCatalog()
+        GalleryCatalogStore.markCatalogDirty(context)
+        val lock = requireNotNull(MediaStoreRepository::class.java.getDeclaredField("scanLock").apply { isAccessible = true }.get(null))
+        val held = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val blocker = Thread {
+            synchronized(lock) {
+                held.countDown()
+                release.await(20, java.util.concurrent.TimeUnit.SECONDS)
+            }
+        }.apply { start() }
+        try {
+            assertTrue(held.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            launchAlbum().use { scenario ->
+                // This is a dependency contract, not an emulator speed benchmark:
+                // the global scan lock is intentionally held until after loading.
+                waitForCount(scenario, 1)
+                scenario.onActivity { assertEquals("scoped.png", adapter(it).getItem(0).name) }
+                assertTrue("Um álbum não pode certificar o catálogo inteiro", GalleryCatalogStore.isCatalogDirty(context, false))
+                assertEquals(1, io { GalleryCatalogStore.readAlbumMedia(context, false, target) }.size)
+            }
+        } finally {
+            release.countDown()
+            blocker.join(5000)
+        }
+    }
+
+    @Test fun visibilityDialogOpensBeforeItsMetadataExecutorCanRun() {
+        insert(source, "dialog.png")
+        prepareCatalog()
+        val release = java.util.concurrent.CountDownLatch(1)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            try {
+                scenario.onActivity { activity ->
+                    val executor = activity.javaClass.getDeclaredField("mediaLoader").apply { isAccessible = true }
+                        .get(activity) as java.util.concurrent.ExecutorService
+                    executor.execute { release.await(20, java.util.concurrent.TimeUnit.SECONDS) }
+                    invoke(activity, "showFolderVisibilityDialog", emptyArray())
+                    assertNotNull("O painel abre na própria ação, antes de consultas/recontagem",
+                        activity.javaClass.getDeclaredField("visibilityDialogAdapter").apply { isAccessible = true }.get(activity))
+                }
+                // New physical album did not exist in the initial main delivery.
+                insert(target, "late-dialog.png")
+                scenario.onActivity { activity ->
+                    // A main-screen delivery arriving after opening the panel must
+                    // populate it too, without reopening or waiting for this executor.
+                    invoke(activity, "submitAlbumsNow", arrayOf(List::class.java, String::class.java),
+                        listOf(AlbumItem(target, "Novo álbum carregado", 1, null, 0, 0, 0, target)), "")
+                    val rows = activity.javaClass.getDeclaredField("visibilityDialogAdapter")
+                        .apply { isAccessible = true }.get(activity) as android.widget.BaseAdapter
+                    assertTrue("O álbum novo entra no painel já aberto, mesmo fora da viewport",
+                        (0 until rows.count).any { (rows.getItem(it) as AlbumItem).key == target })
+                }
+                onView(withText(R.string.main_folder_visibility)).inRoot(isDialog()).check { view, error ->
+                    if (error != null) throw error
+                    assertNotNull(view)
+                }
+            } finally { release.countDown() }
+        }
+    }
+
+    @Test fun hiddenVideoDurationIsPersistentAndInvalidatedWhenFileChanges() {
+        val file = java.io.File(context.cacheDir, "duration-$suffix.mp4").apply { writeBytes(byteArrayOf(1, 2)) }
+        val metadata = context.getSharedPreferences("hidden_video_durations", Context.MODE_PRIVATE)
+        var extractions = 0
+        try {
+            val extract: (java.io.File) -> Long = { extractions++; 7000L }
+            assertEquals(7000L, HiddenVideoDurationCache(context).duration(file, extract))
+            assertEquals(7000L, HiddenVideoDurationCache(context).duration(file, extract))
+            assertEquals("Outro cache/processo reaproveita metadados persistidos", 1, extractions)
+            file.appendBytes(byteArrayOf(3))
+            assertEquals(7000L, HiddenVideoDurationCache(context).duration(file, extract))
+            assertEquals(2, extractions)
+        } finally {
+            metadata.edit().remove(file.absolutePath).commit()
+            file.delete()
+        }
+    }
+
+    @Test fun automaticRefreshResumesWhenDialogReturnsWindowFocus() {
+        insert(source, "initial.png")
+        prepareCatalog()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitUntil { mainAlbum(scenario, source) != null }
+            var dialog: android.app.AlertDialog? = null
+            scenario.onActivity { activity ->
+                dialog = Ui.showConfirmationDialog(activity, "Teste de foco", "Teste", "OK") {}
+            }
+            waitUntil {
+                var lostFocus = false
+                scenario.onActivity { lostFocus = !it.hasWindowFocus() }
+                lostFocus
+            }
+            insert(target, "created-with-dialog-open.png")
+            waitUntil {
+                var pending = false
+                scenario.onActivity { activity ->
+                    pending = activity.javaClass.getDeclaredField("mediaObserverRefreshPending").apply { isAccessible = true }
+                        .getBoolean(activity)
+                }
+                pending
+            }
+            scenario.onActivity { dialog!!.dismiss() }
+            waitUntil { mainAlbum(scenario, target)?.count == 1 }
+        }
+    }
+
+    @Test fun revealedNomediaAlbumUpdatesFromFilesystemWithoutManualRefresh() {
+        val key = "Pictures/.watch-$suffix/"
+        val directory = java.io.File(Environment.getExternalStorageDirectory(), key).apply { mkdirs() }
+        val marker = java.io.File(directory, ".nomedia").apply { createNewFile() }
+        val first = java.io.File(directory, "first.png").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        val second = java.io.File(directory, "second.png")
+        auxiliaryFiles += listOf(directory, marker, first, second)
+        val oldHidden = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty().toSet()
+        prefs.edit().putStringSet("hidden_folder_keys", oldHidden + key).commit()
+        try {
+            prepareCatalog()
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    TemporaryAlbumVisibility.toggle(key, true)
+                    invoke(activity, "loadAlbums", emptyArray())
+                }
+                waitUntil { mainAlbum(scenario, key)?.count == 1 }
+                // No scanFile/update/refresh gesture: only a filesystem event.
+                second.writeBytes(byteArrayOf(4, 5, 6))
+                waitUntil { mainAlbum(scenario, key)?.count == 2 }
+                assertTrue(key in prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty())
+                val overview = io { MediaStoreRepository.queryOverviewMedia(context, true, setOf(key), false) }
+                val hidden = AutomaticHiddenAlbums.keysForMedia(context, overview,
+                    HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())) + oldHidden + key
+                assertTrue(VirtualAlbumRules.mediaForAlbum(overview, VirtualAlbumRules.RECENT_KEY, emptySet(), hidden)
+                    .none { it.albumKey == key })
+            }
+        } finally {
+            prefs.edit().putStringSet("hidden_folder_keys", oldHidden).commit()
+        }
+    }
+
+    @Test fun repeatedMaintenanceRequestsObserveTheSameActualWork() {
+        val ids = java.util.concurrent.ConcurrentLinkedQueue<java.util.UUID>()
+        val completed = java.util.concurrent.CountDownLatch(2)
+        val failed = java.util.concurrent.atomic.AtomicBoolean(false)
+        repeat(2) {
+            MediaScanScheduler.enqueue(context, false, false,
+                onEnqueued = { ids.add(it); completed.countDown() },
+                onFailure = { failed.set(true); completed.countDown() })
+        }
+        assertTrue(completed.await(10, java.util.concurrent.TimeUnit.SECONDS))
+        assertFalse(failed.get())
+        assertEquals(2, ids.size)
+        assertEquals("KEEP deve observar o trabalho real, não um UUID descartado", ids.first(), ids.last())
+        androidx.work.WorkManager.getInstance(context).cancelWorkById(ids.first()).result.get()
+    }
+
+    @Test fun reopeningDetectsMediaChangesWithoutADirtyFlagOrManualRefresh() {
+        insert(source, "initial.png")
+        // Establish the baseline before the tested insertion. Android may still
+        // finish indexing a fixture after IS_PENDING=0; do not assume synchrony.
+        waitUntil {
+            prepareCatalog()
+            io { GalleryCatalogStore.hasFreshCatalog(context, false, MediaActions.hasAllFilesAccess(context), 180_000L) }
+        }
+        insert(target, "added-while-closed.png")
+        assertFalse("getVersion sozinho não detecta inserções comuns",
+            io { GalleryCatalogStore.hasFreshCatalog(context, false, true, 180_000L) })
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            waitUntil { mainAlbum(scenario, target)?.count == 1 }
+        }
+    }
+
+    private fun mainAlbum(scenario: ActivityScenario<MainActivity>, key: String): AlbumItem? {
+        var result: AlbumItem? = null
+        scenario.onActivity { activity ->
+            val albums = activity.javaClass.getDeclaredField("adapter").apply { isAccessible = true }
+                .get(activity) as AlbumRecyclerAdapter
+            result = albums.visibleAlbumsSnapshot().firstOrNull { it.key == key }
+        }
+        return result
+    }
+
     @Test fun disablingTrashPersistsAndDeletesPermanentlyWithoutPurgingOldTrash() {
         val previous = insert(target, "previous-trash.png")
         assertEquals(1, context.contentResolver.update(previous, ContentValues().apply {

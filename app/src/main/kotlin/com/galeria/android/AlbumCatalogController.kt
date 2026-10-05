@@ -43,9 +43,15 @@ class AlbumCatalogController(context: Context) {
     ) {
         val request = ++generation
         executor.execute {
-            if (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)) {
-                val media = MediaStoreRepository.refreshMedia(appContext, options.includeHidden, force = true)
+            if (closed || request != generation) return@execute
+            val dirty = GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)
+            val fresh = GalleryCatalogStore.hasFreshCatalog(appContext, options.includeHidden,
+                MediaActions.hasAllFilesAccess(appContext), CATALOG_FALLBACK_MAX_AGE_MS)
+            if (dirty || !fresh || options.temporarilyVisibleKeys.isNotEmpty()) {
+                val media = MediaStoreRepository.queryOverviewMedia(appContext, options.includeHidden,
+                    options.temporarilyVisibleKeys, options.showNaturallyHidden)
                 deliverAlbums(request, buildAlbumsFromMedia(media, options), options, onAlbums)
+                if (dirty || !fresh) deferRefresh(request, options, onDeferredRefreshRequired)
                 return@execute
             }
             val cachedSummaries = GalleryCatalogStore.readAlbums(appContext, options.includeHidden)
@@ -55,8 +61,10 @@ class AlbumCatalogController(context: Context) {
             }
 
             if (cachedSummaries.isEmpty()) {
-                val media = MediaStoreRepository.refreshMedia(appContext, options.includeHidden, force = true)
+                val media = MediaStoreRepository.queryOverviewMedia(appContext, options.includeHidden,
+                    options.temporarilyVisibleKeys, options.showNaturallyHidden)
                 deliverAlbums(request, buildAlbumsFromMedia(media, options), options, onAlbums)
+                if (!fresh) deferRefresh(request, options, onDeferredRefreshRequired)
                 return@execute
             }
 
@@ -65,12 +73,6 @@ class AlbumCatalogController(context: Context) {
                 deliverAlbums(request, buildAlbumsFromMedia(media, options), options, onAlbums)
             }
 
-            val fresh = GalleryCatalogStore.hasFreshCatalog(
-                appContext,
-                options.includeHidden,
-                MediaActions.hasAllFilesAccess(appContext),
-                CATALOG_FALLBACK_MAX_AGE_MS
-            )
             if (!fresh) {
                 mainHandler.post {
                     if (!closed && request == generation) onDeferredRefreshRequired(options.includeHidden)
@@ -86,18 +88,26 @@ class AlbumCatalogController(context: Context) {
         onSuccess: () -> Unit,
         onFailure: () -> Unit
     ) {
-        val workId = MediaScanScheduler.enqueue(appContext, includeHidden, replace = force)
-        val workInfo = WorkManager.getInstance(appContext).getWorkInfoByIdLiveData(workId)
-        val observer = object : Observer<WorkInfo?> {
-            override fun onChanged(value: WorkInfo?) {
-                value ?: return
-                if (!value.state.isFinished) return
-                workInfo.removeObserver(this)
-                if (closed) return
-                if (value.state == WorkInfo.State.SUCCEEDED) onSuccess() else onFailure()
+        MediaScanScheduler.enqueue(appContext, includeHidden, replace = force, onEnqueued = { workId ->
+            if (closed) return@enqueue
+            val workInfo = WorkManager.getInstance(appContext).getWorkInfoByIdLiveData(workId)
+            val observer = object : Observer<WorkInfo?> {
+                override fun onChanged(value: WorkInfo?) {
+                    value ?: return
+                    if (!value.state.isFinished) return
+                    workInfo.removeObserver(this)
+                    if (closed) return
+                    if (value.state == WorkInfo.State.SUCCEEDED) onSuccess() else onFailure()
+                }
             }
+            workInfo.observe(owner, observer)
+        }, onFailure = { if (!closed) onFailure() })
+    }
+
+    private fun deferRefresh(request: Int, options: AlbumCatalogOptions, callback: (Boolean) -> Unit) {
+        mainHandler.post {
+            if (!closed && request == generation) callback(options.includeHidden)
         }
-        workInfo.observe(owner, observer)
     }
 
     fun close() {
