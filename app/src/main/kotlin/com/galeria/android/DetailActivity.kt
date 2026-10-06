@@ -87,6 +87,7 @@ import kotlin.math.roundToInt
 
 @OptIn(UnstableApi::class)
 class DetailActivity : ComponentActivity() {
+    private val operations = ActivityOperationRunner(this)
     private val executor = Executors.newSingleThreadExecutor()
     private val videoPreviewExecutor = Executors.newSingleThreadExecutor()
     private val motionPhotoExecutor = Executors.newSingleThreadExecutor()
@@ -136,7 +137,7 @@ class DetailActivity : ComponentActivity() {
                     complete: (MotionPhotoClip?) -> Unit) {
                     motionPhotoExecutor.execute {
                         if (!isRelevant()) return@execute
-                        val clip = MotionPhotoSupport.detect(applicationContext, source.uri.toUri())
+                        val clip = MotionPhotoSupport.detect(applicationContext, source.uri.toUri(), isRelevant)
                         runOnUiThread { complete(clip) }
                     }
                 }
@@ -861,8 +862,10 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun renameImage(item: MediaItem, newName: String, requestPermission: Boolean) {
+        if (operations.busy) return
+        operations.run({ runCatching { mediaActions.rename(item, newName) } }) { outcome ->
         try {
-            val updated = mediaActions.rename(item, newName)
+            val updated = outcome.getOrThrow()
             if (updated) {
                 applyRenamedItem(item, newName)
                 pendingRenameItem = null
@@ -878,11 +881,12 @@ class DetailActivity : ComponentActivity() {
         } catch (error: SecurityException) {
             if (!requestPermission) {
                 Ui.toast(this, "Não foi possível renomear a imagem.")
-                return
+                return@run
             }
             pendingRenameItem = item
             pendingRenameName = newName
             requestRenamePermission(item.uri, error)
+        }
         }
     }
 
@@ -1157,7 +1161,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun updateInteractiveSwipe(event: MotionEvent) {
-        if (switchingItem || mediaQueue.size < 2) return
+        if (operations.busy || switchingItem || mediaQueue.size < 2) return
         if (dragPreviewPage == null) {
             val intent = swipeGestureController.resolveIntent(event.rawX, event.rawY, gestureTouchSlop) ?: return
             dragTargetIndex = wrappedIndex(currentIndex + intent.direction)
@@ -1206,6 +1210,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun commitInteractiveSwipe(offset: Int) {
+        if (operations.busy) { cancelInteractiveSwipe(offset); return }
         if (switchingItem) return
         val incomingPage = dragPreviewPage ?: return
         val outgoingPage = activePage
@@ -1355,7 +1360,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun switchItem(direction: Int, horizontal: Boolean) {
-        if (switchingItem || mediaQueue.size < 2) return
+        if (operations.busy || switchingItem || mediaQueue.size < 2) return
         cancelInteractiveSwipe()
         if (!mediaTransitionController.begin()) return
         scheduleTextDetection(null)
@@ -2172,26 +2177,29 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun hideCurrent() {
+        if (operations.busy) return
         val item = currentItem()
-        pendingHiddenCopy = mediaActions.copyToHidden(item)
-        if (pendingHiddenCopy == null) {
-            Ui.toast(this, "Não foi possível copiar para ocultos.")
-            return
-        }
         pendingDeleteUri = item.uri
-        val result = mediaActions.delete(item, REQ_HIDE_DELETE)
+        operations.run({
+            val copy = mediaActions.copyToHidden(item)
+            val result = if (copy == null) MediaActions.RESULT_FAILED else mediaActions.delete(item, REQ_HIDE_DELETE)
+            if (result == MediaActions.RESULT_FAILED) copy?.delete()
+            copy to result
+        }) { (copy, result) ->
+        pendingHiddenCopy = copy
         if (result == MediaActions.RESULT_DONE) {
             Ui.toast(this, "Item ocultado.")
             removeDeletedItem()
         } else if (result == MediaActions.RESULT_FAILED) {
             pendingDeleteUri = null
-            pendingHiddenCopy?.delete()
             pendingHiddenCopy = null
             requestFileManagementAccess()
+        }
         }
     }
 
     private fun askFolderForCopyOrMove(copy: Boolean, anchor: View) {
+        if (operations.busy) return
         val item = currentItem()
         val exposedKeys = intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)?.toList()
         val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
@@ -2205,12 +2213,13 @@ class DetailActivity : ComponentActivity() {
             setOfNotNull(item.albumKey, intent.getStringExtra("album_key")),
             includeHidden
         ) { targets ->
-            if (isFinishing || !anchor.isAttachedToWindow || currentItem().uri != item.uri) return@loadTargets
+            if (operations.busy || isFinishing || !anchor.isAttachedToWindow || currentItem().uri != item.uri) return@loadTargets
             if (targets.isEmpty()) {
                 Ui.toast(this, "Nenhum álbum disponível.")
                 return@loadTargets
             }
             Ui.showAlbumTargets(anchor, if (copy) "Copiar para" else "Mover para", targets) { album ->
+                if (operations.busy) return@showAlbumTargets
                 val folder = album.path.ifBlank { album.name }
                 if (copy) {
                     copyCurrentToFolder(item, folder)
@@ -2224,22 +2233,28 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun copyCurrentToFolder(item: MediaItem, folder: String) {
-        val result = mediaActions.copyToFolder(item, folder)
+        if (operations.busy) return
+        operations.run({ mediaActions.copyToFolder(item, folder) }) { result ->
         if (result == MediaActions.RESULT_DONE) {
             Ui.toast(this, "Item copiado.")
         } else {
             requestFileManagementAccess()
         }
+        }
     }
 
     private fun moveCurrentToFolder(item: MediaItem, folder: String) {
+        if (operations.busy) return
         pendingMoveItem = item
         pendingMoveFolder = folder
-        val sourceFolder = MediaActions.fileFromMediaStore(this, item.uri)?.parentFile
-        val result = mediaActions.moveToFolder(item, folder)
+        operations.run({
+            val sourceFolder = MediaActions.fileFromMediaStore(this, item.uri)?.parentFile
+            val result = mediaActions.moveToFolder(item, folder)
+            result to MediaOperationNavigation.isEmptyMediaFolder(sourceFolder)
+        }) { (result, sourceEmpty) ->
         if (result == MediaActions.RESULT_DONE) {
             Ui.toast(this, "Item movido.")
-            completeMovedItem(item, folder, sourceFolder)
+            completeMovedItem(item, folder, sourceEmpty)
             pendingMoveItem = null
             pendingMoveFolder = null
         } else if (result == MediaActions.RESULT_NEEDS_PERMISSION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -2248,6 +2263,7 @@ class DetailActivity : ComponentActivity() {
             pendingMoveItem = null
             pendingMoveFolder = null
             requestFileManagementAccess()
+        }
         }
     }
 
@@ -2452,17 +2468,19 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun deleteCurrent() {
+        if (operations.busy) return
         val item = currentItem()
         pendingDeleteUri = item.uri
         val permanent = TrashPreferences.deletePermanently(this, sourceAlbumKey)
         pendingDeletePermanent = permanent
-        val result = mediaActions.delete(item, REQ_DELETE, permanent)
+        operations.run({ mediaActions.delete(item, REQ_DELETE, permanent) }) { result ->
         if (result == MediaActions.RESULT_DONE) {
             Ui.toast(this, getString(if (permanent) R.string.album_item_deleted else R.string.item_moved_to_trash))
             removeDeletedItem()
         } else if (result == MediaActions.RESULT_FAILED) {
             pendingDeleteUri = null
             requestFileManagementAccess()
+        }
         }
     }
 
@@ -2490,11 +2508,11 @@ class DetailActivity : ComponentActivity() {
         })
     }
 
-    private fun completeMovedItem(item: MediaItem, folder: String, sourceFolder: File?) {
+    private fun completeMovedItem(item: MediaItem, folder: String, sourceEmpty: Boolean) {
         movedUris.add(item.uri.toString())
         val sourceKey = intent.getStringExtra("album_key")
         if (!sourceKey.isNullOrEmpty() && !VirtualAlbumRules.remainsAfterMove(sourceKey) &&
-            MediaOperationNavigation.isEmptyMediaFolder(sourceFolder)) {
+            sourceEmpty) {
             val key = pendingMoveDestinationKey ?: MediaActions.destinationRelativePath(folder, item.isVideo())
             val name = pendingMoveDestinationName ?: key.trimEnd('/').substringAfterLast('/')
             updateOperationResult(key, name)
@@ -2509,14 +2527,17 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun restoreCurrent() {
+        if (operations.busy) return
         val item = currentItem()
         pendingDeleteUri = item.uri
-        when (MediaActions.requestRestore(this, item.uri, REQ_RESTORE)) {
+        operations.run({ MediaActions.requestRestore(this, item.uri, REQ_RESTORE) }) { result ->
+        when (result) {
             MediaActions.RESULT_DONE -> {
                 Ui.toast(this, getString(R.string.item_restored))
                 removeDeletedItem()
             }
             MediaActions.RESULT_FAILED -> pendingDeleteUri = null
+        }
         }
     }
 
@@ -2574,12 +2595,8 @@ class DetailActivity : ComponentActivity() {
             val item = pendingMoveItem
             val folder = pendingMoveFolder
             if (resultCode == RESULT_OK && item != null && folder != null) {
-                val sourceFolder = MediaActions.fileFromMediaStore(this, item.uri)?.parentFile
-                val result = mediaActions.moveToFolder(item, folder)
-                Ui.toast(this, if (result == MediaActions.RESULT_DONE) "Item movido." else "Não foi possível mover.")
-                if (result == MediaActions.RESULT_DONE) {
-                    completeMovedItem(item, folder, sourceFolder)
-                }
+                moveCurrentToFolder(item, folder)
+                return
             }
             pendingMoveItem = null
             pendingMoveFolder = null
@@ -2738,6 +2755,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        operations.close()
         finishMediaTransition(updateUi = false)
         super.onDestroy()
         if (::timelineBinding.isInitialized) timelineBinding.unbind()

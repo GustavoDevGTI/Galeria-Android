@@ -417,7 +417,11 @@ class Ui private constructor() {
 
         @JvmStatic
         fun toast(context: Context, message: String) {
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            } else {
+                android.os.Handler(android.os.Looper.getMainLooper()).post { toast(context, message) }
+            }
         }
 
         @JvmStatic

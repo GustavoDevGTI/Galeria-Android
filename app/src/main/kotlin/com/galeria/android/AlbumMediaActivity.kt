@@ -50,6 +50,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 class AlbumMediaActivity : ComponentActivity() {
+    private val operations = ActivityOperationRunner(this)
     private lateinit var adapter: MediaRecyclerAdapter
     private lateinit var grid: AccessibleRecyclerView
     private lateinit var fastScroller: AlbumFastScroller
@@ -208,6 +209,8 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        if (::adapter.isInitialized) adapter.cancelPendingUpdates()
+        operations.close()
         folderObserver?.stopWatching()
         searchHandler.removeCallbacks(searchReload)
         if (::grid.isInitialized) grid.removeCallbacks(gridPoolWarmup)
@@ -324,7 +327,7 @@ class AlbumMediaActivity : ComponentActivity() {
                         searchHandler.removeCallbacks(searchReload)
                         searchHandler.postDelayed(searchReload, 180L)
                     } else if (::adapter.isInitialized) {
-                        adapter.applyFilter(s?.toString().orEmpty())
+                        adapter.applyFilterAsync(s?.toString().orEmpty()) { updateEmptyState() }
                         updateEmptyState()
                     }
                 }
@@ -944,6 +947,7 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun deleteSelected(selected: List<MediaItem>, permanent: Boolean = false) {
+        if (operations.busy) return
         if (AlbumMediaRules.requiresFileManagement(
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
                 MediaActions.hasAllFilesAccess(this)
@@ -953,8 +957,11 @@ class AlbumMediaActivity : ComponentActivity() {
             return
         }
         pendingDeletePermanent = permanent || !TrashPreferences.isEnabled(this)
-        val result = if (pendingDeletePermanent) selectionCoordinator.permanentlyDelete(selected, REQ_DELETE)
+        val deletePermanently = pendingDeletePermanent
+        operations.run({
+            if (deletePermanently) selectionCoordinator.permanentlyDelete(selected, REQ_DELETE)
             else selectionCoordinator.delete(selected, REQ_DELETE)
+        }) { result ->
         completedRemovalUris.addAll(result.completedItems.map { MediaIdentityRules.canonicalKey(it.uri.toString()) })
         adapter.removeCompletedItems(result.completedItems.map { it.uri.toString() })
         updateEmptyState()
@@ -968,17 +975,20 @@ class AlbumMediaActivity : ComponentActivity() {
         )
         exitSelectionMode()
         if (result.completed > 0) finishIfAlbumEmpty()
+        }
     }
 
     private fun restoreSelected() {
+        if (operations.busy) return
         val selected = adapter.selectedItems()
         if (selected.isEmpty()) return
-        val result = selectionCoordinator.restore(selected, REQ_RESTORE)
+        operations.run({ selectionCoordinator.restore(selected, REQ_RESTORE) }) { result ->
         completedRemovalUris.addAll(result.completedItems.map { MediaIdentityRules.canonicalKey(it.uri.toString()) })
         adapter.removeCompletedItems(result.completedItems.map { it.uri.toString() })
         updateEmptyState()
         Ui.toast(this, resources.getQuantityString(R.plurals.items_restored, result.completed, result.completed))
         exitSelectionMode()
+        }
     }
 
     private fun askMoveSelected() {
@@ -1038,6 +1048,7 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun moveSelected(selected: List<MediaItem>, destination: AlbumItem) {
+        if (operations.busy) return
         if (AlbumMediaRules.requiresFileManagement(
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
                 MediaActions.hasAllFilesAccess(this)
@@ -1046,7 +1057,7 @@ class AlbumMediaActivity : ComponentActivity() {
             requestFileManagementAccess()
             return
         }
-        val result = selectionCoordinator.move(selected, destination.path.ifBlank { destination.name })
+        operations.run({ selectionCoordinator.move(selected, destination.path.ifBlank { destination.name }) }) { result ->
         if (albumKey != "all_media") {
             completedRemovalUris.addAll(result.completedItems.map { MediaIdentityRules.canonicalKey(it.uri.toString()) })
             adapter.removeCompletedItems(result.completedItems.map { it.uri.toString() })
@@ -1061,6 +1072,7 @@ class AlbumMediaActivity : ComponentActivity() {
         } else {
             exitSelectionMode()
             loadMedia(true)
+        }
         }
     }
 
@@ -1131,12 +1143,13 @@ class AlbumMediaActivity : ComponentActivity() {
         // Drop the temporary exclusion once a fresh delivery confirms the item has left.
         // If it is later moved back into this folder it must become visible again.
         completedRemovalUris.retainAll(items.mapTo(HashSet()) { MediaIdentityRules.canonicalKey(it.uri.toString()) })
-        adapter.submit(items.filterNot(::wasRemoved), query)
-        updateEmptyState()
-        updateSelectionUi()
-        if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
-        if (targetPosition > 0) {
-            grid.scrollToPosition(min(targetPosition, max(0, adapter.getCount() - 1)))
+        adapter.submitAsync(items.filterNot(::wasRemoved), query) {
+            if (!isFinishing && !isDestroyed) {
+                updateEmptyState()
+                updateSelectionUi()
+                if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
+                if (targetPosition > 0) grid.scrollToPosition(min(targetPosition, max(0, adapter.getCount() - 1)))
+            }
         }
     }
 
@@ -1280,18 +1293,16 @@ class AlbumMediaActivity : ComponentActivity() {
             })
             finish()
         }
-        if (!VirtualAlbumRules.isVirtual(key) && key != "all_media") {
-            if (MediaOperationNavigation.isEmptyMediaFolder(File(Environment.getExternalStorageDirectory(), key))) {
-                returnToAlbums()
-            }
-        } else {
-            // A search, type filter or one paging page must not decide whether an album is empty.
-            lifecycleScope.launch {
-                val empty = withContext(Dispatchers.IO) {
+        // A search, type filter or one paging page must not decide whether an album is empty.
+        lifecycleScope.launch {
+            val empty = withContext(Dispatchers.IO) {
+                if (!VirtualAlbumRules.isVirtual(key) && key != "all_media") {
+                    MediaOperationNavigation.isEmptyMediaFolder(File(Environment.getExternalStorageDirectory(), key))
+                } else {
                     MediaStoreRepository.loadMediaForAlbum(applicationContext, key, shouldIncludeHiddenFilesystem()).isEmpty()
                 }
-                if (empty) returnToAlbums()
             }
+            if (empty && !isFinishing) returnToAlbums()
         }
     }
 
@@ -1483,6 +1494,7 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun openDetail(item: MediaItem, position: Int, shuffleMode: Boolean) {
+        if (operations.busy) return
         savedFirstVisible = layoutManager.findFirstVisibleItemPosition()
         val intent = Intent(this, DetailActivity::class.java).apply {
             putExtra("uri", item.uri.toString())

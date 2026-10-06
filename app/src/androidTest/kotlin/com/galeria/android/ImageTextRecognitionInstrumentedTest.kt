@@ -127,6 +127,10 @@ class ImageTextRecognitionInstrumentedTest {
                 awaitAndroidInputReady()
                 onView(withContentDescription(R.string.action_recognize_text)).perform(androidx.test.espresso.action.ViewActions.scrollTo(), click())
                 awaitEditorOcrIdle(scenario)
+                waitForUi {
+                    onView(withText(R.string.ocr_copy_all)).inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
+                        .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed()))
+                }
                 onView(withText(R.string.ocr_copy_all)).perform(click())
                 scenario.onActivity {
                     val clipboard = it.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

@@ -7,6 +7,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.LruCache
+import android.provider.MediaStore
+import androidx.core.net.toUri
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -20,47 +23,127 @@ object VideoThumbnailFrames {
     private val worker = Executors.newFixedThreadPool(2)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val lock = Any()
-    private val waiting = HashMap<String, MutableList<(Uri) -> Unit>>()
+    private val waiting = HashMap<String, MutableList<Request>>()
+    private val cached = LruCache<String, Uri>(2048)
+    private var lastCleanup = 0L
+
+    class Request internal constructor(internal val ready: (Uri?) -> Unit) {
+        @Volatile internal var cancelled = false
+        fun cancel() { cancelled = true }
+    }
 
     fun cachedThumbnail(context: Context, item: MediaItem): Uri? {
         if (!item.isVideo()) return null
-        val target = thumbnailFile(context.applicationContext, item)
-        return if (target.length() > 0L) Uri.fromFile(target) else null
+        return cached.get(identity(context, item))
     }
 
     fun thumbnail(context: Context, item: MediaItem, onReady: (Uri) -> Unit): Uri? {
-        if (!item.isVideo()) return null
-        val key = identity(item)
-        val target = thumbnailFile(context.applicationContext, item)
-        if (target.length() > 0L) return Uri.fromFile(target)
+        val available = cachedThumbnail(context, item)
+        if (available != null) return available
+        request(context, item) { uri -> if (uri != null) onReady(uri) }
+        return null
+    }
+
+    /** No second video decoder while the persistent image is being decided. */
+    fun request(context: Context, item: MediaItem, complete: (Uri?) -> Unit): Request {
+        val request = Request(complete)
+        if (!item.isVideo()) { mainHandler.post { if (!request.cancelled) complete(null) }; return request }
+        val key = identity(context, item)
+        cached.get(key)?.let { uri ->
+            mainHandler.post { if (!request.cancelled) complete(uri) }
+            return request
+        }
+        val appContext = context.applicationContext
+        val target = thumbnailFile(appContext, item)
         synchronized(lock) {
-            waiting[key]?.let { it.add(onReady); return null }
-            if (waiting.size >= MAX_PENDING) return null
-            waiting[key] = mutableListOf(onReady)
+            waiting[key]?.let { callbacks ->
+                callbacks.removeAll { it.cancelled }
+                callbacks.add(request)
+                return request
+            }
+            if (waiting.size >= MAX_PENDING) {
+                mainHandler.post { if (!request.cancelled) complete(null) }
+                return request
+            }
+            waiting[key] = mutableListOf(request)
         }
         worker.execute {
             val ready = runCatching {
-                if (target.length() == 0L) generate(context.applicationContext, item, target)
-                if (target.length() > 0L) Uri.fromFile(target) else null
+                if (target.length() == 0L) generate(appContext, item, target)
+                if (target.length() > 0L) {
+                    File(target.parentFile, "source.uri").writeText(item.uri.toString())
+                    Uri.fromFile(target)
+                } else null
             }.getOrNull()
-            val callbacks = synchronized(lock) {
-                waiting.remove(key).orEmpty()
-            }
-            if (ready != null) mainHandler.post { callbacks.forEach { it(ready) } }
+            if (ready != null) cached.put(key, ready)
+            val callbacks = synchronized(lock) { waiting.remove(key).orEmpty() }
+            mainHandler.post { callbacks.filterNot { it.cancelled }.forEach { it.ready(ready) } }
         }
-        return null
+        return request
+    }
+
+    /** Only discard a persisted decision when deletion is positively verified.
+     * Partial access and hidden albums absent from a visible scan are not deletion. */
+    fun scheduleOrphanCleanup(context: Context) {
+        val app = context.applicationContext
+        synchronized(lock) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (now - lastCleanup < 30 * 60_000L && lastCleanup != 0L) return
+            lastCleanup = now
+        }
+        worker.execute { runCatching { cleanupOrphans(app) } }
+    }
+
+    internal fun cleanupOrphans(context: Context) {
+        if (MediaActions.mediaLibraryAccess(context) != MediaActions.MediaLibraryAccess.FULL) return
+        val root = File(context.noBackupFilesDir, "video_thumbnails")
+        root.listFiles()?.filter { it.isDirectory }?.forEach { directory ->
+            val manifest = File(directory, "source.uri")
+            if (!manifest.isFile) return@forEach // Old entries without proof are retained.
+            val uri = runCatching { manifest.readText().toUri() }.getOrNull() ?: return@forEach
+            val missing = runCatching {
+                when (uri.scheme) {
+                    "file" -> MediaActions.hasAllFilesAccess(context) && uri.path?.let { !File(it).exists() } == true
+                    "content" -> {
+                        val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), android.os.Bundle().apply {
+                                putInt(MediaStore.QUERY_ARG_MATCH_TRASHED, MediaStore.MATCH_INCLUDE)
+                                putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_INCLUDE)
+                            }, null)
+                        } else context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
+                        cursor?.use { !it.moveToFirst() } == true
+                    }
+                    else -> false
+                }
+            }.getOrDefault(false)
+            if (missing && MediaActions.mediaLibraryAccess(context) == MediaActions.MediaLibraryAccess.FULL) {
+                val inactive = synchronized(lock) { waiting.keys.none { it.contains(uri.toString()) } }
+                if (inactive) {
+                    directory.deleteRecursively()
+                    cached.evictAll()
+                }
+            }
+        }
     }
 
     internal fun thumbnailFile(context: Context, item: MediaItem): File {
         val source = digest(item.uri.toString()).take(20)
-        val version = digest(identity(item)).take(20)
+        val version = digest(identity(context, item)).take(20)
         return File(File(File(context.noBackupFilesDir, "video_thumbnails"), source), "$version.jpg")
     }
 
-    private fun identity(item: MediaItem): String = "v2|${item.uri}|${item.size}|${item.dateAdded}"
+    private fun identity(context: Context, item: MediaItem): String =
+        "v2|${MediaContentRevision.key(context, item.uri)}|${item.size}|${item.dateAdded}"
 
-    private fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    private fun digest(value: String): String {
+        val alphabet = "0123456789abcdef"
+        return buildString(64) {
+            MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).forEach {
+                val byte = it.toInt() and 255
+                append(alphabet[byte shr 4]); append(alphabet[byte and 15])
+            }
+        }
+    }
 
     private fun generate(context: Context, item: MediaItem, target: File) {
         val retriever = MediaMetadataRetriever()

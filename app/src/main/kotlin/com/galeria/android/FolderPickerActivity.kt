@@ -15,12 +15,23 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import java.io.File
+import java.util.concurrent.Executors
 
 class FolderPickerActivity : Activity() {
     private lateinit var rootDir: File
     private lateinit var currentDir: File
     private lateinit var adapter: FolderAdapter
     private lateinit var pathView: TextView
+    private val folderWorker = Executors.newSingleThreadExecutor()
+    private val operations = ActivityOperationRunner(this)
+    @Volatile private var folderRequest = 0
+
+    override fun onDestroy() {
+        folderRequest++
+        folderWorker.shutdownNow()
+        operations.close()
+        super.onDestroy()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,15 +115,25 @@ class FolderPickerActivity : Activity() {
 
     private fun loadFolders() {
         pathView.text = currentDir.absolutePath
-        val folders = ArrayList<File?>()
-        if (currentDir != rootDir) {
-            folders.add(null)
+        val directory = currentDir
+        val request = ++folderRequest
+        // Remove old-directory entries so fast repeated taps never navigate via stale rows.
+        adapter.submit(emptyList(), emptyMap())
+        folderWorker.execute {
+            if (request != folderRequest) return@execute
+            val folders = ArrayList<File?>()
+            if (directory != rootDir) folders.add(null)
+            directory.listFiles()?.filter { it.isDirectory && !it.isHidden }
+                ?.sortedBy { it.name.lowercase() }?.let(folders::addAll)
+            val counts = HashMap<String, Int>()
+            for (folder in folders.filterNotNull()) {
+                if (request != folderRequest) return@execute
+                counts[folder.absolutePath] = folder.list()?.size ?: 0
+            }
+            runOnUiThread {
+                if (request == folderRequest && !isFinishing && !isDestroyed) adapter.submit(folders, counts)
+            }
         }
-        currentDir.listFiles()
-            ?.sortedBy { it.name.lowercase() }
-            ?.filter { it.isDirectory && !it.isHidden }
-            ?.let(folders::addAll)
-        adapter.submit(folders)
     }
 
     private fun isInsideRoot(dir: File?): Boolean =
@@ -130,6 +151,7 @@ class FolderPickerActivity : Activity() {
     }
 
     private fun createFolder(name: String) {
+        if (operations.busy) return
         val clean = MediaActions.cleanFolderName(name)
         if (clean.isEmpty()) {
             Ui.toast(this, "Digite um nome válido.")
@@ -145,23 +167,23 @@ class FolderPickerActivity : Activity() {
             ) { MediaActions.requestAllFilesAccess(this) }
             return
         }
-        if (target.exists()) {
-            Ui.toast(this, "A pasta já existe.")
-            return
-        }
-        if (MediaActions.createFolder(this, target)) {
-            Ui.toast(this, "Pasta criada.")
-            currentDir = target
-            loadFolders()
-        } else {
-            Ui.toast(this, "Não foi possível criar a pasta aqui.")
+        operations.run({
+            if (target.exists()) 0 else if (MediaActions.createFolder(this, target)) 1 else -1
+        }) { result ->
+            if (result == 1) {
+                Ui.toast(this, "Pasta criada.")
+                currentDir = target
+                loadFolders()
+            } else Ui.toast(this, if (result == 0) "A pasta já existe." else "Não foi possível criar a pasta aqui.")
         }
     }
 
     private inner class FolderAdapter : BaseAdapter() {
         private val folders = ArrayList<File?>()
+        private var counts: Map<String, Int> = emptyMap()
 
-        fun submit(nextFolders: List<File?>) {
+        fun submit(nextFolders: List<File?>, nextCounts: Map<String, Int>) {
+            counts = nextCounts
             folders.clear()
             folders.addAll(nextFolders)
             notifyDataSetChanged()
@@ -174,6 +196,10 @@ class FolderPickerActivity : Activity() {
         override fun getItemId(position: Int): Long = position.toLong()
 
         override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            if (convertView is LinearLayout) {
+                (convertView.getChildAt(1) as TextView).text = labelFor(getItem(position))
+                return convertView
+            }
             val row = LinearLayout(this@FolderPickerActivity).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 Ui.setPadding(this, 18, 10, 18, 10)
@@ -203,7 +229,7 @@ class FolderPickerActivity : Activity() {
 
         private fun labelFor(file: File?): String {
             if (file == null) return ".."
-            val count = file.listFiles()?.size ?: 0
+            val count = counts[file.absolutePath] ?: 0
             return file.name + "\n" + count + if (count == 1) " item" else " itens"
         }
     }

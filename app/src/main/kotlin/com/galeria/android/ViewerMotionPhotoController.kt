@@ -12,7 +12,9 @@ internal class ViewerMotionPhotoController(
         fun detect(source: Source, isRelevant: () -> Boolean, complete: (MotionPhotoClip?) -> Unit)
     }
     private class Request(val source: Source)
-    private val cache = HashMap<String, MotionPhotoClip?>()
+    private val cache = object : LinkedHashMap<String, MotionPhotoClip?>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MotionPhotoClip?>?) = size > 64
+    }
     @Volatile private var active: Request? = null
     @Volatile private var paused = false
     @Volatile private var closed = false

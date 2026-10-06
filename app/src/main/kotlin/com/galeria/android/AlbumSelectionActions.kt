@@ -59,14 +59,15 @@ class AlbumSelectionActions(
     }
 
     fun move(selected: List<MediaItem>, folder: String): AlbumSelectionResult {
-        val sourceFolders = selected.associate { item ->
+        val sourceFolders = selected.distinctBy { it.albumKey }.associate { item ->
             item.albumKey to MediaActions.fileFromMediaStore(activity, item.uri)?.parentFile
         }
         val completed = selected.filter { item ->
             MediaActions.moveToFolder(activity, item, folder) == MediaActions.RESULT_DONE
         }
+        val completedAlbumKeys = completed.mapTo(HashSet()) { it.albumKey }
         val emptied = sourceFolders.filter { (key, folder) ->
-            completed.any { it.albumKey == key } && MediaOperationNavigation.isEmptyMediaFolder(folder)
+            key in completedAlbumKeys && MediaOperationNavigation.isEmptyMediaFolder(folder)
         }.keys
         return AlbumSelectionResult(completed.size, selected.size, completed, emptied)
     }

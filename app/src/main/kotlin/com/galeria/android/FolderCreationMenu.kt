@@ -16,11 +16,13 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import java.io.File
+import java.util.concurrent.Executors
 
 class FolderCreationMenu(
     private val activity: Activity,
     private val onFolderCreated: (File) -> Unit = {}
 ) {
+    private var creating = false
     private data class StorageLocation(
         val label: String,
         val root: File,
@@ -32,8 +34,16 @@ class FolderCreationMenu(
     }
 
     private fun showStorageChoices() {
+        folderWorker.execute {
+            val locations = storageLocations()
+            activity.runOnUiThread {
+                if (!activity.isFinishing && !activity.isDestroyed) showStorageChoices(locations)
+            }
+        }
+    }
+
+    private fun showStorageChoices(locations: List<StorageLocation>) {
         lateinit var dialog: AlertDialog
-        val locations = storageLocations()
         val panel = panel().apply {
             addView(title(activity.getString(R.string.action_create_folder)))
             addView(description(activity.getString(R.string.folder_choose_location)))
@@ -59,6 +69,7 @@ class FolderCreationMenu(
     private fun showFolderBrowser(location: StorageLocation, startDirectory: File) {
         lateinit var dialog: AlertDialog
         var currentDirectory = startDirectory
+        var requestVersion = 0
         val path = TextView(activity).apply {
             textSize = 12f
             setTextColor(Ui.menuText(activity))
@@ -118,10 +129,21 @@ class FolderCreationMenu(
         }
         refresh = {
             path.text = displayPath(location, currentDirectory)
+            val directory = currentDirectory
+            val version = ++requestVersion
             folders.clear()
-            if (!sameFile(currentDirectory, location.root)) folders.add(null)
-            folders.addAll(visibleFolders(currentDirectory, location))
             adapter.notifyDataSetChanged()
+            folderWorker.execute {
+                val next = ArrayList<File?>()
+                if (!sameFile(directory, location.root)) next.add(null)
+                next.addAll(visibleFolders(directory, location))
+                activity.runOnUiThread {
+                    if (version == requestVersion && dialog.isShowing && !activity.isFinishing && !activity.isDestroyed) {
+                        folders.addAll(next)
+                        adapter.notifyDataSetChanged()
+                    }
+                }
+            }
         }
         val panel = panel().apply {
             addView(title(activity.getString(R.string.action_create_folder)))
@@ -153,8 +175,9 @@ class FolderCreationMenu(
             })
         }
         dialog = AlertDialog.Builder(activity).setView(panel).create()
-        refresh()
+        dialog.setOnDismissListener { requestVersion++ }
         Ui.showSidePanel(dialog, fullHeight = true)
+        refresh()
     }
 
     private fun askFolderName(parent: File) {
@@ -168,6 +191,7 @@ class FolderCreationMenu(
     }
 
     private fun createFolder(parent: File, rawName: String) {
+        if (creating) return
         val name = MediaActions.cleanFolderName(rawName)
         if (name.isBlank()) {
             Ui.toast(activity, activity.getString(R.string.folder_invalid_name))
@@ -183,15 +207,22 @@ class FolderCreationMenu(
             return
         }
         val target = File(parent, name)
-        if (target.exists()) {
-            Ui.toast(activity, activity.getString(R.string.folder_exists_at_location))
-            return
-        }
-        if (MediaActions.createFolder(activity, target)) {
-            Ui.toast(activity, activity.getString(R.string.folder_created_at, displayParent(parent)))
-            onFolderCreated(target)
-        } else {
-            Ui.toast(activity, activity.getString(R.string.folder_create_at_location_failed))
+        creating = true
+        folderWorker.execute {
+            val result = runCatching { if (target.exists()) 0 else if (MediaActions.createFolder(activity, target)) 1 else -1 }.getOrDefault(-1)
+            activity.runOnUiThread {
+                creating = false
+                if (!activity.isFinishing && !activity.isDestroyed) {
+                    when (result) {
+                        1 -> {
+                            Ui.toast(activity, activity.getString(R.string.folder_created_at, displayParent(parent)))
+                            onFolderCreated(target)
+                        }
+                        0 -> Ui.toast(activity, activity.getString(R.string.folder_exists_at_location))
+                        else -> Ui.toast(activity, activity.getString(R.string.folder_create_at_location_failed))
+                    }
+                }
+            }
         }
     }
 
@@ -372,4 +403,6 @@ class FolderCreationMenu(
     private fun openAfterDismiss(block: () -> Unit) {
         activity.window.decorView.postDelayed(block, 60L)
     }
+
+    private companion object { val folderWorker = Executors.newSingleThreadExecutor() }
 }

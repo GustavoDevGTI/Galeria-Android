@@ -81,11 +81,18 @@ class AlbumMutationInstrumentedTest {
         prepareCatalog()
         launchAlbum().use { scenario ->
             waitForCount(scenario, 2)
+            lateinit var removed: MediaItem
             scenario.onActivity { activity ->
                 val adapter = adapter(activity)
                 val selected = adapter.currentOrder().first { MediaIdentityRules.sameUri(it.uri.toString(), first.toString()) }
+                removed = selected
                 invoke(activity, "deleteSelected", arrayOf(List::class.java, Boolean::class.javaPrimitiveType!!),
                     listOf(selected), false)
+            }
+            waitForMutation(scenario)
+            scenario.onActivity { activity ->
+                val adapter = adapter(activity)
+                val selected = removed
                 assertEquals("A saída deve ser visível na própria conclusão da ação", 1, adapter.getCount())
                 assertEquals("keep.png", adapter.getItem(0).name)
                 // Even a late delivery of the old data must not resurrect a removed item.
@@ -93,6 +100,8 @@ class AlbumMutationInstrumentedTest {
                     listOf(selected) + adapter.currentOrder(), "", 0)
                 assertEquals(1, adapter.getCount())
             }
+            waitForMutation(scenario)
+            waitForCount(scenario, 1)
             scenario.recreate()
             waitForCount(scenario, 1)
         }
@@ -108,6 +117,9 @@ class AlbumMutationInstrumentedTest {
             scenario.onActivity { activity ->
                 val selected = adapter(activity).currentOrder().filter { it.name == "move.png" }
                 invokeMove(activity, selected)
+            }
+            waitForMutation(scenario)
+            scenario.onActivity { activity ->
                 assertFalse(activity.isFinishing)
                 assertEquals(1, adapter(activity).getCount())
                 assertEquals("stay.png", adapter(activity).getItem(0).name)
@@ -128,9 +140,9 @@ class AlbumMutationInstrumentedTest {
             waitForCount(scenario, 2)
             scenario.onActivity { activity ->
                 invokeMove(activity, adapter(activity).currentOrder())
-                assertTrue(activity.isFinishing)
             }
             waitForDestination(3)
+            waitForMutation(scenario, finishing = true)
         }
     }
 
@@ -148,6 +160,9 @@ class AlbumMutationInstrumentedTest {
             scenario.onActivity { activity ->
                 val selected = adapter(activity).currentOrder().filter { it.name == "matching.png" }
                 invokeMove(activity, selected)
+            }
+            waitForMutation(scenario)
+            scenario.onActivity { activity ->
                 assertFalse("Ainda há arquivo fora da busca", activity.isFinishing)
             }
         }
@@ -161,6 +176,9 @@ class AlbumMutationInstrumentedTest {
             scenario.onActivity { activity ->
                 val invalid = AlbumItem("", "", 0, null, 0, 0, 0, "")
                 invoke(activity, "moveSelected", arrayOf(List::class.java, AlbumItem::class.java), adapter(activity).currentOrder(), invalid)
+            }
+            waitForMutation(scenario)
+            scenario.onActivity { activity ->
                 assertFalse(activity.isFinishing)
                 assertEquals(1, adapter(activity).getCount())
             }
@@ -457,9 +475,9 @@ class AlbumMutationInstrumentedTest {
             scenario.onActivity { activity ->
                 invoke(activity, "deleteSelected", arrayOf(List::class.java, Boolean::class.javaPrimitiveType!!),
                     adapter(activity).currentOrder(), false)
-                assertTrue(activity.isFinishing)
             }
             waitForActivity<MainActivity>()
+            waitForMutation(scenario, finishing = true)
             assertTrue(io { MediaStoreRepository.loadTrashedMedia(context) }.any {
                 MediaIdentityRules.sameUri(it.uri.toString(), doomed.toString())
             })
@@ -518,6 +536,22 @@ class AlbumMutationInstrumentedTest {
         var matches = false
         scenario.onActivity { matches = adapter(it).getCount() == count }
         matches
+    }
+    private fun waitForMutation(scenario: ActivityScenario<AlbumMediaActivity>, finishing: Boolean = false) {
+        if (finishing) {
+            // The source has already navigated away; its destroyed state is the
+            // required assertion, not an attempt to call onActivity after finish.
+            waitUntil { scenario.state == androidx.lifecycle.Lifecycle.State.DESTROYED }
+            return
+        }
+        waitUntil {
+            var complete = false
+            scenario.onActivity {
+                val runner = AlbumMediaActivity::class.java.getDeclaredField("operations").apply { isAccessible = true }.get(it) as ActivityOperationRunner
+                complete = !runner.busy
+            }
+            complete
+        }
     }
     private fun waitForDestination(count: Int) = waitUntil {
         var matches = false

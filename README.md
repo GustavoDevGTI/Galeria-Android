@@ -123,6 +123,8 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
+A versão 0.8.65 amplia as otimizações de operações de arquivos, editores, catálogo, atualização diferencial da grade e caches de thumbnails/Motion Photos. Com versão `0.8.65` e código `8065` definidos, passaram **229 unitários e 106 instrumentados** no emulador API 36, sem falhas/ignorados e com lint sem erros (126 avisos). O APK release otimizado teve versão, integridade e assinatura permanente conferidas. Consulte [os dez pontos implementados](docs/OTIMIZACOES-2026-10-06.md) e [as notas da release](docs/RELEASE-0.8.65.md).
+
 A versão 0.8.64 otimiza o carregamento dos álbuns e do painel de ocultos, separa consultas urgentes das varreduras gerais e melhora a atualização automática do catálogo. Com os metadados finais da versão, passaram **227 unitários e 100 instrumentados**, sem falhas/ignorados e com lint sem erros (126 avisos). O APK release otimizado foi compilado e teve versão, integridade e assinatura permanente conferidas. Consulte [as mudanças e os testes](docs/OTIMIZACAO-CATALOGO-2026-10-05.md), [as notas da release](docs/RELEASE-0.8.64.md) e o [guia de validação por área](docs/TESTES-VALIDACAO.md).
 
 A versão 0.8.63 reúne o isolamento dos controladores do visualizador, a validação por área e as [correções de álbuns, lixeira e contagem de ocultos](docs/CORRECOES-ALBUNS-2026-10-02.md). A validação final passou em **227 unitários e 92 instrumentados**, com zero ignorados e lint sem erros (126 avisos). O APK release foi compilado com otimização e teve versão, integridade e assinatura permanente conferidas; detalhes nas [notas da release](docs/RELEASE-0.8.63.md). Veja também o [guia de validação por área](docs/TESTES-VALIDACAO.md).
@@ -383,6 +385,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.62`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.62) | 01/10/2026 | Giro sem EXIF prévio, OCR detalhado mais rápido, abertura segura do editor e correção das sete falhas de validação |
 | [`v0.8.63`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.63) | 02/10/2026 | Isolamento dos controladores, validação por área, navegação ao esvaziar álbuns, opção de lixeira, contagem de ocultos e ícones |
 | [`v0.8.64`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.64) | 05/10/2026 | Abertura imediata de ocultos, atualização automática, carregamento local do álbum e reaproveitamento de metadados |
+| [`v0.8.65`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.65) | 06/10/2026 | Operações e editores em segundo plano, atualização diferencial da grade, consultas eficientes e caches de thumbnails/Motion Photos |
 
 ## Relatório comparativo de desempenho
 
@@ -398,7 +401,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.64](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.64/Galeria-Android-versao-0.8.64.apk)
+[Baixar Galeria Android - versão 0.8.65](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.65/Galeria-Android-versao-0.8.65.apk)
 
 Build padrão do Gradle:
 
@@ -409,10 +412,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado como anexo no GitHub Releases (os APKs históricos na raiz permanecem preservados):
 
 ```text
-Galeria-Android-versao-0.8.64.apk
+Galeria-Android-versao-0.8.65.apk
 ```
 
-O APK 0.8.64 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.8.65 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de entrega
 

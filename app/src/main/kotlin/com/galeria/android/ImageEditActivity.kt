@@ -60,6 +60,8 @@ class ImageEditActivity : Activity() {
     private lateinit var textButton: ImageButton
     private lateinit var filterButton: ImageButton
     private lateinit var stage: FrameLayout
+    private lateinit var toolsPanel: ViewGroup
+    private lateinit var saveButton: ImageButton
     private lateinit var colorSpectrum: EditorColorSpectrum
     private lateinit var cropTools: LinearLayout
     private var textInput: EditText? = null
@@ -115,8 +117,8 @@ class ImageEditActivity : Activity() {
         }
         bar.addView(title, titleParams)
 
-        val save = EditorUi.button(this, R.drawable.ic_check, "Salvar cópia") { commitText(); saveEditedImage() }
-        bar.addView(save, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)))
+        saveButton = EditorUi.button(this, R.drawable.ic_check, "Salvar cópia") { commitText(); saveEditedImage() }
+        bar.addView(saveButton, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)))
         root.addView(bar)
 
         stage = FrameLayout(this)
@@ -131,6 +133,7 @@ class ImageEditActivity : Activity() {
             setPadding(Ui.dp(this@ImageEditActivity, 8), Ui.dp(this@ImageEditActivity, 6), Ui.dp(this@ImageEditActivity, 8), Ui.dp(this@ImageEditActivity, 6))
             setBackgroundColor(Color.BLACK)
         }
+        toolsPanel = tools
         val toolRow = LinearLayout(this)
         cropButton = EditorUi.button(this, R.drawable.ic_crop, "Cortar") {
                 commitText()
@@ -138,7 +141,9 @@ class ImageEditActivity : Activity() {
                 refreshToolButtons()
         }
         val rotate = EditorUi.button(this, R.drawable.ic_rotate, "Girar") {
-            commitText(); editor.rotateClockwise(); selectedFilter = EditorFilter.ORIGINAL; refreshToolButtons()
+            commitText()
+            transformImage { source -> Bitmap.createBitmap(source, 0, 0, source.width, source.height,
+                Matrix().apply { postRotate(90f) }, true) }
         }
         val resize = EditorUi.button(this, R.drawable.ic_resize, "Redimensionar imagem") { commitText(); showResizeInput() }
         textButton = EditorUi.button(this, R.drawable.ic_text, "Texto") {
@@ -179,7 +184,10 @@ class ImageEditActivity : Activity() {
         cropTools = LinearLayout(this).apply {
             gravity = Gravity.CENTER
             addView(EditorUi.button(context, R.drawable.ic_ratio, "Proporção do recorte") { showCropRatios() }, LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48)))
-            addView(EditorUi.button(context, R.drawable.ic_flip, "Espelhar") { editor.flipHorizontal() }, LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48)))
+            addView(EditorUi.button(context, R.drawable.ic_flip, "Espelhar") {
+                transformImage { source -> Bitmap.createBitmap(source, 0, 0, source.width, source.height,
+                    Matrix().apply { setScale(-1f, 1f) }, true) }
+            }, LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48)))
             addView(EditorUi.button(context, R.drawable.ic_reset, "Restaurar recorte") { editor.resetCrop() }, LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48)))
         }
         tools.addView(cropTools)
@@ -275,11 +283,14 @@ class ImageEditActivity : Activity() {
             .setNegativeButton("Cancelar", null)
             .setPositiveButton("Aplicar") { _, _ ->
                 val width = input.text.toString().toIntOrNull()
-                if (width == null || !editor.resizeWidth(width)) {
+                if (width == null || width !in 1..4096) {
                     Ui.toast(this, "Escolha uma largura válida de até 4096 px.")
                 } else {
-                    selectedFilter = EditorFilter.ORIGINAL
-                    refreshToolButtons()
+                    transformImage { source ->
+                        val height = (source.height.toLong() * width / source.width).coerceAtLeast(1L)
+                        require(height <= 4096L)
+                        Bitmap.createScaledBitmap(source, width, height.toInt(), true)
+                    }
                 }
             }
             .show()
@@ -308,7 +319,10 @@ class ImageEditActivity : Activity() {
                 runOnUiThread {
                     if (isDestroyed || isFinishing) { bitmap.recycle(); return@runOnUiThread }
                     editor.setBitmap(bitmap)
-                    if (intent.getBooleanExtra(EXTRA_ROTATE_CLOCKWISE, false)) editor.rotateClockwise()
+                    if (intent.getBooleanExtra(EXTRA_ROTATE_CLOCKWISE, false)) {
+                        transformImage { source -> Bitmap.createBitmap(source, 0, 0, source.width, source.height,
+                            Matrix().apply { postRotate(90f) }, true) }
+                    }
                     if (cropOnly) editor.tool = EditorTool.CROP
                     editor.contentDescription = if (cropOnly) getString(R.string.image_edit_crop_ready) else "Imagem pronta para edição"
                     refreshToolButtons()
@@ -351,24 +365,62 @@ class ImageEditActivity : Activity() {
 
     private fun saveEditedImage() {
         if (saving) return
-        val edited = editor.renderEditedBitmap()
-        if (edited == null) {
+        val render = editor.renderSnapshot()
+        if (render == null) {
             Ui.toast(this, "Aguarde a imagem carregar.")
             return
         }
-        saving = true
+        setProcessing(true)
         executor.execute {
+            var edited: Bitmap? = null
             try {
+                edited = render()
                 val saved = saveBitmapToGallery(edited)
                 runOnUiThread {
-                    saving = false
+                    if (isDestroyed || isFinishing) return@runOnUiThread
+                    setProcessing(false)
                     Ui.toast(this, if (saved != null) "Imagem editada salva." else "Não foi possível salvar.")
                     if (saved != null) finish()
                 }
             } catch (_: Exception) {
-                runOnUiThread { saving = false; Ui.toast(this, "Não foi possível salvar.") }
+                runOnUiThread { if (!isDestroyed && !isFinishing) { setProcessing(false); Ui.toast(this, "Não foi possível salvar.") } }
             } finally {
-                edited.recycle()
+                edited?.recycle()
+            }
+        }
+    }
+
+    private fun setProcessing(processing: Boolean) {
+        saving = processing
+        fun enable(view: View) {
+            view.isEnabled = !processing
+            if (view is ViewGroup) for (index in 0 until view.childCount) enable(view.getChildAt(index))
+        }
+        enable(toolsPanel)
+        editor.isEnabled = !processing
+        saveButton.isEnabled = !processing
+    }
+
+    private fun transformImage(transform: (Bitmap) -> Bitmap) {
+        if (saving) return
+        val render = editor.renderSnapshot() ?: return
+        val cropping = editor.tool == EditorTool.CROP
+        setProcessing(true)
+        executor.execute {
+            val result = runCatching {
+                val source = render()
+                try { transform(source).also { if (it !== source) source.recycle() } }
+                catch (error: Throwable) { source.recycle(); throw error }
+            }
+            runOnUiThread {
+                if (isDestroyed || isFinishing) { result.getOrNull()?.recycle(); return@runOnUiThread }
+                setProcessing(false)
+                result.onSuccess { bitmap ->
+                    editor.setBitmap(bitmap)
+                    if (cropping) editor.tool = EditorTool.CROP
+                    selectedFilter = EditorFilter.ORIGINAL
+                    refreshToolButtons()
+                }.onFailure { Ui.toast(this, "Não foi possível editar a imagem.") }
             }
         }
     }
@@ -434,7 +486,7 @@ class ImageEditActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        executor.shutdownNow()
+        executor.shutdown()
     }
 
     private class EditorView(activity: Activity) : View(activity) {
@@ -617,6 +669,7 @@ class ImageEditActivity : Activity() {
         }
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (!isEnabled) return true
             val current = bitmap ?: return true
             updateMatrices()
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -679,22 +732,41 @@ class ImageEditActivity : Activity() {
         override fun performClick(): Boolean = super.performClick()
 
         fun renderEditedBitmap(): Bitmap? {
+            return renderSnapshot()?.invoke()
+        }
+
+        /** Snapshot only light drawing state on main. Bitmap pixels are read by the
+         * worker while editing is disabled; no worker touches a View or shared Paint. */
+        fun renderSnapshot(): (() -> Bitmap)? {
             val current = bitmap ?: return null
+            val strokes = paths.map { Stroke(Path(it.path), Paint(it.paint)) }
+            val placedLabels = labels.map { it.copy() }
+            val imagePaint = Paint(bitmapPaint).apply { colorFilter = filter.colorFilter() }
+            val labelPaint = Paint(textPaint)
+            val crop = cropRect?.let(::RectF)
+            return {
             val output = Bitmap.createBitmap(current.width, current.height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(output)
-            bitmapPaint.colorFilter = filter.colorFilter()
-            canvas.drawBitmap(current, 0f, 0f, bitmapPaint)
-            for (stroke in paths) {
+            canvas.drawBitmap(current, 0f, 0f, imagePaint)
+            for (stroke in strokes) {
                 canvas.drawPath(stroke.path, stroke.paint)
             }
-            textPaint.textSize = max(28f, current.width * 0.045f)
-            for (label in labels) drawLabel(canvas, label)
-            val crop = cropRect ?: return output
+            for (label in placedLabels) {
+                labelPaint.color = label.color
+                labelPaint.textSize = label.size
+                labelPaint.textAlign = Paint.Align.CENTER
+                label.value.lines().forEachIndexed { index, line ->
+                    canvas.drawText(line, label.x, label.y + index * labelPaint.textSize * 1.2f, labelPaint)
+                }
+            }
+            if (crop == null) output else {
             val left = max(0, Math.round(crop.left))
             val top = max(0, Math.round(crop.top))
             val right = min(output.width, Math.round(crop.right))
             val bottom = min(output.height, Math.round(crop.bottom))
-            return Bitmap.createBitmap(output, left, top, max(1, right - left), max(1, bottom - top)).also { if (it !== output) output.recycle() }
+            Bitmap.createBitmap(output, left, top, max(1, right - left), max(1, bottom - top)).also { if (it !== output) output.recycle() }
+            }
+            }
         }
 
         private fun drawLabel(canvas: Canvas, label: PlacedText) {

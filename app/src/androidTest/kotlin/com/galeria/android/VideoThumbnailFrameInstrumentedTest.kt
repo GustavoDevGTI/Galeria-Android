@@ -24,7 +24,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
 class VideoThumbnailFrameInstrumentedTest {
-    @get:Rule val permissions: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.READ_MEDIA_VIDEO)
+    @get:Rule val permissions: GrantPermissionRule = GrantPermissionRule.grant(Manifest.permission.READ_MEDIA_VIDEO, Manifest.permission.READ_MEDIA_IMAGES)
 
     @Test
     fun realVideoFrameSelectionCompletesAndIsStable() {
@@ -80,6 +80,28 @@ class VideoThumbnailFrameInstrumentedTest {
             assertEquals(file, VideoThumbnailFrames.thumbnailFile(context, itemWithResolvedDuration))
             assertEquals(selected, VideoThumbnailFrames.thumbnail(context, itemWithResolvedDuration) {})
             assertEquals(modified, file.lastModified())
+
+            val reused = CountDownLatch(2)
+            val cancelledCalled = java.util.concurrent.atomic.AtomicBoolean()
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                repeat(2) {
+                    VideoThumbnailFrames.request(context, item) { value ->
+                        assertEquals(selected, value); reused.countDown()
+                    }
+                }
+                VideoThumbnailFrames.request(context, item) { cancelledCalled.set(true) }.cancel()
+            }
+            assertTrue(reused.await(5, TimeUnit.SECONDS))
+            assertTrue(!cancelledCalled.get())
+            assertEquals(modified, file.lastModified())
+            // Trashed files still exist: cleanup must not discard their chosen frame.
+            context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, 1) }, null, null)
+            VideoThumbnailFrames.cleanupOrphans(context)
+            assertTrue(file.exists())
+            context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_TRASHED, 0) }, null, null)
+            context.contentResolver.delete(uri, null, null)
+            VideoThumbnailFrames.cleanupOrphans(context)
+            assertTrue("Miniatura órfã deve sair somente depois da exclusão definitiva", !file.exists())
         } finally {
             context.contentResolver.delete(uri, null, null)
         }

@@ -17,18 +17,21 @@ import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.RawQuery
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteQuery
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 @Entity(
     tableName = "cached_media",
     primaryKeys = ["scope", "uri"],
-    indices = [Index("scope"), Index("albumKey"), Index("dateAdded")]
+    indices = [Index("scope"), Index("albumKey"), Index("dateAdded"),
+        Index(value = ["scope", "albumKey", "dateAdded"]), Index(value = ["scope", "dateAdded"])]
 )
 data class CachedMediaEntity(
     val scope: String,
@@ -91,6 +94,7 @@ abstract class GalleryDao {
 
     @Query(
         """
+        WITH albums AS (
         SELECT
             media.albumKey AS albumKey,
             MAX(media.albumName) AS albumName,
@@ -98,68 +102,35 @@ abstract class GalleryDao {
             MAX(media.dateAdded) AS latestDate,
             COALESCE(MIN(CASE WHEN media.dateAdded > 0 THEN media.dateAdded END), 0) AS firstDate,
             SUM(CASE WHEN media.size > 0 THEN media.size ELSE 0 END) AS totalSize,
-            MAX(media.relativePath) AS relativePath,
-            (
-                SELECT cover.uri
-                FROM cached_media AS cover
-                WHERE cover.scope = :scope AND cover.albumKey = media.albumKey
-                ORDER BY cover.dateAdded DESC
-                LIMIT 1
-            ) AS coverUri,
-            (
-                SELECT cover.mimeType
-                FROM cached_media AS cover
-                WHERE cover.scope = :scope AND cover.albumKey = media.albumKey
-                ORDER BY cover.dateAdded DESC
-                LIMIT 1
-            ) AS coverMimeType
+            MAX(media.relativePath) AS relativePath
         FROM cached_media AS media
         WHERE media.scope = :scope
         GROUP BY media.albumKey
+        )
+        SELECT albums.*, cover.uri AS coverUri, cover.mimeType AS coverMimeType
+        FROM albums
+        LEFT JOIN cached_media AS cover ON cover.scope = :scope AND cover.uri = (
+            SELECT candidate.uri FROM cached_media AS candidate
+            WHERE candidate.scope = :scope AND candidate.albumKey = albums.albumKey
+            ORDER BY candidate.dateAdded DESC LIMIT 1
+        )
         ORDER BY latestDate DESC
         """
     )
     abstract fun albumSummaries(scope: String): List<CachedAlbumSummary>
 
-    @Query(
-        """
-        SELECT cached_media.*
-        FROM cached_media
-        LEFT JOIN custom_media_order
-            ON custom_media_order.uri = cached_media.uri
-            AND custom_media_order.albumKey = :customOrderAlbumKey
-        WHERE cached_media.scope = :scope
-            AND (:albumKey = '__all__' OR cached_media.albumKey = :albumKey)
-            AND (
-                :query = ''
-                OR cached_media.name LIKE '%' || :query || '%'
-                OR cached_media.relativePath LIKE '%' || :query || '%'
-            )
-        ORDER BY
-            CASE WHEN :sortMode = 'custom' AND custom_media_order.position IS NULL THEN 1 ELSE 0 END ASC,
-            CASE WHEN :sortMode = 'custom' THEN custom_media_order.position END ASC,
-            CASE WHEN :sortMode = 'date' AND :sortDescending = 0 THEN cached_media.dateAdded END ASC,
-            CASE WHEN :sortMode = 'date' AND :sortDescending = 1 THEN cached_media.dateAdded END DESC,
-            CASE WHEN :sortMode = 'name' AND :sortDescending = 0 THEN LOWER(cached_media.name) END ASC,
-            CASE WHEN :sortMode = 'name' AND :sortDescending = 1 THEN LOWER(cached_media.name) END DESC,
-            CASE WHEN :sortMode = 'size' AND :sortDescending = 0 THEN cached_media.size END ASC,
-            CASE WHEN :sortMode = 'size' AND :sortDescending = 1 THEN cached_media.size END DESC,
-            CASE WHEN :sortMode = 'duration' AND :sortDescending = 0 THEN cached_media.duration END ASC,
-            CASE WHEN :sortMode = 'duration' AND :sortDescending = 1 THEN cached_media.duration END DESC,
-            CASE WHEN :sortMode = 'type' AND :sortDescending = 0 THEN LOWER(cached_media.mimeType) END ASC,
-            CASE WHEN :sortMode = 'type' AND :sortDescending = 1 THEN LOWER(cached_media.mimeType) END DESC,
-            cached_media.dateAdded DESC,
-            LOWER(cached_media.name) ASC
-        """
-    )
-    abstract fun pagedMedia(
+    @RawQuery(observedEntities = [CachedMediaEntity::class, CustomMediaOrderEntity::class])
+    abstract fun pagedQuery(query: SupportSQLiteQuery): PagingSource<Int, CachedMediaEntity>
+
+    fun pagedMedia(
         scope: String,
         albumKey: String,
         customOrderAlbumKey: String,
         query: String,
         sortMode: String,
         sortDescending: Int
-    ): PagingSource<Int, CachedMediaEntity>
+    ): PagingSource<Int, CachedMediaEntity> = pagedQuery(
+        CatalogPagingQuery.build(scope, albumKey, customOrderAlbumKey, query, sortMode, sortDescending != 0))
 
     @Query("DELETE FROM cached_media WHERE scope = :scope")
     abstract fun deleteMedia(scope: String)
@@ -174,7 +145,7 @@ abstract class GalleryDao {
     abstract fun saveState(state: CatalogStateEntity)
 
     @Query("UPDATE cached_media SET duration = :duration WHERE uri = :uri AND duration <= 0")
-    abstract fun updateMediaDuration(uri: String, duration: Long)
+    abstract fun updateMediaDuration(uri: String, duration: Long): Int
 
     @Query("SELECT * FROM catalog_state WHERE scope = :scope LIMIT 1")
     abstract fun state(scope: String): CatalogStateEntity?
@@ -215,7 +186,7 @@ abstract class GalleryDao {
 
 @Database(
     entities = [CachedMediaEntity::class, CatalogStateEntity::class, CustomMediaOrderEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class GalleryDatabase : RoomDatabase() {
@@ -229,12 +200,19 @@ abstract class GalleryDatabase : RoomDatabase() {
                 context.applicationContext,
                 GalleryDatabase::class.java,
                 "gallery_catalog.db"
-            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
         }
 
         internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE cached_media ADD COLUMN duration INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_media_scope_albumKey_dateAdded ON cached_media(scope, albumKey, dateAdded)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_media_scope_dateAdded ON cached_media(scope, dateAdded)")
             }
         }
     }
@@ -252,11 +230,11 @@ object GalleryCatalogStore {
     @Volatile private var visibleSnapshot: List<MediaItem> = emptyList()
     @Volatile private var completeSnapshot: List<MediaItem> = emptyList()
 
-    fun readMedia(context: Context, includeHidden: Boolean): List<MediaItem> {
+    fun readMedia(context: Context, includeHidden: Boolean): List<MediaItem> = synchronized(mutationLock) {
         val scope = scope(includeHidden)
         val result = GalleryDatabase.get(context).galleryDao().media(scope).map { it.toMediaItem() }
         updateSnapshot(includeHidden, result)
-        return result
+        result
     }
 
     fun readAlbumMedia(context: Context, includeHidden: Boolean, albumKey: String): List<MediaItem> =
@@ -453,7 +431,13 @@ object GalleryCatalogStore {
             // A targeted update is not proof that the entire device is reconciled.
             mutationRevision++
             dao.replaceAlbumMedia(scope(includeHidden), albumKey, entities)
-            updateSnapshot(includeHidden, snapshot(includeHidden).filterNot { it.albumKey == albumKey } + items)
+            val previousSnapshot = snapshot(includeHidden)
+            if (previousSnapshot.isEmpty()) {
+                // An invalidated/cold snapshot is not a complete empty catalog.
+                readMedia(context, includeHidden)
+            } else {
+                updateSnapshot(includeHidden, previousSnapshot.filterNot { it.albumKey == albumKey } + items)
+            }
             context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE).edit {
                 remove(fingerprintKey(includeHidden))
             }
@@ -470,7 +454,15 @@ object GalleryCatalogStore {
 
     fun saveResolvedDuration(context: Context, uri: String, duration: Long) {
         if (duration <= 0L) return
-        GalleryDatabase.get(context).galleryDao().updateMediaDuration(uri, duration)
+        synchronized(mutationLock) {
+            if (GalleryDatabase.get(context).galleryDao().updateMediaDuration(uri, duration) == 0) return
+            // Invalidate in O(1), rather than mapping the full catalog for every
+            // resolved video. A subsequent read reloads the updated Room rows.
+            // The revision also prevents an older scan from overwriting them.
+            mutationRevision++
+            visibleSnapshot = emptyList()
+            completeSnapshot = emptyList()
+        }
     }
 
     fun saveCustomOrder(context: Context, albumKey: String, items: List<MediaItem>) {

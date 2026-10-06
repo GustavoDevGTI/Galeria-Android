@@ -35,6 +35,12 @@ class AlbumCatalogController(context: Context) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var generation = 0
     @Volatile private var closed = false
+    // Worker-owned. Reuse the indexed base, but reconcile requested filesystem
+    // folders and .nomedia every time: never cache a visibility decision.
+    private var indexedMedia: List<MediaItem>? = null
+    private var indexedToken = ""
+    private var indexedRevision = -1L
+    private var indexedAt = 0L
 
     fun load(
         options: AlbumCatalogOptions,
@@ -49,20 +55,22 @@ class AlbumCatalogController(context: Context) {
                 MediaActions.hasAllFilesAccess(appContext), CATALOG_FALLBACK_MAX_AGE_MS)
             if (dirty || !fresh || options.temporarilyVisibleKeys.isNotEmpty()) {
                 val media = MediaStoreRepository.queryOverviewMedia(appContext, options.includeHidden,
-                    options.temporarilyVisibleKeys, options.showNaturallyHidden)
+                    options.temporarilyVisibleKeys, options.showNaturallyHidden, indexedBase())
                 deliverAlbums(request, buildAlbumsFromMedia(media, options), options, onAlbums)
                 if (dirty || !fresh) deferRefresh(request, options, onDeferredRefreshRequired)
                 return@execute
             }
             val cachedSummaries = GalleryCatalogStore.readAlbums(appContext, options.includeHidden)
             if (cachedSummaries.isNotEmpty() && options.includesAllMediaTypes()) {
-                val cachedMedia = GalleryCatalogStore.readMedia(appContext, options.includeHidden)
+                val cachedMedia = GalleryCatalogStore.snapshot(options.includeHidden).ifEmpty {
+                    GalleryCatalogStore.readMedia(appContext, options.includeHidden)
+                }
                 deliverAlbums(request, withVirtualAlbums(cachedSummaries, cachedMedia, options), options, onAlbums)
             }
 
             if (cachedSummaries.isEmpty()) {
                 val media = MediaStoreRepository.queryOverviewMedia(appContext, options.includeHidden,
-                    options.temporarilyVisibleKeys, options.showNaturallyHidden)
+                    options.temporarilyVisibleKeys, options.showNaturallyHidden, indexedBase())
                 deliverAlbums(request, buildAlbumsFromMedia(media, options), options, onAlbums)
                 if (!fresh) deferRefresh(request, options, onDeferredRefreshRequired)
                 return@execute
@@ -79,6 +87,21 @@ class AlbumCatalogController(context: Context) {
                 }
             }
         }
+    }
+
+    private fun indexedBase(): List<MediaItem> {
+        val token = GalleryCatalogStore.mediaStoreChangeToken(appContext)
+        val revision = GalleryCatalogStore.currentMutationRevision()
+        val now = android.os.SystemClock.elapsedRealtime()
+        val cached = indexedMedia
+        if (cached != null && token == indexedToken && revision == indexedRevision &&
+            token.isNotEmpty() && now - indexedAt < 30_000L) return cached
+        val source = MediaStoreRepository.queryIndexedMedia(appContext)
+        indexedMedia = source
+        indexedToken = token
+        indexedRevision = revision
+        indexedAt = now
+        return source
     }
 
     fun refreshCatalog(
@@ -210,7 +233,8 @@ class AlbumCatalogController(context: Context) {
                 order
             ) ?: album.cover
             AlbumItem(album.key, album.name, album.count, cover, album.latestDate,
-                album.firstDate, album.totalSize, album.path)
+                album.firstDate, album.totalSize, album.path, key in naturallyHiddenKeys,
+                AlbumRules.isHidden(album.path, key) || markers.containsNomedia(album.path))
         }
     }
 

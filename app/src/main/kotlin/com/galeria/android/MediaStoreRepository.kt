@@ -104,6 +104,7 @@ object MediaStoreRepository {
             return scanCurrentMedia(context, includeHidden, allFilesAccess)
         }
         cacheResult(items, includeHidden, allFilesAccess)
+        VideoThumbnailFrames.scheduleOrphanCleanup(context)
         if (includeHidden) completedHiddenScans++ else completedVisibleScans++
         return items
     }
@@ -226,8 +227,9 @@ object MediaStoreRepository {
     /** UI reconciliation: indexed media plus only the hidden directories requested
      * by the screen. Discovery of unknown hidden directories remains explicit. */
     internal fun queryOverviewMedia(context: Context, includeHidden: Boolean,
-        temporarilyVisible: Set<String>, showNaturallyHidden: Boolean): List<MediaItem> {
-        val indexed = queryIndexedMedia(context)
+        temporarilyVisible: Set<String>, showNaturallyHidden: Boolean,
+        indexedMedia: List<MediaItem>? = null): List<MediaItem> {
+        val indexed = indexedMedia ?: queryIndexedMedia(context)
         if (!StorageAccessRules.includeHiddenFilesystem(includeHidden, MediaActions.hasAllFilesAccess(context))) return indexed
         val requested = temporarilyVisible.toMutableSet()
         if (showNaturallyHidden) {

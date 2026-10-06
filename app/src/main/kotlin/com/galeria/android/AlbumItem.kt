@@ -8,7 +8,9 @@ class AlbumItem(
     @JvmField val latestDate: Long,
     @JvmField val firstDate: Long,
     @JvmField val totalSize: Long,
-    path: String?
+    path: String?,
+    @JvmField val naturallyHidden: Boolean = false,
+    @JvmField val requiresFilesystem: Boolean = false
 ) {
     @JvmField val path: String = path ?: ""
 }

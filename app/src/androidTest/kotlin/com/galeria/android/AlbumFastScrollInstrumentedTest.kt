@@ -3,7 +3,10 @@ package com.galeria.android
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.database.ContentObserver
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.view.MotionEvent
@@ -46,6 +49,7 @@ import org.hamcrest.Matcher
 import org.hamcrest.Matchers.allOf
 import org.hamcrest.Matchers.equalTo
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
@@ -81,6 +85,7 @@ class AlbumFastScrollInstrumentedTest {
             // Drain any already-running scan before installing the large cached
             // fixture. This case exercises grid/scrolling, not real-device indexing.
             MediaStoreRepository.refreshMedia(context, force = true)
+            awaitMediaStoreSettled(context)
             io {
                 dao.replaceMedia(
                     VISIBLE_SCOPE,
@@ -112,7 +117,7 @@ class AlbumFastScrollInstrumentedTest {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             ActivityScenario.launch<AlbumMediaActivity>(intent).use { scenario ->
-                waitUntilDisplayed(FAST_SCROLL_DESCRIPTION)
+                waitUntilDisplayed(FAST_SCROLL_DESCRIPTION, scenario)
                 onView(allOf(withTagValue(equalTo("media_overlay_name")), withText(mediaName(0))))
                     .check(matches(isDisplayed()))
                 onView(allOf(withTagValue(equalTo("media_overlay_duration")), withText("2:05")))
@@ -201,6 +206,30 @@ class AlbumFastScrollInstrumentedTest {
 
     private fun mediaName(index: Int): String = "midia-${index.toString().padStart(3, '0')}.jpg"
 
+    private fun awaitMediaStoreSettled(context: Context) {
+        // Previous real-media fixtures may still deliver asynchronous MediaStore
+        // notifications. Do not stamp the synthetic catalog fresh until those
+        // changes settle; otherwise the app correctly replaces it with real rows.
+        val lastChange = AtomicLong(SystemClock.elapsedRealtime())
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) { lastChange.set(SystemClock.elapsedRealtime()) }
+        }
+        context.contentResolver.registerContentObserver(MediaStore.Files.getContentUri("external"), true, observer)
+        try {
+            val deadline = SystemClock.elapsedRealtime() + 5000
+            var token = GalleryCatalogStore.mediaStoreChangeToken(context)
+            while (SystemClock.elapsedRealtime() < deadline) {
+                val current = GalleryCatalogStore.mediaStoreChangeToken(context)
+                if (current != token) { token = current; lastChange.set(SystemClock.elapsedRealtime()) }
+                if (SystemClock.elapsedRealtime() - lastChange.get() >= 750) return
+                Thread.sleep(50)
+            }
+            throw AssertionError("MediaStore não estabilizou antes da instalação do catálogo sintético")
+        } finally {
+            context.contentResolver.unregisterContentObserver(observer)
+        }
+    }
+
     private fun viewIsDisplayed(description: String): Boolean = try {
         onView(withContentDescription(description)).check(matches(isDisplayed()))
         true
@@ -208,13 +237,21 @@ class AlbumFastScrollInstrumentedTest {
         false
     }
 
-    private fun waitUntilDisplayed(description: String) {
+    private fun waitUntilDisplayed(description: String, scenario: ActivityScenario<AlbumMediaActivity>) {
         val deadline = System.currentTimeMillis() + LOAD_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
             if (viewIsDisplayed(description)) return
             Thread.sleep(100L)
         }
-        throw AssertionError("Elemento não exibido: $description")
+        var diagnostic = ""
+        scenario.onActivity { activity ->
+            val recycler = findRecyclerView(activity.findViewById(android.R.id.content))
+            val layout = recycler?.layoutManager as? GridLayoutManager
+            val scroller = findViewOfType(activity.findViewById(android.R.id.content), AlbumFastScroller::class.java)
+            diagnostic = "items=${recycler?.adapter?.itemCount}, first=${layout?.findFirstVisibleItemPosition()}, " +
+                "last=${layout?.findLastVisibleItemPosition()}, height=${scroller?.height}, visibility=${scroller?.visibility}"
+        }
+        throw AssertionError("Elemento não exibido: $description ($diagnostic)")
     }
 
     private fun waitUntilAlbumEnd(scenario: ActivityScenario<AlbumMediaActivity>) {

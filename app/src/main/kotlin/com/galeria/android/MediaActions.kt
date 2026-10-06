@@ -121,14 +121,7 @@ class MediaActions private constructor() {
                         Collections.singletonList(uri),
                         true
                     )
-                    activity.startIntentSenderForResult(
-                        pendingIntent.intentSender,
-                        requestCode,
-                        null,
-                        0,
-                        0,
-                        0
-                    )
+                    launchPermission(activity, pendingIntent, requestCode)
                     RESULT_NEEDS_PERMISSION
                 } catch (_: Exception) {
                     val trashed = setTrashed(activity, uri, true)
@@ -156,7 +149,7 @@ class MediaActions private constructor() {
                     Collections.singletonList(uri),
                     false
                 )
-                activity.startIntentSenderForResult(pendingIntent.intentSender, requestCode, null, 0, 0, 0)
+                launchPermission(activity, pendingIntent, requestCode)
                 RESULT_NEEDS_PERMISSION
             } catch (_: Exception) {
                 if (setTrashed(activity, uri, false)) RESULT_DONE else RESULT_FAILED
@@ -196,14 +189,7 @@ class MediaActions private constructor() {
                         activity.contentResolver,
                         Collections.singletonList(uri)
                     )
-                    activity.startIntentSenderForResult(
-                        pendingIntent.intentSender,
-                        requestCode,
-                        null,
-                        0,
-                        0,
-                        0
-                    )
+                    launchPermission(activity, pendingIntent, requestCode)
                     RESULT_NEEDS_PERMISSION
                 } catch (_: Exception) {
                     val deleted = deleteDirect(activity, uri)
@@ -270,14 +256,7 @@ class MediaActions private constructor() {
                         activity.contentResolver,
                         Collections.singletonList(uri)
                     )
-                    activity.startIntentSenderForResult(
-                        pendingIntent.intentSender,
-                        requestCode,
-                        null,
-                        0,
-                        0,
-                        0
-                    )
+                    launchPermission(activity, pendingIntent, requestCode)
                 } catch (_: Exception) {
                     Ui.toast(activity, "Não foi possível pedir permissão para mover.")
                 }
@@ -315,6 +294,18 @@ class MediaActions private constructor() {
             }
 
             return moveToFolderDirect(activity, item, relativePath)
+        }
+
+        private fun launchPermission(activity: Activity, permission: android.app.PendingIntent, requestCode: Int) {
+            activity.runOnUiThread {
+                if (!activity.isFinishing && !activity.isDestroyed) {
+                    try {
+                        activity.startIntentSenderForResult(permission.intentSender, requestCode, null, 0, 0, 0)
+                    } catch (_: Exception) {
+                        Ui.toast(activity, "Não foi possível abrir a solicitação de permissão.")
+                    }
+                }
+            }
         }
 
         @JvmStatic

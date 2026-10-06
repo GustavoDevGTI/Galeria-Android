@@ -53,27 +53,37 @@ class VideoEditActivity : Activity() {
             isAppearanceLightNavigationBars = false
         }
         sourceUri = Uri.parse(intent.getStringExtra("uri").orEmpty())
-        val retriever = MediaMetadataRetriever()
-        durationMs = try {
-            retriever.setDataSource(this, sourceUri)
-            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-        } catch (_: Exception) {
-            0L
-        } finally {
-            retriever.release()
-        }
-        if (durationMs <= 0L) {
-            Ui.toast(this, "Não foi possível obter a duração deste vídeo.")
-            finish()
-            return
-        }
         player = ExoPlayer.Builder(this).build().apply {
             setMediaItem(PlayerMediaItem.fromUri(sourceUri))
             prepare()
         }
         commands.bind(player)
         buildLayout()
-        updateRange()
+        startSeek.isEnabled = false
+        endSeek.isEnabled = false
+        saveButton.isEnabled = false
+        previewButton.isEnabled = false
+        executor.execute {
+            val retriever = MediaMetadataRetriever()
+            val duration = try {
+                retriever.setDataSource(this, sourceUri)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } catch (_: Exception) { 0L } finally { retriever.release() }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                durationMs = duration
+                if (duration <= 0L) {
+                    Ui.toast(this, "Não foi possível obter a duração deste vídeo.")
+                    finish()
+                } else {
+                    startSeek.isEnabled = true
+                    endSeek.isEnabled = true
+                    saveButton.isEnabled = true
+                    previewButton.isEnabled = true
+                    updateRange()
+                }
+            }
+        }
     }
 
     private fun buildLayout() {
@@ -226,7 +236,7 @@ class VideoEditActivity : Activity() {
         if (::timelineBinding.isInitialized) timelineBinding.unbind()
         handler.removeCallbacks(previewTick)
         if (::player.isInitialized) player.release()
-        executor.shutdownNow()
+        executor.shutdown()
         super.onDestroy()
     }
 

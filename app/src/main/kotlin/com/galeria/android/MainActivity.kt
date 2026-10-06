@@ -70,7 +70,6 @@ class MainActivity : ComponentActivity() {
     private var showSvgs = true
     private var showPortraits = false
     private var showHiddenFolders = false
-    private var hiddenDirectoryMarkers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
     private var automaticallyHiddenKeys: Set<String> = emptySet()
     private var columnCount = 3
     private var lastColumnGestureMs = 0L
@@ -663,7 +662,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadAlbums() {
-        hiddenDirectoryMarkers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
             emptyView.setText(R.string.main_loading_media)
@@ -906,7 +904,7 @@ class MainActivity : ComponentActivity() {
             for (album in visibleCatalog) {
                 if (allowedKeys.contains(album.key)) rememberedByKey[album.key] = album
             }
-            val rememberedAlbums = rememberedByKey.values.toList()
+            val rememberedAlbums = HiddenAlbumClassification.classify(applicationContext, rememberedByKey.values.toList())
             runOnUiThread {
                 if (isFinishing) return@runOnUiThread
                 val albumsByKey = LinkedHashMap<String, AlbumItem>()
@@ -919,8 +917,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showFolderVisibilityDialog(albums: List<AlbumItem>): (List<AlbumItem>) -> Unit {
-        hiddenDirectoryMarkers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
-        automaticallyHiddenKeys = AutomaticHiddenAlbums.keys(applicationContext, albums, hiddenDirectoryMarkers)
+        automaticallyHiddenKeys = albums.filter { it.naturallyHidden }.mapTo(HashSet()) { it.key }
         val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
         val pinnedKeys = HashSet(prefs.getStringSet(PREF_PINNED_HIDDEN_FOLDER_KEYS, HashSet()) ?: HashSet())
         val everVisibleKeys = HashSet(
@@ -1081,8 +1078,7 @@ class MainActivity : ComponentActivity() {
                     else R.string.main_reveal_hidden_temporarily
                 )
                 eye.setOnClickListener {
-                    val requiresFilesystem = AlbumRules.isHidden(album.path, album.key) ||
-                        hiddenDirectoryMarkers.containsNomedia(album.path)
+                    val requiresFilesystem = album.requiresFilesystem || AlbumRules.isHidden(album.path, album.key)
                     if (requiresFilesystem && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
                         !MediaActions.hasAllFilesAccess(this@MainActivity)) {
                         Ui.toast(this@MainActivity, getString(R.string.access_hidden_folders_required))
@@ -1172,18 +1168,16 @@ class MainActivity : ComponentActivity() {
                 force = true,
                 onSuccess = {
                     mediaLoader.execute {
-                        val refreshed = MediaStoreRepository.buildAlbums(
+                        val refreshed = HiddenAlbumClassification.classify(applicationContext, MediaStoreRepository.buildAlbums(
                             GalleryCatalogStore.readMedia(applicationContext, true)
-                        ).toMutableList()
+                        )).toMutableList()
                         sortAlbums(refreshed)
                         runOnUiThread {
                             if (isFinishing) return@runOnUiThread
                             val previousVisible = HashSet(checkedKeys)
                             mutableAlbums.clear()
                             mutableAlbums.addAll(refreshed)
-                            hiddenDirectoryMarkers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
-                            automaticallyHiddenKeys = AutomaticHiddenAlbums.keys(applicationContext,
-                                refreshed, hiddenDirectoryMarkers)
+                            automaticallyHiddenKeys = refreshed.filter { it.naturallyHidden }.mapTo(HashSet()) { it.key }
                             sortVisibilityAlbums()
                             checkedKeys.clear()
                             for (album in mutableAlbums) {
@@ -1419,7 +1413,10 @@ class MainActivity : ComponentActivity() {
             if (dialog.isShowing && visibilityDialogAdapter === listAdapter) {
                 val existing = mutableAlbums.associateBy { it.key }
                 for (album in remembered) {
-                    if (!VirtualAlbumRules.isVirtual(album.key) && album.key !in existing) {
+                    if (VirtualAlbumRules.isVirtual(album.key)) continue
+                    val index = mutableAlbums.indexOfFirst { it.key == album.key }
+                    if (index >= 0) mutableAlbums[index] = album
+                    else if (album.key !in existing) {
                         mutableAlbums.add(album)
                         if (!hiddenKeys.contains(album.key) && (showHiddenFolders || !isHiddenAlbum(album))) {
                             checkedKeys.add(album.key)
@@ -1466,8 +1463,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun isHiddenAlbum(album: AlbumItem): Boolean =
-        AlbumRules.isHidden(album.path, album.key) || album.key in automaticallyHiddenKeys ||
-            hiddenDirectoryMarkers.containsNomedia(album.path)
+        album.naturallyHidden || AlbumRules.isHidden(album.path, album.key) || album.key in automaticallyHiddenKeys
 
     private fun matchesMediaFilter(item: MediaItem): Boolean = MediaFilterRules.matches(
         item.name,

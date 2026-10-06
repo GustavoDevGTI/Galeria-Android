@@ -30,6 +30,31 @@ import java.io.FileOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class MotionPhotoInstrumentedTest {
+    @Test fun cancelledScanDoesNotPersistAndNegativeDetectionIsReused() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = context.getSharedPreferences("motion_photo_detection_v1", android.content.Context.MODE_PRIVATE)
+        val previous = preferences.all.toMap()
+        val photo = File(context.cacheDir, "motion-negative-${System.nanoTime()}.jpg")
+        try {
+            photo.outputStream().use { output -> repeat(32) { output.write(ByteArray(64 * 1024) { 42 }) } }
+            val uri = Uri.fromFile(photo)
+            var cancelledChecks = 0
+            assertEquals(null, MotionPhotoSupport.detect(context, uri) { ++cancelledChecks < 3 })
+            assertEquals(previous, preferences.all)
+            var scanChecks = 0
+            assertEquals(null, MotionPhotoSupport.detect(context, uri) { scanChecks++; true })
+            assertTrue("Varredura deve percorrer vários blocos", scanChecks > 10)
+            var cachedChecks = 0
+            assertEquals(null, MotionPhotoSupport.detect(context, uri) { cachedChecks++; true })
+            assertTrue("Resultado negativo deve evitar nova varredura", cachedChecks <= 2)
+        } finally {
+            photo.delete()
+            preferences.edit().clear().apply {
+                previous.forEach { (key, value) -> putString(key, value as String) }
+            }.commit()
+        }
+    }
+
     @Test fun detectsAndExtractsEmbeddedVideoWithoutChangingPhoto() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val photo = File(context.cacheDir, "motion_instrumented_test.jpg")

@@ -116,7 +116,8 @@ class AlbumRecyclerAdapter(
             if (remaining == 0 && album.key != "all_media") return@mapNotNull null
             val cover = album.cover?.takeUnless { MediaIdentityRules.canonicalKey(it.uri.toString()) in keys }
             AlbumItem(album.key, album.name, remaining, cover, album.latestDate, album.firstDate,
-                (album.totalSize - removed.sumOf { it.size }).coerceAtLeast(0), album.path)
+                (album.totalSize - removed.sumOf { it.size }).coerceAtLeast(0), album.path,
+                album.naturallyHidden, album.requiresFilesystem)
         })
     }
 
@@ -290,23 +291,44 @@ class AlbumRecyclerAdapter(
     }
 
     private fun bindCover(holder: Holder, album: AlbumItem) {
+        holder.thumbnailRequest?.cancel()
+        holder.thumbnailRequest = null
         holder.cover.background = Ui.rounded(Color.BLACK, folderRadius(), context)
         val cover = album.cover
         if (cover == null) {
+            holder.thumbnailLoad?.dispose()
+            holder.thumbnailLoad = null
+            holder.boundUri = null
             holder.cover.setImageDrawable(null)
         } else {
-            val saved = if (cover.isVideo()) {
+            if (holder.boundUri != cover.uri.toString()) {
+                holder.thumbnailLoad?.dispose()
+                holder.thumbnailLoad = null
+                holder.cover.setImageDrawable(null)
+            }
+            holder.boundUri = cover.uri.toString()
+            if (cover.isVideo()) {
                 val boundKey = album.key
                 val boundUri = cover.uri
-                VideoThumbnailFrames.thumbnail(context, cover) { uri ->
+                val saved = VideoThumbnailFrames.cachedThumbnail(context, cover)
+                if (saved != null) loadCover(holder, cover, saved)
+                else holder.thumbnailRequest = VideoThumbnailFrames.request(context, cover) { uri ->
                     if (holder.bindingAdapterPosition in visibleAlbums.indices &&
                         visibleAlbums[holder.bindingAdapterPosition].key == boundKey &&
                         visibleAlbums[holder.bindingAdapterPosition].cover?.uri == boundUri
                     ) loadCover(holder, cover, uri)
                 }
-            } else null
-            loadCover(holder, cover, saved)
+            } else loadCover(holder, cover, null)
         }
+    }
+
+    override fun onViewRecycled(holder: Holder) {
+        holder.thumbnailRequest?.cancel()
+        holder.thumbnailRequest = null
+        holder.thumbnailLoad?.dispose()
+        holder.thumbnailLoad = null
+        holder.boundUri = null
+        super.onViewRecycled(holder)
     }
 
     private fun loadCover(holder: Holder, cover: MediaItem, saved: android.net.Uri?) {
@@ -314,7 +336,7 @@ class AlbumRecyclerAdapter(
             if (saved == null) "opening" else "saved"
         } else imageCoverRevision.toString()
         val diskKey = "album:${MediaContentRevision.key(context, cover.uri)}:${cover.size}:${cover.dateAdded}:$version"
-        holder.cover.load(saved ?: cover.uri) {
+        holder.thumbnailLoad = holder.cover.load(saved ?: cover.uri) {
             ImageRotation.configureRequest(context, cover, this)
             size(coverSizePx, coverSizePx)
             precision(Precision.INEXACT)
@@ -352,7 +374,9 @@ class AlbumRecyclerAdapter(
             first.latestDate == second.latestDate &&
             first.firstDate == second.firstDate &&
             first.totalSize == second.totalSize &&
-            first.path == second.path
+            first.path == second.path && first.naturallyHidden == second.naturallyHidden &&
+            first.requiresFilesystem == second.requiresFilesystem && first.cover?.size == second.cover?.size &&
+            first.cover?.dateAdded == second.cover?.dateAdded
 
     class Holder(
         itemView: View,
@@ -361,7 +385,11 @@ class AlbumRecyclerAdapter(
         val check: TextView,
         val pin: ImageView,
         val temporaryEye: ImageView
-    ) : RecyclerView.ViewHolder(itemView)
+    ) : RecyclerView.ViewHolder(itemView) {
+        var thumbnailRequest: VideoThumbnailFrames.Request? = null
+        var boundUri: String? = null
+        var thumbnailLoad: coil3.request.Disposable? = null
+    }
 
     private companion object {
         const val PAYLOAD_SELECTION = "selection"

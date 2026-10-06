@@ -388,6 +388,24 @@ object AlbumMediaRules {
         return items
     }
 
+    /** Same comparator/stable tie breaking as prepare(), without sorting an album
+     * just to display its first item as a cover. */
+    fun first(source: List<MediaItem>, options: AlbumMediaPreparationOptions, customOrder: List<String>): MediaItem? {
+        val mediaComparator = MediaSortRules.comparator(options.sortMode, options.sortDescending, customOrder, ::sortKey)
+        val comparator = Comparator<MediaItem> { first, second ->
+            val group = if (options.groupMode == GROUP_NONE) 0
+                else groupValue(first, options.groupMode).compareTo(groupValue(second, options.groupMode))
+            if (group != 0) group else mediaComparator.compare(first, second)
+        }
+        var best: MediaItem? = null
+        for (item in source) {
+            if (!MediaFilterRules.matches(item.name, item.mimeType, options.filterOptions)) continue
+            val previous = best
+            if (previous == null || comparator.compare(item, previous) < 0) best = item
+        }
+        return best
+    }
+
     private fun sortKey(item: MediaItem): MediaSortRules.Key = MediaSortRules.Key(
         item.uri.toString(),
         item.name,

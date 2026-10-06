@@ -17,12 +17,33 @@ import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
 
 class SettingsActivity : Activity() {
     private lateinit var prefs: SharedPreferences
     private lateinit var content: LinearLayout
     private lateinit var root: LinearLayout
     private var advancedOptionsExpanded = false
+    private val cacheOperations = ActivityOperationRunner(this)
+    private var cacheSubtitle: TextView? = null
+    private var cacheMeasurement = 0
+    private val cacheScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var cacheSizeJob: Job? = null
+    private var measuredCacheBytes: Long? = null
+    private var measuredCacheAt = 0L
+
+    override fun onDestroy() {
+        cacheMeasurement++
+        cacheScope.cancel()
+        cacheOperations.close()
+        super.onDestroy()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -147,7 +168,8 @@ class SettingsActivity : Activity() {
         addOption(getString(R.string.settings_folder_thumbnail_style), prefs.getString("folder_thumb_style", folderThumbnailValues[1]).orEmpty()) {
             chooseValue(getString(R.string.settings_folder_thumbnail_style), "folder_thumb_style", folderThumbnailValues)
         }
-        addOption(getString(R.string.settings_clear_cache), cacheLabel()) { clearCache() }
+        cacheSubtitle = addOption(getString(R.string.settings_clear_cache), "…") { clearCache() }
+        measureCache()
 
         addSection(getString(R.string.settings_section_scrolling))
         addSwitch(getString(R.string.settings_horizontal_thumbnail_scroll), getString(R.string.settings_horizontal_thumbnail_scroll_hint), "horizontal_thumbnail_scroll", false, null)
@@ -257,7 +279,7 @@ class SettingsActivity : Activity() {
         content.addView(view, params)
     }
 
-    private fun addOption(title: String, subtitle: String, listener: (() -> Unit)?) {
+    private fun addOption(title: String, subtitle: String, listener: (() -> Unit)?): TextView {
         val row = rowBase()
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val titleView = Ui.title(this, title, 16)
@@ -269,6 +291,7 @@ class SettingsActivity : Activity() {
             row.setOnClickListener { listener() }
         }
         content.addView(row)
+        return subtitleView
     }
 
     private fun addSwitch(
@@ -524,15 +547,33 @@ class SettingsActivity : Activity() {
         }
     }
 
-    private fun cacheLabel(): String {
-        val bytes = folderSize(cacheDir)
-        return getString(R.string.settings_cache_size_kb, bytes / 1024)
+    private fun measureCache() {
+        val known = measuredCacheBytes
+        if (known != null && android.os.SystemClock.elapsedRealtime() - measuredCacheAt < 5_000L) {
+            cacheSubtitle?.text = getString(R.string.settings_cache_size_kb, known / 1024)
+            return
+        }
+        if (cacheSizeJob?.isActive == true) return
+        val measurement = cacheMeasurement
+        cacheSizeJob = cacheScope.launch {
+            val bytes = withContext(Dispatchers.IO) { folderSize(cacheDir) }
+            if (measurement == cacheMeasurement && !isFinishing) {
+                measuredCacheBytes = bytes
+                measuredCacheAt = android.os.SystemClock.elapsedRealtime()
+                cacheSubtitle?.text = getString(R.string.settings_cache_size_kb, bytes / 1024)
+            }
+        }
     }
 
     private fun clearCache() {
-        deleteChildren(cacheDir)
-        Ui.toast(this, getString(R.string.settings_cache_cleared))
-        fillContent()
+        if (cacheOperations.busy) return
+        cacheMeasurement++
+        measuredCacheBytes = null
+        cacheSizeJob?.cancel()
+        cacheOperations.run({ deleteChildren(cacheDir) }) {
+            Ui.toast(this, getString(R.string.settings_cache_cleared))
+            fillContent()
+        }
     }
 
     private fun folderSize(file: File?): Long {
