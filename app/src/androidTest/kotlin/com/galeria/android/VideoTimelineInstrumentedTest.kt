@@ -381,6 +381,92 @@ class VideoTimelineInstrumentedTest {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
+    @Test fun slowFilmstripShowsLoadingImmediatelyAndIgnoresRepeatedClicks() {
+        withBlockedFrameWorker { release ->
+            val file = sample()
+            try {
+                ActivityScenario.launch<DetailActivity>(intent(file)).use { scenario ->
+                    scenario.onActivity { activity ->
+                        val toggle = activity.window.decorView.findViewWithTag<View>("video_timeline_toggle")
+                        val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                        toggle.performClick()
+                        assertEquals(VideoTimelineView.ExpansionState.LOADING, strip.expansionState)
+                        assertFalse("Novo clique deve ficar bloqueado", toggle.isEnabled)
+                        assertEquals(View.VISIBLE, activity.window.decorView.findViewWithTag<View>("video_timeline_loading").visibility)
+                        repeat(5) { toggle.performClick() }
+                        assertEquals("Cliques não podem fechar ou reiniciar o pedido", VideoTimelineView.ExpansionState.LOADING, strip.expansionState)
+                    }
+                    instrumentation.waitForIdleSync()
+                    scenario.onActivity {
+                        val loading = it.window.decorView.findViewWithTag<android.view.ViewGroup>("video_timeline_loading")
+                        assertTrue(loading.isShown)
+                        assertEquals(1, loading.childCount)
+                        assertTrue(loading.getChildAt(0) is LoadingIndicatorView)
+                        assertTrue(it.window.decorView.findViewWithTag<View>("video_progress").isShown)
+                    }
+                    captureLoadingFeedback("loading-filmstrip-qa.png")
+                    release.countDown()
+                    await {
+                        var ready = false
+                        scenario.onActivity { activity ->
+                            val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                            ready = strip.isShown && strip.expansionState == VideoTimelineView.ExpansionState.OPEN
+                            if (ready) {
+                                assertTrue(activity.window.decorView.findViewWithTag<View>("video_timeline_toggle").isEnabled)
+                                assertEquals(View.GONE, activity.window.decorView.findViewWithTag<View>("video_timeline_loading").visibility)
+                            }
+                        }
+                        ready
+                    }
+                }
+            } finally { file.delete() }
+        }
+    }
+
+    @Test fun filmstripTimeoutReleasesButtonAndAllowsRetryWithoutLateReopening() {
+        withBlockedFrameWorker { release ->
+            val file = sample()
+            try {
+                ActivityScenario.launch<DetailActivity>(intent(file)).use { scenario ->
+                    scenario.onActivity { activity ->
+                        val toggle = activity.window.decorView.findViewWithTag<View>("video_timeline_toggle")
+                        val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                        toggle.performClick()
+                        val timeout = VideoTimelineView::class.java.getDeclaredField("loadingTimeout").apply { isAccessible = true }.get(strip) as Runnable
+                        timeout.run() // Deterministic slow-I/O timeout, no 15-second sleep.
+                        assertEquals(VideoTimelineView.ExpansionState.FAILED, strip.expansionState)
+                        assertTrue(toggle.isEnabled)
+                        assertEquals(View.GONE, activity.window.decorView.findViewWithTag<View>("video_timeline_loading").visibility)
+                        toggle.performClick()
+                        assertEquals(VideoTimelineView.ExpansionState.LOADING, strip.expansionState)
+                        assertFalse(toggle.isEnabled)
+                        // Navigating away cancels loading and blocks stale completion.
+                        strip.setSource(null)
+                        strip.setExpanded(false)
+                    }
+                    release.countDown()
+                    instrumentation.waitForIdleSync()
+                    scenario.onActivity { activity ->
+                        assertEquals(View.GONE, activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline").visibility)
+                        assertTrue(activity.window.decorView.findViewWithTag<View>("video_timeline_toggle").isEnabled)
+                    }
+                }
+            } finally { file.delete() }
+        }
+    }
+
+    private fun withBlockedFrameWorker(test: (CountDownLatch) -> Unit) {
+        val worker = VideoTimelineFrames::class.java.getDeclaredField("worker").apply { isAccessible = true }
+            .get(null) as java.util.concurrent.ExecutorService
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        worker.execute { entered.countDown(); release.await(30, TimeUnit.SECONDS) }
+        try {
+            assertTrue("Worker de miniaturas indisponível", entered.await(15, TimeUnit.SECONDS))
+            test(release)
+        } finally { release.countDown() }
+    }
+
     private fun sample() = File(context.cacheDir, "timeline-${System.nanoTime()}.mp4").also { file ->
         instrumentation.context.assets.open("playback-sample.mp4").use { input -> file.outputStream().use(input::copyTo) }
     }

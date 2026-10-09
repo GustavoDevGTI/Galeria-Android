@@ -158,6 +158,7 @@ class DetailActivity : ComponentActivity() {
     private lateinit var timelineBinding: VideoTimelineBinding
     private lateinit var videoProgressRow: LinearLayout
     private lateinit var timelineButton: ImageButton
+    private lateinit var timelineLoadingRow: LinearLayout
     private var timelineExpanded = false
     private lateinit var textRecognitionButton: ImageButton
     private val textRecognitionController by lazy {
@@ -607,6 +608,7 @@ class DetailActivity : ComponentActivity() {
             tag = "video_timeline_toggle"
             contentDescription = getString(R.string.video_timeline_show)
             setOnClickListener {
+                if (videoTimeline.expansionState == VideoTimelineView.ExpansionState.LOADING) return@setOnClickListener
                 videoTimeline.cancelGesture()
                 timelineExpanded = !timelineExpanded
                 updateTimelineVisibility()
@@ -614,6 +616,35 @@ class DetailActivity : ComponentActivity() {
         }
         videoProgressRow.addView(timelineButton, LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)))
         bottomBar.addView(videoProgressRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 44)))
+        // Reserve only the filmstrip's space, leaving playback and other actions usable.
+        timelineLoadingRow = LinearLayout(this).apply {
+            tag = "video_timeline_loading"
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            addView(LoadingIndicatorView(this@DetailActivity, Color.WHITE,
+                getString(R.string.video_timeline_loading)),
+                LinearLayout.LayoutParams(Ui.dp(this@DetailActivity, 32), Ui.dp(this@DetailActivity, 32)))
+        }
+        bottomBar.addView(timelineLoadingRow,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
+        videoTimeline.onExpansionStateChanged = { state ->
+            val loading = state == VideoTimelineView.ExpansionState.LOADING
+            timelineLoadingRow.visibility = if (loading) View.VISIBLE else View.GONE
+            timelineButton.isEnabled = !loading
+            timelineButton.alpha = if (loading) 0.35f else if (timelineExpanded) 1f else 0.65f
+            timelineButton.contentDescription = getString(when {
+                loading -> R.string.video_timeline_loading
+                timelineExpanded -> R.string.video_timeline_hide
+                else -> R.string.video_timeline_show
+            })
+            if (state == VideoTimelineView.ExpansionState.FAILED) {
+                timelineExpanded = false
+                timelineButton.alpha = 0.65f
+                timelineButton.contentDescription = getString(R.string.video_timeline_show)
+                Ui.toast(this, getString(R.string.video_timeline_load_failed))
+            }
+        }
         videoTimeline.visibility = View.GONE
         bottomBar.addView(videoTimeline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
 
@@ -2070,6 +2101,10 @@ class DetailActivity : ComponentActivity() {
         videoTimeline.setExpanded(timelineExpanded)
         timelineButton.contentDescription = getString(if (timelineExpanded) R.string.video_timeline_hide else R.string.video_timeline_show)
         timelineButton.alpha = if (timelineExpanded) 1f else 0.65f
+        if (videoTimeline.expansionState == VideoTimelineView.ExpansionState.LOADING) {
+            timelineButton.contentDescription = getString(R.string.video_timeline_loading)
+            timelineButton.alpha = 0.35f
+        }
     }
 
     private fun updateTimeline() {
@@ -2330,6 +2365,7 @@ class DetailActivity : ComponentActivity() {
                     }
                 }
             } catch (error: SecurityException) {
+                android.util.Log.w("ImageRotation", "Rotação requer permissão de gravação", error)
                 runOnUiThread {
                     imageRotationRunning = false
                     if (!requestPermission || !requestRotationPermission(item, error)) {
@@ -2337,7 +2373,8 @@ class DetailActivity : ComponentActivity() {
                         Ui.toast(this, getString(R.string.image_rotate_permission_error))
                     }
                 }
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                android.util.Log.e("ImageRotation", "Falha ao girar imagem", error)
                 runOnUiThread {
                     imageRotationRunning = false
                     pendingRotateItem = null

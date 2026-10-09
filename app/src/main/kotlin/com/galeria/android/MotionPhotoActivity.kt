@@ -7,7 +7,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -49,8 +48,8 @@ class MotionPhotoActivity : ComponentActivity() {
             setBackgroundColor(Color.BLACK)
         }
         root.addView(playerView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        val progress = ProgressBar(this)
-        root.addView(progress, FrameLayout.LayoutParams(Ui.dp(this, 42), Ui.dp(this, 42), Gravity.CENTER))
+        val progress = LoadingIndicatorView(this, Color.WHITE)
+        root.addView(progress, FrameLayout.LayoutParams(Ui.dp(this, 32), Ui.dp(this, 32), Gravity.CENTER))
         val back = TextView(this).apply {
             text = getString(R.string.album_back)
             textSize = 17f
@@ -104,6 +103,7 @@ class MotionPhotoActivity : ComponentActivity() {
             tag = "video_timeline_toggle"
             contentDescription = getString(if (timelineExpanded) R.string.video_timeline_hide else R.string.video_timeline_show)
             setOnClickListener {
+                if (timeline.expansionState == VideoTimelineView.ExpansionState.LOADING) return@setOnClickListener
                 timeline.cancelGesture()
                 timelineExpanded = !timelineExpanded
                 timeline.setExpanded(timelineExpanded)
@@ -114,6 +114,22 @@ class MotionPhotoActivity : ComponentActivity() {
         progressRow.addView(progressBar, LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f))
         progressRow.addView(toggle, LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)))
         controls.addView(progressRow)
+        val timelineLoading = LoadingIndicatorView(this, Color.WHITE).apply { visibility = View.GONE }
+        controls.addView(FrameLayout(this).apply {
+            addView(timelineLoading, FrameLayout.LayoutParams(Ui.dp(context, 32), Ui.dp(context, 32), Gravity.CENTER))
+            visibility = View.GONE
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
+        timeline.onExpansionStateChanged = { state ->
+            val loading = state == VideoTimelineView.ExpansionState.LOADING
+            timelineLoading.visibility = if (loading) View.VISIBLE else View.GONE
+            (timelineLoading.parent as View).visibility = if (loading) View.VISIBLE else View.GONE
+            toggle.isEnabled = !loading
+            if (state == VideoTimelineView.ExpansionState.FAILED) {
+                timelineExpanded = false
+                toggle.contentDescription = getString(R.string.video_timeline_show)
+                Ui.toast(this, getString(R.string.video_timeline_load_failed))
+            }
+        }
         timeline.setExpanded(timelineExpanded)
         controls.addView(timeline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
         timelineBinding = VideoTimelineBinding(timeline).apply {

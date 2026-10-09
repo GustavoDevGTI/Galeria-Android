@@ -54,9 +54,13 @@ if (!$SkipInstall) {
 
 $failed = 0
 for ($run = 1; $run -le $Repeat; $run++) {
-    $arguments = @('-s', $Device, 'shell', 'am', 'instrument', '-w', '-r')
+    # Resolve the user explicitly instead of passing Android's -2/current-user
+    # sentinel to instrumentation (including shells temporarily running as root).
+    $currentUser = (& adb -s $Device shell am get-current-user).Trim()
+    if ($LASTEXITCODE -ne 0 -or $currentUser -notmatch '^\d+$') { throw 'Usuário Android atual indisponível.' }
+    $arguments = @('-s', $Device, 'shell', 'am', 'instrument', '--user', $currentUser, '-w', '-r')
     if (!$All) { $arguments += @('-e', 'class', $Class) }
-    $arguments += 'com.galeria.android.test/androidx.test.runner.AndroidJUnitRunner'
+    $arguments += 'com.galeria.android.test/com.galeria.android.GalleryTestRunner'
     $started = [Diagnostics.Stopwatch]::StartNew()
     $output = & adb @arguments
     $instrumentationExit = $LASTEXITCODE

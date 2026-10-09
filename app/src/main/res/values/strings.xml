@@ -1,7 +1,12 @@
 <resources>
+    <string name="loading_in_progress">Carregando</string>
     <string name="video_timeline_description">Linha do tempo do vídeo. Deslize as miniaturas para navegar por segundo.</string>
     <string name="video_timeline_show">Mostrar linha do tempo</string>
     <string name="video_timeline_hide">Fechar linha do tempo</string>
+    <string name="video_timeline_loading">Preparando miniaturas…</string>
+    <string name="loading_album_targets">Carregando pastas…</string>
+    <string name="operation_in_progress">Concluindo operação…</string>
+    <string name="video_timeline_load_failed">Não foi possível preparar as miniaturas. Toque para tentar novamente.</string>
     <string name="video_progress_description">Posição da reprodução</string>
     <string name="image_rotate_done">Orientação alterada.</string>
     <string name="image_rotate_error">Não foi possível alterar a orientação.</string>

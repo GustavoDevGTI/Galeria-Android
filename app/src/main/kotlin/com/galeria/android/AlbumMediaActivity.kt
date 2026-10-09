@@ -61,6 +61,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private lateinit var selectAllChip: TextView
     private lateinit var moreButton: ImageButton
     private lateinit var emptyView: TextView
+    private lateinit var catalogLoadingView: LoadingIndicatorView
     private var albumKey: String? = null
     private var albumName: String = ""
     private lateinit var prefs: SharedPreferences
@@ -482,6 +483,7 @@ class AlbumMediaActivity : ComponentActivity() {
                     pendingPagedScrollPosition = -1
                 }
             } else if (refresh is LoadState.Error) {
+                catalogLoadingView.visibility = View.GONE
                 emptyView.setText(R.string.album_load_failed)
                 emptyView.visibility = if (adapter.getCount() == 0) View.VISIBLE else View.GONE
             }
@@ -562,6 +564,8 @@ class AlbumMediaActivity : ComponentActivity() {
             visibility = View.GONE
         }
         content.addView(emptyView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        catalogLoadingView = LoadingIndicatorView(this, description = getString(R.string.album_loading_media)).apply { visibility = View.GONE }
+        content.addView(catalogLoadingView, FrameLayout.LayoutParams(Ui.dp(this, 32), Ui.dp(this, 32), Gravity.CENTER))
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         selectionActions = LinearLayout(this).apply {
@@ -1099,15 +1103,12 @@ class AlbumMediaActivity : ComponentActivity() {
             adapter.isSelectionMode()
         )
         val usePaging = AlbumMediaRules.shouldUsePaging(albumKey, groupMode, adapter.isSelectionMode())
+        if (adapter.getCount() == 0 && ::emptyView.isInitialized) {
+            emptyView.visibility = View.GONE
+            catalogLoadingView.visibility = View.VISIBLE
+        }
         if (usePaging) {
-            if (adapter.getCount() == 0 && ::emptyView.isInitialized) {
-                emptyView.setText(R.string.album_loading_media)
-                emptyView.visibility = View.VISIBLE
-            }
             pendingPagedScrollPosition = targetPosition
-        } else if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
-            emptyView.setText(R.string.main_loading_media)
-            emptyView.visibility = View.VISIBLE
         }
         catalogController.load(
             lifecycleScope,
@@ -1121,6 +1122,16 @@ class AlbumMediaActivity : ComponentActivity() {
                     adapter.submitPagingData(filteredPage)
                 } else {
                     pendingPagingData = filteredPage
+                }
+            },
+            onFailure = {
+                if (!isFinishing && !isDestroyed) {
+                    swipeRefresh.isRefreshing = false
+                    catalogLoadingView.visibility = View.GONE
+                    if (adapter.getCount() == 0) {
+                        emptyView.setText(R.string.album_load_failed)
+                        emptyView.visibility = View.VISIBLE
+                    } else Ui.toast(this, getString(R.string.album_load_failed))
                 }
             }
         )
@@ -1281,6 +1292,8 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun updateEmptyState() {
+        catalogLoadingView.visibility = View.GONE
+        emptyView.setText(R.string.album_empty)
         emptyView.visibility = if (adapter.getCount() == 0) View.VISIBLE else View.GONE
     }
 

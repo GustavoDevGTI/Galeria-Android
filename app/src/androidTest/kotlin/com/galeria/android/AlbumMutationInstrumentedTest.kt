@@ -200,6 +200,9 @@ class AlbumMutationInstrumentedTest {
                 invoke(detail, "moveCurrentToFolder", arrayOf(MediaItem::class.java, String::class.java), item, target)
             }
             waitForDestination(2)
+            // Destination can resume before the source's finish transition ends.
+            // Verify the empty source is actually destroyed before Scenario.close().
+            waitForMutation(scenario, finishing = true)
         }
     }
 

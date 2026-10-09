@@ -11,6 +11,11 @@ import coil3.video.VideoFrameDecoder
 import okio.Path.Companion.toPath
 
 class GalleryApplication : Application(), SingletonImageLoader.Factory, Configuration.Provider {
+    override fun onCreate() {
+        super.onCreate()
+        GalleryUpgradeCoordinator.initialize(this)
+    }
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setMinimumLoggingLevel(Log.ERROR)

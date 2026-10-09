@@ -221,7 +221,10 @@ class AlbumFastScrollInstrumentedTest {
             while (SystemClock.elapsedRealtime() < deadline) {
                 val current = GalleryCatalogStore.mediaStoreChangeToken(context)
                 if (current != token) { token = current; lastChange.set(SystemClock.elapsedRealtime()) }
-                if (SystemClock.elapsedRealtime() - lastChange.get() >= 750) return
+                // Provider photo-picker maintenance can publish a second change
+                // after the previous fixture's deletion has returned. Require a
+                // full quiet window, not a fixed sleep or a retry of the assertion.
+                if (SystemClock.elapsedRealtime() - lastChange.get() >= 1_500) return
                 Thread.sleep(50)
             }
             throw AssertionError("MediaStore não estabilizou antes da instalação do catálogo sintético")
@@ -251,7 +254,15 @@ class AlbumFastScrollInstrumentedTest {
             diagnostic = "items=${recycler?.adapter?.itemCount}, first=${layout?.findFirstVisibleItemPosition()}, " +
                 "last=${layout?.findLastVisibleItemPosition()}, height=${scroller?.height}, visibility=${scroller?.visibility}"
         }
-        throw AssertionError("Elemento não exibido: $description ($diagnostic)")
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val catalogPrefs = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
+        val catalogDiagnostic = io {
+            "dirty=${GalleryCatalogStore.isCatalogDirty(context, false)}, " +
+                "rows=${GalleryDatabase.get(context).galleryDao().media(VISIBLE_SCOPE).size}, " +
+                "storedToken=${catalogPrefs.getString("media_store_generation_visible", null)}, " +
+                "currentToken=${GalleryCatalogStore.mediaStoreChangeToken(context)}"
+        }
+        throw AssertionError("Elemento não exibido: $description ($diagnostic; $catalogDiagnostic)")
     }
 
     private fun waitUntilAlbumEnd(scenario: ActivityScenario<AlbumMediaActivity>) {

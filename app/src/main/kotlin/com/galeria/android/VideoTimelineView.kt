@@ -19,6 +19,17 @@ import kotlin.math.abs
 
 /** Scrolls a virtual, second-by-second filmstrip under a fixed playhead. */
 internal class VideoTimelineView(context: Context) : View(context) {
+    enum class ExpansionState { CLOSED, LOADING, OPEN, FAILED }
+    var onExpansionStateChanged: ((ExpansionState) -> Unit)? = null
+    var expansionState = ExpansionState.CLOSED
+        private set
+    private val loadingTimeout = Runnable {
+        if (expansionState == ExpansionState.LOADING) {
+            expansionRequested = false
+            visibility = GONE
+            setExpansionState(ExpansionState.FAILED)
+        }
+    }
     var onScrubStart: (() -> Unit)? = null
     var onScrubMove: ((Long) -> Unit)? = null
     var onScrubStop: ((Long, Boolean) -> Unit)? = null
@@ -30,6 +41,8 @@ internal class VideoTimelineView(context: Context) : View(context) {
         private set
     private var source: VideoTimelineFrames? = null
     private var sourceIdentity: String? = null
+    private var sourceUri: Uri? = null
+    private var sourceRevision = ""
     private var downX = 0f
     private var downPosition = 0L
     private var moved = false
@@ -65,6 +78,8 @@ internal class VideoTimelineView(context: Context) : View(context) {
         source?.close()
         source = uri?.let { VideoTimelineFrames(context, it, revision) }
         sourceIdentity = identity
+        sourceUri = uri
+        sourceRevision = revision
         frames.clear()
         failedFrames.clear()
         samples = emptyList()
@@ -72,6 +87,7 @@ internal class VideoTimelineView(context: Context) : View(context) {
         positionMs = 0L
         range = null
         if (expansionRequested) { animate().cancel(); alpha = 1f; visibility = GONE }
+        reportExpansionState()
         invalidate()
     }
 
@@ -86,6 +102,14 @@ internal class VideoTimelineView(context: Context) : View(context) {
 
     /** Preparing the viewport starts with playback; opening never reveals loading cells. */
     fun setExpanded(expanded: Boolean) {
+        // Ignore repeated requests while the initial viewport is already queued.
+        if (expanded && expansionRequested && expansionState == ExpansionState.LOADING) return
+        if (expanded && expansionState == ExpansionState.FAILED) {
+            source?.close()
+            source = sourceUri?.let { VideoTimelineFrames(context, it, sourceRevision) }
+            failedFrames.clear()
+            samples = emptyList()
+        }
         expansionRequested = expanded
         if (!expanded) {
             cancelGesture()
@@ -97,6 +121,7 @@ internal class VideoTimelineView(context: Context) : View(context) {
             requestFrames()
             revealIfPrepared()
         }
+        reportExpansionState()
     }
 
     fun setPreparationEnabled(enabled: Boolean) {
@@ -105,13 +130,37 @@ internal class VideoTimelineView(context: Context) : View(context) {
             source?.request(emptyList()) { _, _ -> }
             samples = emptyList()
         }
+        reportExpansionState()
     }
 
     private fun revealIfPrepared() {
         if (!expansionRequested || !preparationEnabled || visibility == VISIBLE || !isPrepared) return
+        if (visibleTimes(viewportWidth()).none { it in frames }) {
+            expansionRequested = false
+            setExpansionState(ExpansionState.FAILED)
+            return
+        }
         visibility = VISIBLE
+        setExpansionState(ExpansionState.OPEN)
         alpha = 0f
         animate().alpha(1f).setDuration(120L).start()
+    }
+
+    private fun reportExpansionState() {
+        if (!expansionRequested && expansionState == ExpansionState.FAILED) return
+        setExpansionState(when {
+            !expansionRequested || !preparationEnabled -> ExpansionState.CLOSED
+            visibility == VISIBLE && isPrepared -> ExpansionState.OPEN
+            else -> ExpansionState.LOADING
+        })
+    }
+
+    private fun setExpansionState(state: ExpansionState) {
+        if (state == expansionState) return
+        expansionState = state
+        removeCallbacks(loadingTimeout)
+        if (state == ExpansionState.LOADING) postDelayed(loadingTimeout, 15_000L)
+        onExpansionStateChanged?.invoke(state)
     }
 
     private fun viewportWidth(): Int {
@@ -289,10 +338,14 @@ internal class VideoTimelineView(context: Context) : View(context) {
     }
 
     override fun onDetachedFromWindow() {
+        removeCallbacks(loadingTimeout)
+        expansionRequested = false
+        setExpansionState(ExpansionState.CLOSED)
         cancelGesture()
         source?.close()
         source = null
         sourceIdentity = null
+        sourceUri = null
         frames.clear()
         failedFrames.clear()
         super.onDetachedFromWindow()

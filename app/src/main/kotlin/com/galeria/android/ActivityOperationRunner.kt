@@ -10,6 +10,7 @@ import java.util.concurrent.Executors
 internal class ActivityOperationRunner(private val activity: Activity) {
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
+    private val indicator = ActivityLoadingIndicator(activity)
     private var closed = false
     var busy = false
         private set
@@ -17,10 +18,12 @@ internal class ActivityOperationRunner(private val activity: Activity) {
     fun <T> run(work: () -> T, complete: (T) -> Unit) {
         if (closed || busy || activity.isFinishing || activity.isDestroyed) return
         busy = true
+        indicator.begin(activity.getString(R.string.operation_in_progress))
         worker.execute {
             val result = runCatching(work)
             main.post {
                 busy = false
+                indicator.finish()
                 if (!closed && !activity.isFinishing && !activity.isDestroyed) {
                     result.fold(complete) { Ui.toast(activity, "Não foi possível concluir a operação.") }
                 }
@@ -30,6 +33,7 @@ internal class ActivityOperationRunner(private val activity: Activity) {
 
     fun close() {
         closed = true
+        indicator.finish()
         main.removeCallbacksAndMessages(null)
         worker.shutdown()
     }

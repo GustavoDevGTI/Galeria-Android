@@ -54,3 +54,14 @@ internal fun awaitAndroidInputReady() {
         SystemClock.sleep(50L)
     } while (true)
 }
+
+/** Capture the actual Android windows while deterministic slow-I/O fixtures are held. */
+internal fun captureLoadingFeedback(name: String) {
+    val instrumentation = InstrumentationRegistry.getInstrumentation()
+    val screenshot = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
+    try {
+        java.io.File(instrumentation.targetContext.getExternalFilesDir(null), name).outputStream().use {
+            check(screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+        }
+    } finally { screenshot.recycle() }
+}

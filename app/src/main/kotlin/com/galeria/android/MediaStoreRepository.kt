@@ -30,6 +30,7 @@ object MediaStoreRepository {
 
     @JvmStatic
     fun loadMedia(context: Context, includeHiddenFilesystem: Boolean = false): List<MediaItem> {
+        GalleryUpgradeCoordinator.ensureReady(context)
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
         val includeHidden = StorageAccessRules.includeHiddenFilesystem(includeHiddenFilesystem, allFilesAccess)
         if (GalleryCatalogStore.isCatalogDirty(context, includeHidden)) {
@@ -50,7 +51,8 @@ object MediaStoreRepository {
                 cacheResult(memorySnapshot, includeHidden, allFilesAccess)
                 return memorySnapshot
             }
-            if (Looper.myLooper() != Looper.getMainLooper()) {
+            if (Looper.myLooper() != Looper.getMainLooper() && GalleryCatalogStore.hasFreshCatalog(
+                    context, includeHidden, allFilesAccess, CACHE_TTL_MS)) {
                 val stored = GalleryCatalogStore.readMedia(context.applicationContext, includeHidden)
                 if (stored.isNotEmpty()) {
                     cacheResult(stored, includeHidden, allFilesAccess)
@@ -70,6 +72,7 @@ object MediaStoreRepository {
     ): List<MediaItem> {
         val requestHidden = StorageAccessRules.includeHiddenFilesystem(
             includeHiddenFilesystem, MediaActions.hasAllFilesAccess(context))
+        GalleryUpgradeCoordinator.ensureReady(context)
         val completedAtRequest = if (requestHidden) completedHiddenScans else completedVisibleScans
         return synchronized(scanLock) {
             val allFilesAccess = MediaActions.hasAllFilesAccess(context)
@@ -84,30 +87,36 @@ object MediaStoreRepository {
         }
     }
 
-    private tailrec fun scanCurrentMedia(context: Context, includeHidden: Boolean, allFilesAccess: Boolean): List<MediaItem> {
-        val revision = GalleryCatalogStore.currentMutationRevision()
-        val changeToken = GalleryCatalogStore.mediaStoreChangeToken(context)
-        val items = ArrayList<MediaItem>()
-        loadFromFilesCollection(context, items)
-        if (includeHidden) {
-            loadFromHiddenFilesystem(context, items, allFilesAccess)
+    private fun scanCurrentMedia(context: Context, includeHidden: Boolean, allFilesAccess: Boolean): List<MediaItem> {
+        repeat(3) {
+            if (Thread.currentThread().isInterrupted) throw InterruptedException("Varredura cancelada")
+            val revision = GalleryCatalogStore.currentMutationRevision()
+            val changeToken = GalleryCatalogStore.mediaStoreChangeToken(context)
+            val items = ArrayList<MediaItem>()
+            loadFromFilesCollection(context, items)
+            if (includeHidden) {
+                loadFromHiddenFilesystem(context, items, allFilesAccess)
+            }
+            items.sortByDescending { it.dateAdded }
+            // Remember generated-cache parents from the complete scan before any
+            // screen, search, selection or media-type filter takes a smaller subset.
+            AutomaticHiddenAlbums.keysForMedia(context, items,
+                HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
+            if (changeToken != GalleryCatalogStore.mediaStoreChangeToken(context) ||
+                !GalleryCatalogStore.writeMediaIfCurrent(context.applicationContext, items, includeHidden, allFilesAccess, revision, changeToken)) {
+                // A targeted album refresh/mutation finished during the scan. Never
+                // overwrite its newer rows or certify the obsolete global snapshot.
+                return@repeat
+            }
+            cacheResult(items, includeHidden, allFilesAccess)
+            VideoThumbnailFrames.scheduleOrphanCleanup(context)
+            if (includeHidden) completedHiddenScans++ else completedVisibleScans++
+            return items
         }
-        items.sortByDescending { it.dateAdded }
-        // Remember generated-cache parents from the complete scan before any
-        // screen, search, selection or media-type filter takes a smaller subset.
-        AutomaticHiddenAlbums.keysForMedia(context, items,
-            HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
-        if (changeToken != GalleryCatalogStore.mediaStoreChangeToken(context) ||
-            !GalleryCatalogStore.writeMediaIfCurrent(context.applicationContext, items, includeHidden, allFilesAccess, revision, changeToken)) {
-            // A targeted album refresh/mutation finished during the scan. Never
-            // overwrite its newer rows or certify the obsolete global snapshot.
-            return scanCurrentMedia(context, includeHidden, allFilesAccess)
-        }
-        cacheResult(items, includeHidden, allFilesAccess)
-        VideoThumbnailFrames.scheduleOrphanCleanup(context)
-        if (includeHidden) completedHiddenScans++ else completedVisibleScans++
-        return items
+        throw CatalogChangedDuringScanException()
     }
+
+    internal class CatalogChangedDuringScanException : java.io.IOException("Catálogo mudou durante a varredura")
 
     private fun cacheResult(items: List<MediaItem>, includeHiddenFilesystem: Boolean, allFilesAccess: Boolean) {
         val now = System.currentTimeMillis()
@@ -458,6 +467,7 @@ object MediaStoreRepository {
         insideHiddenArea: Boolean,
         durations: HiddenVideoDurationCache
     ) {
+        if (Thread.currentThread().isInterrupted) throw InterruptedException("Varredura cancelada")
         if (dir == null || depth > 24 || shouldSkipDirectory(root, dir)) {
             return
         }

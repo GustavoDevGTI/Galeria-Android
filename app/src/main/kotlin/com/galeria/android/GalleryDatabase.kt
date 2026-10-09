@@ -224,7 +224,8 @@ object GalleryCatalogStore {
     private const val CATALOG_META_PREFS = "gallery_catalog_meta"
     private const val PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION = "catalog_dirty_after_media_action"
     private val mutationLock = Any()
-    private var mutationRevision = 0L
+    private val mutationRevision = java.util.concurrent.atomic.AtomicLong()
+    private val metadataLock = Any()
     private const val PREF_CATALOG_MODEL_VERSION_PREFIX = "catalog_model_version_"
     private const val CATALOG_MODEL_VERSION = 3
     @Volatile private var visibleSnapshot: List<MediaItem> = emptyList()
@@ -275,9 +276,14 @@ object GalleryCatalogStore {
     fun snapshot(includeHidden: Boolean): List<MediaItem> =
         ArrayList(if (includeHidden) completeSnapshot else visibleSnapshot)
 
+    internal fun invalidateSnapshots() {
+        visibleSnapshot = emptyList()
+        completeSnapshot = emptyList()
+    }
+
     fun markCatalogDirty(context: Context) {
-        synchronized(mutationLock) {
-            mutationRevision++
+        synchronized(metadataLock) {
+            mutationRevision.incrementAndGet()
             context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE).edit()
                 .putBoolean("${PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION}_visible", true)
                 .putBoolean("${PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION}_complete", true)
@@ -294,11 +300,11 @@ object GalleryCatalogStore {
             }
     }
 
-    fun currentMutationRevision(): Long = synchronized(mutationLock) { mutationRevision }
+    fun currentMutationRevision(): Long = mutationRevision.get()
 
     fun clearCatalogDirty(context: Context, includeHidden: Boolean? = null, expectedRevision: Long? = null) {
-        synchronized(mutationLock) {
-            if (expectedRevision != null && mutationRevision != expectedRevision) return
+        synchronized(metadataLock) {
+            if (expectedRevision != null && mutationRevision.get() != expectedRevision) return
             val preferences = context.getSharedPreferences(CATALOG_META_PREFS, Context.MODE_PRIVATE)
             preferences.edit().apply {
                 if (includeHidden != null && preferences.getBoolean(PREF_CATALOG_DIRTY_AFTER_MEDIA_ACTION, false)) {
@@ -429,7 +435,7 @@ object GalleryCatalogStore {
             if (dao.mediaForAlbum(scope(includeHidden), albumKey).associateBy { it.uri } ==
                 entities.associateBy { it.uri }) return
             // A targeted update is not proof that the entire device is reconciled.
-            mutationRevision++
+            mutationRevision.incrementAndGet()
             dao.replaceAlbumMedia(scope(includeHidden), albumKey, entities)
             val previousSnapshot = snapshot(includeHidden)
             if (previousSnapshot.isEmpty()) {
@@ -446,8 +452,9 @@ object GalleryCatalogStore {
 
     internal fun writeMediaIfCurrent(context: Context, items: List<MediaItem>, includeHidden: Boolean,
         allFilesAccess: Boolean, expectedRevision: Long, changeToken: String? = null): Boolean = synchronized(mutationLock) {
-        if (mutationRevision != expectedRevision) return@synchronized false
+        if (mutationRevision.get() != expectedRevision) return@synchronized false
         writeMedia(context, items, includeHidden, allFilesAccess, changeToken)
+        if (mutationRevision.get() != expectedRevision) return@synchronized false
         clearCatalogDirty(context, includeHidden, expectedRevision)
         true
     }
@@ -459,7 +466,7 @@ object GalleryCatalogStore {
             // Invalidate in O(1), rather than mapping the full catalog for every
             // resolved video. A subsequent read reloads the updated Room rows.
             // The revision also prevents an older scan from overwriting them.
-            mutationRevision++
+            mutationRevision.incrementAndGet()
             visibleSnapshot = emptyList()
             completeSnapshot = emptyList()
         }

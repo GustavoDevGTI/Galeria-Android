@@ -21,6 +21,10 @@ class MediaScanWorker(context: Context, params: WorkerParameters) : Worker(conte
         val force = inputData.getBoolean(KEY_FORCE, false)
         val count = MediaStoreRepository.refreshMedia(applicationContext, includeHidden, force).size
         Result.success(workDataOf(KEY_ITEM_COUNT to count))
+    } catch (_: MediaStoreRepository.CatalogChangedDuringScanException) {
+        // A user-requested refresh must finish instead of spinning through
+        // WorkManager backoff. Maintenance can retry without holding the UI.
+        if (inputData.getBoolean(KEY_FORCE, false)) Result.failure() else Result.retry()
     } catch (_: SecurityException) {
         Result.retry()
     } catch (_: Exception) {
@@ -43,6 +47,7 @@ object MediaScanScheduler {
         val app = context.applicationContext
         schedulingExecutor.execute {
             try {
+                GalleryUpgradeCoordinator.ensureReady(app)
                 val manager = WorkManager.getInstance(app)
                 val name = if (includeHidden) "gallery_complete_scan" else "gallery_visible_scan"
                 // Resolve KEEP to the actual existing ID, never observe an ID

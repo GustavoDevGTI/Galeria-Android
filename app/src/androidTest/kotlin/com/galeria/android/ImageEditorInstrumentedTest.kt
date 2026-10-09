@@ -169,7 +169,7 @@ class ImageEditorInstrumentedTest {
                 waitForMenu()
                 onView(withContentDescription("Girar")).check(matches(isDisplayed()))
                 onView(withContentDescription("Edição personalizada")).check(matches(isDisplayed()))
-                onView(withContentDescription("Cortar")).inRoot(isDialog()).perform(click())
+                onView(withContentDescription("Cortar")).inRoot(isDialog()).perform(clickClickableAncestor())
                 waitForText("Cortar imagem")
                 waitForCropReady()
                 onView(withContentDescription("Texto")).check(doesNotExist())
@@ -177,14 +177,17 @@ class ImageEditorInstrumentedTest {
                 pressBack()
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
                 waitForMenu()
-                onView(withContentDescription("Edição personalizada")).inRoot(isDialog()).perform(click())
+                onView(withContentDescription("Edição personalizada")).inRoot(isDialog()).perform(clickClickableAncestor())
                 waitForText("Editar imagem")
                 onView(withContentDescription("Texto")).check(matches(isDisplayed()))
 
                 pressBack()
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
                 waitForMenu()
-                onView(withContentDescription("Girar")).inRoot(isDialog()).perform(click())
+                // This case verifies menu dispatch + persisted EXIF + redisplay,
+                // not injected tap timing. Under emulator load Espresso can turn
+                // a short tap into a tooltip long press (MotionEvents: Overslept).
+                onView(withContentDescription("Girar")).inRoot(isDialog()).perform(clickClickableAncestor())
                 val deadline = System.currentTimeMillis() + 10_000L
                 var rotated = false
                 var rotationState = "Aguardando orientação e imagem"

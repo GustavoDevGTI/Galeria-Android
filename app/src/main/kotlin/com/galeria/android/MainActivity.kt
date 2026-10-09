@@ -44,6 +44,7 @@ import kotlin.math.min
 class MainActivity : ComponentActivity() {
     private lateinit var adapter: AlbumRecyclerAdapter
     private lateinit var emptyView: TextView
+    private lateinit var catalogLoadingView: LoadingIndicatorView
     private lateinit var searchInput: EditText
     private lateinit var grid: AccessibleRecyclerView
     private lateinit var swipeRefresh: SwipeRefreshLayout
@@ -152,6 +153,7 @@ class MainActivity : ComponentActivity() {
                 if (mediaObserverRefreshPending) scheduleMediaRefresh()
             }
         } else if (accessCoordinator.initialChoiceMade()) {
+            catalogLoadingView.visibility = View.GONE
             emptyView.visibility = View.VISIBLE
             emptyView.setText(R.string.access_choose_in_settings)
         }
@@ -399,6 +401,8 @@ class MainActivity : ComponentActivity() {
             emptyView,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         )
+        catalogLoadingView = LoadingIndicatorView(this, description = getString(R.string.main_loading_media)).apply { visibility = View.GONE }
+        content.addView(catalogLoadingView, FrameLayout.LayoutParams(Ui.dp(this, 32), Ui.dp(this, 32), Gravity.CENTER))
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         selectionActions = LinearLayout(this).apply {
@@ -664,8 +668,8 @@ class MainActivity : ComponentActivity() {
     private fun loadAlbums() {
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
-            emptyView.setText(R.string.main_loading_media)
-            emptyView.visibility = View.VISIBLE
+            emptyView.visibility = View.GONE
+            catalogLoadingView.visibility = View.VISIBLE
         }
         catalogController.load(
             AlbumCatalogOptions(
@@ -689,7 +693,18 @@ class MainActivity : ComponentActivity() {
             onAlbums = { albums, currentQuery ->
                 if (!isFinishing) showAlbumsProgressively(albums, currentQuery)
             },
-            onDeferredRefreshRequired = ::scheduleDeferredCatalogRefresh
+            onDeferredRefreshRequired = ::scheduleDeferredCatalogRefresh,
+            onFailure = {
+                if (!isFinishing && !isDestroyed) {
+                    if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
+                    deferredCatalogRefreshPending = false
+                    catalogLoadingView.visibility = View.GONE
+                    if (adapter.getCount() == 0) {
+                        emptyView.setText(R.string.album_load_failed)
+                        emptyView.visibility = View.VISIBLE
+                    } else Ui.toast(this, getString(R.string.album_load_failed))
+                }
+            }
         )
     }
 
@@ -1126,6 +1141,18 @@ class MainActivity : ComponentActivity() {
 
         var showHiddenCheck: CheckBox? = null
         var showHiddenLabel: TextView? = null
+        var loadHiddenButton: TextView? = null
+        var loadHiddenIndicator: LoadingIndicatorView? = null
+        var hiddenScanLoading = false
+        fun setHiddenScanLoading(loading: Boolean) {
+            hiddenScanLoading = loading
+            refresher.isRefreshing = false
+            loadHiddenButton?.apply {
+                isEnabled = !loading
+                visibility = if (loading) View.INVISIBLE else View.VISIBLE
+            }
+            loadHiddenIndicator?.visibility = if (loading) View.VISIBLE else View.GONE
+        }
 
         fun hiddenAlbumsInDialog(): List<AlbumItem> =
             mutableAlbums.filter { isHiddenAlbum(it) || hiddenKeys.contains(it.key) }
@@ -1152,7 +1179,7 @@ class MainActivity : ComponentActivity() {
         }
 
         fun requestHiddenScanAccess() {
-            refresher.isRefreshing = false
+            setHiddenScanLoading(false)
             Ui.toast(this, getString(R.string.access_hidden_folders_required))
             accessCoordinator.ensureFullAccess(true)
         }
@@ -1186,12 +1213,12 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             renderAlbums()
-                            refresher.isRefreshing = false
+                            setHiddenScanLoading(false)
                         }
                     }
                 },
                 onFailure = {
-                    refresher.isRefreshing = false
+                    setHiddenScanLoading(false)
                     Ui.toast(this, getString(R.string.main_hidden_refresh_failed))
                 }
             )
@@ -1237,11 +1264,12 @@ class MainActivity : ComponentActivity() {
         refreshVisibilityDialogCounts = refreshCounts
 
         fun loadHiddenAlbums() {
+            if (hiddenScanLoading) return
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
                 requestHiddenScanAccess()
                 return
             }
-            refresher.isRefreshing = true
+            setHiddenScanLoading(true)
             refreshHiddenAlbums()
         }
 
@@ -1360,7 +1388,9 @@ class MainActivity : ComponentActivity() {
                         LinearLayout.LayoutParams(0, Ui.dp(this@MainActivity, 48), 1f)
                     )
                     addView(
-                        dialogButton(getString(R.string.main_load_hidden)) { loadHiddenAlbums() }.apply {
+                        FrameLayout(this@MainActivity).apply {
+                          addView(dialogButton(getString(R.string.main_load_hidden)) { loadHiddenAlbums() }.apply {
+                            loadHiddenButton = this
                             textSize = 13f
                             setPadding(
                                 Ui.dp(this@MainActivity, 8),
@@ -1368,6 +1398,11 @@ class MainActivity : ComponentActivity() {
                                 Ui.dp(this@MainActivity, 8),
                                 Ui.dp(this@MainActivity, 8)
                             )
+                          }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                          addView(LoadingIndicatorView(this@MainActivity, dialogText).apply {
+                              loadHiddenIndicator = this
+                              visibility = View.GONE
+                          }, FrameLayout.LayoutParams(Ui.dp(this@MainActivity, 32), Ui.dp(this@MainActivity, 32), Gravity.CENTER))
                         },
                         LinearLayout.LayoutParams(0, Ui.dp(this@MainActivity, 48), 1f)
                     )
@@ -1505,6 +1540,7 @@ class MainActivity : ComponentActivity() {
 
     private fun updateEmptyText() {
         if (!::adapter.isInitialized || !::emptyView.isInitialized) return
+        catalogLoadingView.visibility = View.GONE
         emptyView.setText(R.string.main_empty_folders)
         emptyView.visibility = if (adapter.getCount() == 0) View.VISIBLE else View.GONE
     }
@@ -1515,6 +1551,7 @@ class MainActivity : ComponentActivity() {
             requestCode,
             onGranted = ::loadAlbums,
             onDenied = {
+                catalogLoadingView.visibility = View.GONE
                 emptyView.visibility = View.VISIBLE
                 emptyView.setText(R.string.access_authorize_media)
             }

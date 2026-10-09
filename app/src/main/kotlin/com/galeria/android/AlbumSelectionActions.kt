@@ -18,6 +18,7 @@ class AlbumSelectionActions(
     private val prefs: SharedPreferences
 ) {
     private val executor = Executors.newSingleThreadExecutor()
+    private val targetLoading = ActivityLoadingIndicator(activity)
     @Volatile private var closed = false
 
     fun shareIntent(selected: List<MediaItem>): Intent? {
@@ -79,27 +80,33 @@ class AlbumSelectionActions(
         includeHidden: Boolean,
         onTargets: (List<AlbumItem>) -> Unit
     ) {
-        if (closed) return
+        if (closed || !targetLoading.begin(activity.getString(R.string.loading_album_targets))) return
         executor.execute {
-            val source = MediaStoreRepository.loadAlbums(activity.applicationContext, includeHidden)
-            val markerKeys = AutomaticHiddenAlbums.keys(activity.applicationContext, source,
-                HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
-            val targets = AlbumTargetRules.orderedTargets(
-                source,
-                exposedKeys,
-                hiddenKeys + markerKeys,
-                setOfNotNull(excludedAlbumKey),
-                prefs.getString("sort_mode", AlbumRules.SORT_MODIFIED) ?: AlbumRules.SORT_MODIFIED,
-                prefs.getBoolean("sort_desc", true)
-            )
+            val result = runCatching {
+                val source = MediaStoreRepository.loadAlbums(activity.applicationContext, includeHidden)
+                val markerKeys = AutomaticHiddenAlbums.keys(activity.applicationContext, source,
+                    HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
+                AlbumTargetRules.orderedTargets(
+                    source,
+                    exposedKeys,
+                    hiddenKeys + markerKeys,
+                    setOfNotNull(excludedAlbumKey),
+                    prefs.getString("sort_mode", AlbumRules.SORT_MODIFIED) ?: AlbumRules.SORT_MODIFIED,
+                    prefs.getBoolean("sort_desc", true)
+                )
+            }
             activity.runOnUiThread {
-                if (!closed && !activity.isFinishing && !activity.isDestroyed) onTargets(targets)
+                targetLoading.finish()
+                if (!closed && !activity.isFinishing && !activity.isDestroyed) result.fold(onTargets) {
+                    Ui.toast(activity, activity.getString(R.string.album_load_failed))
+                }
             }
         }
     }
 
     fun close() {
         closed = true
+        targetLoading.finish()
         executor.shutdownNow()
     }
 }

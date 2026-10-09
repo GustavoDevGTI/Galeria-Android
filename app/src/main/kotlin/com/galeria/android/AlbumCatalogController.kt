@@ -33,7 +33,7 @@ class AlbumCatalogController(context: Context) {
     private val appContext = context.applicationContext
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var generation = 0
+    @Volatile private var generation = 0
     @Volatile private var closed = false
     // Worker-owned. Reuse the indexed base, but reconcile requested filesystem
     // folders and .nomedia every time: never cache a visibility decision.
@@ -45,46 +45,53 @@ class AlbumCatalogController(context: Context) {
     fun load(
         options: AlbumCatalogOptions,
         onAlbums: (List<AlbumItem>, String) -> Unit,
-        onDeferredRefreshRequired: (Boolean) -> Unit
+        onDeferredRefreshRequired: (Boolean) -> Unit,
+        onFailure: () -> Unit = {}
     ) {
         val request = ++generation
         executor.execute {
             if (closed || request != generation) return@execute
-            val dirty = GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)
-            val fresh = GalleryCatalogStore.hasFreshCatalog(appContext, options.includeHidden,
-                MediaActions.hasAllFilesAccess(appContext), CATALOG_FALLBACK_MAX_AGE_MS)
-            if (dirty || !fresh || options.temporarilyVisibleKeys.isNotEmpty()) {
-                val media = MediaStoreRepository.queryOverviewMedia(appContext, options.includeHidden,
-                    options.temporarilyVisibleKeys, options.showNaturallyHidden, indexedBase())
-                deliverAlbums(request, buildAlbumsFromMedia(media, options), options, onAlbums)
-                if (dirty || !fresh) deferRefresh(request, options, onDeferredRefreshRequired)
-                return@execute
-            }
-            val cachedSummaries = GalleryCatalogStore.readAlbums(appContext, options.includeHidden)
-            if (cachedSummaries.isNotEmpty() && options.includesAllMediaTypes()) {
-                val cachedMedia = GalleryCatalogStore.snapshot(options.includeHidden).ifEmpty {
-                    GalleryCatalogStore.readMedia(appContext, options.includeHidden)
+            try {
+                GalleryUpgradeCoordinator.ensureReady(appContext)
+                val dirty = GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)
+                val fresh = GalleryCatalogStore.hasFreshCatalog(appContext, options.includeHidden,
+                    MediaActions.hasAllFilesAccess(appContext), CATALOG_FALLBACK_MAX_AGE_MS)
+                if (dirty || !fresh || options.temporarilyVisibleKeys.isNotEmpty()) {
+                    val media = MediaStoreRepository.queryOverviewMedia(appContext, options.includeHidden,
+                        options.temporarilyVisibleKeys, options.showNaturallyHidden, indexedBase())
+                    deliverAlbums(request, buildAlbumsFromMedia(media, options), options, onAlbums)
+                    if (dirty || !fresh) deferRefresh(request, options, onDeferredRefreshRequired)
+                    return@execute
                 }
-                deliverAlbums(request, withVirtualAlbums(cachedSummaries, cachedMedia, options), options, onAlbums)
-            }
-
-            if (cachedSummaries.isEmpty()) {
-                val media = MediaStoreRepository.queryOverviewMedia(appContext, options.includeHidden,
-                    options.temporarilyVisibleKeys, options.showNaturallyHidden, indexedBase())
-                deliverAlbums(request, buildAlbumsFromMedia(media, options), options, onAlbums)
-                if (!fresh) deferRefresh(request, options, onDeferredRefreshRequired)
-                return@execute
-            }
-
-            if (!options.includesAllMediaTypes()) {
-                val media = MediaStoreRepository.loadMedia(appContext, options.includeHidden)
-                deliverAlbums(request, buildAlbumsFromMedia(media, options), options, onAlbums)
-            }
-
-            if (!fresh) {
-                mainHandler.post {
-                    if (!closed && request == generation) onDeferredRefreshRequired(options.includeHidden)
+                val cachedSummaries = GalleryCatalogStore.readAlbums(appContext, options.includeHidden)
+                if (cachedSummaries.isNotEmpty() && options.includesAllMediaTypes()) {
+                    val cachedMedia = GalleryCatalogStore.snapshot(options.includeHidden).ifEmpty {
+                        GalleryCatalogStore.readMedia(appContext, options.includeHidden)
+                    }
+                    deliverAlbums(request, withVirtualAlbums(cachedSummaries, cachedMedia, options), options, onAlbums)
                 }
+
+                if (cachedSummaries.isEmpty()) {
+                    val media = MediaStoreRepository.queryOverviewMedia(appContext, options.includeHidden,
+                        options.temporarilyVisibleKeys, options.showNaturallyHidden, indexedBase())
+                    deliverAlbums(request, buildAlbumsFromMedia(media, options), options, onAlbums)
+                    if (!fresh) deferRefresh(request, options, onDeferredRefreshRequired)
+                    return@execute
+                }
+
+                if (!options.includesAllMediaTypes()) {
+                    val media = MediaStoreRepository.loadMedia(appContext, options.includeHidden)
+                    deliverAlbums(request, buildAlbumsFromMedia(media, options), options, onAlbums)
+                }
+
+                if (!fresh) {
+                    mainHandler.post {
+                        if (!closed && request == generation) onDeferredRefreshRequired(options.includeHidden)
+                    }
+                }
+            } catch (error: Exception) {
+                android.util.Log.e("AlbumCatalog", "Falha ao carregar catálogo", error)
+                mainHandler.post { if (!closed && request == generation) onFailure() }
             }
         }
     }

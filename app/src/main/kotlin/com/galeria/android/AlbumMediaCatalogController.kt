@@ -35,7 +35,7 @@ class AlbumMediaCatalogController(context: Context) {
     private val appContext = context.applicationContext
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var generation = 0
+    @Volatile private var generation = 0
     private var pagingJob: Job? = null
     @Volatile private var closed = false
 
@@ -43,7 +43,8 @@ class AlbumMediaCatalogController(context: Context) {
         scope: CoroutineScope,
         options: AlbumMediaCatalogOptions,
         onItems: (List<MediaItem>) -> Unit,
-        onPage: suspend (PagingData<MediaItem>) -> Unit
+        onPage: suspend (PagingData<MediaItem>) -> Unit,
+        onFailure: () -> Unit = {}
     ) {
         if (closed) return
         val request = ++generation
@@ -54,51 +55,63 @@ class AlbumMediaCatalogController(context: Context) {
             val aggregateAlbum = options.albumKey == null || options.albumKey == "all_media" ||
                 options.albumKey == VirtualAlbumRules.RECENT_KEY
             pagingJob = scope.launch {
-                if (MediaStoreRepository.isPhysicalAlbum(options.albumKey)) {
-                    withContext(Dispatchers.IO) {
-                        val key = options.albumKey!!
-                        if (options.includeHidden || GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden) ||
-                            !GalleryCatalogStore.hasAlbumMedia(appContext, options.includeHidden, key) ||
-                            !GalleryCatalogStore.hasFreshCatalog(appContext, options.includeHidden,
-                                MediaActions.hasAllFilesAccess(appContext), 180_000L)) {
-                            MediaStoreRepository.refreshAlbumMedia(appContext, key, options.includeHidden)
+                try {
+                    withContext(Dispatchers.IO) { GalleryUpgradeCoordinator.ensureReady(appContext) }
+                    if (MediaStoreRepository.isPhysicalAlbum(options.albumKey)) {
+                        withContext(Dispatchers.IO) {
+                            val key = options.albumKey!!
+                            if (options.includeHidden || GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden) ||
+                                !GalleryCatalogStore.hasAlbumMedia(appContext, options.includeHidden, key) ||
+                                !GalleryCatalogStore.hasFreshCatalog(appContext, options.includeHidden,
+                                    MediaActions.hasAllFilesAccess(appContext), 180_000L)) {
+                                MediaStoreRepository.refreshAlbumMedia(appContext, key, options.includeHidden)
+                            }
+                        }
+                    } else {
+                        withContext(Dispatchers.IO) {
+                            if (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden) ||
+                                !GalleryCatalogStore.hasFreshCatalog(appContext, options.includeHidden,
+                                    MediaActions.hasAllFilesAccess(appContext), 180_000L)) {
+                                MediaStoreRepository.refreshMedia(appContext, options.includeHidden, force = true)
+                            }
                         }
                     }
-                } else if (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)) {
-                    withContext(Dispatchers.IO) {
-                        MediaStoreRepository.refreshMedia(appContext, options.includeHidden, force = true)
-                    }
-                }
-                val hiddenKeys = userHiddenKeys + if (aggregateAlbum) {
-                    withContext(Dispatchers.IO) {
-                        AutomaticHiddenAlbums.keys(
-                            appContext,
-                            GalleryCatalogStore.readAlbums(appContext, options.includeHidden),
-                            HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
+                    val hiddenKeys = userHiddenKeys + if (aggregateAlbum) {
+                        withContext(Dispatchers.IO) {
+                            AutomaticHiddenAlbums.keys(
+                                appContext,
+                                GalleryCatalogStore.readAlbums(appContext, options.includeHidden),
+                                HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
+                            )
+                        }
+                    } else emptySet()
+                    GalleryCatalogStore.pagedMedia(
+                        appContext,
+                        options.includeHidden,
+                        options.albumKey,
+                        options.query,
+                        options.sortMode,
+                        options.sortDescending,
+                        PagingConfig(
+                            pageSize = 30,
+                            initialLoadSize = 45,
+                            prefetchDistance = 12,
+                            enablePlaceholders = true,
+                            maxSize = 180
                         )
+                    ).map { page ->
+                        page.filter { item ->
+                            MediaFilterRules.matches(item.name, item.mimeType, options.filterOptions) &&
+                                (!aggregateAlbum || !VirtualAlbumRules.isHiddenMedia(item, hiddenKeys))
+                        }
+                    }.collectLatest { page ->
+                        if (!closed && request == generation) onPage(page)
                     }
-                } else emptySet()
-                GalleryCatalogStore.pagedMedia(
-                    appContext,
-                    options.includeHidden,
-                    options.albumKey,
-                    options.query,
-                    options.sortMode,
-                    options.sortDescending,
-                    PagingConfig(
-                        pageSize = 30,
-                        initialLoadSize = 45,
-                        prefetchDistance = 12,
-                        enablePlaceholders = true,
-                        maxSize = 180
-                    )
-                ).map { page ->
-                    page.filter { item ->
-                        MediaFilterRules.matches(item.name, item.mimeType, options.filterOptions) &&
-                            (!aggregateAlbum || !VirtualAlbumRules.isHiddenMedia(item, hiddenKeys))
-                    }
-                }.collectLatest { page ->
-                    if (!closed && request == generation) onPage(page)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    android.util.Log.e("AlbumMediaCatalog", "Falha ao carregar páginas", error)
+                    if (!closed && request == generation) onFailure()
                 }
             }
             return
@@ -106,42 +119,50 @@ class AlbumMediaCatalogController(context: Context) {
 
         executor.execute {
             if (closed || request != generation) return@execute
-            val physicalAlbum = MediaStoreRepository.isPhysicalAlbum(options.albumKey)
-            if (!physicalAlbum && GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden)) {
-                MediaStoreRepository.refreshMedia(appContext, options.includeHidden, force = true)
-            }
-            val cachedAlbum = if (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden) ||
-                (physicalAlbum && !GalleryCatalogStore.hasFreshCatalog(appContext, options.includeHidden,
-                    MediaActions.hasAllFilesAccess(appContext), 180_000L))) {
-                emptyList()
-            } else {
-                options.albumKey
-                    ?.takeIf { it.isNotEmpty() && it != "all_media" && it != "root" }
-                    ?.let { GalleryCatalogStore.readAlbumMedia(appContext, options.includeHidden, it) }
-                    .orEmpty()
-            }
-            val source = if (cachedAlbum.isNotEmpty() && !options.includeHidden) {
-                cachedAlbum
-            } else if (physicalAlbum) {
-                MediaStoreRepository.queryAlbumMedia(appContext, options.albumKey!!, options.includeHidden)
-            } else if (cachedAlbum.isNotEmpty()) {
-                cachedAlbum
-            } else {
-                MediaStoreRepository.loadMediaForAlbum(appContext, options.albumKey, options.includeHidden)
-            }
-            val customOrder = GalleryCatalogStore.migrateLegacyOrder(appContext, options.albumKey ?: "all")
-            val items = AlbumMediaRules.prepare(
-                source,
-                AlbumMediaPreparationOptions(
-                    options.filterOptions,
-                    options.groupMode,
-                    options.sortMode,
-                    options.sortDescending
-                ),
-                customOrder
-            )
-            mainHandler.post {
-                if (!closed && request == generation) onItems(items)
+            try {
+                GalleryUpgradeCoordinator.ensureReady(appContext)
+                val physicalAlbum = MediaStoreRepository.isPhysicalAlbum(options.albumKey)
+                if (!physicalAlbum && (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden) ||
+                    !GalleryCatalogStore.hasFreshCatalog(appContext, options.includeHidden,
+                        MediaActions.hasAllFilesAccess(appContext), 180_000L))) {
+                    MediaStoreRepository.refreshMedia(appContext, options.includeHidden, force = true)
+                }
+                val cachedAlbum = if (GalleryCatalogStore.isCatalogDirty(appContext, options.includeHidden) ||
+                    (physicalAlbum && !GalleryCatalogStore.hasFreshCatalog(appContext, options.includeHidden,
+                        MediaActions.hasAllFilesAccess(appContext), 180_000L))) {
+                    emptyList()
+                } else {
+                    options.albumKey
+                        ?.takeIf { it.isNotEmpty() && it != "all_media" && it != "root" }
+                        ?.let { GalleryCatalogStore.readAlbumMedia(appContext, options.includeHidden, it) }
+                        .orEmpty()
+                }
+                val source = if (cachedAlbum.isNotEmpty() && !options.includeHidden) {
+                    cachedAlbum
+                } else if (physicalAlbum) {
+                    MediaStoreRepository.queryAlbumMedia(appContext, options.albumKey!!, options.includeHidden)
+                } else if (cachedAlbum.isNotEmpty()) {
+                    cachedAlbum
+                } else {
+                    MediaStoreRepository.loadMediaForAlbum(appContext, options.albumKey, options.includeHidden)
+                }
+                val customOrder = GalleryCatalogStore.migrateLegacyOrder(appContext, options.albumKey ?: "all")
+                val items = AlbumMediaRules.prepare(
+                    source,
+                    AlbumMediaPreparationOptions(
+                        options.filterOptions,
+                        options.groupMode,
+                        options.sortMode,
+                        options.sortDescending
+                    ),
+                    customOrder
+                )
+                mainHandler.post {
+                    if (!closed && request == generation) onItems(items)
+                }
+            } catch (error: Exception) {
+                android.util.Log.e("AlbumMediaCatalog", "Falha ao carregar mídias", error)
+                mainHandler.post { if (!closed && request == generation) onFailure() }
             }
         }
     }
