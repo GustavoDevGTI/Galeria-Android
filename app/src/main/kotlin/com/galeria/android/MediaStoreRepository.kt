@@ -227,6 +227,25 @@ object MediaStoreRepository {
         buildAlbums(queryOverviewMedia(context, includeHiddenFilesystem, emptySet(), includeHiddenFilesystem))
             .sortedByDescending { it.latestDate }
 
+    /** Move/copy is not hidden-folder discovery. Reconcile only exposed destinations
+     * missing from MediaStore or protected by filesystem markers, never the source
+     * or every folder remembered by the complete hidden catalog. */
+    internal fun loadTargetAlbums(context: Context, exposedKeys: List<String>?,
+        excludedKeys: Set<String>, includeHiddenFilesystem: Boolean): List<AlbumItem> {
+        val indexed = queryIndexedMedia(context)
+        val indexedKeys = indexed.mapTo(HashSet()) { it.albumKey }
+        val markers = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
+        val requested = if (StorageAccessRules.includeHiddenFilesystem(
+                includeHiddenFilesystem, MediaActions.hasAllFilesAccess(context))) {
+            exposedKeys.orEmpty().asSequence()
+                .filter { it !in excludedKeys && isPhysicalAlbum(it) }
+                .filter { it !in indexedKeys || AlbumRules.isHidden(it, it) || markers.containsNomedia(it) }
+                .toSet()
+        } else emptySet()
+        return buildAlbums(queryOverviewMedia(context, includeHiddenFilesystem, requested,
+            showNaturallyHidden = false, indexedMedia = indexed))
+    }
+
     internal fun isPhysicalAlbum(key: String?): Boolean =
         !key.isNullOrEmpty() && key != "all_media" && key != "root" && !VirtualAlbumRules.isVirtual(key)
 

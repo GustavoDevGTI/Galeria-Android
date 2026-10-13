@@ -107,7 +107,21 @@ class AlbumSelectionInstrumentedTest {
 
             ActivityScenario.launch<AlbumMediaActivity>(intent).use { scenario ->
                 waitUntilDisplayed(firstName)
-                onView(withContentDescription(firstName)).perform(longPressAndDragTo(thirdName))
+                // Physical albums query MediaStore, not the synthetic cached dates
+                // above. Fixture inserts can straddle a second, so filename order
+                // does not guarantee that firstName/thirdName span all three cells.
+                lateinit var displayedOrder: List<MediaItem>
+                waitForView {
+                    scenario.onActivity { activity ->
+                        val adapter = AlbumMediaActivity::class.java.getDeclaredField("adapter")
+                            .apply { isAccessible = true }.get(activity) as MediaRecyclerAdapter
+                        displayedOrder = adapter.currentOrder()
+                        assertEquals(setOf(firstName, secondName, thirdName), displayedOrder.map { it.name }.toSet())
+                        assertEquals(3, displayedOrder.size)
+                    }
+                }
+                onView(withContentDescription(displayedOrder.first().name))
+                    .perform(longPressAndDragTo(displayedOrder.last().name))
                 waitUntilHint(context.resources.getQuantityString(R.plurals.selected_count, 3, 3))
                 scenario.onActivity { activity ->
                     val refresh = descendants(activity.window.decorView).filterIsInstance<SwipeRefreshLayout>().first()

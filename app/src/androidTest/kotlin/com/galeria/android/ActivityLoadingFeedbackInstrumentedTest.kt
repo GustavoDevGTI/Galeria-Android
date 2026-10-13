@@ -30,7 +30,10 @@ class ActivityLoadingFeedbackInstrumentedTest {
             ActivityScenario.launch(TestViewHostActivity::class.java).use { scenario ->
                 scenario.onActivity { activity ->
                     runner = ActivityOperationRunner(activity)
-                    runner.run({ executed.incrementAndGet(); release.await(10, TimeUnit.SECONDS) }) { finished.countDown() }
+                    // Hold until the assertions release us; a slow emulator must
+                    // not turn the simulated pending operation into a completed one.
+                    // The finally block always releases the worker, even on failure.
+                    runner.run({ executed.incrementAndGet(); release.await() }) { finished.countDown() }
                     repeat(5) { runner.run({ executed.incrementAndGet() }) { fail("Pedido duplicado executou") } }
                     assertTrue(runner.busy)
                 }
@@ -56,7 +59,7 @@ class ActivityLoadingFeedbackInstrumentedTest {
                     actions = DetailMediaActions(activity, activity.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE))
                     val worker = DetailMediaActions::class.java.getDeclaredField("executor").apply { isAccessible = true }
                         .get(actions) as java.util.concurrent.ExecutorService
-                    worker.execute { entered.countDown(); release.await(10, TimeUnit.SECONDS) }
+                    worker.execute { entered.countDown(); release.await() }
                     repeat(5) {
                         actions.loadTargets(null, emptySet(), emptySet(), false) { delivered.incrementAndGet(); finished.countDown() }
                     }

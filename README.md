@@ -123,6 +123,8 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
+A versão 0.8.67 limita os destinos de Mover/Copiar às pastas expostas, sem reler a origem nem outros ocultos. Com versão `0.8.67` e código `8067` definidos, passaram **229 unitários e 115 instrumentados**, sem falhas/ignorados, no emulador API 36 com SwiftShader; lint sem erros (129 avisos). Consulte [o diagnóstico e a correção](docs/MOVER-OCULTOS-2026-10-13.md) e [as notas da release, incluindo tentativas rejeitadas](docs/RELEASE-0.8.67.md).
+
 A versão 0.8.66 adiciona recuperação segura após atualização e retorno visual padronizado com ícone circular, sem frases ou pedidos duplicados. Com versão `0.8.66` e código `8066` definidos, passaram **229 unitários e 114 instrumentados** no emulador API 36, sem falhas/ignorados e com lint sem erros (129 avisos). O teste de atualização por cima da 0.8.62 debug também passou, sem limpar dados entre instalações. Consulte [o diagnóstico e as alterações](docs/ATUALIZACAO-E-FEEDBACK-2026-10-09.md) e [as notas da release](docs/RELEASE-0.8.66.md).
 
 A versão 0.8.65 amplia as otimizações de operações de arquivos, editores, catálogo, atualização diferencial da grade e caches de thumbnails/Motion Photos. Com versão `0.8.65` e código `8065` definidos, passaram **229 unitários e 106 instrumentados** no emulador API 36, sem falhas/ignorados e com lint sem erros (126 avisos). O APK release otimizado teve versão, integridade e assinatura permanente conferidas. Consulte [os dez pontos implementados](docs/OTIMIZACOES-2026-10-06.md) e [as notas da release](docs/RELEASE-0.8.65.md).
@@ -389,6 +391,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.64`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.64) | 05/10/2026 | Abertura imediata de ocultos, atualização automática, carregamento local do álbum e reaproveitamento de metadados |
 | [`v0.8.65`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.65) | 06/10/2026 | Operações e editores em segundo plano, atualização diferencial da grade, consultas eficientes e caches de thumbnails/Motion Photos |
 | [`v0.8.66`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.66) | 09/10/2026 | Recuperação após atualização, carregamentos com falha/timeout tratados e indicador circular sem frases ou pedidos duplicados |
+| [`v0.8.67`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.67) | 13/10/2026 | Consulta de destinos de Mover/Copiar limitada às pastas expostas, sem reler origem ou outros ocultos |
 
 ## Relatório comparativo de desempenho
 
@@ -404,7 +407,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.66](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.66/Galeria-Android-versao-0.8.66.apk)
+[Baixar Galeria Android - versão 0.8.67](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.67/Galeria-Android-versao-0.8.67.apk)
 
 Build padrão do Gradle:
 
@@ -415,10 +418,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado como anexo no GitHub Releases (os APKs históricos na raiz permanecem preservados):
 
 ```text
-Galeria-Android-versao-0.8.66.apk
+Galeria-Android-versao-0.8.67.apk
 ```
 
-O APK 0.8.66 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.8.67 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de entrega
 

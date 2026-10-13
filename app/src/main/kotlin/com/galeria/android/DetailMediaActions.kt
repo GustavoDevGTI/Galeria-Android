@@ -93,7 +93,8 @@ class DetailMediaActions(
         if (closed || !targetLoading.begin(activity.getString(R.string.loading_album_targets))) return
         executor.execute {
             val result = runCatching {
-                val source = MediaStoreRepository.loadAlbums(activity.applicationContext, includeHidden)
+                val source = MediaStoreRepository.loadTargetAlbums(activity.applicationContext,
+                    exposedKeys, excludedKeys, includeHidden)
                 val markerKeys = AutomaticHiddenAlbums.keys(activity.applicationContext, source,
                     HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
                 AlbumTargetRules.orderedTargets(

@@ -391,6 +391,82 @@ class AlbumMutationInstrumentedTest {
         }
     }
 
+    @Test fun moveTargetsFromTemporarilyRevealedAlbumDoNotReadOtherHiddenFoldersOrSource() {
+        insert(target, "visible-target.png")
+        val sourceKey = "Pictures/.move-source-$suffix/"
+        val hiddenTargetKey = "Pictures/.move-target-$suffix/"
+        val unrelatedKey = "Pictures/.move-unrelated-$suffix/"
+        fun hiddenFile(key: String, name: String): java.io.File {
+            val directory = java.io.File(Environment.getExternalStorageDirectory(), key)
+            if (!directory.exists()) {
+                assertTrue(directory.mkdirs())
+                auxiliaryFiles += directory
+                auxiliaryFiles += java.io.File(directory, ".nomedia").apply { assertTrue(createNewFile()) }
+            }
+            return java.io.File(directory, name).apply {
+                writeBytes(byteArrayOf(1, 2, 3))
+                auxiliaryFiles += this
+            }
+        }
+        val sourceVideo = hiddenFile(sourceKey, "source.mp4")
+        hiddenFile(hiddenTargetKey, "first.png")
+        val unrelatedVideo = hiddenFile(unrelatedKey, "unrelated.mp4")
+        val durationPrefs = context.getSharedPreferences("hidden_video_durations", Context.MODE_PRIVATE)
+        val hiddenKeys = setOf(sourceKey, hiddenTargetKey, unrelatedKey)
+        val exposed = listOf(hiddenTargetKey, target, sourceKey)
+        try {
+            io {
+                GalleryUpgradeCoordinator.ensureReady(context)
+                androidx.work.WorkManager.getInstance(context).cancelAllWork().result.get()
+                val indexed = MediaStoreRepository.queryIndexedMedia(context)
+                val hidden = hiddenKeys.flatMap { MediaStoreRepository.queryAlbumMedia(context, it, true) }
+                GalleryCatalogStore.writeMedia(context, indexed + hidden, true, true)
+                // Calibrate the probe: the old complete-catalog path opens both
+                // videos, even though neither can be a destination for this move.
+                MediaStoreRepository.loadAlbums(context, true)
+            }
+            assertTrue(durationPrefs.contains(sourceVideo.absolutePath))
+            assertTrue(durationPrefs.contains(unrelatedVideo.absolutePath))
+            // A live destination must not use its old cached count.
+            hiddenFile(hiddenTargetKey, "second.png")
+            TemporaryAlbumVisibility.toggle(sourceKey, true)
+            TemporaryAlbumVisibility.toggle(hiddenTargetKey, true)
+            ActivityScenario.launch(TestViewHostActivity::class.java).use { scenario ->
+                for (fromViewer in listOf(false, true)) {
+                    durationPrefs.edit().remove(sourceVideo.absolutePath).remove(unrelatedVideo.absolutePath).commit()
+                    val delivered = java.util.concurrent.CountDownLatch(1)
+                    var result: List<AlbumItem>? = null
+                    var closeActions: (() -> Unit)? = null
+                    scenario.onActivity { activity ->
+                        val callback: (List<AlbumItem>) -> Unit = { result = it; delivered.countDown() }
+                        if (fromViewer) {
+                            val actions = DetailMediaActions(activity, prefs)
+                            closeActions = { actions.close() }
+                            actions.loadTargets(exposed, hiddenKeys, setOf(sourceKey), true, callback)
+                        } else {
+                            val actions = AlbumSelectionActions(activity, prefs)
+                            closeActions = { actions.close() }
+                            actions.loadMoveTargets(exposed, hiddenKeys, sourceKey, true, callback)
+                        }
+                    }
+                    try {
+                        assertTrue("Destinos não foram entregues", delivered.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                        assertEquals(listOf(hiddenTargetKey, target), result!!.map { it.key })
+                        assertEquals(2, result!!.first().count)
+                        assertFalse("Mover releu os vídeos da origem", durationPrefs.contains(sourceVideo.absolutePath))
+                        assertFalse("Mover visitou ocultos fora da lista exposta", durationPrefs.contains(unrelatedVideo.absolutePath))
+                    } finally { scenario.onActivity { closeActions?.invoke() } }
+                }
+            }
+            val limited = io { MediaStoreRepository.loadTargetAlbums(context, exposed, setOf(sourceKey), false) }
+            assertFalse("Sem leitura de ocultos não deve incluir destino de filesystem", limited.any { it.key == hiddenTargetKey })
+        } finally {
+            TemporaryAlbumVisibility.hide(sourceKey)
+            TemporaryAlbumVisibility.hide(hiddenTargetKey)
+            durationPrefs.edit().remove(sourceVideo.absolutePath).remove(unrelatedVideo.absolutePath).commit()
+        }
+    }
+
     @Test fun repeatedMaintenanceRequestsObserveTheSameActualWork() {
         val ids = java.util.concurrent.ConcurrentLinkedQueue<java.util.UUID>()
         val completed = java.util.concurrent.CountDownLatch(2)
