@@ -2,7 +2,7 @@ package com.galeria.android
 
 import kotlin.math.sqrt
 
-internal data class OcrReading(val text: String, val confidence: Float = 0f)
+internal data class OcrReading(val text: String, val confidence: Float = 0f, val document: OcrDocument = OcrDocument(text))
 
 internal object OcrRules {
     val rotations = listOf(0, 90, 270, 180)

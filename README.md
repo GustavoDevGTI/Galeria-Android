@@ -47,7 +47,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Barra de ações unificada com ícones mais delicados e favoritos representados por coração em todas as telas
 - Favorito por coração no topo do visualizador, próximo ao menu de opções
 - Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção ao abrir e reprodução sob demanda, sem alterar o original
-- Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção de trechos e cópia integral
+- Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção diretamente sobre a imagem, alças de ajuste, cópia do trecho escolhido e seleção integral
 - Ícone de texto exibido automaticamente quando a foto aberta contém texto reconhecido; análise local adiada durante a troca rápida de fotos
 - Barra simples de reprodução no visualizador de vídeo e em Motion Photos; um ícone ao lado abre/fecha a linha do tempo sob demanda
 - Linha do tempo horizontal contínua com miniaturas por segundo em vídeos, Motion Photos e na prévia de corte; deslizar move a faixa sob o marcador central e atualiza o vídeo durante o gesto
@@ -80,7 +80,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Menus e submenus acompanham a cor do tema escolhido, mantendo contraste adequado em temas claros e escuros
 - Editor com tema preto e ferramentas por ícones: recorte por cantos/bordas, proporções, espelhamento, giro, filtros e redimensionamento em pixels
 - Texto digitado diretamente sobre a imagem e pincel com seis combinações de espessura/tipo e espectro de cores; cada traço mantém seu estilo
-- OCR acionável ao segurar uma foto e também dentro do editor; leitura detalhada de documentos e cópia do texto sem alterar a imagem
+- OCR acionável ao segurar uma foto e também dentro do editor; seleção acompanha o zoom e considera a imagem editada, sem alterar o arquivo original
 - Exportação de imagem para PDF
 - Definir imagem como papel de parede
 - Rotação de imagem
@@ -122,6 +122,8 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
   Textos, mensagens formatadas, plurais e listas traduzíveis das telas principal e de álbum
 
 ## Testes automatizados
+
+A versão 0.8.68 permite selecionar e copiar texto diretamente sobre a imagem, com arraste, alças e alinhamento ao zoom, também dentro do editor. Com versão `0.8.68` e código `8068` definidos, passaram **235 unitários e 118 instrumentados**, sem falhas/ignorados, no emulador API 36 com SwiftShader; lint sem erros (129 avisos). Consulte [a implementação do OCR](docs/OCR-NA-IMAGEM-2026-10-13.md) e [as notas da release, incluindo a tentativa rejeitada e a correção da sincronização do teste](docs/RELEASE-0.8.68.md).
 
 A versão 0.8.67 limita os destinos de Mover/Copiar às pastas expostas, sem reler a origem nem outros ocultos. Com versão `0.8.67` e código `8067` definidos, passaram **229 unitários e 115 instrumentados**, sem falhas/ignorados, no emulador API 36 com SwiftShader; lint sem erros (129 avisos). Consulte [o diagnóstico e a correção](docs/MOVER-OCULTOS-2026-10-13.md) e [as notas da release, incluindo tentativas rejeitadas](docs/RELEASE-0.8.67.md).
 
@@ -392,6 +394,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.65`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.65) | 06/10/2026 | Operações e editores em segundo plano, atualização diferencial da grade, consultas eficientes e caches de thumbnails/Motion Photos |
 | [`v0.8.66`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.66) | 09/10/2026 | Recuperação após atualização, carregamentos com falha/timeout tratados e indicador circular sem frases ou pedidos duplicados |
 | [`v0.8.67`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.67) | 13/10/2026 | Consulta de destinos de Mover/Copiar limitada às pastas expostas, sem reler origem ou outros ocultos |
+| [`v0.8.68`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.68) | 13/10/2026 | OCR com seleção de palavras sobre a foto, alças, cópia do trecho escolhido e integração ao zoom e editor |
 
 ## Relatório comparativo de desempenho
 
@@ -407,7 +410,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.67](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.67/Galeria-Android-versao-0.8.67.apk)
+[Baixar Galeria Android - versão 0.8.68](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.68/Galeria-Android-versao-0.8.68.apk)
 
 Build padrão do Gradle:
 
@@ -418,10 +421,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado como anexo no GitHub Releases (os APKs históricos na raiz permanecem preservados):
 
 ```text
-Galeria-Android-versao-0.8.67.apk
+Galeria-Android-versao-0.8.68.apk
 ```
 
-O APK 0.8.67 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.8.68 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de entrega
 

@@ -16,6 +16,7 @@ import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.*
+import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.action.GeneralSwipeAction
 import androidx.test.espresso.action.Press
 import androidx.test.espresso.action.Swipe
@@ -96,8 +97,9 @@ class VideoViewerRegressionTest {
                 awaitViewerReady(scenario, created[0])
                 onView(isAssignableFrom(CoilZoomImageView::class.java)).perform(longClick())
                 awaitViewerOcrIdle(scenario)
-                onView(withText(R.string.ocr_copy_all))
-                    .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog()).perform(click())
+                onView(withContentDescription(R.string.ocr_select_on_image)).check(matches(isDisplayed()))
+                onView(withText(R.string.action_select_all)).perform(click())
+                onView(withText(R.string.ocr_copy_selection)).perform(click())
                 scenario.onActivity { activity ->
                     val clipboard = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     assertTrue(clipboard.primaryClip!!.getItemAt(0).text.contains("DOCUMENTO ALFA"))

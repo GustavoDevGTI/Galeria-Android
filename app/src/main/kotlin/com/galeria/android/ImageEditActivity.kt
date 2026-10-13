@@ -32,6 +32,8 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.ImageButton
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import android.view.inputmethod.InputMethodManager
 import java.io.File
 import java.io.FileOutputStream
@@ -42,7 +44,7 @@ import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.min
 
-class ImageEditActivity : Activity() {
+class ImageEditActivity : ComponentActivity() {
     companion object {
         const val EXTRA_MODE = "image_edit_mode"
         const val EXTRA_ROTATE_CLOCKWISE = "image_edit_rotate_clockwise"
@@ -69,6 +71,9 @@ class ImageEditActivity : Activity() {
     private var brushPreset = 0
     private var saving = false
     private var ocrRunning = false
+    private var ocrSelection: OcrSelectionOverlay? = null
+    private var ocrProgress: LoadingIndicatorView? = null
+    private var ocrHostResumed = false
     private lateinit var filterRow: LinearLayout
     private var selectedFilter = EditorFilter.ORIGINAL
     private var cropOnly = false
@@ -76,6 +81,12 @@ class ImageEditActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(android.R.style.Theme_Material_NoActionBar)
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val selection = ocrSelection
+                if (selection != null) selection.close() else finish()
+            }
+        })
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
@@ -107,7 +118,9 @@ class ImageEditActivity : Activity() {
             view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
             insets
         }
-        val back = EditorUi.button(this, R.drawable.ic_back, "Voltar") { finish() }
+        val back = EditorUi.button(this, R.drawable.ic_back, "Voltar") {
+            if (ocrSelection != null) ocrSelection?.close() else finish()
+        }
         bar.addView(back, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)))
 
         val title = Ui.title(this, getString(if (cropOnly) R.string.image_edit_crop_title else R.string.image_edit_custom_title), 18)
@@ -257,13 +270,33 @@ class ImageEditActivity : Activity() {
     }
 
     private fun recognizeText() {
-        if (ocrRunning) return
+        if (ocrSelection != null) { ocrSelection?.close(); return }
+        if (ocrRunning || saving) return
+        commitText()
+        val render = editor.renderSnapshot(applyCrop = false, forOcr = true) ?: return
         ocrRunning = true
-        Ui.toast(this, getString(R.string.ocr_processing))
-        ImageTextRecognition.recognize(this, sourceUri, isRelevant = { !isDestroyed && !isFinishing }, detailed = true) { result ->
+        setProcessing(true)
+        ocrProgress = LoadingIndicatorView(this, Color.WHITE, getString(R.string.ocr_processing)).also {
+            stage.addView(it, FrameLayout.LayoutParams(Ui.dp(this, 32), Ui.dp(this, 32), Gravity.CENTER))
+        }
+        ImageTextRecognition.recognizeBitmap(render, isRelevant = { !isDestroyed && !isFinishing }, detailed = true) { result ->
             ocrRunning = false
-            result.fold(onSuccess = {
-                if (it.isBlank()) Ui.toast(this, getString(R.string.ocr_no_text)) else EditorUi.recognizedText(this, it)
+            ocrProgress?.let { stage.removeView(it) }; ocrProgress = null
+            setProcessing(false)
+            if (!ocrHostResumed) return@recognizeBitmap
+            result.fold(onSuccess = { document ->
+                if (document.text.isBlank()) Ui.toast(this, getString(R.string.ocr_no_text)) else {
+                    setProcessing(true)
+                    lateinit var selection: OcrSelectionOverlay
+                    selection = OcrSelectionOverlay(this, document, { editor.normalizedImageMatrix() }) {
+                        if (ocrSelection === selection) {
+                            ocrSelection = null
+                            if (!isDestroyed && !isFinishing) setProcessing(false)
+                        }
+                    }
+                    ocrSelection = selection
+                    selection.attachTo(stage)
+                }
             }, onFailure = { Ui.toast(this, getString(R.string.ocr_error)) })
         }
     }
@@ -484,7 +517,17 @@ class ImageEditActivity : Activity() {
         return "$base-editada$ext"
     }
 
+    override fun onResume() { super.onResume(); ocrHostResumed = true }
+
+    override fun onPause() {
+        ocrHostResumed = false
+        ocrSelection?.close()
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        ocrSelection?.close()
+        ocrProgress?.let { stage.removeView(it) }; ocrProgress = null
         super.onDestroy()
         executor.shutdown()
     }
@@ -737,16 +780,24 @@ class ImageEditActivity : Activity() {
 
         /** Snapshot only light drawing state on main. Bitmap pixels are read by the
          * worker while editing is disabled; no worker touches a View or shared Paint. */
-        fun renderSnapshot(): (() -> Bitmap)? {
+        fun normalizedImageMatrix(): Matrix {
+            updateMatrices()
+            val current = bitmap ?: return Matrix().apply { setScale(0f, 0f) }
+            return Matrix(bitmapToView).apply { preScale(current.width.toFloat(), current.height.toFloat()) }
+        }
+
+        fun renderSnapshot(applyCrop: Boolean = true, forOcr: Boolean = false): (() -> Bitmap)? {
             val current = bitmap ?: return null
             val strokes = paths.map { Stroke(Path(it.path), Paint(it.paint)) }
             val placedLabels = labels.map { it.copy() }
             val imagePaint = Paint(bitmapPaint).apply { colorFilter = filter.colorFilter() }
             val labelPaint = Paint(textPaint)
-            val crop = cropRect?.let(::RectF)
+            val crop = if (applyCrop) cropRect?.let(::RectF) else null
+            val size = if (forOcr) OcrRules.targetSize(current.width, current.height, true) else current.width to current.height
             return {
-            val output = Bitmap.createBitmap(current.width, current.height, Bitmap.Config.ARGB_8888)
+            val output = Bitmap.createBitmap(size.first, size.second, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(output)
+            canvas.scale(size.first.toFloat() / current.width, size.second.toFloat() / current.height)
             canvas.drawBitmap(current, 0f, 0f, imagePaint)
             for (stroke in strokes) {
                 canvas.drawPath(stroke.path, stroke.paint)

@@ -28,6 +28,42 @@ import java.util.Locale
 
 @RunWith(AndroidJUnit4::class)
 class ImageTextRecognitionInstrumentedTest {
+    @Test fun wordCornersMapBackOntoThePhotoInEveryRecognitionOrientation() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val upright = Bitmap.createBitmap(1400, 500, Bitmap.Config.ARGB_8888)
+        Canvas(upright).apply {
+            drawColor(Color.WHITE)
+            drawText("DOCUMENTO GALERIA TEXTO COPIAVEL", 40f, 270f,
+                Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 60f })
+        }
+        try {
+            for (rotation in listOf(0, 90, 180, 270)) {
+                val bitmap = if (rotation == 0) upright.copy(Bitmap.Config.ARGB_8888, false)
+                    else Bitmap.createBitmap(upright, 0, 0, upright.width, upright.height,
+                        Matrix().apply { postRotate(rotation.toFloat()) }, false)
+                val file = File.createTempFile("ocr-geometry-$rotation-", ".png", context.cacheDir)
+                try {
+                    file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    bitmap.recycle()
+                    var result: Result<OcrDocument>? = null
+                    val finished = CountDownLatch(1)
+                    ImageTextRecognition.recognizeDocument(context, Uri.fromFile(file)) { result = it; finished.countDown() }
+                    assertTrue(finished.await(45, TimeUnit.SECONDS))
+                    val word = requireNotNull(result).getOrThrow().words.first { it.text == "DOCUMENTO" }
+                    val x = word.corners.sumOf { it.x.toDouble() }.toFloat() / 4
+                    val y = word.corners.sumOf { it.y.toDouble() }.toFloat() / 4
+                    val expected = when (rotation) {
+                        0 -> 0.16f to 0.50f
+                        90 -> 0.50f to 0.16f
+                        180 -> 0.84f to 0.50f
+                        else -> 0.50f to 0.84f
+                    }
+                    org.junit.Assert.assertEquals("Caixa horizontal na foto a $rotation graus", expected.first, x, 0.08f)
+                    org.junit.Assert.assertEquals("Caixa vertical na foto a $rotation graus", expected.second, y, 0.08f)
+                } finally { if (!bitmap.isRecycled) bitmap.recycle(); file.delete() }
+            }
+        } finally { upright.recycle() }
+    }
     @Test fun sidewaysDarkScreenshotOffersTheDocumentNotOnlyStatusBarText() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
@@ -45,7 +81,8 @@ class ImageTextRecognitionInstrumentedTest {
                 waitForUi(timeoutMs = 45000) {
                     onView(withContentDescription(R.string.ocr_text_available)).perform(click())
                 }
-                waitForUi(timeoutMs = 45000) { onView(withText(R.string.ocr_copy_all)).perform(click()) }
+                awaitViewerOcrIdle(scenario)
+                copyAllFromImage()
                 scenario.onActivity {
                     val clipboard = it.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val text = clipboard.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
@@ -119,22 +156,39 @@ class ImageTextRecognitionInstrumentedTest {
                 onView(androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(com.github.panpf.zoomimage.CoilZoomImageView::class.java))
                     .perform(androidx.test.espresso.action.ViewActions.longClick())
                 awaitViewerOcrIdle(scenario)
-                onView(withText(R.string.ocr_copy_all)).perform(click())
+                copyAllFromImage()
             }
             ActivityScenario.launch<ImageEditActivity>(Intent(context, ImageEditActivity::class.java).apply {
                 putExtra("uri", Uri.fromFile(photo).toString()); putExtra("mime", "image/png"); putExtra("name", photo.name)
             }).use { scenario ->
+                waitForUi { onView(withContentDescription("Imagem pronta para edição"))
+                    .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed())) }
+                scenario.onActivity { activity ->
+                    val editor = activity.window.decorView.findViewWithTag<View>("editor_canvas")
+                    val mapping = editor.javaClass.getDeclaredMethod("normalizedImageMatrix").apply { isAccessible = true }.invoke(editor) as Matrix
+                    val point = floatArrayOf(0.5f, 0.91f)
+                    mapping.mapPoints(point)
+                    editor.javaClass.getDeclaredMethod("setDrawingColor", Int::class.javaPrimitiveType).apply { isAccessible = true }.invoke(editor, Color.BLACK)
+                    editor.javaClass.getDeclaredMethod("addText", String::class.java, Float::class.javaPrimitiveType,
+                        Float::class.javaPrimitiveType, Float::class.javaPrimitiveType).apply { isAccessible = true }
+                        .invoke(editor, "TEXTO ADICIONADO", point[0], point[1], 30f)
+                }
                 awaitAndroidInputReady()
                 onView(withContentDescription(R.string.action_recognize_text)).perform(androidx.test.espresso.action.ViewActions.scrollTo(), click())
                 awaitEditorOcrIdle(scenario)
-                waitForUi {
-                    onView(withText(R.string.ocr_copy_all)).inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
-                        .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed()))
-                }
-                onView(withText(R.string.ocr_copy_all)).perform(click())
+                copyAllFromImage()
                 scenario.onActivity {
                     val clipboard = it.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     assertTrue(clipboard.primaryClip!!.getItemAt(0).text.contains("DOCUMENTO GALERIA"))
+                    assertTrue("OCR deve reconhecer a edição, não só o arquivo original",
+                        clipboard.primaryClip!!.getItemAt(0).text.contains("TEXTO ADICIONADO"))
+                }
+                androidx.test.espresso.Espresso.pressBack()
+                onView(withContentDescription(R.string.ocr_select_on_image))
+                    .check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist())
+                scenario.onActivity {
+                    org.junit.Assert.assertFalse("Voltar do OCR não pode sair do editor", it.isFinishing)
+                    assertTrue(it.window.decorView.findViewWithTag<View>("editor_canvas").isEnabled)
                 }
             }
         } finally { photo.delete() }
@@ -180,11 +234,7 @@ class ImageTextRecognitionInstrumentedTest {
                 }
                 onView(withContentDescription(R.string.ocr_text_available)).perform(click())
                 awaitViewerOcrIdle(scenario)
-                waitForUi {
-                    onView(withText(R.string.ocr_copy_all)).inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
-                        .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed()))
-                }
-                onView(withText(R.string.ocr_copy_all)).perform(click())
+                copyAllFromImage()
                 scenario.onActivity {
                     val clipboard = it.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     assertTrue(clipboard.primaryClip!!.getItemAt(0).text.contains("GALERIA"))
@@ -225,5 +275,18 @@ class ImageTextRecognitionInstrumentedTest {
         assertTrue("OCR não terminou", done.await(30, TimeUnit.SECONDS))
         assertTrue("Texto reconhecido: $text", text.contains("GALERIA"))
         assertTrue("O arquivo foi alterado", originalSize == photo.length())
+    }
+
+    private fun copyAllFromImage() {
+        onView(withContentDescription(R.string.ocr_select_on_image))
+            .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed()))
+        waitForUi { onView(withText(R.string.action_select_all))
+            .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed())) }
+        onView(withText(R.string.action_select_all)).perform(click())
+        waitForUi { onView(withText(R.string.ocr_copy_selection))
+            .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed())) }
+        onView(withText(R.string.ocr_copy_selection)).perform(click())
+        onView(withContentDescription(R.string.ocr_select_on_image))
+            .check(androidx.test.espresso.assertion.ViewAssertions.matches(androidx.test.espresso.matcher.ViewMatchers.isDisplayed()))
     }
 }

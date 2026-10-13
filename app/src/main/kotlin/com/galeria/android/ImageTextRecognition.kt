@@ -31,11 +31,22 @@ internal object ImageTextRecognition {
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
     fun recognize(context: Context, uri: Uri, isRelevant: () -> Boolean = { true }, detailed: Boolean = true, onComplete: (Result<String>) -> Unit) {
+        recognizeDocument(context, uri, isRelevant, detailed) { result -> onComplete(result.map { it.text }) }
+    }
+
+    fun recognizeDocument(context: Context, uri: Uri, isRelevant: () -> Boolean = { true }, detailed: Boolean = true,
+        onComplete: (Result<OcrDocument>) -> Unit) {
         val appContext = context.applicationContext
+        recognizeBitmap({ decode(appContext, uri, detailed) }, isRelevant, detailed, onComplete)
+    }
+
+    /** The factory executes on the OCR worker and transfers bitmap ownership. */
+    fun recognizeBitmap(createBitmap: () -> Bitmap, isRelevant: () -> Boolean, detailed: Boolean = true,
+        onComplete: (Result<OcrDocument>) -> Unit) {
         decodeExecutor.execute {
             if (!isRelevant()) return@execute
             val result = runCatching {
-                val bitmap = normalize(decode(appContext, uri, detailed))
+                val bitmap = normalize(createBitmap())
                 try {
                     if (!isRelevant()) return@execute
                     val inverted = if (hasDarkBackground(bitmap)) invert(bitmap) else null
@@ -44,7 +55,7 @@ internal object ImageTextRecognition {
                         if (inverted != null && !OcrRules.isReliable(best) && isRelevant()) {
                             best = OcrRules.best(best, readOrientations(recognizer, bitmap, detailed, isRelevant))
                         }
-                        best.text
+                        best.document
                     } finally { inverted?.recycle() }
                 } finally { bitmap.recycle() }
             }
@@ -61,7 +72,21 @@ internal object ImageTextRecognition {
             val lines = result.textBlocks.flatMap { it.lines }
             val characters = lines.sumOf { it.text.length }.coerceAtLeast(1)
             val confidence = lines.sumOf { it.confidence.toDouble() * it.text.length } / characters
-            best = OcrRules.best(best, OcrReading(result.text, confidence.toFloat()))
+            var lineId = 0
+            val words = result.textBlocks.flatMapIndexed { blockId, block ->
+                block.lines.flatMap { line ->
+                    val id = lineId++
+                    line.elements.mapNotNull { element ->
+                        val points = element.cornerPoints?.toList() ?: element.boundingBox?.let { box ->
+                            listOf(android.graphics.Point(box.left, box.top), android.graphics.Point(box.right, box.top),
+                                android.graphics.Point(box.right, box.bottom), android.graphics.Point(box.left, box.bottom))
+                        }
+                        if (points == null || points.size != 4 || element.text.isBlank()) null else OcrWord(element.text,
+                            points.map { OcrGeometry.fromRotated(it.x.toFloat(), it.y.toFloat(), bitmap.width, bitmap.height, rotation) }, id, blockId)
+                    }
+                }
+            }
+            best = OcrRules.best(best, OcrReading(result.text, confidence.toFloat(), OcrDocument(result.text, words)))
             // Automatic detection is cheap for clear upright text, but partial
             // status-bar text must not prevent checking the other orientations.
             if (if (detailed) OcrRules.isDetailedReadingComplete(best) else OcrRules.isReliable(best)) break

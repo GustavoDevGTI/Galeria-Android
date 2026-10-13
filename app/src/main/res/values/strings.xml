@@ -23,6 +23,8 @@
     <string name="ocr_no_text">Nenhum texto encontrado nesta imagem.</string>
     <string name="ocr_error">Não foi possível reconhecer o texto.</string>
     <string name="ocr_copy_all">Copiar tudo</string>
+    <string name="ocr_copy_selection">Copiar</string>
+    <string name="ocr_select_on_image">Selecionar texto na imagem</string>
     <string name="ocr_copied">Texto copiado.</string>
     <string name="action_motion_photo">Ver foto em movimento</string>
     <string name="motion_photo_error">Não foi possível reproduzir esta foto em movimento.</string>

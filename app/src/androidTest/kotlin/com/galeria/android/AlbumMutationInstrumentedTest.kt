@@ -50,6 +50,7 @@ class AlbumMutationInstrumentedTest {
     private val auxiliaryFiles = mutableListOf<java.io.File>()
     private val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
     private var previousTrashEnabled: Boolean? = null
+    private lateinit var launchedAlbum: AlbumMediaActivity
 
     @Before fun allowFileManagement() {
         previousTrashEnabled = if (prefs.contains(TrashPreferences.ENABLED))
@@ -602,7 +603,7 @@ class AlbumMutationInstrumentedTest {
     private fun launchAlbum() = ActivityScenario.launch<AlbumMediaActivity>(Intent(context, AlbumMediaActivity::class.java).apply {
         putExtra("album_key", source)
         putExtra("album_name", "Origem")
-    })
+    }).also { scenario -> scenario.onActivity { launchedAlbum = it } }
     private fun invokeMove(activity: AlbumMediaActivity, selected: List<MediaItem>) {
         invoke(activity, "moveSelected", arrayOf(List::class.java, AlbumItem::class.java), selected,
             AlbumItem(target, "Destino", 1, null, 0, 0, 0, target))
@@ -618,9 +619,17 @@ class AlbumMutationInstrumentedTest {
     }
     private fun waitForMutation(scenario: ActivityScenario<AlbumMediaActivity>, finishing: Boolean = false) {
         if (finishing) {
-            // The source has already navigated away; its destroyed state is the
-            // required assertion, not an attempt to call onActivity after finish.
-            waitUntil { scenario.state == androidx.lifecycle.Lifecycle.State.DESTROYED }
+            // Scenario.state throws for intermediate stages during navigation.
+            // Observe the exact source on main, but still require DESTROYED;
+            // STARTED/STOPPED/isFinishing are not sufficient for this assertion.
+            waitUntil {
+                var destroyed = false
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    destroyed = ActivityLifecycleMonitorRegistry.getInstance()
+                        .getLifecycleStageOf(launchedAlbum) == Stage.DESTROYED
+                }
+                destroyed
+            }
             return
         }
         waitUntil {

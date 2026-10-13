@@ -17,19 +17,19 @@ internal class ViewerTextRecognitionController(
         fun cancel(work: Runnable)
     }
     interface Recognizer {
-        fun recognize(image: Image, detailed: Boolean, isRelevant: () -> Boolean, complete: (Result<String>) -> Unit)
+        fun recognize(image: Image, detailed: Boolean, isRelevant: () -> Boolean, complete: (Result<OcrDocument>) -> Unit)
     }
     interface Listener {
         fun availabilityChanged(available: Boolean)
         fun manualStarted()
-        fun manualCompleted(result: Result<String>, cached: Boolean)
+        fun manualCompleted(result: Result<OcrDocument>, cached: Boolean)
     }
 
     private class TextCache(private val capacity: Int) {
         init { require(capacity > 0) }
-        private val values = LinkedHashMap<String, String>(capacity, 0.75f, true)
-        fun get(key: String): String? = values[key]
-        fun put(key: String, text: String) {
+        private val values = LinkedHashMap<String, OcrDocument>(capacity, 0.75f, true)
+        fun get(key: String): OcrDocument? = values[key]
+        fun put(key: String, text: OcrDocument) {
             values[key] = text
             if (values.size > capacity) values.remove(values.keys.first())
         }
@@ -50,7 +50,7 @@ internal class ViewerTextRecognitionController(
         listener.availabilityChanged(false)
         if (image == null || paused || !hostActive() || currentImage() != image) return
         detectedText.get(image.key)?.let {
-            listener.availabilityChanged(it.isNotBlank())
+            listener.availabilityChanged(it.text.isNotBlank())
             return
         }
         val request = Request(image, detailed = false)
@@ -67,7 +67,7 @@ internal class ViewerTextRecognitionController(
 
     fun requestManual(image: Image) {
         if (closed || paused || !hostActive() || currentImage() != image) return
-        detailedText.get(image.key)?.takeIf(String::isNotBlank)?.let {
+        detailedText.get(image.key)?.takeIf { it.text.isNotBlank() }?.let {
             listener.manualCompleted(Result.success(it), cached = true)
             return
         }
@@ -115,7 +115,7 @@ internal class ViewerTextRecognitionController(
         }
     }
 
-    private fun complete(request: Request, result: Result<String>) {
+    private fun complete(request: Request, result: Result<OcrDocument>) {
         if (request.completed || !isRelevant(request)) return
         if (currentImage() != request.image) {
             active = null
@@ -128,7 +128,7 @@ internal class ViewerTextRecognitionController(
             if (request.detailed) detailedText.put(request.image.key, it)
         }
         if (request.detailed) listener.manualCompleted(result, cached = false)
-        else result.onSuccess { listener.availabilityChanged(it.isNotBlank()) }
+        else result.onSuccess { listener.availabilityChanged(it.text.isNotBlank()) }
     }
 
     companion object {

@@ -161,6 +161,9 @@ class DetailActivity : ComponentActivity() {
     private lateinit var timelineLoadingRow: LinearLayout
     private var timelineExpanded = false
     private lateinit var textRecognitionButton: ImageButton
+    private var ocrSelection: OcrSelectionOverlay? = null
+    private var ocrProgress: LoadingIndicatorView? = null
+    private var pendingOcrPoint: android.graphics.PointF? = null
     private val textRecognitionController by lazy {
         ViewerTextRecognitionController(
             scheduler = object : ViewerTextRecognitionController.Scheduler {
@@ -169,8 +172,8 @@ class DetailActivity : ComponentActivity() {
             },
             recognizer = object : ViewerTextRecognitionController.Recognizer {
                 override fun recognize(image: ViewerTextRecognitionController.Image, detailed: Boolean,
-                    isRelevant: () -> Boolean, complete: (Result<String>) -> Unit) {
-                    ImageTextRecognition.recognize(this@DetailActivity, Uri.parse(image.uri), isRelevant, detailed, complete)
+                    isRelevant: () -> Boolean, complete: (Result<OcrDocument>) -> Unit) {
+                    ImageTextRecognition.recognizeDocument(this@DetailActivity, Uri.parse(image.uri), isRelevant, detailed, complete)
                 }
             },
             currentImage = { mediaQueue.getOrNull(currentIndex)?.takeIf { it.isImage() }?.let(::textSource) },
@@ -179,14 +182,20 @@ class DetailActivity : ComponentActivity() {
                 override fun availabilityChanged(available: Boolean) {
                     textRecognitionButton.visibility = if (available) View.VISIBLE else View.GONE
                 }
-                override fun manualStarted() { Ui.toast(this@DetailActivity, getString(R.string.ocr_processing)) }
-                override fun manualCompleted(result: Result<String>, cached: Boolean) {
+                override fun manualStarted() {
+                    textRecognitionButton.isEnabled = false
+                    ocrProgress = LoadingIndicatorView(this@DetailActivity, Color.WHITE, getString(R.string.ocr_processing)).also {
+                        activePage?.addView(it, FrameLayout.LayoutParams(Ui.dp(this@DetailActivity, 32), Ui.dp(this@DetailActivity, 32), Gravity.CENTER))
+                    }
+                }
+                override fun manualCompleted(result: Result<OcrDocument>, cached: Boolean) {
+                    clearOcrProgress()
                     result.fold(
-                        onSuccess = { text ->
-                            if (text.isBlank()) Ui.toast(this@DetailActivity, getString(R.string.ocr_no_text))
+                        onSuccess = { document ->
+                            if (document.text.isBlank()) Ui.toast(this@DetailActivity, getString(R.string.ocr_no_text))
                             else {
                                 if (!cached) textRecognitionButton.visibility = View.VISIBLE
-                                showRecognizedText(text)
+                                showRecognizedText(document)
                             }
                         },
                         onFailure = { Ui.toast(this@DetailActivity, getString(R.string.ocr_error)) }
@@ -297,6 +306,7 @@ class DetailActivity : ComponentActivity() {
         timelineExpanded = savedInstanceState?.getBoolean("timeline_expanded") ?: false
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                if (closeOcrSelection()) return
                 resetSpeedAndFinish()
             }
         })
@@ -838,30 +848,41 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun recognizeCurrentImageText(item: MediaItem) {
+    private fun recognizeCurrentImageText(item: MediaItem, point: android.graphics.PointF? = null) {
         if (!item.isImage()) return
+        if (point == null && closeOcrSelection()) return
+        pendingOcrPoint = point
         textRecognitionController.requestManual(textSource(item))
     }
 
-    private fun showRecognizedText(recognized: String) {
-        val textView = TextView(this).apply {
-            text = recognized
-            textSize = 16f
-            setTextColor(Ui.text(this@DetailActivity))
-            setTextIsSelectable(true)
-            setPadding(Ui.dp(this@DetailActivity, 24), Ui.dp(this@DetailActivity, 12), Ui.dp(this@DetailActivity, 24), Ui.dp(this@DetailActivity, 12))
-        }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.action_recognize_text)
-            .setView(ScrollView(this).apply { addView(textView) })
-            .setPositiveButton(R.string.ocr_copy_all) { _, _ ->
-                (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(
-                    ClipData.newPlainText(getString(R.string.action_recognize_text), recognized)
-                )
-                Ui.toast(this, getString(R.string.ocr_copied))
+    private fun clearOcrProgress() {
+        ocrProgress?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        ocrProgress = null
+        if (::textRecognitionButton.isInitialized) textRecognitionButton.isEnabled = true
+    }
+
+    private fun closeOcrSelection(): Boolean {
+        val selection = ocrSelection ?: return false
+        selection.close()
+        ocrSelection = null
+        return true
+    }
+
+    private fun showRecognizedText(document: OcrDocument) {
+        val page = activePage ?: return
+        val image = activeZoomImage() ?: return
+        closeOcrSelection()
+        lateinit var selection: OcrSelectionOverlay
+        selection = OcrSelectionOverlay(this, document, {
+            android.graphics.Matrix(image.imageMatrix).apply {
+                preScale((image.drawable?.intrinsicWidth ?: 0).toFloat(), (image.drawable?.intrinsicHeight ?: 0).toFloat())
+                postTranslate(image.left + image.paddingLeft.toFloat(), image.top + image.paddingTop.toFloat())
             }
-            .setNegativeButton(R.string.action_close, null)
-            .show()
+        }, image) { if (ocrSelection === selection) ocrSelection = null }
+        ocrSelection = selection
+        selection.attachTo(page)
+        pendingOcrPoint?.let { selection.selectAt(it.x, it.y, continueDrag = true) }
+        pendingOcrPoint = null
     }
 
     private fun textCacheKey(item: MediaItem) = "${MediaContentRevision.key(this, item.uri)}|${item.size}|${item.dateAdded}"
@@ -870,6 +891,8 @@ class DetailActivity : ComponentActivity() {
         ViewerTextRecognitionController.Image(item.uri.toString(), textCacheKey(item))
 
     private fun scheduleTextDetection(item: MediaItem?) {
+        closeOcrSelection()
+        clearOcrProgress()
         textRecognitionController.detect(item?.takeIf { it.isImage() }?.let(::textSource))
     }
 
@@ -1949,13 +1972,15 @@ class DetailActivity : ComponentActivity() {
         page.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         image.tag = item.uri
         val imageGestures = ImageGestureArbiter()
+        var longPressPoint = android.graphics.PointF()
         val textLongPress = Runnable {
             if (imageGestures.claimText { currentItem().uri == item.uri && !isFinishing }) {
                 image.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                recognizeCurrentImageText(item)
+                recognizeCurrentImageText(item, longPressPoint)
             }
         }
         image.setOnTouchListener { _, event ->
+            ocrSelection?.takeIf { it.parent === page }?.let { return@setOnTouchListener it.onTouchEvent(event) }
             if (switchingItem) {
                 image.removeCallbacks(textLongPress)
                 imageGestures.cancel()
@@ -1964,6 +1989,7 @@ class DetailActivity : ComponentActivity() {
             val atBaseScale = isAtBaseZoom(image)
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    longPressPoint = android.graphics.PointF(event.x, event.y)
                     imageGestures.start(event.x, event.y)
                     image.removeCallbacks(textLongPress)
                     image.postDelayed(textLongPress, ViewConfiguration.getLongPressTimeout().toLong())
@@ -2773,6 +2799,8 @@ class DetailActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        closeOcrSelection()
+        clearOcrProgress()
         // Settle before pausing so a new video cannot start after lifecycle pause.
         finishMediaTransition()
         cinemaController.settle()
@@ -2792,6 +2820,8 @@ class DetailActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        closeOcrSelection()
+        clearOcrProgress()
         operations.close()
         finishMediaTransition(updateUi = false)
         super.onDestroy()
@@ -2817,6 +2847,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun resetSpeedAndFinish() {
+        if (closeOcrSelection()) return
         playbackController.resetSpeed()
         finish()
         Ui.applyCloseTransition(this)

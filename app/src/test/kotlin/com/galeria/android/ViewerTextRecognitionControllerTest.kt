@@ -6,6 +6,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ViewerTextRecognitionControllerTest {
+    @Test fun detailedCacheKeepsWordGeometryWithItsText() {
+        val f = Fixture()
+        f.manual(a)
+        val document = OcrDocument("Palavra", listOf(OcrWord("Palavra",
+            listOf(OcrPoint(0f, 0f), OcrPoint(1f, 0f), OcrPoint(1f, 1f), OcrPoint(0f, 1f)), 0, 0)))
+        f.calls.single().complete(Result.success(document))
+        f.manual(a)
+        assertEquals(1, f.calls.size)
+        assertTrue(f.manualResults.last().second)
+        assertSame(document, f.manualResults.last().first.getOrThrow())
+    }
     private val a = ViewerTextRecognitionController.Image("image:a", "a:revision1|100|20")
     private val b = ViewerTextRecognitionController.Image("image:b", "b:revision1|100|20")
     private val c = ViewerTextRecognitionController.Image("image:c", "c:revision1|100|20")
@@ -17,10 +28,10 @@ class ViewerTextRecognitionControllerTest {
         var started = 0
         var onStart: (() -> Unit)? = null
         val availability = arrayListOf<Boolean>()
-        val manualResults = arrayListOf<Pair<Result<String>, Boolean>>()
+        val manualResults = arrayListOf<Pair<Result<OcrDocument>, Boolean>>()
         val pending = linkedMapOf<Runnable, Long>()
         data class Call(val image: ViewerTextRecognitionController.Image, val detailed: Boolean,
-            val relevant: () -> Boolean, val complete: (Result<String>) -> Unit)
+            val relevant: () -> Boolean, val complete: (Result<OcrDocument>) -> Unit)
         val calls = arrayListOf<Call>()
         val controller = ViewerTextRecognitionController(
             object : ViewerTextRecognitionController.Scheduler {
@@ -29,7 +40,7 @@ class ViewerTextRecognitionControllerTest {
             },
             object : ViewerTextRecognitionController.Recognizer {
                 override fun recognize(image: ViewerTextRecognitionController.Image, detailed: Boolean,
-                    isRelevant: () -> Boolean, complete: (Result<String>) -> Unit) {
+                    isRelevant: () -> Boolean, complete: (Result<OcrDocument>) -> Unit) {
                     calls.add(Call(image, detailed, isRelevant, complete))
                 }
             },
@@ -38,7 +49,7 @@ class ViewerTextRecognitionControllerTest {
             listener = object : ViewerTextRecognitionController.Listener {
                 override fun availabilityChanged(available: Boolean) { availability.add(available) }
                 override fun manualStarted() { started++; onStart?.invoke() }
-                override fun manualCompleted(result: Result<String>, cached: Boolean) { manualResults.add(result to cached) }
+                override fun manualCompleted(result: Result<OcrDocument>, cached: Boolean) { manualResults.add(result to cached) }
             },
             cacheCapacity = capacity
         )
@@ -47,7 +58,7 @@ class ViewerTextRecognitionControllerTest {
         fun manual(source: ViewerTextRecognitionController.Image) { image = source; controller.requestManual(source) }
         // Deliberately ignore engine relevance: the controller must reject old
         // callbacks itself, rather than trusting cancellation in the backend.
-        fun succeed(text: String, index: Int = calls.lastIndex) { calls[index].complete(Result.success(text)) }
+        fun succeed(text: String, index: Int = calls.lastIndex) { calls[index].complete(Result.success(OcrDocument(text))) }
     }
 
     @Test fun automaticDetectionKeeps650msDelayAndLightReading() {
@@ -99,7 +110,7 @@ class ViewerTextRecognitionControllerTest {
         f.succeed("automatic obsolete", 0)
         assertTrue(f.manualResults.isEmpty())
         f.succeed("documento completo", 1)
-        assertEquals("documento completo", f.manualResults.single().first.getOrThrow())
+        assertEquals("documento completo", f.manualResults.single().first.getOrThrow().text)
         assertFalse(f.manualResults.single().second)
     }
 
@@ -113,7 +124,7 @@ class ViewerTextRecognitionControllerTest {
         f.manual(a)
         assertEquals(2, f.calls.size) // The current manual request remains deduplicated.
         f.succeed("novo", 1)
-        assertEquals("novo", f.manualResults.single().first.getOrThrow())
+        assertEquals("novo", f.manualResults.single().first.getOrThrow().text)
     }
 
     @Test fun returningToTheSameImageDoesNotReviveItsOldAutomaticRequest() {
@@ -135,7 +146,7 @@ class ViewerTextRecognitionControllerTest {
         f.succeed("duplicado")
         f.calls[0].complete(Result.failure(IllegalStateException("late failure")))
         assertEquals(1, f.manualResults.size)
-        assertEquals("texto", f.manualResults[0].first.getOrThrow())
+        assertEquals("texto", f.manualResults[0].first.getOrThrow().text)
     }
 
     @Test fun pauseInvalidatesWorkAndResumeAllowsRetryWithoutStuckManualKey() {
@@ -151,7 +162,7 @@ class ViewerTextRecognitionControllerTest {
         f.manual(a)
         assertEquals(2, f.calls.size)
         f.succeed("retomado")
-        assertEquals("retomado", f.manualResults.single().first.getOrThrow())
+        assertEquals("retomado", f.manualResults.single().first.getOrThrow().text)
     }
 
     @Test fun closeIsPermanentAndCancelsPendingAutomaticWork() {
