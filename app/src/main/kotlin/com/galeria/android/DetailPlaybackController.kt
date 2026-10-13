@@ -47,6 +47,12 @@ internal object DetailPlaybackRules {
         return (max(0L, positionMs).coerceAtMost(durationMs) * 1000L / durationMs).toInt()
     }
 
+    fun nextQuickSpeed(speed: Float): Float = when {
+        kotlin.math.abs(speed - 1f) < 0.01f -> 1.5f
+        kotlin.math.abs(speed - 1.5f) < 0.01f -> 2f
+        else -> 1f
+    }
+
     fun speedLabel(speed: Float): String = when {
         kotlin.math.abs(speed - 0.5f) < 0.01f -> "0,5x"
         kotlin.math.abs(speed - 1.5f) < 0.01f -> "1,5x"

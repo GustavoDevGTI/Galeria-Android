@@ -585,9 +585,16 @@ class DetailActivity : ComponentActivity() {
             }
         }
         speedButton = timeLabel("1x").apply {
+            tag = "video_speed"
             gravity = Gravity.CENTER
-            setOnClickListener { showSpeedPopup() }
+            background = Ui.actionFeedback(this@DetailActivity, Color.WHITE)
+            setOnClickListener {
+                playbackController.setSpeed(DetailPlaybackRules.nextQuickSpeed(playbackSpeed))
+                updateSpeedButton()
+            }
+            setOnLongClickListener { showSpeedPopup(); true }
         }
+        updateSpeedButton()
         timelineRow.addView(currentTime, LinearLayout.LayoutParams(Ui.dp(this, 52), Ui.dp(this, 34)))
         timelineRow.addView(TextView(this).apply {
             text = "/"
@@ -688,6 +695,7 @@ class DetailActivity : ComponentActivity() {
             setOnClickListener { shareCurrent() }
         }
         val trash = actionButton(R.drawable.ic_trash).apply {
+            tag = "viewer_delete"
             contentDescription = getString(
                 if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) R.string.action_delete_permanently
                 else R.string.action_delete
@@ -727,7 +735,6 @@ class DetailActivity : ComponentActivity() {
         actionsBar.addView(edit, actionParams())
         actionsBar.addView(share, actionParams())
         actionsBar.addView(restore, actionParams())
-        actionsBar.addView(trash, actionParams())
         actionsBar.addView(soundButton, actionParams())
         actionsBar.addView(cinemaButton, actionParams())
         actionsBar.addView(motionPhotoButton, actionParams())
@@ -738,6 +745,8 @@ class DetailActivity : ComponentActivity() {
             setOnClickListener { recognizeCurrentImageText(currentItem()) }
         }
         actionsBar.addView(textRecognitionButton, actionParams())
+        // A fixed-width end slot never shifts as video/OCR/Motion Photo actions appear.
+        actionsBar.addView(trash, LinearLayout.LayoutParams(Ui.dp(this, 56), Ui.dp(this, Ui.ACTION_TOUCH_HEIGHT_DP)))
         bottomBar.addView(actionsBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, Ui.ACTION_TOUCH_HEIGHT_DP)))
 
         root.addView(topBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
@@ -2202,6 +2211,7 @@ class DetailActivity : ComponentActivity() {
     private fun updateSpeedButton() {
         if (!::speedButton.isInitialized) return
         speedButton.text = DetailPlaybackRules.speedLabel(playbackSpeed)
+        speedButton.contentDescription = getString(R.string.video_speed_description, speedButton.text)
     }
 
     private fun toggleFavorite() {

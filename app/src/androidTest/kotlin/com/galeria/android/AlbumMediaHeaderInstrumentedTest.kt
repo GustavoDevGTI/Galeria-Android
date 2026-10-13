@@ -78,8 +78,7 @@ class AlbumMediaHeaderInstrumentedTest {
         }
 
         ActivityScenario.launch<AlbumMediaActivity>(intent).use {
-            onView(withContentDescription("Mais opções")).perform(click())
-            onView(withText("Ordenar por")).perform(clickClickableAncestor())
+            onView(withContentDescription(R.string.action_sort_by)).perform(click())
             waitForView {
                 onView(withText("Nome alfabético")).inRoot(isDialog()).check { view, exception ->
                     if (exception != null) throw exception
@@ -101,12 +100,10 @@ class AlbumMediaHeaderInstrumentedTest {
             waitForView {
                 onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
             }
-            onView(withContentDescription("Mais opções")).perform(click())
-            onView(withText("Ordenar por")).perform(clickClickableAncestor())
+            onView(withContentDescription(R.string.action_sort_by)).perform(click())
             onView(allOf(withText("↑"), isDisplayed())).inRoot(isDialog()).check(matches(isDisplayed()))
             onView(withText("Nome alfabético")).inRoot(isDialog()).perform(clickClickableAncestor())
-            onView(withContentDescription("Mais opções")).perform(click())
-            onView(withText("Ordenar por")).perform(clickClickableAncestor())
+            onView(withContentDescription(R.string.action_sort_by)).perform(click())
             onView(allOf(withText("↓"), isDisplayed())).inRoot(isDialog()).check(matches(isDisplayed()))
             onView(withText("Nome alfabético")).inRoot(isDialog()).perform(clickClickableAncestor())
 

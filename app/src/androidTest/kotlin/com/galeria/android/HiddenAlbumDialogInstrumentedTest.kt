@@ -123,10 +123,8 @@ class HiddenAlbumDialogInstrumentedTest {
 
             ActivityScenario.launch(MainActivity::class.java).use {
                 waitUntilDisplayedContaining(cameraName)
-                onView(withContentDescription("Mais opções")).perform(click())
-                waitUntilDisplayed("Exibir/ocultar pastas")
                 onView(withText("Exibir ocultos")).check(doesNotExist())
-                onView(withText("Exibir/ocultar pastas")).perform(clickClickableAncestor())
+                onView(withContentDescription(R.string.main_folder_visibility)).perform(click())
 
                 waitUntilDialogDisplayedContaining(knownName)
                 onView(withText("Exibir/ocultar pastas")).inRoot(isDialog()).check { view, noViewFoundException ->
@@ -199,8 +197,7 @@ class HiddenAlbumDialogInstrumentedTest {
                         prefs.getStringSet(PREF_EVER_VISIBLE, emptySet()).orEmpty() + revealKey)
                     .commit()
                 ActivityScenario.launch(MainActivity::class.java).use {
-                    onView(withContentDescription("Mais opções")).perform(click())
-                    onView(withText("Exibir/ocultar pastas")).perform(clickClickableAncestor())
+                    onView(withContentDescription(R.string.main_folder_visibility)).perform(click())
                     waitUntilDialogDisplayedContaining(revealName)
                     onView(allOf(withContentDescription("Exibir por 30 minutos"),
                         withParent(hasDescendant(withText(containsString(revealName))))))
@@ -213,8 +210,7 @@ class HiddenAlbumDialogInstrumentedTest {
                     waitUntilDisplayedContaining(revealName)
                     assertTrue(prefs.getStringSet(PREF_HIDDEN_KEYS, emptySet()).orEmpty().contains(revealKey))
 
-                    onView(withContentDescription("Mais opções")).perform(click())
-                    onView(withText("Exibir/ocultar pastas")).perform(clickClickableAncestor())
+                    onView(withContentDescription(R.string.main_folder_visibility)).perform(click())
                     waitUntilDialogDisplayedContaining(revealName)
                     onView(allOf(withContentDescription("Ocultar novamente"),
                         withParent(hasDescendant(withText(containsString(revealName))))))
@@ -227,8 +223,7 @@ class HiddenAlbumDialogInstrumentedTest {
                     waitForView {
                         onView(withText(containsString(revealName))).check(doesNotExist())
                     }
-                    onView(withContentDescription("Mais opções")).perform(click())
-                    onView(withText("Exibir/ocultar pastas")).perform(clickClickableAncestor())
+                    onView(withContentDescription(R.string.main_folder_visibility)).perform(click())
                     waitUntilDialogDisplayedContaining(revealName)
                     onView(allOf(withContentDescription("Exibir por 30 minutos"),
                         withParent(hasDescendant(withText(containsString(revealName))))))

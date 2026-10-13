@@ -82,6 +82,8 @@ class AlbumMediaActivity : ComponentActivity() {
     private lateinit var selectionBar: LinearLayout
     private lateinit var selectionActions: LinearLayout
     private lateinit var selectionActionDock: LinearLayout
+    private lateinit var browseBar: GalleryBrowseBar
+    private var appliedThemeBackground: Int? = null
     private lateinit var selectAllText: TextView
     private var spacingDecoration: RecyclerView.ItemDecoration? = null
     private var dragMoved = false
@@ -193,6 +195,7 @@ class AlbumMediaActivity : ComponentActivity() {
         super.onResume()
         albumScreenResumed = true
         Ui.applySystemBars(this)
+        applyBrowseTheme()
         if (firstResume) {
             firstResume = false
             if (pendingMediaRefresh) scheduleMediaRefresh()
@@ -568,6 +571,15 @@ class AlbumMediaActivity : ComponentActivity() {
         content.addView(catalogLoadingView, FrameLayout.LayoutParams(Ui.dp(this, 32), Ui.dp(this, 32), Gravity.CENTER))
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
+        browseBar = GalleryBrowseBar(this, navigationBarHeight(),
+            onSort = ::showMediaSortDialog,
+            onFilter = ::showMediaFilterDialog,
+            onHidden = {
+                startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_HIDDEN_PANEL, true))
+            },
+            onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) })
+        root.addView(browseBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
         selectionActions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.surface(this@AlbumMediaActivity))
@@ -604,11 +616,31 @@ class AlbumMediaActivity : ComponentActivity() {
         Ui.addSelectionActionToDock(selectionActionDock, Ui.selectionAction(this, icon, label, listener))
     }
 
+    private fun applyBrowseTheme() {
+        val color = Ui.bg(this)
+        if (appliedThemeBackground == color || !::browseBar.isInitialized) return
+        appliedThemeBackground = color
+        findViewById<ViewGroup>(android.R.id.content).getChildAt(0).setBackgroundColor(color)
+        grid.setBackgroundColor(color)
+        searchInput.setTextColor(Ui.text(this))
+        searchInput.setHintTextColor(Ui.muted(this))
+        val toolbar = window.decorView.findViewWithTag<ViewGroup>(TAG_ALBUM_TOOLBAR)
+        for (index in 0 until toolbar.childCount) {
+            (toolbar.getChildAt(index) as? ImageButton)?.setColorFilter(Ui.text(this))
+        }
+        swipeRefresh.setColorSchemeColors(Ui.accent(this))
+        swipeRefresh.setProgressBackgroundColorSchemeColor(Ui.surface(this))
+        browseBar.restyle()
+        selectionActions.setBackgroundColor(Ui.surface(this))
+        Ui.restyleSelectionActionDock(selectionActionDock)
+        updateSelectionUi()
+        // Theme changes affect every visible cell, without invalidating the list structure.
+        adapter.notifyItemRangeChanged(0, adapter.itemCount)
+    }
+
     private fun showFolderMenu(anchor: View) {
-        val filter = getString(R.string.action_filter_media)
-        val group = getString(R.string.album_group_by)
-        val sort = getString(R.string.action_sort_by)
         val viewMode = getString(R.string.album_view_mode)
+        val group = getString(R.string.album_group_by)
         val createFolder = getString(R.string.action_create_folder)
         val random = getString(R.string.album_random)
         val spacing = getString(R.string.album_grid_spacing)
@@ -621,7 +653,7 @@ class AlbumMediaActivity : ComponentActivity() {
         val automaticCover = getString(R.string.album_automatic_cover)
         val hasManualCover = prefs.contains(AlbumCoverRules.preferenceKey(albumKey ?: "all_media"))
         val options = buildList {
-            addAll(listOf(filter, group, sort, viewMode))
+            addAll(listOf(group, viewMode))
             if (albumKey != VirtualAlbumRules.TRASH_KEY) addAll(listOf(createFolder, random))
             if (albumKey != VirtualAlbumRules.TRASH_KEY) add(chooseCover)
             if (albumKey != VirtualAlbumRules.TRASH_KEY && hasManualCover) add(automaticCover)
@@ -635,10 +667,8 @@ class AlbumMediaActivity : ComponentActivity() {
             selectedItems = if (cinemaPreferences.isEnabled(albumKey)) setOf(cinemaMode) else emptySet()
         ) { selected ->
             when (selected) {
-                filter -> showMediaFilterDialog()
-                group -> showGroupDialog()
-                sort -> showMediaSortDialog()
                 viewMode -> showViewModeDialog()
+                group -> showGroupDialog()
                 createFolder -> showCreateFolderDialog()
                 random -> startRandomPlayback()
                 chooseCover -> {
@@ -828,6 +858,7 @@ class AlbumMediaActivity : ComponentActivity() {
         val active = adapter.isSelectionMode() && adapter.selectedCount() > 0
         selectionBar.visibility = View.GONE
         selectionActions.visibility = if (active) View.VISIBLE else View.GONE
+        browseBar.visibility = if (active) View.GONE else View.VISIBLE
         selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
         Ui.styleSelectionToggle(selectAllChip, adapter.allVisibleSelected())
         searchInput.isEnabled = !active

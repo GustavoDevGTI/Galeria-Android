@@ -21,6 +21,39 @@ import org.hamcrest.Matchers.equalTo
 
 @RunWith(AndroidJUnit4::class)
 class ActivityLoadingFeedbackInstrumentedTest {
+    @Test fun finishingAfterAndroidRemovesTheLoadingWindowIsSafeAndAllowsAnotherRequest() {
+        ActivityScenario.launch(TestViewHostActivity::class.java).use { scenario ->
+            lateinit var indicator: ActivityLoadingIndicator
+            scenario.onActivity { activity ->
+                indicator = ActivityLoadingIndicator(activity)
+                assertTrue(indicator.begin(activity.getString(R.string.operation_in_progress)))
+                assertTrue(indicator.busy)
+            }
+            assertIconOnlyFeedback()
+            scenario.onActivity { activity ->
+                val dialog = ActivityLoadingIndicator::class.java.getDeclaredField("dialog")
+                    .apply { isAccessible = true }.get(indicator) as android.app.AlertDialog
+                val decor = requireNotNull(dialog.window).decorView
+                assertTrue(decor.isAttachedToWindow)
+                // Reproduce the real failure: Android removes the window before
+                // the asynchronous completion asks Dialog to dismiss it.
+                activity.windowManager.removeViewImmediate(decor)
+                assertFalse(decor.isAttachedToWindow)
+                indicator.finish()
+                assertFalse(indicator.busy)
+                indicator.finish()
+                assertTrue("Uma nova operação não pode ficar bloqueada", indicator.begin(activity.getString(R.string.operation_in_progress)))
+                val replacement = ActivityLoadingIndicator::class.java.getDeclaredField("dialog")
+                    .apply { isAccessible = true }.get(indicator) as android.app.AlertDialog
+                // A fast completion may precede the first rendering traversal;
+                // it must dismiss that newly added window too.
+                indicator.finish()
+                assertFalse(indicator.busy)
+                assertFalse(replacement.isShowing)
+            }
+        }
+    }
+
     @Test fun fileOperationShowsImmediateFeedbackAndNeverQueuesDuplicateClicks() {
         val release = CountDownLatch(1)
         val finished = CountDownLatch(1)

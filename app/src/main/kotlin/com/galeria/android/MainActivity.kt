@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var selectionBar: LinearLayout
     private lateinit var selectionActions: LinearLayout
     private lateinit var selectionActionDock: LinearLayout
+    private lateinit var browseBar: GalleryBrowseBar
     private lateinit var selectAllText: TextView
     private lateinit var prefs: SharedPreferences
     private lateinit var scaleDetector: ScaleGestureDetector
@@ -122,7 +123,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) TemporaryAlbumVisibility.clear()
+        if (savedInstanceState == null && !isHiddenPanelHost()) TemporaryAlbumVisibility.clear()
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         Ui.applySystemBars(this)
         accessCoordinator = MainMediaAccessCoordinator(this, prefs)
@@ -131,7 +132,12 @@ class MainActivity : ComponentActivity() {
         buildLayout()
         registerMediaObserver()
         accessCoordinator.start(::scheduleInitialCatalogLoad)
+        if (isHiddenPanelHost()) root.post {
+            if (!isFinishing && !isDestroyed) showFolderVisibilityDialog()
+        }
     }
+
+    private fun isHiddenPanelHost() = intent.getBooleanExtra(EXTRA_HIDDEN_PANEL, false)
 
     override fun onResume() {
         super.onResume()
@@ -193,7 +199,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         mediaRefreshHandler.removeCallbacks(mediaRefreshRunnable)
         mediaRefreshHandler.removeCallbacks(revealExpiryRunnable)
-        if (!isChangingConfigurations) TemporaryAlbumVisibility.clear()
+        if (!isChangingConfigurations && !isHiddenPanelHost()) TemporaryAlbumVisibility.clear()
         revealedFolderObservers.values.forEach { it.stopWatching() }
         revealedFolderObservers.clear()
         try {
@@ -405,6 +411,13 @@ class MainActivity : ComponentActivity() {
         content.addView(catalogLoadingView, FrameLayout.LayoutParams(Ui.dp(this, 32), Ui.dp(this, 32), Gravity.CENTER))
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
+        browseBar = GalleryBrowseBar(this, navigationBarHeight(),
+            onSort = ::showSortDialog,
+            onFilter = ::showMediaFilterDialog,
+            onHidden = ::showFolderVisibilityDialog,
+            onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) })
+        root.addView(browseBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
         selectionActions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.surface(this@MainActivity))
@@ -435,12 +448,8 @@ class MainActivity : ComponentActivity() {
         }
 
     private fun showMenu(anchor: View) {
-        val sort = getString(R.string.action_sort_by)
-        val filter = getString(R.string.action_filter_media)
         val organization = getString(R.string.main_folder_organization)
-        val visibility = getString(R.string.main_folder_visibility)
         val createFolder = getString(R.string.action_create_folder)
-        val settings = getString(R.string.action_settings)
         val refresh = getString(R.string.action_refresh)
         val showHiddenTrash = prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
         val trashVisibility = getString(
@@ -448,20 +457,16 @@ class MainActivity : ComponentActivity() {
         )
         Ui.showPopupOptions(
             anchor,
-            listOf(sort, filter, organization, visibility, createFolder, trashVisibility, settings, refresh)
+            listOf(organization, createFolder, trashVisibility, refresh)
         ) { selected ->
             when (selected) {
-                sort -> showSortDialog()
-                filter -> showMediaFilterDialog()
                 organization -> showFolderOrganizationDialog()
-                visibility -> showFolderVisibilityDialog()
                 createFolder -> FolderCreationMenu(this) { loadAlbums() }.show()
                 trashVisibility -> {
                     prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, !showHiddenTrash).apply()
                     loadAlbums()
                 }
-                settings -> startActivity(Intent(this, SettingsActivity::class.java))
-                else -> loadAlbums()
+                refresh -> loadAlbums()
             }
         }
     }
@@ -479,6 +484,7 @@ class MainActivity : ComponentActivity() {
         val active = adapter.isSelectionMode()
         selectionBar.visibility = View.GONE
         selectionActions.visibility = if (active) View.VISIBLE else View.GONE
+        browseBar.visibility = if (active) View.GONE else View.VISIBLE
         selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
         searchIconButton.visibility = if (active) View.GONE else View.VISIBLE
         Ui.styleSelectionToggle(selectAllChip, adapter.allVisibleSelected())
@@ -808,6 +814,7 @@ class MainActivity : ComponentActivity() {
             swipeRefresh.setProgressBackgroundColorSchemeColor(Ui.surface(this))
         }
         if (::selectionBar.isInitialized) selectionBar.background = Ui.rounded(Ui.surface(this), 8, this)
+        if (::browseBar.isInitialized) browseBar.restyle()
         if (::selectionActions.isInitialized) {
             selectionActions.setBackgroundColor(Ui.surface(this))
             Ui.restyleSelectionActionDock(selectionActionDock)
@@ -1438,6 +1445,7 @@ class MainActivity : ComponentActivity() {
             visibilityDialogAdapter = null
             refreshVisibilityDialogCounts = null
             mergeVisibleAlbumsIntoDialog = null
+            if (isHiddenPanelHost() && !isChangingConfigurations && !isFinishing) finish()
             mediaRefreshHandler.removeCallbacks(visibilityCountRefreshRunnable)
         }
         Ui.showCenteredPanel(dialog, fullHeight = true)
@@ -1613,6 +1621,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        const val EXTRA_HIDDEN_PANEL = "gallery_hidden_panel"
         private const val REQ_BATCH_DELETE = 10
         private const val PREFS = "gallery_albums"
         private const val PREF_PINNED_HIDDEN_FOLDER_KEYS = "pinned_hidden_folder_keys"

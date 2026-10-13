@@ -46,7 +46,16 @@ internal class ActivityLoadingIndicator(private val activity: Activity) {
     }
 
     fun finish() {
-        dialog?.dismiss()
+        val current = dialog ?: return
+        // Release request ownership even when Android already removed the window
+        // (for example, after the host Activity was destroyed).
         dialog = null
+        try {
+            current.dismiss()
+        } catch (error: IllegalArgumentException) {
+            // WindowManager may have removed the view before Dialog's bookkeeping
+            // caught up. An already detached loading surface must not crash delivery.
+            android.util.Log.w("GalleryLoading", "Loading window was already removed", error)
+        }
     }
 }

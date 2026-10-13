@@ -85,4 +85,20 @@ class DetailPlaybackRulesTest {
         assertEquals("1,5x", DetailPlaybackRules.speedLabel(1.5f))
         assertEquals("2x", DetailPlaybackRules.speedLabel(2f))
     }
+
+    @Test
+    fun quickSpeedCyclesAndReturnsToNormal() {
+        var speed = 1f
+        repeat(3) {
+            for (expected in listOf(1.5f, 2f, 1f)) {
+                speed = DetailPlaybackRules.nextQuickSpeed(speed)
+                assertEquals(expected, speed, 0.001f)
+            }
+        }
+    }
+
+    @Test
+    fun halfSpeedSelectedFromMenuReturnsToNormalOnNextTap() {
+        assertEquals(1f, DetailPlaybackRules.nextQuickSpeed(0.5f), 0.001f)
+    }
 }
