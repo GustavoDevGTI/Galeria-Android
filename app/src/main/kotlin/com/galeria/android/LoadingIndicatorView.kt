@@ -2,6 +2,7 @@ package com.galeria.android
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.Color
 import android.os.Build
 import android.view.View
 import android.widget.ImageView.ScaleType
@@ -11,6 +12,17 @@ import androidx.swiperefreshlayout.widget.CircularProgressDrawable
 /** The same circular indicator used by pull-to-refresh, without visible loading copy. */
 internal class LoadingIndicatorView @JvmOverloads constructor(context: Context, color: Int = Ui.text(context),
     description: String = context.getString(R.string.loading_in_progress)) : AppCompatImageView(context) {
+    companion object {
+        /** A 48dp icon-only surface; the 8dp inset keeps the existing 32dp spinner.
+         * Unlike a bare white spinner it remains legible over any image pixels. */
+        fun overImage(context: Context, description: String): LoadingIndicatorView =
+            LoadingIndicatorView(context, Color.WHITE, description).apply {
+                val inset = Ui.dp(context, 8)
+                setPadding(inset, inset, inset, inset)
+                background = Ui.rounded(0xE6222222.toInt(), 24, context)
+            }
+    }
+
     private lateinit var indicator: CircularProgressDrawable
     val isAnimating: Boolean get() = ::indicator.isInitialized && indicator.isRunning
 

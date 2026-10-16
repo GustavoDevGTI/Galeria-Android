@@ -183,9 +183,10 @@ class DetailActivity : ComponentActivity() {
                     textRecognitionButton.visibility = if (available) View.VISIBLE else View.GONE
                 }
                 override fun manualStarted() {
+                    clearOcrProgress()
                     textRecognitionButton.isEnabled = false
-                    ocrProgress = LoadingIndicatorView(this@DetailActivity, Color.WHITE, getString(R.string.ocr_processing)).also {
-                        activePage?.addView(it, FrameLayout.LayoutParams(Ui.dp(this@DetailActivity, 32), Ui.dp(this@DetailActivity, 32), Gravity.CENTER))
+                    ocrProgress = LoadingIndicatorView.overImage(this@DetailActivity, getString(R.string.ocr_processing)).also {
+                        activePage?.addView(it, FrameLayout.LayoutParams(Ui.dp(this@DetailActivity, 48), Ui.dp(this@DetailActivity, 48), Gravity.CENTER))
                     }
                 }
                 override fun manualCompleted(result: Result<OcrDocument>, cached: Boolean) {

@@ -6,6 +6,48 @@ Antes de instalar os APKs e iniciar instrumentação, o runner guarda o dump da 
 
 ## Uso diário — PowerShell 7
 
+### OCR no APK otimizado
+
+Testes debug aprovados não comprovam que o OCR inicializa na release. A partir
+da correção de 16/10/2026, `:app:assembleRelease` também executa
+`:app:verifyReleaseOcrComponents`: verifica no resultado real do R8 que os três
+registradores ML Kit e seus construtores sem argumentos foram preservados.
+Uma ausência interrompe a montagem. Não desabilite a otimização para aprovar
+essa checagem. A tarefa exige a configuração normal de assinatura release;
+nenhuma credencial é mantida nos fontes.
+
+Essa verificação estrutural não substitui o smoke de execução antes de publicar:
+
+1. Instale o APK release recém-gerado no emulador dedicado, sem limpar dados.
+   Se a assinatura for incompatível com o APK debug instalado, use uma cópia
+   diagnóstica assinada para testes, mantendo DEX/assets/libs idênticos ao original.
+   Nunca distribua essa cópia nem desinstale automaticamente a instalação existente.
+2. Abra uma imagem real com texto legível; teste o toque prolongado e o submenu.
+3. Confirme o ícone de carregamento contrastante, a seleção na própria foto,
+   seleção individual/total e a ação Copiar. A foto deve continuar intacta.
+4. Reabra o app para repetir a inicialização a frio e confira o log: não pode haver
+   `Invalid component registrar`, `NoSuchMethodException` nem erro `GalleryOCR`.
+5. Registre o hash do APK original, os logs e a captura da seleção em
+   `app/build/reports/`. Não versione imagens particulares usadas no diagnóstico.
+
+O smoke deve usar código otimizado; reinstalar o APK debug não valida a release.
+O runner separado `OcrReleaseSmokeRunner` usa apenas APIs Android e a interface
+pública, sem Kotlin/AndroidX nem nomes internos que o R8 modifica. Execute com
+uma cópia release de assinatura compatível:
+
+```powershell
+./scripts/run-release-ocr-smoke.ps1 -Apk ./copia-release-para-testes.apk
+```
+
+Ele cria uma imagem própria, reconhece pelo toque prolongado, seleciona e copia
+o texto, confere o clipboard e verifica que o arquivo não mudou. O script recusa
+APK debuggable e dispositivos físicos, compila o runner com
+`-PocrReleaseSmoke=true`, instala sem limpar dados e registra hashes/logs/resultado.
+Ele não troca assinaturas nem publica. Preserve também o hash do APK original
+e a conferência de DEX/assets/libs da cópia de teste. Antes de retomar a bateria
+AndroidX, compile `:app:assembleDebugAndroidTest` sem essa propriedade para
+restaurar o runner normal; `run-validation.ps1` já faz isso automaticamente.
+
 Execute na raiz do projeto, com Java 17, SDK Android e `adb` no PATH:
 
 ```powershell

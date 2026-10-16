@@ -126,6 +126,8 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
+A versão 0.8.70 corrige a inicialização do OCR no APK otimizado e dá contraste ao indicador de reconhecimento sobre fotos claras ou escuras. Com versão `0.8.70` e código `8070` definidos, passaram **237 unitários e 125 instrumentados**, sem falhas/ignorados; lint sem erros (129 avisos). Um teste separado também reconheceu, selecionou e copiou texto no código otimizado da release. Consulte [as notas da versão](docs/RELEASE-0.8.70.md) e [o fluxo de validação do OCR release](docs/TESTES-VALIDACAO.md).
+
 A versão 0.8.69 traz a barra inferior dos álbuns com Ordenar, Filtrar, Ocultos e Configurações, Excluir em posição fixa no visualizador e velocidade por toque curto/toque prolongado. Com versão `0.8.69` e código `8069` definidos, passaram **237 unitários e 124 instrumentados**, sem falhas/ignorados, no emulador API 36; lint sem erros (129 avisos). Consulte [a barra inferior](docs/BARRA-INFERIOR-2026-10-13.md), [o botão de velocidade](docs/VELOCIDADE-VIDEO-2026-10-13.md) e [as notas da release, incluindo o diagnóstico e a correção do indicador de carregamento](docs/RELEASE-0.8.69.md).
 
 A versão 0.8.68 permite selecionar e copiar texto diretamente sobre a imagem, com arraste, alças e alinhamento ao zoom, também dentro do editor. Com versão `0.8.68` e código `8068` definidos, passaram **235 unitários e 118 instrumentados**, sem falhas/ignorados, no emulador API 36 com SwiftShader; lint sem erros (129 avisos). Consulte [a implementação do OCR](docs/OCR-NA-IMAGEM-2026-10-13.md) e [as notas da release, incluindo a tentativa rejeitada e a correção da sincronização do teste](docs/RELEASE-0.8.68.md).

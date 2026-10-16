@@ -21,6 +21,41 @@ import org.hamcrest.Matchers.equalTo
 
 @RunWith(AndroidJUnit4::class)
 class ActivityLoadingFeedbackInstrumentedTest {
+    @Test fun imageLoadingIndicatorRemainsVisibleOverLightAndDarkPhotos() {
+        ActivityScenario.launch(TestViewHostActivity::class.java).use { scenario ->
+            lateinit var indicator: LoadingIndicatorView
+            lateinit var container: FrameLayout
+            scenario.onActivity { activity ->
+                indicator = LoadingIndicatorView.overImage(activity, activity.getString(R.string.ocr_processing))
+                container = FrameLayout(activity).apply {
+                    addView(indicator, FrameLayout.LayoutParams(Ui.dp(activity, 48), Ui.dp(activity, 48), android.view.Gravity.CENTER))
+                }
+                activity.setContentView(container)
+            }
+            onView(withContentDescription(R.string.ocr_processing)).check(matches(isDisplayed()))
+            scenario.onActivity {
+                assertFalse("O indicador não deve capturar o toque na foto", indicator.isClickable)
+                assertTrue(indicator.drawable is androidx.swiperefreshlayout.widget.CircularProgressDrawable)
+                assertEquals(Ui.dp(indicator.context, 8), indicator.paddingLeft)
+                for (photoColor in listOf(android.graphics.Color.WHITE, android.graphics.Color.BLACK)) {
+                    container.setBackgroundColor(photoColor)
+                    val rendered = android.graphics.Bitmap.createBitmap(indicator.width, indicator.height, android.graphics.Bitmap.Config.ARGB_8888)
+                    try {
+                        val canvas = android.graphics.Canvas(rendered)
+                        canvas.drawColor(photoColor)
+                        // Sample the empty center of the surface, independent of spinner phase.
+                        indicator.background.setBounds(0, 0, indicator.width, indicator.height)
+                        indicator.background.draw(canvas)
+                        val center = rendered.getPixel(rendered.width / 2, rendered.height / 2)
+                        assertTrue("O ícone branco precisa de fundo contrastante", androidx.core.graphics.ColorUtils.calculateContrast(android.graphics.Color.WHITE, center) > 7.0)
+                        assertEquals("A foto não deve ser coberta fora do círculo", photoColor, rendered.getPixel(0, 0))
+                    } finally { rendered.recycle() }
+                }
+            }
+            captureLoadingFeedback("ocr-loading-contrast-qa.png")
+        }
+    }
+
     @Test fun finishingAfterAndroidRemovesTheLoadingWindowIsSafeAndAllowsAnotherRequest() {
         ActivityScenario.launch(TestViewHostActivity::class.java).use { scenario ->
             lateinit var indicator: ActivityLoadingIndicator

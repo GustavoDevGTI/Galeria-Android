@@ -29,9 +29,10 @@ android {
         applicationId = "com.galeria.android"
         minSdk 23
         targetSdk 37
-        versionCode = 8069
-        versionName = "0.8.69"
-        testInstrumentationRunner "com.galeria.android.GalleryTestRunner"
+        versionCode = 8070
+        versionName = "0.8.70"
+        testInstrumentationRunner providers.gradleProperty("ocrReleaseSmoke").orNull == "true"
+            ? "com.galeria.android.OcrReleaseSmokeRunner" : "com.galeria.android.GalleryTestRunner"
     }
 
     compileOptions {
@@ -70,6 +71,36 @@ android {
 
 room {
     schemaDirectory "$projectDir/schemas"
+}
+
+// Debug instrumentation cannot catch reflection stripped only in release.
+// Fail every release assembly if its optimized OCR registrars lose their entry points.
+def releaseOcrRegistrars = [
+    "com.google.mlkit.common.internal.CommonComponentRegistrar",
+    "com.google.mlkit.vision.common.internal.VisionCommonRegistrar",
+    "com.google.mlkit.vision.text.internal.TextRegistrar"
+]
+def verifyReleaseOcrComponents = tasks.register("verifyReleaseOcrComponents") {
+    group = "verification"
+    description = "Checks that optimized release OCR registrars retain their reflective constructors."
+    dependsOn "minifyReleaseWithR8"
+    def seedsFile = layout.buildDirectory.file("outputs/mapping/release/seeds.txt")
+    def usageFile = layout.buildDirectory.file("outputs/mapping/release/usage.txt")
+    inputs.files(seedsFile, usageFile)
+    doLast {
+        def seeds = seedsFile.get().asFile.readLines() as Set
+        def usage = usageFile.get().asFile.readLines()
+        releaseOcrRegistrars.each { registrar ->
+            def constructor = "${registrar}: ${registrar.tokenize('.').last()}()".toString()
+            if (!seeds.contains(registrar) || !seeds.contains(constructor) || usage.contains(registrar)) {
+                throw new GradleException("OCR release inválido: preservar classe e construtor de ${registrar} nas regras R8.")
+            }
+        }
+        logger.lifecycle("OCR release: os 3 registradores e seus construtores foram preservados pelo R8.")
+    }
+}
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    dependsOn verifyReleaseOcrComponents
 }
 
 dependencies {

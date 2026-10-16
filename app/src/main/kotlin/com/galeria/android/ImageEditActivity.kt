@@ -276,8 +276,8 @@ class ImageEditActivity : ComponentActivity() {
         val render = editor.renderSnapshot(applyCrop = false, forOcr = true) ?: return
         ocrRunning = true
         setProcessing(true)
-        ocrProgress = LoadingIndicatorView(this, Color.WHITE, getString(R.string.ocr_processing)).also {
-            stage.addView(it, FrameLayout.LayoutParams(Ui.dp(this, 32), Ui.dp(this, 32), Gravity.CENTER))
+        ocrProgress = LoadingIndicatorView.overImage(this, getString(R.string.ocr_processing)).also {
+            stage.addView(it, FrameLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48), Gravity.CENTER))
         }
         ImageTextRecognition.recognizeBitmap(render, isRelevant = { !isDestroyed && !isFinishing }, detailed = true) { result ->
             ocrRunning = false
