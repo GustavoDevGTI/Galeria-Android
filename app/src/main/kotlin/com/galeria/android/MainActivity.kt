@@ -15,6 +15,9 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.text.Editable
 import android.text.TextWatcher
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.RelativeSizeSpan
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -33,6 +36,7 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.core.graphics.drawable.toDrawable
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -91,6 +95,7 @@ class MainActivity : ComponentActivity() {
     private var refreshVisibilityDialogCounts: (() -> Unit)? = null
     private var mergeVisibleAlbumsIntoDialog: ((List<AlbumItem>) -> Unit)? = null
     private val revealedFolderObservers = HashMap<String, android.os.FileObserver>()
+    private val visibilityFolderObservers = HashMap<String, android.os.FileObserver>()
     private val visibilityCountRefreshRunnable = Runnable { refreshVisibilityDialogCounts?.invoke() }
     private val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val revealExpiryRunnable = Runnable {
@@ -149,6 +154,7 @@ class MainActivity : ComponentActivity() {
         }
         loadSettings()
         applyThemeColors()
+        refreshVisibilityDialogCounts?.invoke()
         if (::adapter.isInitialized) adapter.refreshChangedCovers()
         if (accessCoordinator.hasMediaLibraryAccess()) {
             if (GalleryCatalogStore.isCatalogDirty(applicationContext, shouldIncludeHiddenFilesystem())) {
@@ -202,6 +208,9 @@ class MainActivity : ComponentActivity() {
         if (!isChangingConfigurations && !isHiddenPanelHost()) TemporaryAlbumVisibility.clear()
         revealedFolderObservers.values.forEach { it.stopWatching() }
         revealedFolderObservers.clear()
+        visibilityFolderObservers.values.forEach { it.stopWatching() }
+        visibilityFolderObservers.clear()
+        mediaRefreshHandler.removeCallbacks(visibilityCountRefreshRunnable)
         try {
             contentResolver.unregisterContentObserver(mediaObserver)
         } catch (_: Exception) {
@@ -1063,7 +1072,10 @@ class MainActivity : ComponentActivity() {
                 val eye = row.findViewWithTag<ImageButton>("eye")
                 val check = row.findViewWithTag<CheckBox>("check")
                 val pinned = pinnedKeys.contains(album.key)
-                label.text = getString(R.string.main_album_count_label, album.name, album.count)
+                label.text = SpannableString(getString(R.string.main_album_count_label, album.name, album.count)).apply {
+                    setSpan(RelativeSizeSpan(0.78f), album.name.length.coerceAtMost(length), length,
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
                 label.setTextColor(dialogText)
                 pin.setImageResource(if (pinned) R.drawable.ic_pin_filled else R.drawable.ic_pin)
                 pin.setColorFilter(if (pinned) dialogText else dialogMuted)
@@ -1183,6 +1195,7 @@ class MainActivity : ComponentActivity() {
         fun renderAlbums() {
             updateShowHiddenControl()
             listAdapter.notifyDataSetChanged()
+            observeVisibilityDialogFolders(mutableAlbums)
         }
 
         fun requestHiddenScanAccess() {
@@ -1249,7 +1262,7 @@ class MainActivity : ComponentActivity() {
                     val updated = AlbumCountRefresh.refresh(applicationContext, snapshot)
                     runOnUiThread {
                         countsRefreshPending = false
-                        if (!isFinishing && visibilityDialogAdapter === listAdapter) {
+                        if (!isFinishing && !isDestroyed && visibilityDialogAdapter === listAdapter) {
                             val countedKeys = snapshot.mapTo(HashSet()) { it.key }
                             val countsByKey = updated.associateBy { it.key }
                             val reconciled = mutableAlbums.mapNotNull { album ->
@@ -1315,21 +1328,16 @@ class MainActivity : ComponentActivity() {
             dialog.dismiss()
         }
 
-        fun dialogButton(text: String, primary: Boolean = false, onClick: () -> Unit): TextView =
+        fun dialogButton(text: String, onClick: () -> Unit): TextView =
             TextView(this).apply {
                 this.text = text
                 textSize = 14f
                 setTextColor(dialogText)
-                if (primary) setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
                 gravity = Gravity.CENTER_VERTICAL or Gravity.START
                 minimumHeight = Ui.dp(this@MainActivity, 50)
                 isClickable = true
                 isFocusable = true
-                background = if (primary) {
-                    Ui.rounded(Ui.blend(dialogBg, dialogText, 0.10f), 0, this@MainActivity)
-                } else {
-                    Ui.rounded(Color.TRANSPARENT, 0, this@MainActivity)
-                }
+                background = Ui.rounded(Color.TRANSPARENT, 0, this@MainActivity)
                 setPadding(
                     Ui.dp(this@MainActivity, 14),
                     Ui.dp(this@MainActivity, 8),
@@ -1345,7 +1353,7 @@ class MainActivity : ComponentActivity() {
                 Ui.dp(this@MainActivity, 22),
                 Ui.dp(this@MainActivity, 16),
                 Ui.dp(this@MainActivity, 22),
-                Ui.dp(this@MainActivity, 54)
+                Ui.dp(this@MainActivity, 52)
             )
             addView(
                 TextView(this@MainActivity).apply {
@@ -1418,14 +1426,32 @@ class MainActivity : ComponentActivity() {
             )
             addView(refresher, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
-        val buttonBar = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = Ui.rounded(Ui.blend(dialogBg, Color.WHITE, 0.03f), 0, this@MainActivity)
+        val buttonBar = ClickFeedbackActionLayout(this).apply {
+            tag = "hidden_dialog_confirm"
+            gravity = Gravity.CENTER
+            isClickable = true
+            isFocusable = true
+            contentDescription = getString(R.string.action_ok)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x14000000),
+                Ui.rounded(Ui.blend(dialogBg, dialogText, 0.08f), 0, this@MainActivity),
+                Color.WHITE.toDrawable()
+            )
+            setOnClickListener {
+                isEnabled = false
+                // Let the shared, momentary click pulse finish before closing.
+                postDelayed({ if (dialog.isShowing && !isFinishing) applyFolderVisibility() }, 180L)
+            }
             addView(
-                Ui.markPrimaryDialogAction(
-                    dialogButton(getString(R.string.action_ok), primary = true) { applyFolderVisibility() }
-                ),
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                TextView(this@MainActivity).apply {
+                    setText(R.string.action_ok)
+                    textSize = 14f
+                    setTextColor(dialogText)
+                    gravity = Gravity.CENTER
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             )
         }
         val panel = FrameLayout(this).apply {
@@ -1434,7 +1460,7 @@ class MainActivity : ComponentActivity() {
             addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(
                 buttonBar,
-                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this@MainActivity, 50), Gravity.BOTTOM)
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this@MainActivity, 48), Gravity.BOTTOM)
             )
         }
 
@@ -1445,6 +1471,8 @@ class MainActivity : ComponentActivity() {
             visibilityDialogAdapter = null
             refreshVisibilityDialogCounts = null
             mergeVisibleAlbumsIntoDialog = null
+            visibilityFolderObservers.values.forEach { it.stopWatching() }
+            visibilityFolderObservers.clear()
             if (isHiddenPanelHost() && !isChangingConfigurations && !isFinishing) finish()
             mediaRefreshHandler.removeCallbacks(visibilityCountRefreshRunnable)
         }
@@ -1609,6 +1637,37 @@ class MainActivity : ComponentActivity() {
             }
             observer.startWatching()
             revealedFolderObservers[key] = observer
+        }
+    }
+
+    /** Only watch known hidden folders while their dialog is open. MediaStore
+     * does not report direct writes/moves under .nomedia. Never scan the device. */
+    private fun observeVisibilityDialogFolders(albums: List<AlbumItem>) {
+        if (isFinishing || isDestroyed || visibilityDialogAdapter == null) return
+        val wanted = if (MediaActions.hasAllFilesAccess(this)) albums.asSequence()
+            .filter { it.requiresFilesystem || AlbumRules.isHidden(it.path, it.key) }
+            .map { it.key }.filter(MediaStoreRepository::isPhysicalAlbum).toSet() else emptySet()
+        visibilityFolderObservers.keys.filterNot { it in wanted }.forEach {
+            visibilityFolderObservers.remove(it)?.stopWatching()
+        }
+        val root = Environment.getExternalStorageDirectory()
+        for (key in wanted) {
+            if (key in visibilityFolderObservers) continue
+            val directory = java.io.File(root, key)
+            if (!runCatching { directory.canonicalPath.startsWith(root.canonicalPath + java.io.File.separator) }
+                    .getOrDefault(false)) continue
+            val observer = object : android.os.FileObserver(directory.absolutePath,
+                CREATE or DELETE or MOVED_FROM or MOVED_TO or CLOSE_WRITE or DELETE_SELF or MOVE_SELF) {
+                override fun onEvent(event: Int, path: String?) {
+                    mediaRefreshHandler.post {
+                        if (isFinishing || isDestroyed || !mainScreenResumed || visibilityDialogAdapter == null) return@post
+                        mediaRefreshHandler.removeCallbacks(visibilityCountRefreshRunnable)
+                        mediaRefreshHandler.postDelayed(visibilityCountRefreshRunnable, 180L)
+                    }
+                }
+            }
+            observer.startWatching()
+            visibilityFolderObservers[key] = observer
         }
     }
 

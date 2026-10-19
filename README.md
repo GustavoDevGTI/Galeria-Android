@@ -47,7 +47,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Preferência de modo cinema e de trilhas aplicável a todos os vídeos de um álbum
 - Barra de ações unificada com ícones mais delicados e favoritos representados por coração em todas as telas
 - Excluir em posição fixa à direita para fotos e vídeos, sem deslocamento quando OCR ou Motion Photo ficam disponíveis
-- Barra inferior na página inicial e nos álbuns com Ordenar, Filtrar, Ocultos e Configurações; seleção de itens utiliza a barra de ações própria
+- Barra inferior com Ordenar, Filtrar, Ocultos e Configurações na página inicial; dentro dos álbuns, Aleatório substitui Ocultos e inicia a reprodução das mídias da pasta. A seleção de itens utiliza a barra de ações própria.
 - Favorito por coração no topo do visualizador, próximo ao menu de opções
 - Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção ao abrir e reprodução sob demanda, sem alterar o original
 - Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção diretamente sobre a imagem, alças de ajuste, cópia do trecho escolhido e seleção integral
@@ -76,11 +76,13 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Pinça horizontal dentro dos álbuns para alternar entre 2 e 8 colunas, preservando a posição e a escolha nas próximas aberturas
 - Ajuste global de espaçamento da grade
 - Área de itens ocultos com gerenciamento de exibição/ocultação de pastas
+- Confirmação de ocultos centralizada em barra compacta, inteiramente clicável e animada; contagem menor e atualizada durante inclusões, exclusões e movimentos, inclusive em pastas com `.nomedia`, sem recarregar a galeria inteira.
 - Caches fragmentados em pastas de hash são classificados antes dos filtros de mídia; após reconhecidos, continuam ocultos mesmo quando crescem, aparecem parcialmente no catálogo ou ganham subpastas. Pastas comuns não são escondidas apenas por terem poucas imagens ou fotos de documentos.
 - Olho no gerenciamento de ocultos revela um álbum na página inicial por até 30 minutos, inclusive com o app em segundo plano; ao fechar o app, a revelação acaba. O álbum continua oculto nas coleções agregadas.
 - Fixação de pastas no gerenciamento de ocultos para manter pastas importantes no topo e forçar varredura dos ocultos quando necessário
 - Submenu de ocultos limitado aos álbuns visíveis ou já exibidos anteriormente; novos álbuns ocultos só são procurados pelo botão `Carregar ocultos`
 - Menus e submenus acompanham a cor do tema escolhido, mantendo contraste adequado em temas claros e escuros
+- No seletor de tema, o cartão usa o fundo principal da galeria e a prévia mostra a cor secundária real dos submenus, com atualização em tempo real.
 - Editor com tema preto e ferramentas por ícones: recorte por cantos/bordas, proporções, espelhamento, giro, filtros e redimensionamento em pixels
 - Texto digitado diretamente sobre a imagem e pincel com seis combinações de espessura/tipo e espectro de cores; cada traço mantém seu estilo
 - OCR acionável ao segurar uma foto e também dentro do editor; seleção acompanha o zoom e considera a imagem editada, sem alterar o arquivo original
@@ -403,6 +405,8 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.67`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.67) | 13/10/2026 | Consulta de destinos de Mover/Copiar limitada às pastas expostas, sem reler origem ou outros ocultos |
 | [`v0.8.68`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.68) | 13/10/2026 | OCR com seleção de palavras sobre a foto, alças, cópia do trecho escolhido e integração ao zoom e editor |
 | [`v0.8.69`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.69) | 13/10/2026 | Barra inferior dos álbuns, Excluir fixo, velocidade por toque/segurar e fechamento seguro do indicador de carregamento |
+| [`v0.8.70`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.70) | 16/10/2026 | Inicialização do OCR no APK otimizado e indicador com contraste sobre imagens claras e escuras |
+| [`v0.8.71`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.71) | 19/10/2026 | Toque prolongado no OCR, atalho Aleatório, confirmação e contagem de ocultos e prévia fiel das cores do tema |
 
 ## Relatório comparativo de desempenho
 
@@ -418,7 +422,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.69](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.69/Galeria-Android-versao-0.8.69.apk)
+[Baixar Galeria Android - versão 0.8.71](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.71/Galeria-Android-versao-0.8.71.apk)
 
 Build padrão do Gradle:
 
@@ -429,10 +433,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado como anexo no GitHub Releases (os APKs históricos na raiz permanecem preservados):
 
 ```text
-Galeria-Android-versao-0.8.69.apk
+Galeria-Android-versao-0.8.71.apk
 ```
 
-O APK 0.8.69 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.8.71 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de entrega
 

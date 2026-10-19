@@ -18,7 +18,9 @@ internal object AlbumCountRefresh {
             val count = if (!hidden && album.key == album.path && indexedCounts != null) {
                 indexedCounts[album.key] ?: 0
             } else if (album.key == album.path && MediaActions.hasAllFilesAccess(context)) {
-                MediaOperationNavigation.mediaCount(File(root, album.path)) ?: album.count
+                File(root, album.path).listFiles()?.count {
+                    it.isFile && it.length() > 0 && MediaStoreRepository.isSupportedMediaFile(it)
+                } ?: album.count
             } else album.count // Inaccessible metadata is unknown, never assumed empty.
             if (count == 0) null else AlbumItem(album.key, album.name, count, album.cover,
                 album.latestDate, album.firstDate, album.totalSize, album.path, album.naturallyHidden, album.requiresFilesystem)

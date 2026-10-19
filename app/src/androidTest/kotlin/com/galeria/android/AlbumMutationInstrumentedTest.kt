@@ -566,35 +566,67 @@ class AlbumMutationInstrumentedTest {
 
     @Test fun hiddenDialogCountsRefreshWithoutRevealingOrUnhidingAlbums() {
         val first = insert(source, "first.png")
-        insert(source, "second.png")
-        auxiliaryFiles += java.io.File(Environment.getExternalStorageDirectory(), source + ".nomedia")
-            .apply { createNewFile() }
+        val second = insert(source, "second.png")
+        insert(target, "target.png")
+        for (key in listOf(source, target)) {
+            auxiliaryFiles += java.io.File(Environment.getExternalStorageDirectory(), key + ".nomedia")
+                .apply { createNewFile() }
+        }
         prepareCatalog()
         val oldHidden = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty().toSet()
-        prefs.edit().putStringSet("hidden_folder_keys", oldHidden + source).commit()
+        prefs.edit().putStringSet("hidden_folder_keys", oldHidden + source + target).commit()
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 val stale = AlbumItem(source, "Contagem oculta", 99, null, 0, 0, 0, source)
-                val refreshed = io { AlbumCountRefresh.refresh(context, listOf(stale)) }
-                assertEquals(2, refreshed.single().count)
+                val staleTarget = AlbumItem(target, "Destino oculto", 99, null, 0, 0, 0, target)
+                val refreshed = io { AlbumCountRefresh.refresh(context, listOf(stale, staleTarget)) }
+                assertEquals(2, refreshed.first { it.key == source }.count)
                 scenario.onActivity { activity ->
                     invoke(activity, "showFolderVisibilityDialog", arrayOf(List::class.java), refreshed)
                 }
-                onView(withText("Contagem oculta (2)")).inRoot(isDialog()).check { view, error ->
-                    if (error != null) throw error
-                    assertNotNull(view)
-                }
-                context.contentResolver.delete(first, null, null)
-                waitUntil {
+                fun awaitCount(name: String, count: Int) = waitUntil {
                     runCatching {
-                        onView(withText("Contagem oculta (1)")).inRoot(isDialog()).check { view, error ->
+                        onView(withText("$name ($count)")).inRoot(isDialog()).check { view, error ->
                             if (error != null) throw error
                             assertNotNull(view)
                         }
                     }.isSuccess
                 }
+                awaitCount("Contagem oculta", 2)
+                awaitCount("Destino oculto", 1)
+                val third = insert(source, "third.png")
+                awaitCount("Contagem oculta", 3)
+                context.contentResolver.delete(first, null, null)
+                awaitCount("Contagem oculta", 2)
+                // No MediaStore notification: real .nomedia filesystem mutations.
+                val empty = java.io.File(Environment.getExternalStorageDirectory(), source + "empty.png")
+                auxiliaryFiles += empty
+                assertTrue(empty.createNewFile())
+                val direct = java.io.File(Environment.getExternalStorageDirectory(), source + "direct.png")
+                auxiliaryFiles += direct
+                context.contentResolver.openInputStream(second)!!.use { input -> direct.outputStream().use(input::copyTo) }
+                awaitCount("Contagem oculta", 3)
+                val moved = java.io.File(Environment.getExternalStorageDirectory(), target + "direct.png")
+                auxiliaryFiles += moved
+                assertTrue(direct.renameTo(moved))
+                awaitCount("Contagem oculta", 2)
+                awaitCount("Destino oculto", 2)
+                assertTrue(moved.delete())
+                awaitCount("Destino oculto", 1)
+                context.contentResolver.delete(third, null, null)
+                awaitCount("Contagem oculta", 1)
                 assertTrue(source in prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty())
                 assertFalse(source in TemporaryAlbumVisibility.activeKeys())
+                context.contentResolver.delete(second, null, null)
+                waitUntil {
+                    var gone = false
+                    scenario.onActivity { activity ->
+                        val adapter = activity.javaClass.getDeclaredField("visibilityDialogAdapter")
+                            .apply { isAccessible = true }.get(activity) as android.widget.BaseAdapter
+                        gone = (0 until adapter.count).none { (adapter.getItem(it) as AlbumItem).key == source }
+                    }
+                    gone
+                }
             }
         } finally {
             prefs.edit().putStringSet("hidden_folder_keys", oldHidden).commit()

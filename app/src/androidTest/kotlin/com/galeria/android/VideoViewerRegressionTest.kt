@@ -38,6 +38,119 @@ class VideoViewerRegressionTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
+    @Test fun heldOcrGestureKeepsThePhotoAndReadsLightAndBlackBackgroundsAfterReopening() {
+        val folder = "Pictures/OcrHeldGesture-${System.nanoTime()}/"
+        val created = (1..4).map { insertPhoto(folder, "ocr-held-$it.png") }
+        try {
+            created.take(2).forEachIndexed { index, uri ->
+                val bitmap = Bitmap.createBitmap(1600, 1200, Bitmap.Config.ARGB_8888)
+                try {
+                    android.graphics.Canvas(bitmap).apply {
+                        drawColor(if (index == 0) Color.WHITE else Color.BLACK)
+                        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                            color = if (index == 0) Color.BLACK else Color.WHITE
+                            textSize = 64f
+                        }
+                        repeat(4) { drawText("DOCUMENTO ALFA TEXTO PARA COPIAR", 45f, 230f + it * 210f, paint) }
+                    }
+                    context.contentResolver.openOutputStream(uri, "wt")!!.use {
+                        assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+                    }
+                } finally { bitmap.recycle() }
+            }
+            val catalog = MediaStoreRepository.refreshMedia(context, force = true)
+            GalleryCatalogStore.saveCustomOrder(context, folder, created.map { uri ->
+                catalog.first { MediaIdentityRules.sameUri(it.uri.toString(), uri.toString()) }
+            })
+            for ((index, uri) in created.take(2).withIndex()) {
+                val original = context.contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                val releaseWorker = java.util.concurrent.CountDownLatch(1)
+                val entered = java.util.concurrent.CountDownLatch(1)
+                val worker = ImageTextRecognition::class.java.getDeclaredField("decodeExecutor")
+                    .apply { isAccessible = true }.get(null) as java.util.concurrent.ExecutorService
+                worker.execute { entered.countDown(); releaseWorker.await() }
+                try {
+                    assertTrue(entered.await(15, java.util.concurrent.TimeUnit.SECONDS))
+                    ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+                        putExtra("uri", uri.toString()); putExtra("mime", "image/png")
+                        putExtra("name", "ocr-held-${index + 1}.png")
+                        putExtra("path", folder); putExtra("album_key", folder)
+                    }).use { scenario ->
+                        awaitViewerReady(scenario, uri)
+                        scenario.onActivity { activity ->
+                            val image = descendants(activity.window.decorView).filterIsInstance<CoilZoomImageView>().first()
+                            assertTrue("A referência da foto exibida deve representar a mídia atual",
+                                MediaIdentityRules.sameUri(image.tag.toString(), current(activity).uri.toString()))
+                        }
+                        if (index == 1) {
+                            onView(isAssignableFrom(CoilZoomImageView::class.java)).perform(doubleClick())
+                            await {
+                                var zoomed = false
+                                scenario.onActivity { activity ->
+                                    val image = descendants(activity.window.decorView).filterIsInstance<CoilZoomImageView>().first()
+                                    zoomed = image.zoomable.transformState.value.scaleX > image.zoomable.minScaleState.value * 1.2f
+                                }
+                                zoomed
+                            }
+                        }
+                        onView(isAssignableFrom(CoilZoomImageView::class.java)).perform(holdThenMoveFinger())
+                        captureLoadingFeedback("ocr-held-${if (index == 0) "light" else "black"}.png")
+                        scenario.onActivity { activity ->
+                            val progress = activity.javaClass.getDeclaredField("ocrProgress")
+                                .apply { isAccessible = true }.get(activity) as? View
+                            assertNotNull("Segurar deve iniciar OCR: fundo=$index, mídia atual=${current(activity).uri}", progress)
+                            assertTrue("O indicador de OCR deve estar visível sobre a foto de fundo=$index", progress!!.isShown)
+                            assertNull("Mover o dedo após segurar não pode iniciar prévia de outra mídia",
+                                activity.javaClass.getDeclaredField("dragPreviewPage").apply { isAccessible = true }.get(activity))
+                            assertTrue(MediaIdentityRules.sameUri(uri.toString(), current(activity).uri.toString()))
+                            assertFalse(activity.mediaTransitionController.isBusy)
+                        }
+                        releaseWorker.countDown()
+                        awaitViewerOcrIdle(scenario)
+                        onView(withContentDescription(R.string.ocr_select_on_image)).check(matches(isDisplayed()))
+                        onView(withText(R.string.action_select_all)).perform(click())
+                        onView(withText(R.string.ocr_copy_selection)).perform(click())
+                        scenario.onActivity { activity ->
+                            val clipboard = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            assertTrue(clipboard.primaryClip!!.getItemAt(0).text.contains("DOCUMENTO ALFA"))
+                            assertTrue(MediaIdentityRules.sameUri(uri.toString(), current(activity).uri.toString()))
+                        }
+                    }
+                    assertArrayEquals("A inversão para OCR não pode alterar a foto original", original,
+                        context.contentResolver.openInputStream(uri)!!.use { it.readBytes() })
+                } finally { releaseWorker.countDown() }
+            }
+        } finally {
+            created.forEach { context.contentResolver.delete(it, null, null) }
+            GalleryDatabase.get(context).galleryDao().deleteCustomOrder(folder)
+            MediaStoreRepository.invalidateCache()
+            GalleryCatalogStore.markCatalogDirty(context)
+        }
+    }
+
+    private fun holdThenMoveFinger(): androidx.test.espresso.ViewAction = object : androidx.test.espresso.ViewAction {
+        override fun getConstraints(): org.hamcrest.Matcher<View> = isDisplayed()
+        override fun getDescription() = "segurar a foto e mover um dedo sem soltá-lo antes do OCR"
+        override fun perform(controller: androidx.test.espresso.UiController, view: View) {
+            val location = IntArray(2).also(view::getLocationOnScreen)
+            val x = location[0] + view.width * 0.5f
+            val y = location[1] + view.height * 0.5f
+            val slop = android.view.ViewConfiguration.get(view.context).scaledTouchSlop.toFloat()
+            val down = SystemClock.uptimeMillis()
+            fun inject(action: Int, dx: Float = 0f, dy: Float = 0f) {
+                val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x + dx, y + dy, 0)
+                    .apply { source = android.view.InputDevice.SOURCE_TOUCHSCREEN }
+                try { assertTrue(controller.injectMotionEvent(event)) } finally { event.recycle() }
+            }
+            inject(MotionEvent.ACTION_DOWN)
+            controller.loopMainThreadForAtLeast(android.view.ViewConfiguration.getLongPressTimeout().toLong() + 150)
+            inject(MotionEvent.ACTION_MOVE, -slop * 3f, -slop * 2f)
+            controller.loopMainThreadForAtLeast(40)
+            inject(MotionEvent.ACTION_UP, -slop * 3f, -slop * 2f)
+            controller.loopMainThreadUntilIdle()
+        }
+    }
+
     @Test fun queuedManualOcrCannotRevealTextAfterNavigationAndCanBeRetried() {
         val folder = "Pictures/OcrOwnership-${System.nanoTime()}/"
         val created = (1..4).map { insertPhoto(folder, "ocr-ownership-$it.png") }

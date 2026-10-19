@@ -11,7 +11,8 @@ internal class GalleryBrowseBar @JvmOverloads constructor(
     onSort: () -> Unit = {},
     onFilter: () -> Unit = {},
     onHidden: () -> Unit = {},
-    onSettings: () -> Unit = {}
+    onSettings: () -> Unit = {},
+    onRandomPlayback: (() -> Unit)? = null
 ) : LinearLayout(context) {
     private val dock = Ui.selectionActionDock(context)
 
@@ -28,7 +29,11 @@ internal class GalleryBrowseBar @JvmOverloads constructor(
             }
         add(R.drawable.ic_sort, R.string.browse_sort, R.string.action_sort_by, "browse_sort", onSort)
         add(R.drawable.ic_filter, R.string.browse_filter, R.string.action_filter_media, "browse_filter", onFilter)
-        add(R.drawable.ic_eye_off, R.string.browse_hidden, R.string.main_folder_visibility, "browse_hidden", onHidden)
+        if (onRandomPlayback != null) {
+            add(R.drawable.ic_shuffle, R.string.album_random, R.string.action_random_playback, "browse_shuffle", onRandomPlayback)
+        } else {
+            add(R.drawable.ic_eye_off, R.string.browse_hidden, R.string.main_folder_visibility, "browse_hidden", onHidden)
+        }
         add(R.drawable.ic_settings, R.string.action_settings, R.string.action_settings, "browse_settings", onSettings)
         restyle()
     }

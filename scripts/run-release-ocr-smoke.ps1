@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory)][string]$Apk,
     [string]$Device = 'emulator-5554',
+    [ValidateSet('Light', 'Dark')][string]$Background = 'Light',
     [string]$ReportDirectory
 )
 $ErrorActionPreference = 'Stop'
@@ -37,7 +38,7 @@ foreach ($package in @($apkPath, $testApk)) {
 }
 & adb -s $Device logcat -c
 $timer = [Diagnostics.Stopwatch]::StartNew()
-$output = & adb -s $Device shell am instrument -w -r 'com.galeria.android.test/com.galeria.android.OcrReleaseSmokeRunner'
+$output = & adb -s $Device shell am instrument -w -r -e background $Background 'com.galeria.android.test/com.galeria.android.OcrReleaseSmokeRunner'
 $instrumentationExit = $LASTEXITCODE
 $timer.Stop()
 $output | Set-Content -LiteralPath (Join-Path $ReportDirectory 'instrumentation.txt') -Encoding utf8
@@ -45,7 +46,7 @@ $output | Set-Content -LiteralPath (Join-Path $ReportDirectory 'instrumentation.
     Set-Content -LiteralPath (Join-Path $ReportDirectory 'logcat.txt') -Encoding utf8
 $result = ConvertFrom-GalleryInstrumentation $output $instrumentationExit 1
 [ordered]@{
-    mode = 'release-ocr-smoke'; passed = $result.Success; tests = $result.Total
+    mode = 'release-ocr-smoke'; passed = $result.Success; tests = $result.Total; background = $Background
     device = $Device; seconds = [math]::Round($timer.Elapsed.TotalSeconds, 1)
     apkSha256 = (Get-FileHash -LiteralPath $apkPath -Algorithm SHA256).Hash
     testApkSha256 = (Get-FileHash -LiteralPath $testApk -Algorithm SHA256).Hash

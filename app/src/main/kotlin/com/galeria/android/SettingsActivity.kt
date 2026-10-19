@@ -342,8 +342,9 @@ class SettingsActivity : Activity() {
         var selectedColor = initialColor
         var applied = false
         val panel = LinearLayout(this).apply {
+            tag = "theme_color_panel"
             orientation = LinearLayout.VERTICAL
-            background = Ui.rounded(Ui.menuSurface(this@SettingsActivity), 14, this@SettingsActivity)
+            background = Ui.rounded(Ui.bg(this@SettingsActivity), 14, this@SettingsActivity)
             clipToOutline = true
             Ui.setPadding(this, 18, 18, 18, 12)
         }
@@ -393,6 +394,7 @@ class SettingsActivity : Activity() {
         panel.addView(tone, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42)))
 
         val sample = LinearLayout(this).apply {
+            tag = "theme_submenu_preview"
             orientation = LinearLayout.VERTICAL
             Ui.setPadding(this, 14, 12, 14, 12)
         }
@@ -457,19 +459,20 @@ class SettingsActivity : Activity() {
             Ui.setThemePreview(selectedColor)
             root.setBackgroundColor(Ui.bg(this@SettingsActivity))
             Ui.applySystemBars(this@SettingsActivity)
-            panel.background = Ui.rounded(Ui.menuSurface(this@SettingsActivity), 14, this@SettingsActivity)
+            panel.background = Ui.rounded(Ui.bg(this@SettingsActivity), 14, this@SettingsActivity)
+            val mainText = Ui.text(this@SettingsActivity)
             val menuText = Ui.menuText(this@SettingsActivity)
-            title.setTextColor(menuText)
-            instruction.setTextColor(Ui.blend(menuText, Ui.menuSurface(this@SettingsActivity), 0.34f))
-            toneLabel.setTextColor(menuText)
-            cancel.setTextColor(menuText)
-            confirm.setTextColor(Ui.accent(this@SettingsActivity))
+            title.setTextColor(mainText)
+            instruction.setTextColor(Ui.muted(this@SettingsActivity))
+            toneLabel.setTextColor(mainText)
+            cancel.setTextColor(mainText)
+            confirm.setTextColor(mainText)
             tone.progressTintList = ColorStateList.valueOf(Ui.accent(this@SettingsActivity))
             tone.thumbTintList = ColorStateList.valueOf(Ui.accent(this@SettingsActivity))
-            sample.background = Ui.rounded(Ui.surface(this@SettingsActivity), 10, this@SettingsActivity)
-            sampleTitle.setTextColor(Ui.text(this@SettingsActivity))
-            sampleSubtitle.setTextColor(Ui.muted(this@SettingsActivity))
-            sampleAccent.setTextColor(Ui.accent(this@SettingsActivity))
+            sample.background = Ui.rounded(Ui.menuSurface(this@SettingsActivity), 10, this@SettingsActivity)
+            sampleTitle.setTextColor(menuText)
+            sampleSubtitle.setTextColor(menuText)
+            sampleAccent.setTextColor(menuText)
         }
 
         wheel.onColorChanged = ::applyPreview

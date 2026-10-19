@@ -170,6 +170,7 @@
     <string name="album_group_by">Agrupar por</string>
     <string name="album_view_mode">Modo de visualização</string>
     <string name="album_random">Aleatório</string>
+    <string name="action_random_playback">Reprodução aleatória</string>
     <string name="album_cinema_mode">Modo cinema</string>
     <string name="album_cinema_mode_enabled">Modo cinema ativado.</string>
     <string name="album_cinema_mode_disabled">Modo cinema desativado.</string>
@@ -234,7 +235,7 @@
     <string name="settings_theme_color_wheel_description">Círculo de cores do tema</string>
     <string name="settings_theme_tone">Luminosidade</string>
     <string name="settings_theme_preview_title">Prévia do tema</string>
-    <string name="settings_theme_preview_subtitle">Superfícies e textos com contraste confortável.</string>
+    <string name="settings_theme_preview_subtitle">Cor e contraste usados nos submenus.</string>
     <string name="settings_theme_apply">Aplicar</string>
     <string name="settings_language">Idioma</string>
     <string name="settings_language_portuguese">Português</string>

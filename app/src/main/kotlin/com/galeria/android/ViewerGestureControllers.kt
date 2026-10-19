@@ -55,7 +55,7 @@ internal class ViewerSwipeGestureController {
 /** One instance per image view: obsolete image callbacks cannot mutate the
  * active image's arbitration. Android callback scheduling and zoom stay outside. */
 internal class ImageGestureArbiter {
-    enum class MoveRoute { IMAGE_ZOOM, GALLERY }
+    enum class MoveRoute { IMAGE_ZOOM, GALLERY, TEXT }
     enum class Release { TEXT, GALLERY, TAP, IMAGE }
 
     var paging = false
@@ -76,11 +76,15 @@ internal class ImageGestureArbiter {
     }
 
     fun pointerDown() {
+        textLongPressed = false
         paging = false
         tapCandidate = false
     }
 
     fun move(x: Float, y: Float, pointers: Int, atBaseScale: Boolean, touchSlop: Float): MoveRoute {
+        // A held finger belongs to OCR even if it drifts after recognition or
+        // the photo is zoomed. Only a second pointer hands it back to zoom.
+        if (textLongPressed && pointers == 1) return MoveRoute.TEXT
         if (abs(x - downX) > touchSlop || abs(y - downY) > touchSlop) tapCandidate = false
         if (pointers > 1 || !atBaseScale) {
             paging = false
@@ -91,7 +95,7 @@ internal class ImageGestureArbiter {
 
     /** Returns true only for the handoff that must cancel the zoom view stream. */
     fun claimPaging(): Boolean {
-        if (paging) return false
+        if (paging || textLongPressed) return false
         paging = true
         return true
     }

@@ -574,10 +574,13 @@ class AlbumMediaActivity : ComponentActivity() {
         browseBar = GalleryBrowseBar(this, navigationBarHeight(),
             onSort = ::showMediaSortDialog,
             onFilter = ::showMediaFilterDialog,
-            onHidden = {
-                startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_HIDDEN_PANEL, true))
-            },
-            onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) })
+            onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
+            onRandomPlayback = ::startRandomPlayback)
+        browseBar.findViewWithTag<View>("browse_shuffle").apply {
+            // Trashed media does not offer random playback in the album menu either.
+            isEnabled = albumKey != VirtualAlbumRules.TRASH_KEY
+            alpha = if (isEnabled) 1f else 0.4f
+        }
         root.addView(browseBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         selectionActions = LinearLayout(this).apply {

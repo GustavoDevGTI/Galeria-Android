@@ -59,7 +59,7 @@ class ThemeCustomizationInstrumentedTest {
     }
 
     @Test
-    fun colorWheelShowsLivePreviewAndCancelKeepsSavedTheme() {
+    fun colorWheelPreviewsMainAndSubmenuColorsAndKeepsSaveAndCancelBehavior() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val hadTheme = prefs.contains("theme_color")
@@ -69,14 +69,33 @@ class ThemeCustomizationInstrumentedTest {
         try {
             ActivityScenario.launch(SettingsActivity::class.java).use { scenario ->
                 onView(withText(context.getString(R.string.settings_theme_color))).perform(click())
-                onView(withTagValue(equalTo(ThemeColorWheelView.TAG))).check(matches(isDisplayed()))
-                    .perform(selectWheelColor(Color.RED))
-
-                scenario.onActivity { activity ->
-                    val hsv = FloatArray(3)
-                    Color.colorToHSV(Ui.themeSeed(activity), hsv)
-                    assertTrue(hsv[1] <= ThemeColorWheelView.MAX_SATURATION + 0.001f)
-                    assertTrue(Ui.themeSeed(activity) != Ui.normalizeThemeSeed(savedTheme))
+                for (color in listOf(Color.RED, Color.WHITE, Color.rgb(24, 28, 32), Color.rgb(232, 214, 166))) {
+                    onView(withTagValue(equalTo(ThemeColorWheelView.TAG))).check(matches(isDisplayed()))
+                        .perform(selectWheelColor(color))
+                    onView(withTagValue(equalTo("theme_color_panel"))).check { view, error ->
+                        if (error != null) throw error
+                        assertEquals("O cartão deve mostrar o fundo principal da galeria", Ui.bg(view.context),
+                            (view.background as android.graphics.drawable.GradientDrawable).color!!.defaultColor)
+                        val title = findText(view, context.getString(R.string.settings_choose_theme_color))
+                        assertEquals(Ui.text(view.context), title.currentTextColor)
+                        assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(title.currentTextColor, Ui.bg(view.context)) >= 4.5)
+                        assertEquals(Ui.text(view.context),
+                            findText(view, context.getString(R.string.settings_theme_apply)).currentTextColor)
+                    }
+                    onView(withTagValue(equalTo("theme_submenu_preview"))).check { view, error ->
+                        if (error != null) throw error
+                        assertEquals("A prévia deve usar exatamente a cor dos submenus", Ui.menuSurface(view.context),
+                            (view.background as android.graphics.drawable.GradientDrawable).color!!.defaultColor)
+                        val title = findText(view, context.getString(R.string.settings_theme_preview_title))
+                        assertEquals(Ui.menuText(view.context), title.currentTextColor)
+                        assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(title.currentTextColor, Ui.menuSurface(view.context)) >= 4.5)
+                    }
+                    scenario.onActivity { activity ->
+                        val hsv = FloatArray(3)
+                        Color.colorToHSV(Ui.themeSeed(activity), hsv)
+                        assertTrue(hsv[1] <= ThemeColorWheelView.MAX_SATURATION + 0.001f)
+                        assertTrue(Ui.themeSeed(activity) != Ui.normalizeThemeSeed(savedTheme))
+                    }
                 }
 
                 onView(withText(context.getString(R.string.action_cancel))).perform(click())
@@ -90,6 +109,29 @@ class ThemeCustomizationInstrumentedTest {
                     val location = IntArray(2)
                     settingsTitle.getLocationOnScreen(location)
                     assertTrue(location[1] >= topInset)
+                }
+                onView(withText(context.getString(R.string.settings_theme_color))).perform(click())
+                onView(withTagValue(equalTo(ThemeColorWheelView.TAG))).perform(selectWheelColor(Color.rgb(190, 214, 234)))
+                var selected = 0
+                var secondary = 0
+                scenario.onActivity { activity ->
+                    selected = Ui.themeSeed(activity)
+                    secondary = Ui.menuSurface(activity)
+                }
+                val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+                instrumentation.waitForIdleSync()
+                instrumentation.uiAutomation.takeScreenshot()?.let { screenshot ->
+                    try {
+                        java.io.File(context.getExternalFilesDir(null), "theme-dual-preview.png").outputStream().use {
+                            screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                        }
+                    } finally { screenshot.recycle() }
+                }
+                onView(withText(context.getString(R.string.settings_theme_apply))).perform(click())
+                scenario.onActivity { activity ->
+                    assertEquals("Aplicar deve salvar a cor visualizada", selected, prefs.getInt("theme_color", 0))
+                    assertEquals(selected, Ui.themeSeed(activity))
+                    assertEquals("O submenu real deve manter a cor mostrada na prévia", secondary, Ui.menuSurface(activity))
                 }
             }
         } finally {

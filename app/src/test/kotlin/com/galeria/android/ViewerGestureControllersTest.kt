@@ -6,6 +6,31 @@ import org.junit.Test
 class ViewerGestureControllersTest {
     private val slop = 10f
 
+    @Test fun heldTextCannotBecomeGalleryPagingBeforeFingerLift() {
+        for (atBaseScale in listOf(true, false)) {
+            val image = ImageGestureArbiter()
+            image.start(100f, 100f)
+            assertTrue(image.claimText { true })
+            assertEquals(ImageGestureArbiter.MoveRoute.TEXT, image.move(140f, 135f, 1, atBaseScale, slop))
+            assertFalse("Movimento depois do toque prolongado não pode iniciar paginação", image.claimPaging())
+            assertFalse(image.paging)
+            assertEquals(ImageGestureArbiter.Release.TEXT, image.release())
+            image.finishRelease(ImageGestureArbiter.Release.TEXT)
+            image.start(100f, 100f)
+            assertTrue("A sequência seguinte deve continuar permitindo navegar", image.claimPaging())
+        }
+    }
+
+    @Test fun pinchAfterTextClaimReturnsTheGestureToTheImage() {
+        val image = ImageGestureArbiter()
+        image.start(100f, 100f)
+        assertTrue(image.claimText { true })
+        image.pointerDown()
+        assertFalse("O segundo dedo deve permitir zoom, sem reaproveitar o toque prolongado", image.textLongPressed)
+        assertEquals(ImageGestureArbiter.MoveRoute.IMAGE_ZOOM, image.move(100f, 100f, 2, false, slop))
+        assertEquals(ImageGestureArbiter.Release.IMAGE, image.release())
+    }
+
     private fun ImageGestureArbiter.claimText(isCurrentImage: Boolean, isFinishing: Boolean): Boolean =
         claimText { isCurrentImage && !isFinishing }
 

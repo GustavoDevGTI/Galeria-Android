@@ -37,9 +37,10 @@ uma cópia release de assinatura compatível:
 
 ```powershell
 ./scripts/run-release-ocr-smoke.ps1 -Apk ./copia-release-para-testes.apk
+./scripts/run-release-ocr-smoke.ps1 -Apk ./copia-release-para-testes.apk -Background Dark
 ```
 
-Ele cria uma imagem própria, reconhece pelo toque prolongado, seleciona e copia
+Execute nos fundos claro (padrão) e preto (`-Background Dark`). Ele cria uma imagem própria, reconhece pelo toque prolongado com pequeno arraste, seleciona e copia
 o texto, confere o clipboard e verifica que o arquivo não mudou. O script recusa
 APK debuggable e dispositivos físicos, compila o runner com
 `-PocrReleaseSmoke=true`, instala sem limpar dados e registra hashes/logs/resultado.
@@ -47,6 +48,11 @@ Ele não troca assinaturas nem publica. Preserve também o hash do APK original
 e a conferência de DEX/assets/libs da cópia de teste. Antes de retomar a bateria
 AndroidX, compile `:app:assembleDebugAndroidTest` sem essa propriedade para
 restaurar o runner normal; `run-validation.ps1` já faz isso automaticamente.
+
+A regressão de OCR também abre fotos de um álbum real de teste, incluindo a
+troca de URI entre as coleções Images e Files do MediaStore após o carregamento.
+Ela confere o gesto em fundos branco e preto, zoom, indicador de análise, cópia,
+preservação do original e ausência de navegação indevida durante o toque mantido.
 
 Execute na raiz do projeto, com Java 17, SDK Android e `adb` no PATH:
 

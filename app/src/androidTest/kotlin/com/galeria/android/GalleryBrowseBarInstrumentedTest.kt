@@ -29,6 +29,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import org.hamcrest.Matchers.`is`
 import org.hamcrest.Matchers.not
 import org.junit.Assert.*
@@ -59,6 +61,9 @@ class GalleryBrowseBarInstrumentedTest {
             onView(withTagValue(`is`("browse_filter"))).perform(click())
             onView(withText(R.string.action_filter_media)).inRoot(isDialog()).check(matches(isDisplayed()))
             pressBack()
+            onView(withTagValue(`is`("browse_hidden"))).perform(click())
+            onView(withText(R.string.main_folder_visibility)).inRoot(isDialog()).check(matches(isDisplayed()))
+            pressBack()
             onView(withContentDescription(R.string.action_more_options)).perform(click())
             for (text in listOf(R.string.main_folder_organization, R.string.action_create_folder, R.string.action_refresh)) {
                 onView(withText(text)).check(matches(isDisplayed()))
@@ -72,24 +77,40 @@ class GalleryBrowseBarInstrumentedTest {
         }
     }
 
-    @Test fun albumBarReturnsAfterSelectionAndHiddenPanelKeepsTheOriginalAlbumAndRevealSession() {
+    @Test fun albumBarReturnsAfterSelectionAndShuffleKeepsTheOriginalAlbumAndRevealSession() {
         val folder = "Pictures/BrowseBar-${System.nanoTime()}/"
         val uri = insertPhoto(folder)
+        val secondUri = insertPhoto(folder, "browse-second.png")
         try {
             ActivityScenario.launch<AlbumMediaActivity>(Intent(context, AlbumMediaActivity::class.java).apply {
                 putExtra("album_key", folder); putExtra("album_name", "Álbum de teste")
             }).use { scenario ->
-                waitUntil { var count = 0; scenario.onActivity { count = adapter(it).getCount() }; count == 1 }
-                scenario.onActivity { assertBar(it.window.decorView) }
+                waitUntil { var count = 0; scenario.onActivity { count = adapter(it).getCount() }; count == 2 }
+                scenario.onActivity { assertBar(it.window.decorView, "browse_shuffle") }
+                onView(withTagValue(`is`("browse_hidden"))).check(doesNotExist())
+                onView(withContentDescription(R.string.action_random_playback)).check(matches(isDisplayed()))
                 onView(withContentDescription("browse-photo.png")).perform(longClick())
                 onView(withTagValue(`is`("gallery_browse_bar"))).check(matches(not(isDisplayed())))
                 onView(withContentDescription(R.string.action_move)).check(matches(isDisplayed()))
                 pressBack()
                 onView(withTagValue(`is`("gallery_browse_bar"))).check(matches(isDisplayed()))
                 TemporaryAlbumVisibility.toggle(folder)
-                onView(withTagValue(`is`("browse_hidden"))).perform(click())
-                onView(withText(R.string.main_folder_visibility)).inRoot(isDialog()).check(matches(isDisplayed()))
-                assertTrue("Abrir Ocultos não pode encerrar a revelação existente", folder in TemporaryAlbumVisibility.activeKeys())
+                onView(withTagValue(`is`("browse_shuffle"))).perform(click())
+                waitUntil {
+                    var playing = false
+                    instrumentation.runOnMainSync {
+                        val viewer = ActivityLifecycleMonitorRegistry.getInstance()
+                            .getActivitiesInStage(Stage.RESUMED).filterIsInstance<DetailActivity>().singleOrNull()
+                        playing = viewer != null
+                        if (viewer != null) {
+                            assertTrue(viewer.intent.getBooleanExtra("shuffle_mode", false))
+                            assertEquals(folder, viewer.intent.getStringExtra("album_key"))
+                            assertNull(viewer.window.decorView.findViewWithTag<View>("gallery_browse_bar"))
+                        }
+                    }
+                    playing
+                }
+                assertTrue("Reproduzir não pode encerrar a revelação existente", folder in TemporaryAlbumVisibility.activeKeys())
                 pressBack()
                 waitUntil {
                     var resumed = false
@@ -98,10 +119,10 @@ class GalleryBrowseBarInstrumentedTest {
                 }
                 scenario.onActivity {
                     assertEquals(folder, it.intent.getStringExtra("album_key"))
-                    assertEquals(1, adapter(it).getCount())
-                    assertBar(it.window.decorView)
+                    assertEquals(2, adapter(it).getCount())
+                    assertBar(it.window.decorView, "browse_shuffle")
                 }
-                assertTrue("Fechar o painel não equivale a fechar o app", folder in TemporaryAlbumVisibility.activeKeys())
+                assertTrue("Voltar do visualizador não equivale a fechar o app", folder in TemporaryAlbumVisibility.activeKeys())
                 onView(withContentDescription(R.string.action_more_options)).perform(click())
                 for (text in listOf(R.string.album_view_mode, R.string.album_random, R.string.album_choose_cover, R.string.album_cinema_mode)) {
                     onView(withText(text)).check(matches(isDisplayed()))
@@ -112,6 +133,7 @@ class GalleryBrowseBarInstrumentedTest {
         } finally {
             TemporaryAlbumVisibility.hide(folder)
             context.contentResolver.delete(uri, null, null)
+            context.contentResolver.delete(secondUri, null, null)
             MediaStoreRepository.invalidateCache()
             GalleryCatalogStore.markCatalogDirty(context)
         }
@@ -187,12 +209,12 @@ class GalleryBrowseBarInstrumentedTest {
         } finally { photo.delete(); video.delete() }
     }
 
-    private fun assertBar(root: View) {
+    private fun assertBar(root: View, thirdAction: String = "browse_hidden") {
         val bar = root.findViewWithTag<ViewGroup>("gallery_browse_bar")
         assertTrue(bar.isShown)
         val dock = bar.getChildAt(0) as ViewGroup
         assertEquals(4, dock.childCount)
-        val tags = listOf("browse_sort", "browse_filter", "browse_hidden", "browse_settings")
+        val tags = listOf("browse_sort", "browse_filter", thirdAction, "browse_settings")
         tags.forEachIndexed { index, tag ->
             val action = dock.getChildAt(index)
             assertEquals(tag, action.tag)
@@ -208,9 +230,9 @@ class GalleryBrowseBarInstrumentedTest {
         while (SystemClock.uptimeMillis() < deadline) { if (predicate()) return; SystemClock.sleep(100) }
         assertTrue("Estado esperado não apareceu", predicate())
     }
-    private fun insertPhoto(folder: String): Uri {
+    private fun insertPhoto(folder: String, name: String = "browse-photo.png"): Uri {
         val uri = requireNotNull(context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "browse-photo.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.DISPLAY_NAME, name); put(MediaStore.Images.Media.MIME_TYPE, "image/png")
             put(MediaStore.Images.Media.RELATIVE_PATH, folder); put(MediaStore.Images.Media.IS_PENDING, 1)
         }))
         val image = Bitmap.createBitmap(120, 120, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.rgb(170, 190, 180)) }

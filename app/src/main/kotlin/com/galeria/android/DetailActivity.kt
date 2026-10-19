@@ -67,6 +67,7 @@ import coil3.size.Precision
 import coil3.size.Scale
 import com.github.panpf.zoomimage.CoilZoomImageView
 import com.github.panpf.zoomimage.view.zoom.OnViewTapListener
+import com.github.panpf.zoomimage.view.zoom.OnViewLongPressListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1982,32 +1983,35 @@ class DetailActivity : ComponentActivity() {
         page.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         image.tag = item.uri
         val imageGestures = ImageGestureArbiter()
-        var longPressPoint = android.graphics.PointF()
-        val textLongPress = Runnable {
-            if (imageGestures.claimText { currentItem().uri == item.uri && !isFinishing }) {
+        // Use ZoomImage's detector: it owns the same stream as pan, pinch and
+        // double-tap instead of competing with a second delayed View callback.
+        image.onViewLongPressListener = OnViewLongPressListener { _, offset ->
+            if (switchingItem || isFinishing || isDestroyed || !image.isAttachedToWindow || activePage !== page)
+                return@OnViewLongPressListener
+            val current = mediaQueue.getOrNull(currentIndex) ?: return@OnViewLongPressListener
+            // Loading the album can replace /images/media/id with /file/id.
+            // Compare media identity, then pass the current queue item to OCR;
+            // its controller must not receive the obsolete URI/cache key.
+            if (imageGestures.claimText { MediaIdentityRules.sameUri(current.uri.toString(), item.uri.toString()) }) {
+                cancelPendingSingleTap()
                 image.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                recognizeCurrentImageText(item, longPressPoint)
+                recognizeCurrentImageText(current, android.graphics.PointF(offset.x, offset.y))
             }
         }
         image.setOnTouchListener { _, event ->
             ocrSelection?.takeIf { it.parent === page }?.let { return@setOnTouchListener it.onTouchEvent(event) }
             if (switchingItem) {
-                image.removeCallbacks(textLongPress)
                 imageGestures.cancel()
                 return@setOnTouchListener true
             }
             val atBaseScale = isAtBaseZoom(image)
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    longPressPoint = android.graphics.PointF(event.x, event.y)
                     imageGestures.start(event.x, event.y)
-                    image.removeCallbacks(textLongPress)
-                    image.postDelayed(textLongPress, ViewConfiguration.getLongPressTimeout().toLong())
                     beginPointerGesture(event)
                     false
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> {
-                    image.removeCallbacks(textLongPress)
                     if (dragPreviewPage != null) cancelInteractiveSwipe()
                     imageGestures.pointerDown()
                     false
@@ -2015,7 +2019,7 @@ class DetailActivity : ComponentActivity() {
                 MotionEvent.ACTION_MOVE -> {
                     val wasPaging = imageGestures.paging
                     val route = imageGestures.move(event.x, event.y, event.pointerCount, atBaseScale, gestureTouchSlop)
-                    if (!imageGestures.tapCandidate) image.removeCallbacks(textLongPress)
+                    if (route == ImageGestureArbiter.MoveRoute.TEXT) return@setOnTouchListener true
                     if (route == ImageGestureArbiter.MoveRoute.IMAGE_ZOOM) {
                         if (wasPaging || dragPreviewPage != null) cancelInteractiveSwipe()
                         false
@@ -2032,7 +2036,6 @@ class DetailActivity : ComponentActivity() {
                     }
                 }
                 MotionEvent.ACTION_UP -> {
-                    image.removeCallbacks(textLongPress)
                     val release = imageGestures.release()
                     val consumed = when (release) {
                         ImageGestureArbiter.Release.TEXT -> {
@@ -2061,7 +2064,6 @@ class DetailActivity : ComponentActivity() {
                     consumed
                 }
                 MotionEvent.ACTION_CANCEL -> {
-                    image.removeCallbacks(textLongPress)
                     if (imageGestures.paging || dragPreviewPage != null) cancelInteractiveSwipe()
                     imageGestures.cancel()
                 }

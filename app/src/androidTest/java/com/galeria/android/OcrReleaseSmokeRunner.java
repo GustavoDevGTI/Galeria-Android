@@ -31,8 +31,10 @@ import java.util.Arrays;
  * It runs against the real optimized release with a compatible test signature. */
 public final class OcrReleaseSmokeRunner extends Instrumentation {
     private interface Condition { boolean ready(); }
+    private boolean darkBackground;
 
     @Override public void onCreate(Bundle arguments) {
+        darkBackground = arguments != null && "Dark".equalsIgnoreCase(arguments.getString("background"));
         super.onCreate(arguments);
         start();
     }
@@ -69,9 +71,9 @@ public final class OcrReleaseSmokeRunner extends Instrumentation {
         Activity activity = null;
         try {
             Canvas canvas = new Canvas(bitmap);
-            canvas.drawColor(Color.WHITE);
+            canvas.drawColor(darkBackground ? Color.BLACK : Color.WHITE);
             Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            paint.setColor(Color.BLACK);
+            paint.setColor(darkBackground ? Color.WHITE : Color.BLACK);
             paint.setTextSize(44f);
             canvas.drawText("DOCUMENTO ALFA BETA GALERIA", 60f, 440f, paint);
             canvas.drawText("TEXTO COPIAVEL TESTE ORIGINAL", 60f, 600f, paint);
@@ -103,7 +105,11 @@ public final class OcrReleaseSmokeRunner extends Instrumentation {
             long down = SystemClock.uptimeMillis();
             touch(down, MotionEvent.ACTION_DOWN, bounds);
             SystemClock.sleep(ViewConfiguration.getLongPressTimeout() + 150L);
-            touch(down, MotionEvent.ACTION_UP, bounds);
+            Rect drift = new Rect(bounds);
+            int slop = ViewConfiguration.get(context).getScaledTouchSlop();
+            drift.offset(-slop * 3, -slop * 2);
+            touch(down, MotionEvent.ACTION_MOVE, drift);
+            touch(down, MotionEvent.ACTION_UP, drift);
             await("OCR não reconheceu o documento na foto; verificar inicialização release", () ->
                 textNode("DOCUMENTO") != null && textNode("ALFA") != null &&
                 textNode("GALERIA") != null && textNode("COPIAVEL") != null);
@@ -123,7 +129,8 @@ public final class OcrReleaseSmokeRunner extends Instrumentation {
             check(Arrays.equals(original, readBytes(photo)), "O OCR alterou a foto");
             Bitmap capture = getUiAutomation().takeScreenshot();
             if (capture != null) {
-                try (FileOutputStream out = new FileOutputStream(new File(context.getExternalFilesDir(null), "ocr-release-smoke.png"))) {
+                try (FileOutputStream out = new FileOutputStream(new File(context.getExternalFilesDir(null),
+                        darkBackground ? "ocr-release-smoke-dark.png" : "ocr-release-smoke.png"))) {
                     capture.compress(Bitmap.CompressFormat.PNG, 100, out);
                 } finally { capture.recycle(); }
             }

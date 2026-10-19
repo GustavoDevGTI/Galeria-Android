@@ -153,7 +153,15 @@ class HiddenAlbumDialogInstrumentedTest {
                         (view as TextView).gravity,
                         view.layoutDirection
                     ) and Gravity.HORIZONTAL_GRAVITY_MASK
-                    assertTrue("O OK do painel central deve ficar à direita.", gravity == Gravity.RIGHT)
+                    assertTrue("O OK deve ficar centralizado na barra.", gravity == Gravity.CENTER_HORIZONTAL)
+                    val bar = view.parent as android.view.ViewGroup
+                    assertTrue("Toda a barra deve receber o clique com o feedback padrão.",
+                        bar is ClickFeedbackActionLayout && bar.isClickable && bar.isFocusable)
+                    assertTrue("A barra deve ser mais fina e manter área de toque acessível.",
+                        bar.height == Ui.dp(view.context, 48))
+                    assertTrue("O alvo de toque deve ocupar toda a largura do painel.",
+                        bar.width == (bar.parent as android.view.View).width)
+                    assertTrue(bar.background is android.graphics.drawable.RippleDrawable)
                 }
                 val hiddenControlLocation = IntArray(2)
                 val loadControlLocation = IntArray(2)
@@ -171,6 +179,16 @@ class HiddenAlbumDialogInstrumentedTest {
                     "Os centros de Exibir ocultos e Carregar ocultos devem ficar na mesma linha.",
                     kotlin.math.abs(hiddenControlLocation[1] - loadControlLocation[1]) <= Ui.dp(context, 8)
                 )
+                onView(withText(containsString(cameraName))).inRoot(isDialog()).check { view, error ->
+                    if (error != null) throw error
+                    val label = (view as TextView).text as android.text.Spanned
+                    val countSpans = label.getSpans(cameraName.length, label.length, android.text.style.RelativeSizeSpan::class.java)
+                    assertTrue("A contagem deve ser menor que o nome, sem reduzir o nome do álbum.",
+                        countSpans.size == 1 && countSpans.single().sizeChange < 1f && label.getSpanStart(countSpans.single()) >= cameraName.length)
+                }
+                onView(androidx.test.espresso.matcher.ViewMatchers.withTagValue(org.hamcrest.Matchers.`is`("hidden_dialog_confirm")))
+                    .inRoot(isDialog()).perform(clickConfirmEdge())
+                onView(withText(R.string.main_folder_visibility)).check(doesNotExist())
             }
 
             val revealName = "GaleriaRevealTest${System.nanoTime()}"
@@ -262,6 +280,23 @@ class HiddenAlbumDialogInstrumentedTest {
             bitmap.eraseColor(android.graphics.Color.BLUE)
             assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream))
         } finally { bitmap.recycle() }
+    }
+
+    private fun clickConfirmEdge(): androidx.test.espresso.ViewAction = object : androidx.test.espresso.ViewAction {
+        override fun getConstraints(): org.hamcrest.Matcher<android.view.View> = isDisplayed()
+        override fun getDescription() = "confirmar pela extremidade esquerda da barra, fora do texto central"
+        override fun perform(controller: androidx.test.espresso.UiController, view: android.view.View) {
+            val location = IntArray(2).also(view::getLocationOnScreen)
+            val down = android.os.SystemClock.uptimeMillis()
+            for (action in listOf(android.view.MotionEvent.ACTION_DOWN, android.view.MotionEvent.ACTION_UP)) {
+                val event = android.view.MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(), action,
+                    location[0] + Ui.dp(view.context, 8).toFloat(), location[1] + view.height / 2f, 0)
+                    .apply { source = android.view.InputDevice.SOURCE_TOUCHSCREEN }
+                try { assertTrue(controller.injectMotionEvent(event)) } finally { event.recycle() }
+                controller.loopMainThreadForAtLeast(40)
+            }
+            controller.loopMainThreadForAtLeast(200)
+        }
     }
 
     private fun waitUntilDisplayed(text: String) = waitForView {
