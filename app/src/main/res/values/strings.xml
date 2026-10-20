@@ -134,6 +134,9 @@
     <string name="main_delete_albums_message">Mover as mídias de %1$s para a Lixeira? %2$s</string>
     <string name="main_no_move_target">Nenhum álbum disponível para mover.</string>
     <string name="main_folder_organization">Organização de pastas</string>
+    <string name="main_album_spacing">Espaçamento entre álbuns</string>
+    <string name="action_information">Informações</string>
+    <string name="main_album_spacing_hint">Esquerda: mais espaço. Direita: menos espaço. O ajuste é salvo automaticamente e não altera a grade dentro das pastas.</string>
     <string name="main_folder_visibility">Exibir/ocultar pastas</string>
     <string name="main_folder_organization_hint">Use dois dedos na grade: juntar diminui as capas; afastar aumenta as capas.</string>
     <string name="main_pin_hidden">Fixar nos ocultos</string>

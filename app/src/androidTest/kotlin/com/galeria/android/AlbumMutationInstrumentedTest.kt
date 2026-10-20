@@ -66,14 +66,45 @@ class AlbumMutationInstrumentedTest {
             previousTrashEnabled?.let { putBoolean(TrashPreferences.ENABLED, it) }
                 ?: remove(TrashPreferences.ENABLED)
         }.commit()
-        InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).toList().forEach(Activity::finish)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val closing = mutableListOf<Activity>()
+        instrumentation.runOnMainSync {
+            closing.addAll(ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED))
+            closing.forEach(Activity::finish)
+        }
+        waitUntil {
+            var destroyed = false
+            instrumentation.runOnMainSync { destroyed = closing.all { it.isDestroyed } }
+            destroyed
         }
         created.forEach { context.contentResolver.delete(it, null, null) }
         auxiliaryFiles.asReversed().forEach { it.delete() }
         MediaStoreRepository.invalidateCache()
         GalleryCatalogStore.markCatalogDirty(context)
+        awaitCleanupCatalogSettled()
         io { MediaStoreRepository.refreshMedia(context, false, force = true) }
+    }
+
+    private fun awaitCleanupCatalogSettled() {
+        // Closing the redirected MainActivity and deleting fixtures deliver
+        // asynchronous catalog/provider changes. Wait for those, not a retry
+        // of the test's assertions or an ignored stale-scan exception.
+        var token = GalleryCatalogStore.mediaStoreChangeToken(context)
+        var revision = GalleryCatalogStore.currentMutationRevision()
+        var quietSince = SystemClock.elapsedRealtime()
+        val deadline = quietSince + 10_000L
+        while (SystemClock.elapsedRealtime() < deadline) {
+            val currentToken = GalleryCatalogStore.mediaStoreChangeToken(context)
+            val currentRevision = GalleryCatalogStore.currentMutationRevision()
+            if (currentToken != token || currentRevision != revision) {
+                token = currentToken
+                revision = currentRevision
+                quietSince = SystemClock.elapsedRealtime()
+            }
+            if (SystemClock.elapsedRealtime() - quietSince >= 1_500L) return
+            SystemClock.sleep(50L)
+        }
+        throw AssertionError("O catálogo não estabilizou após fechar telas e remover as mídias do teste")
     }
 
     @Test fun deletionRemovesOnlyConfirmedItemsImmediatelyAndTheyDoNotReturn() {

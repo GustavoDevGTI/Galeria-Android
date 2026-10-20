@@ -14,6 +14,8 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import android.view.View
 import android.view.ViewGroup
+import android.widget.SeekBar
+import androidx.recyclerview.widget.RecyclerView
 import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ActivityScenario
@@ -65,7 +67,7 @@ class GalleryBrowseBarInstrumentedTest {
             onView(withText(R.string.main_folder_visibility)).inRoot(isDialog()).check(matches(isDisplayed()))
             pressBack()
             onView(withContentDescription(R.string.action_more_options)).perform(click())
-            for (text in listOf(R.string.main_folder_organization, R.string.action_create_folder, R.string.action_refresh)) {
+            for (text in listOf(R.string.main_folder_organization, R.string.main_album_spacing, R.string.action_create_folder, R.string.action_refresh)) {
                 onView(withText(text)).check(matches(isDisplayed()))
             }
             onView(withText(R.string.action_sort_by)).check(doesNotExist())
@@ -74,6 +76,74 @@ class GalleryBrowseBarInstrumentedTest {
             onView(withTagValue(`is`("gallery_browse_bar"))).check(matches(isDisplayed()))
             scenario.onActivity { assertTrue(it.hasWindowFocus()); assertFalse(it.isFinishing); assertBar(it.window.decorView) }
             screenshot("browse-main-qa.png")
+        }
+    }
+
+    @Test fun albumSpacingChangesThroughOverflowAndSurvivesReopeningWithoutChangingMediaSpacing() {
+        val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val oldSpacing = if (prefs.contains("album_spacing_dp")) prefs.getInt("album_spacing_dp", 8) else null
+        val mediaSpacing = prefs.getInt("grid_spacing_global", 3)
+        val folder = "Pictures/AlbumSpacing-${System.nanoTime()}/"
+        val uri = insertPhoto(folder)
+        prefs.edit().remove("album_spacing_dp").commit()
+        MediaStoreRepository.invalidateCache()
+        GalleryCatalogStore.markCatalogDirty(context)
+        fun grid(activity: MainActivity): RecyclerView = MainActivity::class.java.getDeclaredField("grid").apply {
+            isAccessible = true
+        }.get(activity) as RecyclerView
+        fun assertSpacing(scenario: ActivityScenario<MainActivity>, expected: Int) {
+            waitUntil {
+                var ready = false
+                scenario.onActivity { activity ->
+                    val list = grid(activity)
+                    ready = list.childCount > 0 && (0 until list.childCount).all {
+                        list.getChildAt(it).paddingLeft == Ui.dp(activity, expected) &&
+                            list.getChildAt(it).paddingTop == Ui.dp(activity, expected)
+                    }
+                }
+                ready
+            }
+        }
+        try {
+            var reduced = 8
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                assertSpacing(scenario, 8)
+                onView(withContentDescription(R.string.action_more_options)).perform(click())
+                onView(withText(R.string.main_album_spacing)).perform(click())
+                onView(withTagValue(`is`("album_spacing_slider"))).inRoot(isDialog())
+                    .perform(androidx.test.espresso.action.ViewActions.swipeRight())
+                reduced = prefs.getInt("album_spacing_dp", 8)
+                assertTrue("Arrastar para a direita deve diminuir o espaço", reduced < 8)
+                assertSpacing(scenario, reduced)
+                assertEquals(mediaSpacing, prefs.getInt("grid_spacing_global", 3))
+                screenshot("album-spacing-compact-qa.png")
+                pressBack()
+                scenario.recreate()
+                assertSpacing(scenario, reduced)
+            }
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                assertSpacing(scenario, reduced)
+                onView(withContentDescription(R.string.action_more_options)).perform(click())
+                onView(withText(R.string.main_album_spacing)).perform(click())
+                onView(withTagValue(`is`("album_spacing_slider"))).inRoot(isDialog()).check { view, error ->
+                    if (error != null) throw error
+                    assertEquals(16 - reduced, (view as SeekBar).progress)
+                }
+                onView(withTagValue(`is`("album_spacing_slider"))).inRoot(isDialog())
+                    .perform(androidx.test.espresso.action.ViewActions.swipeLeft())
+                val expanded = prefs.getInt("album_spacing_dp", 0)
+                assertTrue("Também deve ser possível aumentar novamente", expanded > reduced)
+                assertSpacing(scenario, expanded)
+                pressBack()
+                assertEquals(mediaSpacing, prefs.getInt("grid_spacing_global", 3))
+            }
+        } finally {
+            prefs.edit().apply {
+                if (oldSpacing == null) remove("album_spacing_dp") else putInt("album_spacing_dp", oldSpacing)
+            }.commit()
+            context.contentResolver.delete(uri, null, null)
+            MediaStoreRepository.invalidateCache()
+            GalleryCatalogStore.markCatalogDirty(context)
         }
     }
 
@@ -192,8 +262,18 @@ class GalleryBrowseBarInstrumentedTest {
                         val parent = button.parent as ViewGroup
                         assertSame(button, parent.getChildAt(parent.childCount - 1))
                         val inset = parent.width - button.x - button.width / 2f
-                        assertEquals(Ui.dp(it, 28).toFloat(), inset, 1f)
+                        assertEquals(parent.width / 10f, inset, 1f)
                         if (mime == "image/png") photoInset = inset else assertEquals(photoInset, inset, 1f)
+                        val actions = (0 until parent.childCount).map(parent::getChildAt).filter { view -> view.visibility == View.VISIBLE }
+                        val middle = if (mime == "image/png") listOf("ocr_text_action", "viewer_information")
+                            else listOf("viewer_sound", "viewer_cinema_mode_button")
+                        assertEquals(listOf("viewer_edit") + middle + listOf("viewer_share", "viewer_delete"), actions.map { view -> view.tag })
+                        actions.forEachIndexed { index, view ->
+                            assertEquals(parent.width / 5f, view.width.toFloat(), 1f)
+                            assertEquals((index + 0.5f) * parent.width / 5f, view.x + view.width / 2f, 1f)
+                            assertTrue(view is android.widget.ImageButton)
+                            assertTrue(view.isClickable && view.isFocusable)
+                        }
                         assertNull("A barra de álbuns não deve ocupar o visualizador", it.window.decorView.findViewWithTag<View>("gallery_browse_bar"))
                     }
                     if (mime == "image/png") {
@@ -203,6 +283,16 @@ class GalleryBrowseBarInstrumentedTest {
                             assertEquals(photoInset, (button.parent as View).width - button.x - button.width / 2f, 1f)
                         }
                         screenshot("browse-photo-delete-qa.png")
+                        onView(withTagValue(`is`("viewer_information"))).perform(click())
+                        waitUntil {
+                            runCatching {
+                                onView(withText("Informações da imagem")).inRoot(isDialog()).check(matches(isDisplayed()))
+                            }.isSuccess
+                        }
+                        onView(withText(photo.name)).inRoot(isDialog()).check(matches(isDisplayed()))
+                        pressBack()
+                    } else {
+                        screenshot("browse-video-actions-qa.png")
                     }
                 }
             }

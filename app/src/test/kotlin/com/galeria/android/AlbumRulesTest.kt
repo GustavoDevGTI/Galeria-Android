@@ -3,6 +3,7 @@ package com.galeria.android
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AlbumRulesTest {
@@ -272,24 +273,28 @@ class AlbumRulesTest {
     }
 
     @Test
-    fun essentialAlbumsStayInTheExpectedOrderAheadOfOtherAlbums() {
+    fun recentComesFirstAndEssentialAlbumsUseLatestActivityAheadOfOrdinaryAlbums() {
         val source = listOf(
             album("travel", "Viagem", "Pictures/Travel/"),
             album(VirtualAlbumRules.RECENT_KEY, "Recentes", ""),
-            album("downloads", "Downloads", "Download/"),
-            album("screens", "Capturas de tela", "Pictures/Screenshots/"),
-            album(VirtualAlbumRules.FAVORITES_KEY, "Favoritos", ""),
-            album("camera", "Câmera", "DCIM/Camera/")
+            AlbumItem("downloads", "Downloads", 1, null, 40, 1, 1, "Download/"),
+            AlbumItem("screens", "Capturas de tela", 1, null, 30, 1, 1, "Pictures/Screenshots/"),
+            AlbumItem(VirtualAlbumRules.FAVORITES_KEY, "Favoritos", 1, null, 10, 1, 1, ""),
+            AlbumItem("camera", "Câmera", 1, null, 20, 1, 1, "DCIM/Camera/")
         )
 
         assertEquals(
-            listOf("camera", "screens", VirtualAlbumRules.FAVORITES_KEY, "downloads", VirtualAlbumRules.RECENT_KEY, "travel"),
+            listOf(VirtualAlbumRules.RECENT_KEY, "downloads", "screens", "camera", VirtualAlbumRules.FAVORITES_KEY, "travel"),
             VirtualAlbumRules.pinEssential(source).map { it.key }
         )
+        assertEquals(listOf(VirtualAlbumRules.RECENT_KEY, VirtualAlbumRules.FAVORITES_KEY, "downloads", "screens", "camera", "travel"),
+            VirtualAlbumRules.pinEssential(source, favoriteAddedAt = 50L).map { it.key })
+        val newestCamera = source.map { if (it.key == "camera") AlbumItem(it.key, it.name, 1, null, 60, 1, 1, it.path) else it }
+        assertEquals("camera", VirtualAlbumRules.pinEssential(newestCamera, favoriteAddedAt = 50L)[1].key)
     }
 
     @Test
-    fun userPinnedAlbumsComeBeforeEssentialAlbums() {
+    fun userPinnedAlbumsComeAfterRecentButBeforeOtherEssentialAlbums() {
         val source = listOf(
             album("camera", "Câmera", "DCIM/Camera/"),
             album("travel", "Viagem", "Pictures/Travel/"),
@@ -297,13 +302,48 @@ class AlbumRulesTest {
         )
 
         assertEquals(
-            listOf("travel", "camera", VirtualAlbumRules.RECENT_KEY),
+            listOf(VirtualAlbumRules.RECENT_KEY, "travel", "camera"),
             VirtualAlbumRules.pinEssential(source, setOf("travel")).map { it.key }
         )
         assertEquals(
             listOf(VirtualAlbumRules.RECENT_KEY, "camera", "travel"),
             VirtualAlbumRules.pinEssential(source, setOf(VirtualAlbumRules.RECENT_KEY)).map { it.key }
         )
+    }
+
+    @Test fun onlyTheActiveScreenshotFolderIsEssentialAndTheLegacyFolderKeepsOrdinaryOrder() {
+        val source = listOf(
+            AlbumItem("legacy", "Screenshot", 1, null, 500, 1, 1, "Pictures/Screenshot/"),
+            album("travel", "Viagem", "Pictures/Travel/"),
+            AlbumItem("current", "Capturas de tela", 1, null, 400, 1, 1, "Pictures/Capturas de tela/"),
+            album("camera", "Câmera", "DCIM/Camera/"),
+            album(VirtualAlbumRules.RECENT_KEY, "Recentes", "")
+        )
+        val active = VirtualAlbumRules.newestScreenshotKey(source, mapOf("legacy" to 10L, "current" to 400L))
+        assertEquals("current", active)
+        assertEquals(listOf(VirtualAlbumRules.RECENT_KEY, "current", "camera", "legacy", "travel"),
+            VirtualAlbumRules.pinEssential(source, activeScreenshotKey = active).map { it.key })
+        assertEquals(listOf(VirtualAlbumRules.RECENT_KEY, "camera", "legacy", "travel"),
+            VirtualAlbumRules.pinEssential(source.filterNot { it.key == "current" }, activeScreenshotKey = active).map { it.key })
+        // A subsequent genuine screenshot in the other folder changes the winner.
+        assertEquals("legacy", VirtualAlbumRules.newestScreenshotKey(source, mapOf("legacy" to 600L, "current" to 400L)))
+        assertFalse(VirtualAlbumRules.isScreenshot(album("notes", "Capturas de documentos", "Pictures/Notas/")))
+    }
+
+    @Test fun screenshotImportTimeDoesNotOverrideCaptureTimeAndTiesAreDeterministic() {
+        assertEquals(20L, VirtualAlbumRules.captureTime(20_000L, 50, 100))
+        assertEquals(50L, VirtualAlbumRules.captureTime(0, 50, 100))
+        assertEquals(100L, VirtualAlbumRules.captureTime(0, 0, 100))
+        val captured = java.util.Calendar.getInstance().apply {
+            clear(); set(2020, 0, 2, 3, 4, 5)
+        }.timeInMillis / 1000L
+        assertEquals(captured, VirtualAlbumRules.captureTime(0, 2_000_000_000L, 2_000_000_001L, "Screenshot_20200102-030405.png"))
+        assertEquals(captured, VirtualAlbumRules.captureTime(0, 2_000_000_000L, 2_000_000_001L, "Captura de tela 2020-01-02 03-04-05.png"))
+        assertEquals(90L, VirtualAlbumRules.captureTime(0, 90, 100, "Screenshot_20201399-030405.png"))
+        val a = album("a", "Screenshots", "Pictures/Screenshots/")
+        val b = album("b", "Capturas de tela", "DCIM/Capturas de tela/")
+        assertEquals(VirtualAlbumRules.newestScreenshotKey(listOf(a, b)), VirtualAlbumRules.newestScreenshotKey(listOf(b, a)))
+        assertNull(VirtualAlbumRules.newestScreenshotKey(listOf(album("notes", "Notas", "Pictures/Notas/"))))
     }
 
     @Test

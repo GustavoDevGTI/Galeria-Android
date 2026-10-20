@@ -33,6 +33,7 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.ListView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -78,6 +79,7 @@ class MainActivity : ComponentActivity() {
     private var showHiddenFolders = false
     private var automaticallyHiddenKeys: Set<String> = emptySet()
     private var columnCount = 3
+    private var albumSpacingDp = 8
     private var lastColumnGestureMs = 0L
     private var gridTouchDownX = 0f
     private var gridTouchDownY = 0f
@@ -348,6 +350,7 @@ class MainActivity : ComponentActivity() {
                 return true
             }
         })
+        adapter.setSpacing(albumSpacingDp)
         adapter.setCoverSize(albumCoverSizePx())
         grid.adapter = adapter
         grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -458,6 +461,7 @@ class MainActivity : ComponentActivity() {
 
     private fun showMenu(anchor: View) {
         val organization = getString(R.string.main_folder_organization)
+        val spacing = getString(R.string.main_album_spacing)
         val createFolder = getString(R.string.action_create_folder)
         val refresh = getString(R.string.action_refresh)
         val showHiddenTrash = prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
@@ -466,10 +470,11 @@ class MainActivity : ComponentActivity() {
         )
         Ui.showPopupOptions(
             anchor,
-            listOf(organization, createFolder, trashVisibility, refresh)
+            listOf(organization, spacing, createFolder, trashVisibility, refresh)
         ) { selected ->
             when (selected) {
                 organization -> showFolderOrganizationDialog()
+                spacing -> showAlbumSpacingDialog()
                 createFolder -> FolderCreationMenu(this) { loadAlbums() }.show()
                 trashVisibility -> {
                     prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, !showHiddenTrash).apply()
@@ -798,6 +803,11 @@ class MainActivity : ComponentActivity() {
         if (columnCount < 2 || columnCount > 6) {
             columnCount = 3
         }
+        albumSpacingDp = prefs.getInt("album_spacing_dp", 8).coerceIn(0, 16)
+        if (::adapter.isInitialized) {
+            adapter.setSpacing(albumSpacingDp)
+            adapter.setCoverSize(albumCoverSizePx())
+        }
     }
 
     private fun applyThemeColors() {
@@ -880,6 +890,51 @@ class MainActivity : ComponentActivity() {
                 .apply()
             loadAlbums()
         }
+    }
+
+    private fun showAlbumSpacingDialog() {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = Ui.rounded(Ui.menuSurface(this@MainActivity), 14, this@MainActivity)
+            clipToOutline = true
+            Ui.setPadding(this, 24, 20, 24, 8)
+        }
+        panel.addView(TextView(this).apply {
+            setText(R.string.main_album_spacing)
+            textSize = 18f
+            setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+            setTextColor(Ui.menuText(this@MainActivity))
+        })
+        panel.addView(TextView(this).apply {
+            setText(R.string.main_album_spacing_hint)
+            textSize = 13f
+            setTextColor(Ui.menuText(this@MainActivity))
+            alpha = 0.78f
+            Ui.setPadding(this, 0, 6, 0, 12)
+        })
+        panel.addView(SeekBar(this).apply {
+            tag = "album_spacing_slider"
+            contentDescription = getString(R.string.main_album_spacing)
+            max = 16
+            progress = max - albumSpacingDp
+            progressTintList = android.content.res.ColorStateList.valueOf(Ui.accent(this@MainActivity))
+            thumbTintList = progressTintList
+            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Ui.muted(this@MainActivity))
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    albumSpacingDp = 16 - progress
+                    adapter.setSpacing(albumSpacingDp)
+                    prefs.edit().putInt("album_spacing_dp", albumSpacingDp).apply()
+                }
+                override fun onStartTrackingTouch(bar: SeekBar?) = Unit
+                override fun onStopTrackingTouch(bar: SeekBar?) {
+                    adapter.setCoverSize(albumCoverSizePx())
+                }
+            })
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48)))
+        val dialog = AlertDialog.Builder(this).setView(panel).create()
+        dialog.setOnDismissListener { adapter.setCoverSize(albumCoverSizePx()) }
+        Ui.showSidePanel(dialog)
     }
 
     private fun showFolderOrganizationDialog() {
@@ -1525,7 +1580,7 @@ class MainActivity : ComponentActivity() {
 
     private fun albumCoverSizePx(): Int {
         val horizontalPadding = Ui.dp(this, 12)
-        val itemPadding = Ui.dp(this, 16) * columnCount
+        val itemPadding = Ui.dp(this, albumSpacingDp) * 2 * columnCount
         return max(Ui.dp(this, 96), (resources.displayMetrics.widthPixels - horizontalPadding - itemPadding) / columnCount)
     }
 

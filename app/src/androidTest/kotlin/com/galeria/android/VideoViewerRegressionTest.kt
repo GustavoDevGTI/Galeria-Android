@@ -201,8 +201,10 @@ class VideoViewerRegressionTest {
                 awaitOcrWorkerIdle()
                 scenario.onActivity { activity ->
                     assertTrue(MediaIdentityRules.sameUri(created[1].toString(), current(activity).uri.toString()))
-                    assertEquals("A foto sem texto não deve receber o ícone do documento anterior.", View.GONE,
-                        activity.window.decorView.findViewWithTag<View>("ocr_text_action").visibility)
+                    val shortcut = activity.window.decorView.findViewWithTag<View>("ocr_text_action")
+                    assertEquals(View.VISIBLE, shortcut.visibility)
+                    assertEquals("O resultado do documento anterior não pode marcar a nova foto como texto reconhecido.",
+                        activity.getString(R.string.action_recognize_text), shortcut.contentDescription)
                 }
                 onView(withText(R.string.ocr_copy_all)).check(androidx.test.espresso.assertion.ViewAssertions.doesNotExist())
 

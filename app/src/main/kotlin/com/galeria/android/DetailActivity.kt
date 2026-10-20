@@ -131,6 +131,8 @@ class DetailActivity : ComponentActivity() {
     private lateinit var soundButton: ImageButton
     private lateinit var cinemaButton: ImageButton
     private lateinit var motionPhotoButton: ImageButton
+    private lateinit var motionPhotoOverlay: FrameLayout
+    private lateinit var imageInformationButton: ImageButton
     private val motionPhotoController by lazy {
         ViewerMotionPhotoController(
             detector = object : ViewerMotionPhotoController.Detector {
@@ -181,7 +183,11 @@ class DetailActivity : ComponentActivity() {
             hostActive = { !isFinishing && !isDestroyed },
             listener = object : ViewerTextRecognitionController.Listener {
                 override fun availabilityChanged(available: Boolean) {
-                    textRecognitionButton.visibility = if (available) View.VISIBLE else View.GONE
+                    // The manual shortcut stays in its slot even before detection,
+                    // including photos for which automatic OCR finds no text.
+                    textRecognitionButton.contentDescription = getString(
+                        if (available) R.string.ocr_text_available else R.string.action_recognize_text
+                    )
                 }
                 override fun manualStarted() {
                     clearOcrProgress()
@@ -196,7 +202,6 @@ class DetailActivity : ComponentActivity() {
                         onSuccess = { document ->
                             if (document.text.isBlank()) Ui.toast(this@DetailActivity, getString(R.string.ocr_no_text))
                             else {
-                                if (!cached) textRecognitionButton.visibility = View.VISIBLE
                                 showRecognizedText(document)
                             }
                         },
@@ -667,32 +672,20 @@ class DetailActivity : ComponentActivity() {
         videoTimeline.visibility = View.GONE
         bottomBar.addView(videoTimeline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
 
-        actionsBar = LinearLayout(this).apply { gravity = Gravity.CENTER }
-        val edit = ClickFeedbackActionLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        actionsBar = LinearLayout(this).apply {
+            tag = "viewer_actions"
             gravity = Gravity.CENTER
-            background = Ui.actionFeedback(this@DetailActivity, Color.WHITE)
-            isClickable = true
-            isFocusable = true
+        }
+        val edit = actionButton(R.drawable.ic_edit).apply {
+            tag = "viewer_edit"
             contentDescription = getString(R.string.action_edit)
             visibility = if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) View.GONE else View.VISIBLE
             setOnClickListener {
                 if (currentItem().isVideo()) openCurrentEditor() else showImageEditMenu()
             }
-            addView(ImageView(this@DetailActivity).apply {
-                setImageResource(R.drawable.ic_edit)
-                imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, LinearLayout.LayoutParams(Ui.dp(this@DetailActivity, 20), Ui.dp(this@DetailActivity, 20)))
-            addView(TextView(this@DetailActivity).apply {
-                text = getString(R.string.action_edit)
-                textSize = 11f
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            })
         }
         val share = actionButton(R.drawable.ic_share).apply {
+            tag = "viewer_share"
             contentDescription = getString(R.string.action_share)
             setOnClickListener { shareCurrent() }
         }
@@ -713,6 +706,7 @@ class DetailActivity : ComponentActivity() {
             share.visibility = View.GONE
         }
         soundButton = actionButton(R.drawable.ic_volume_on).apply {
+            tag = "viewer_sound"
             contentDescription = "Desativar som"
             setOnClickListener { toggleVideoSound() }
         }
@@ -723,6 +717,12 @@ class DetailActivity : ComponentActivity() {
             setOnClickListener { toggleCinemaMode() }
         }
         motionPhotoButton = actionButton(R.drawable.ic_motion_photo).apply {
+            tag = "viewer_motion_photo"
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x33FFFFFF),
+                Ui.rounded(0x99000000.toInt(), 28, this@DetailActivity),
+                Ui.rounded(Color.WHITE, 28, this@DetailActivity)
+            )
             contentDescription = getString(R.string.action_motion_photo)
             visibility = View.GONE
             setOnClickListener {
@@ -734,25 +734,47 @@ class DetailActivity : ComponentActivity() {
                 })
             }
         }
-        actionsBar.addView(edit, actionParams())
-        actionsBar.addView(share, actionParams())
-        actionsBar.addView(restore, actionParams())
-        actionsBar.addView(soundButton, actionParams())
-        actionsBar.addView(cinemaButton, actionParams())
-        actionsBar.addView(motionPhotoButton, actionParams())
         textRecognitionButton = actionButton(R.drawable.ic_text_recognition).apply {
             tag = "ocr_text_action"
-            contentDescription = getString(R.string.ocr_text_available)
+            contentDescription = getString(R.string.action_recognize_text)
             visibility = View.GONE
             setOnClickListener { recognizeCurrentImageText(currentItem()) }
         }
+        imageInformationButton = actionButton(R.drawable.ic_information).apply {
+            tag = "viewer_information"
+            contentDescription = getString(R.string.action_information)
+            visibility = View.GONE
+            setOnClickListener { showCurrentImageInformation() }
+        }
+        // Mutually exclusive photo/video actions share positions 2 and 3.
+        // Optional OCR detection and Motion Photo must not shift this row.
+        actionsBar.addView(edit, actionParams())
         actionsBar.addView(textRecognitionButton, actionParams())
-        // A fixed-width end slot never shifts as video/OCR/Motion Photo actions appear.
-        actionsBar.addView(trash, LinearLayout.LayoutParams(Ui.dp(this, 56), Ui.dp(this, Ui.ACTION_TOUCH_HEIGHT_DP)))
+        actionsBar.addView(soundButton, actionParams())
+        actionsBar.addView(imageInformationButton, actionParams())
+        actionsBar.addView(cinemaButton, actionParams())
+        actionsBar.addView(share, actionParams())
+        actionsBar.addView(restore, actionParams())
+        actionsBar.addView(trash, actionParams())
         bottomBar.addView(actionsBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, Ui.ACTION_TOUCH_HEIGHT_DP)))
 
         root.addView(topBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
         root.addView(bottomBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        motionPhotoOverlay = FrameLayout(this).apply {
+            tag = "motion_photo_overlay"
+            addView(motionPhotoButton, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        root.addView(motionPhotoOverlay, FrameLayout.LayoutParams(Ui.dp(this, 56), Ui.dp(this, 56), Gravity.BOTTOM or Gravity.START).apply {
+            marginStart = Ui.dp(this@DetailActivity, 18)
+        })
+        bottomBar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val params = motionPhotoOverlay.layoutParams as FrameLayout.LayoutParams
+            val margin = bottomBar.height + Ui.dp(this, 12)
+            if (params.bottomMargin != margin) {
+                params.bottomMargin = margin
+                motionPhotoOverlay.layoutParams = params
+            }
+        }
         setContentView(root)
     }
 
@@ -904,6 +926,9 @@ class DetailActivity : ComponentActivity() {
     private fun scheduleTextDetection(item: MediaItem?) {
         closeOcrSelection()
         clearOcrProgress()
+        val photoVisibility = if (item?.isImage() == true) View.VISIBLE else View.GONE
+        textRecognitionButton.visibility = photoVisibility
+        imageInformationButton.visibility = photoVisibility
         textRecognitionController.detect(item?.takeIf { it.isImage() }?.let(::textSource))
     }
 
@@ -1406,6 +1431,7 @@ class DetailActivity : ComponentActivity() {
         val show = hudVisible
         animateHudView(topBar, show)
         animateHudView(bottomBar, show)
+        animateHudView(motionPhotoOverlay, show)
         speedPopup?.dismiss()
     }
 

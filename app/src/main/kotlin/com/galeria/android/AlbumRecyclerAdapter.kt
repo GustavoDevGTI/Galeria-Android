@@ -38,6 +38,7 @@ class AlbumRecyclerAdapter(
     private var filter = ""
     private var selectionMode = false
     private var coverSizePx = 320
+    private var spacingDp = 8
     private var imageCoverRevision = 0L
     private var contentGeneration = MediaContentRevision.generation()
 
@@ -57,6 +58,21 @@ class AlbumRecyclerAdapter(
         if (coverSizePx == bounded) return
         coverSizePx = bounded
         if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_COVER)
+    }
+
+    fun setSpacing(spacing: Int) {
+        val bounded = spacing.coerceIn(0, 16)
+        if (spacingDp == bounded) return
+        spacingDp = bounded
+        if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_SPACING)
+    }
+
+    private fun bindSpacing(holder: Holder) {
+        val gap = Ui.dp(context, spacingDp)
+        holder.itemView.setPadding(gap, gap, gap, Ui.dp(context, (spacingDp - 2).coerceAtLeast(0)))
+        val params = holder.name.layoutParams as LinearLayout.LayoutParams
+        params.topMargin = Ui.dp(context, spacingDp.coerceIn(2, 6))
+        holder.name.layoutParams = params
     }
 
     fun setPinnedKeys(keys: Set<String>) {
@@ -249,6 +265,7 @@ class AlbumRecyclerAdapter(
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val album = visibleAlbums[position]
+        bindSpacing(holder)
         bindSelection(holder, album)
         holder.pin.visibility = if (album.key in pinnedKeys) View.VISIBLE else View.GONE
         holder.temporaryEye.visibility = if (album.key in temporarilyVisibleKeys) View.VISIBLE else View.GONE
@@ -265,6 +282,7 @@ class AlbumRecyclerAdapter(
             return
         }
         val album = visibleAlbums[position]
+        if (payloads.contains(PAYLOAD_SPACING)) bindSpacing(holder)
         if (payloads.contains(PAYLOAD_SELECTION)) bindSelection(holder, album)
         if (payloads.contains(PAYLOAD_PIN)) holder.pin.visibility = if (album.key in pinnedKeys) View.VISIBLE else View.GONE
         if (payloads.contains(PAYLOAD_TEMPORARY)) holder.temporaryEye.visibility =
@@ -393,6 +411,7 @@ class AlbumRecyclerAdapter(
 
     private companion object {
         const val PAYLOAD_SELECTION = "selection"
+        const val PAYLOAD_SPACING = "spacing"
         const val PAYLOAD_COVER = "cover"
         const val PAYLOAD_PIN = "pin"
         const val PAYLOAD_TEMPORARY = "temporary"

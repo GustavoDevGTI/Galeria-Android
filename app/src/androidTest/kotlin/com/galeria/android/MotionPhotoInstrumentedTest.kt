@@ -99,6 +99,42 @@ class MotionPhotoInstrumentedTest {
                 assertTrue("A ação de Motion Photo não apareceu", System.currentTimeMillis() < deadline)
                 Thread.sleep(100)
             }
+            scenario.onActivity { activity ->
+                val root = activity.window.decorView
+                val button = root.findViewWithTag<android.view.View>("viewer_motion_photo")
+                val overlay = root.findViewWithTag<android.view.View>("motion_photo_overlay")
+                val bar = root.findViewWithTag<android.view.ViewGroup>("viewer_actions")
+                assertTrue("Motion Photo deve ficar sobre a imagem, fora da barra", button.parent === overlay)
+                val overlayPosition = IntArray(2).also(overlay::getLocationOnScreen)
+                val barPosition = IntArray(2).also(bar::getLocationOnScreen)
+                assertTrue(overlayPosition[1] + overlay.height <= barPosition[1])
+                assertEquals(5, (0 until bar.childCount).count { bar.getChildAt(it).visibility == android.view.View.VISIBLE })
+            }
+            fun awaitMotionControls(visible: Boolean) {
+                val deadline = SystemClock.uptimeMillis() + 6_000L
+                var settled = false
+                while (!settled && SystemClock.uptimeMillis() < deadline) {
+                    scenario.onActivity { activity ->
+                        val overlay = activity.window.decorView.findViewWithTag<android.view.View>("motion_photo_overlay")
+                        settled = if (visible) overlay.isShown && overlay.alpha >= 0.99f else !overlay.isShown
+                    }
+                    if (!settled) SystemClock.sleep(50L)
+                }
+                assertTrue("O gesto deve alternar também o atalho flutuante de Motion Photo", settled)
+            }
+            onView(withContentDescription("Visualizador de mídia")).perform(click())
+            // Single taps wait for the double-tap window and then fade the HUD.
+            awaitMotionControls(false)
+            onView(withContentDescription(R.string.action_motion_photo)).check(matches(org.hamcrest.Matchers.not(isDisplayed())))
+            onView(withContentDescription("Visualizador de mídia")).perform(click())
+            awaitMotionControls(true)
+            onView(withContentDescription(R.string.action_motion_photo)).check(matches(isDisplayed()))
+            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { screenshot ->
+                File(context.getExternalFilesDir(null), "motion-photo-overlay-qa.png").outputStream().use {
+                    screenshot.compress(Bitmap.CompressFormat.PNG, 100, it)
+                }
+                screenshot.recycle()
+            }
             onView(withContentDescription(R.string.action_motion_photo)).perform(click())
             onView(withText(R.string.album_back)).check(matches(isDisplayed()))
             awaitAndroidInputReady()

@@ -41,6 +41,7 @@ class AlbumCatalogController(context: Context) {
     private var indexedToken = ""
     private var indexedRevision = -1L
     private var indexedAt = 0L
+    private var activeScreenshotKey: String? = null
 
     fun load(
         options: AlbumCatalogOptions,
@@ -157,7 +158,8 @@ class AlbumCatalogController(context: Context) {
         AlbumRules.sort(sorted, options.sortMode, options.sortDescending)
         val pinned = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
             .getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty()
-        val ordered = VirtualAlbumRules.pinEssential(sorted, pinned)
+        val ordered = VirtualAlbumRules.pinEssential(sorted, pinned,
+            activeScreenshotKey = activeScreenshotKey)
         mainHandler.post {
             if (!closed && request == generation) onAlbums(ordered, options.query)
         }
@@ -183,6 +185,10 @@ class AlbumCatalogController(context: Context) {
         val naturallyHiddenKeys = AutomaticHiddenAlbums.keys(appContext, classificationSource, markers)
         val virtualHiddenKeys = options.hiddenKeys + naturallyHiddenKeys
         val physical = prepareAlbums(sourceAlbums, options, naturallyHiddenKeys)
+        // Decide from the unfiltered catalog: filtering one image type must not
+        // promote the legacy screenshot folder as the phone's active folder.
+        activeScreenshotKey = ScreenshotAlbumResolver.activeKey(appContext,
+            prepareAlbums(classificationSource, options, naturallyHiddenKeys))
         val prefs = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val favorites = prefs
             .getStringSet("favorites", emptySet()).orEmpty()
@@ -239,7 +245,10 @@ class AlbumCatalogController(context: Context) {
                 ),
                 order
             ) ?: album.cover
-            AlbumItem(album.key, album.name, album.count, cover, album.latestDate,
+            val latestActivity = if (key == VirtualAlbumRules.FAVORITES_KEY) {
+                maxOf(album.latestDate, MediaFavorites.latestAddition(prefs, candidates.map { it.uri.toString() }))
+            } else album.latestDate
+            AlbumItem(album.key, album.name, album.count, cover, latestActivity,
                 album.firstDate, album.totalSize, album.path, key in naturallyHiddenKeys,
                 AlbumRules.isHidden(album.path, key) || markers.containsNomedia(album.path))
         }

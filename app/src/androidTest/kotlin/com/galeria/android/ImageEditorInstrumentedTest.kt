@@ -322,17 +322,25 @@ class ImageEditorInstrumentedTest {
     }
 
     private fun waitForText(text: String) {
-        val deadline = System.currentTimeMillis() + 10_000L
-        var lastFailure: Throwable? = null
-        while (System.currentTimeMillis() < deadline) {
-            try {
-                onView(withText(text)).check(matches(isDisplayed()))
-                return
-            } catch (error: Throwable) {
-                lastFailure = error
-                Thread.sleep(100L)
+        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        val deadline = android.os.SystemClock.uptimeMillis() + 10_000L
+        var editorRoot: android.view.View? = null
+        while (editorRoot == null && android.os.SystemClock.uptimeMillis() < deadline) {
+            instrumentation.runOnMainSync {
+                val editor = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                    .filterIsInstance<ImageEditActivity>().firstOrNull { it.hasWindowFocus() }
+                val root = editor?.window?.decorView
+                if (root != null && root.isShown && descendants(root).filterIsInstance<android.widget.TextView>()
+                        .any { it.text.toString() == text && it.isShown }) editorRoot = root
             }
+            if (editorRoot == null) android.os.SystemClock.sleep(50L)
         }
-        throw AssertionError("A opção $text não apareceu", lastFailure)
+        assertNotNull("O editor com a opção $text não recebeu foco", editorRoot)
+        // The launcher is a DetailActivity Scenario. Do not let Espresso pick
+        // its old, now invisible root while the editor window is being created.
+        onView(withText(text)).inRoot(androidx.test.espresso.matcher.RootMatchers.withDecorView(
+            org.hamcrest.Matchers.`is`(requireNotNull(editorRoot))
+        )).check(matches(isDisplayed()))
     }
 }

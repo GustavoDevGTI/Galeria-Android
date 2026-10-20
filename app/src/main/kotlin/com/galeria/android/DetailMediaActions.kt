@@ -34,20 +34,11 @@ class DetailMediaActions(
     }
 
     fun toggleFavorite(item: MediaItem): Boolean {
-        val favorites = HashSet(prefs.getStringSet("favorites", emptySet()).orEmpty())
-        val key = item.uri.toString()
-        val favorite = if (favorites.remove(key)) {
-            false
-        } else {
-            favorites.add(key)
-            true
-        }
-        prefs.edit().putStringSet("favorites", favorites).apply()
-        return favorite
+        return MediaFavorites.toggle(prefs, item.uri.toString())
     }
 
     fun isFavorite(item: MediaItem): Boolean =
-        prefs.getStringSet("favorites", emptySet()).orEmpty().contains(item.uri.toString())
+        prefs.getStringSet("favorites", emptySet()).orEmpty().any { MediaIdentityRules.sameUri(it, item.uri.toString()) }
 
     @Throws(SecurityException::class)
     fun rename(item: MediaItem, newName: String): Boolean =

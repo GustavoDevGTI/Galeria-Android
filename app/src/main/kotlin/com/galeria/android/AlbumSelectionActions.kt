@@ -32,9 +32,7 @@ class AlbumSelectionActions(
 
     fun addToFavorites(selected: List<MediaItem>): Int {
         if (selected.isEmpty()) return 0
-        val favorites = HashSet(prefs.getStringSet("favorites", emptySet()).orEmpty())
-        favorites.addAll(selected.map { it.uri.toString() })
-        prefs.edit().putStringSet("favorites", favorites).apply()
+        MediaFavorites.add(prefs, selected.map { it.uri.toString() })
         return selected.size
     }
 

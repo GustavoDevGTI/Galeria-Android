@@ -128,6 +128,8 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
+A versão 0.8.72 ajusta a prioridade dos álbuns por atividade, adiciona espaçamento configurável e alinha cinco atalhos no visualizador de fotos e vídeos. Com versão `0.8.72` e código `8072` definidos, passaram **241 unitários e 129 instrumentados**, sem falhas/ignorados; lint sem erros (130 avisos). O OCR também passou no código otimizado da release com fundos claro e preto. As [notas da versão](docs/RELEASE-0.8.72.md) registram a aprovação completa e as duas tentativas anteriores rejeitadas por sincronização dos testes.
+
 A versão 0.8.70 corrige a inicialização do OCR no APK otimizado e dá contraste ao indicador de reconhecimento sobre fotos claras ou escuras. Com versão `0.8.70` e código `8070` definidos, passaram **237 unitários e 125 instrumentados**, sem falhas/ignorados; lint sem erros (129 avisos). Um teste separado também reconheceu, selecionou e copiou texto no código otimizado da release. Consulte [as notas da versão](docs/RELEASE-0.8.70.md) e [o fluxo de validação do OCR release](docs/TESTES-VALIDACAO.md).
 
 A versão 0.8.69 traz a barra inferior dos álbuns com Ordenar, Filtrar, Ocultos e Configurações, Excluir em posição fixa no visualizador e velocidade por toque curto/toque prolongado. Com versão `0.8.69` e código `8069` definidos, passaram **237 unitários e 124 instrumentados**, sem falhas/ignorados, no emulador API 36; lint sem erros (129 avisos). Consulte [a barra inferior](docs/BARRA-INFERIOR-2026-10-13.md), [o botão de velocidade](docs/VELOCIDADE-VIDEO-2026-10-13.md) e [as notas da release, incluindo o diagnóstico e a correção do indicador de carregamento](docs/RELEASE-0.8.69.md).
@@ -407,6 +409,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.69`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.69) | 13/10/2026 | Barra inferior dos álbuns, Excluir fixo, velocidade por toque/segurar e fechamento seguro do indicador de carregamento |
 | [`v0.8.70`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.70) | 16/10/2026 | Inicialização do OCR no APK otimizado e indicador com contraste sobre imagens claras e escuras |
 | [`v0.8.71`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.71) | 19/10/2026 | Toque prolongado no OCR, atalho Aleatório, confirmação e contagem de ocultos e prévia fiel das cores do tema |
+| [`v0.8.72`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.72) | 20/10/2026 | Prioridade dos álbuns por atividade, espaçamento ajustável e cinco atalhos alinhados no visualizador |
 
 ## Relatório comparativo de desempenho
 
@@ -422,7 +425,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.71](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.71/Galeria-Android-versao-0.8.71.apk)
+[Baixar Galeria Android - versão 0.8.72](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.72/Galeria-Android-versao-0.8.72.apk)
 
 Build padrão do Gradle:
 
@@ -433,10 +436,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado como anexo no GitHub Releases (os APKs históricos na raiz permanecem preservados):
 
 ```text
-Galeria-Android-versao-0.8.71.apk
+Galeria-Android-versao-0.8.72.apk
 ```
 
-O APK 0.8.71 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.8.72 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de entrega
 
@@ -481,6 +484,8 @@ Se o Java no Windows falhar com `Unable to establish loopback connection` antes 
 - Código principal migrado para Kotlin
 - Grade baseada em RecyclerView
 - Grade de pastas com espaçamento vertical compacto e nomes preservados em até duas linhas
+- Espaçamento entre álbuns ajustável pelo menu de três pontos, com prévia imediata e preferência salva separadamente da grade de mídias
+- Barra do visualizador com cinco posições iguais: fotos usam Editar, Texto, Informações, Compartilhar e Excluir; vídeos usam Editar, Som, Cinema, Compartilhar e Excluir. Motion Photo fica sobre a imagem, sem deslocar os atalhos
 - Cache local com Room, carregamento progressivo com Paging 3 e varreduras com WorkManager
 - Abertura da tela principal baseada em resumos de álbuns calculados pelo Room, sem carregar milhares de mídias na memória
 - Catálogo invalidado pela versão do MediaStore, evitando varreduras completas quando nada mudou
@@ -509,8 +514,9 @@ Se o Java no Windows falhar com `Unable to establish loopback connection` antes 
 - Recentes e Favoritos não revelam mídias de pastas ocultas; Favoritos só aparece quando contém pelo menos uma mídia
 - Lixeira com restauração e exclusão definitiva usa o MediaStore no Android 11+ e armazenamento de recuperação próprio nas versões anteriores
 - Itens excluídos de pastas ocultas ficam ocultos também na Lixeira, com alternância explícita no menu da Lixeira e no menu principal quando não houver itens visíveis
-- Câmera, Capturas de tela, Favoritos, Downloads e Recentes permanecem fixos no topo, sem interferir na ordenação dos demais álbuns
-- Álbuns podem ser fixados ou desafixados pela seleção; fixados pelo usuário vêm antes dos álbuns essenciais, e favoritar continua sendo uma ação sobre mídias individuais
+- Recentes fica sempre em primeiro, seguido dos álbuns pinados pelo usuário. Câmera, Favoritos, Downloads e a pasta ativa de Capturas de tela aparecem depois, ordenados pela atividade mais recente; os demais mantêm a ordenação escolhida.
+- Ao favoritar uma mídia, Favoritos ganha destaque pela data da adição, mesmo se a foto for antiga. Entre pastas de capturas duplicadas, só a que contém as capturas mais recentes recebe destaque automático; a pasta legada continua como álbum comum, sem exclusão ou movimentação de arquivos. A identificação prioriza a data de captura disponível no MediaStore, com fallback às datas disponíveis quando ausente.
+- Álbuns podem ser fixados ou desafixados pela seleção; favoritar continua sendo uma ação sobre mídias individuais.
 - Seleção contínua por arraste mantém a atualização por puxar desativada até o dedo sair da tela; cada mídia selecionada tem seu próprio botão de visualização sem limpar a seleção
 - A ordenação usa setas na opção ativa: o primeiro toque escolhe a ordem crescente e um novo toque inverte a direção
 - Abertura do submenu de ocultos sem varredura automática: somente álbuns visíveis ou já exibidos entram na lista até o uso de `Carregar ocultos`

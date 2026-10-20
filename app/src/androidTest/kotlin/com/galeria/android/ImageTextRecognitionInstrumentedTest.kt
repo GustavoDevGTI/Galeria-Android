@@ -18,6 +18,7 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -248,7 +249,15 @@ class ImageTextRecognitionInstrumentedTest {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }).use { scenario ->
                 awaitViewerOcrIdle(scenario)
-                scenario.onActivity { assertTrue(it.window.decorView.findViewWithTag<View>("ocr_text_action").visibility == View.GONE) }
+                scenario.onActivity {
+                    val shortcut = it.window.decorView.findViewWithTag<View>("ocr_text_action")
+                    assertEquals(View.VISIBLE, shortcut.visibility)
+                    assertEquals(it.getString(R.string.action_recognize_text), shortcut.contentDescription)
+                }
+                // A negative automatic result must not remove the manual action.
+                onView(withContentDescription(R.string.action_recognize_text)).perform(click())
+                awaitViewerOcrIdle(scenario)
+                scenario.onActivity { assertTrue(it.window.decorView.findViewWithTag<View>("ocr_text_action").isEnabled) }
             }
         } finally { photo.delete() }
     }

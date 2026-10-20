@@ -260,11 +260,60 @@ object VirtualAlbumRules {
         }
     }
 
-    fun pinEssential(albums: List<AlbumItem>, pinnedKeys: Set<String> = emptySet()): List<AlbumItem> = albums.withIndex()
-        .sortedWith(compareBy<IndexedValue<AlbumItem>> {
-            if (it.value.key in pinnedKeys) -1 else essentialPriority(it.value)
-        }.thenBy { it.index })
-        .map { it.value }
+    fun pinEssential(
+        albums: List<AlbumItem>,
+        pinnedKeys: Set<String> = emptySet(),
+        favoriteAddedAt: Long = 0L,
+        activeScreenshotKey: String? = newestScreenshotKey(albums)
+    ): List<AlbumItem> {
+        fun group(album: AlbumItem): Int = when {
+            album.key == RECENT_KEY -> 0
+            album.key in pinnedKeys -> 1
+            album.key == FAVORITES_KEY || isCamera(album) || isDownload(album) ||
+                album.key == activeScreenshotKey -> 2
+            else -> 3
+        }
+        return albums.withIndex().sortedWith(compareBy<IndexedValue<AlbumItem>> { group(it.value) }
+            .thenByDescending {
+                if (group(it.value) == 2) {
+                    if (it.value.key == FAVORITES_KEY) maxOf(it.value.latestDate, favoriteAddedAt)
+                    else it.value.latestDate
+                } else 0L
+            }.thenBy { it.index }).map { it.value }
+    }
+
+    internal fun isScreenshot(album: AlbumItem): Boolean {
+        val folder = album.path.replace('\\', '/').trimEnd('/').substringAfterLast('/')
+        val names = setOf("screenshot", "screenshots", "captura de tela", "capturas de tela", "screen captures", "screencaptures")
+        return normalize(folder) in names || normalize(album.name) in names
+    }
+
+    internal fun newestScreenshotKey(albums: List<AlbumItem>, capturedAt: Map<String, Long> = emptyMap()): String? =
+        albums.filter(::isScreenshot).sortedWith(compareByDescending<AlbumItem> {
+            capturedAt[it.key] ?: it.latestDate
+        }.thenBy { it.key }).firstOrNull()?.key
+
+    private val screenshotTimestamp = Regex("^(?:screenshot|capturas? de tela)[ _-]*(20\\d{2})[-_]?([01]\\d)[-_]?([0-3]\\d)[ T_-]+([0-2]\\d)[-_:]?([0-5]\\d)[-_:]?([0-5]\\d)")
+
+    internal fun captureTime(takenMs: Long, modifiedSeconds: Long, addedSeconds: Long, name: String = ""): Long {
+        val namedTime = screenshotTimestamp.find(normalize(name))?.let { match ->
+            runCatching {
+                val parts = match.groupValues.drop(1).map(String::toInt)
+                Calendar.getInstance().apply {
+                    isLenient = false
+                    clear()
+                    set(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5])
+                }.timeInMillis / 1000L
+            }.getOrNull()
+        }
+        return when {
+        takenMs > 0 -> takenMs / 1000L
+        namedTime != null -> namedTime
+        modifiedSeconds > 0 && addedSeconds > 0 -> minOf(modifiedSeconds, addedSeconds)
+        modifiedSeconds > 0 -> modifiedSeconds
+        else -> addedSeconds.coerceAtLeast(0L)
+        }
+    }
 
     private fun aggregate(key: String, name: String, media: List<MediaItem>): AlbumItem {
         val newest = media.maxByOrNull { it.dateAdded }
@@ -281,17 +330,11 @@ object VirtualAlbumRules {
         )
     }
 
-    private fun essentialPriority(album: AlbumItem): Int {
-        val normalized = normalize("${album.name} ${album.path}")
-        return when {
-            album.key == FAVORITES_KEY -> 2
-            album.key == RECENT_KEY -> 4
-            normalized.contains("dcim/camera") || normalized.contains(" camera") || normalized.startsWith("camera") -> 0
-            normalized.contains("screenshot") || normalized.contains("captura") -> 1
-            normalized.contains("download") -> 3
-            else -> 5
-        }
+    private fun isCamera(album: AlbumItem): Boolean = normalize("${album.name} ${album.path}").let {
+        it.contains("dcim/camera") || it.contains(" camera") || it.startsWith("camera")
     }
+
+    private fun isDownload(album: AlbumItem): Boolean = normalize("${album.name} ${album.path}").contains("download")
 
     private fun normalize(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFD)
         .replace("\\p{M}+".toRegex(), "")
