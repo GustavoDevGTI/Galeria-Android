@@ -33,4 +33,4 @@ Sem incremento de versão, commit, push ou release nesta etapa. Aprovação por 
 
 ## Preparação da publicação autorizada
 
-Após autorização, versão/código passaram para `0.8.67`/`8067`. A regressão completa final `20261013-100723-332-a870e465` aprovou os 229 unitários e 115 instrumentados sem falhas/ignorados; lint sem erros (129 avisos), 45 contratos das ferramentas aprovados. As tentativas rejeitadas, ajustes de sincronização dos testes e o watchdog do Android emulado estão registrados nas [notas da 0.8.67](RELEASE-0.8.67.md). Nenhuma regra de seleção/timeout do app foi alterada para acomodar esses testes.
+Após autorização, versão/código passaram para `0.8.67`/`8067`. A regressão completa final `20261013-100723-332-a870e465` aprovou os 229 unitários e 115 instrumentados sem falhas/ignorados; lint sem erros (129 avisos), 45 contratos das ferramentas aprovados. As tentativas rejeitadas, ajustes de sincronização dos testes e o watchdog do Android emulado estão registrados nas [notas da 0.8.67](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.67). Nenhuma regra de seleção/timeout do app foi alterada para acomodar esses testes.

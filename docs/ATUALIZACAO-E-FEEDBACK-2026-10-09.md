@@ -92,4 +92,4 @@ Não houve push/release ou incremento de versão. Esta validação é por áreas
 
 Após autorização de publicação, versão/código foram incrementados para `0.8.66`/`8066`. A regressão completa `20261009-142236-333-267b5e0d` aprovou 229 unitários, 114 instrumentados sem ignorados, lint sem erros (129 avisos) e 45 contratos das ferramentas. Fingerprint final: `CA29B714700C4CA3737C93254AF58B7A88B98D09FE433C350C9FF8B4D4D6930B`.
 
-A atualização debug 0.8.62→0.8.66 foi repetida e aprovada, sem limpar dados entre instalações: `app/build/reports/upgrade/20261009-143213/result.json`. A aprovação parcial anterior não foi usada como aprovação de entrega. Build release, assinatura e integridade são documentadas nas [notas da 0.8.66](RELEASE-0.8.66.md).
+A atualização debug 0.8.62→0.8.66 foi repetida e aprovada, sem limpar dados entre instalações: `app/build/reports/upgrade/20261009-143213/result.json`. A aprovação parcial anterior não foi usada como aprovação de entrega. Build release, assinatura e integridade são documentadas nas [notas da 0.8.66](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.66).

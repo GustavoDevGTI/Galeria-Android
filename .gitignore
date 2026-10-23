@@ -6,8 +6,8 @@ local.properties
 *.jks
 *.keystore
 keystore.properties
+# APKs de todas as versões são distribuídos pelo GitHub Releases.
 *.apk
-!Galeria-Android-versao-*.apk
 *.ap_
 *.aab
 *.iml

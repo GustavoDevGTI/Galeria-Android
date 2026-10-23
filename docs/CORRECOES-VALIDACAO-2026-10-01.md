@@ -55,4 +55,4 @@ Relatórios integrais locais: `app/build/reports/native-tests/20261001-121550-33
 
 ## Limites
 
-Não houve teste em celular físico nesta etapa. A suíte automatizada não homologa todos os codecs, fabricantes, variantes de Motion Photos, idiomas ou combinações reais de trilhas de áudio e legenda. O histórico da validação do APK 0.8.61 continua disponível em [VALIDACAO-0.8.61.md](VALIDACAO-0.8.61.md).
+Não houve teste em celular físico nesta etapa. A suíte automatizada não homologa todos os codecs, fabricantes, variantes de Motion Photos, idiomas ou combinações reais de trilhas de áudio e legenda. O histórico da validação do APK 0.8.61 continua disponível no [registro da release 0.8.61](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.61).

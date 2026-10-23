@@ -2,7 +2,7 @@
 
 Base: código da 0.8.64. Esta etapa não altera versão, dependências, assinatura ou publicação.
 
-A publicação posterior é a versão 0.8.65 (código 8065), com os mesmos fontes funcionais e nova regressão completa aprovada. Consulte [as notas e evidências da publicação](RELEASE-0.8.65.md).
+A publicação posterior é a versão 0.8.65 (código 8065), com os mesmos fontes funcionais e nova regressão completa aprovada. Consulte [as notas e evidências da publicação](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.65).
 
 | Ponto | Mudança implementada |
 | --- | --- |

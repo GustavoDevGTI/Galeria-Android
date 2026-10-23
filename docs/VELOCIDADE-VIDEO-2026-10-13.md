@@ -8,4 +8,4 @@ Validação por áreas Playback e Cinema: `20261013-145051-675-fdc26c0b`, 237 un
 
 Não houve incremento de versão, commit, push ou release nesta alteração. Esta aprovação por áreas não substitui a regressão completa exigida antes de publicar.
 
-Após o pedido posterior de publicação, esta alteração foi incluída na 0.8.69 (8069), junto da barra inferior. A regressão completa final aprovou 237 unitários e 124 testes instrumentados, sem falhas/ignorados e com lint sem erros (129 avisos), após a correção adicional de ciclo de vida do indicador de carregamento. Veja [as notas da release](RELEASE-0.8.69.md).
+Após o pedido posterior de publicação, esta alteração foi incluída na 0.8.69 (8069), junto da barra inferior. A regressão completa final aprovou 237 unitários e 124 testes instrumentados, sem falhas/ignorados e com lint sem erros (129 avisos), após a correção adicional de ciclo de vida do indicador de carregamento. Veja [as notas da release](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.69).
