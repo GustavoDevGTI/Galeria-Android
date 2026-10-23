@@ -9,7 +9,7 @@ internal class GalleryBrowseBar @JvmOverloads constructor(
     context: Context,
     bottomInset: Int = 0,
     onSort: () -> Unit = {},
-    onFilter: () -> Unit = {},
+    onOrganize: () -> Unit = {},
     onHidden: () -> Unit = {},
     onSettings: () -> Unit = {},
     onRandomPlayback: (() -> Unit)? = null
@@ -28,7 +28,7 @@ internal class GalleryBrowseBar @JvmOverloads constructor(
                 Ui.addSelectionActionToDock(dock, this)
             }
         add(R.drawable.ic_sort, R.string.browse_sort, R.string.action_sort_by, "browse_sort", onSort)
-        add(R.drawable.ic_filter, R.string.browse_filter, R.string.action_filter_media, "browse_filter", onFilter)
+        add(R.drawable.ic_organize, R.string.action_organize, R.string.action_organize, "browse_organize", onOrganize)
         if (onRandomPlayback != null) {
             add(R.drawable.ic_shuffle, R.string.album_random, R.string.action_random_playback, "browse_shuffle", onRandomPlayback)
         } else {

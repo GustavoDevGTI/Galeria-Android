@@ -573,7 +573,11 @@ class AlbumMediaActivity : ComponentActivity() {
 
         browseBar = GalleryBrowseBar(this, navigationBarHeight(),
             onSort = ::showMediaSortDialog,
-            onFilter = ::showMediaFilterDialog,
+            onOrganize = {
+                startActivity(OrganizerActivity.intent(this,
+                    intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS),
+                    shouldIncludeHiddenFilesystem(), albumKey))
+            },
             onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
             onRandomPlayback = ::startRandomPlayback)
         browseBar.findViewWithTag<View>("browse_shuffle").apply {
@@ -642,6 +646,7 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun showFolderMenu(anchor: View) {
+        val filter = getString(R.string.action_filter_media)
         val viewMode = getString(R.string.album_view_mode)
         val group = getString(R.string.album_group_by)
         val createFolder = getString(R.string.action_create_folder)
@@ -656,6 +661,7 @@ class AlbumMediaActivity : ComponentActivity() {
         val automaticCover = getString(R.string.album_automatic_cover)
         val hasManualCover = prefs.contains(AlbumCoverRules.preferenceKey(albumKey ?: "all_media"))
         val options = buildList {
+            add(filter)
             addAll(listOf(group, viewMode))
             if (albumKey != VirtualAlbumRules.TRASH_KEY) addAll(listOf(createFolder, random))
             if (albumKey != VirtualAlbumRules.TRASH_KEY) add(chooseCover)
@@ -670,6 +676,7 @@ class AlbumMediaActivity : ComponentActivity() {
             selectedItems = if (cinemaPreferences.isEnabled(albumKey)) setOf(cinemaMode) else emptySet()
         ) { selected ->
             when (selected) {
+                filter -> showMediaFilterDialog()
                 viewMode -> showViewModeDialog()
                 group -> showGroupDialog()
                 createFolder -> showCreateFolderDialog()

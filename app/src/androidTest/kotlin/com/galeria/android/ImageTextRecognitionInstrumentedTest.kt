@@ -233,6 +233,10 @@ class ImageTextRecognitionInstrumentedTest {
                     assertTrue("O texto foi reconhecido, mas o ícone não apareceu",
                         it.window.decorView.findViewWithTag<View>("ocr_text_action").visibility == View.VISIBLE)
                 }
+                // Activity focus can precede removal of Android 16's task dim
+                // layer. Require input readiness before the single real tap.
+                awaitAndroidInputReady()
+                awaitClipboardPreviewClosed()
                 onView(withContentDescription(R.string.ocr_text_available)).perform(click())
                 awaitViewerOcrIdle(scenario)
                 copyAllFromImage()
@@ -255,6 +259,8 @@ class ImageTextRecognitionInstrumentedTest {
                     assertEquals(it.getString(R.string.action_recognize_text), shortcut.contentDescription)
                 }
                 // A negative automatic result must not remove the manual action.
+                awaitAndroidInputReady()
+                awaitClipboardPreviewClosed()
                 onView(withContentDescription(R.string.action_recognize_text)).perform(click())
                 awaitViewerOcrIdle(scenario)
                 scenario.onActivity { assertTrue(it.window.decorView.findViewWithTag<View>("ocr_text_action").isEnabled) }
@@ -284,6 +290,26 @@ class ImageTextRecognitionInstrumentedTest {
         assertTrue("OCR não terminou", done.await(30, TimeUnit.SECONDS))
         assertTrue("Texto reconhecido: $text", text.contains("GALERIA"))
         assertTrue("O arquivo foi alterado", originalSize == photo.length())
+    }
+
+    /** The preceding copy leaves Android's trusted ClipboardOverlay over the
+     * bottom-left OCR icon. It receives touches without dim-layer occlusion or
+     * losing app focus. Wait for its real removal, never retry the icon tap. */
+    private fun awaitClipboardPreviewClosed() {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val deadline = android.os.SystemClock.uptimeMillis() + 10_000L
+        do {
+            val input = android.os.ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand("dumpsys input"))
+                .bufferedReader().use { it.readText() }
+            val visible = input.lineSequence().any {
+                it.contains("name=") && it.contains(" ClipboardOverlay,") && !it.contains("NOT_VISIBLE")
+            }
+            if (!visible) return
+            if (android.os.SystemClock.uptimeMillis() >= deadline) {
+                throw AssertionError("A prévia de cópia do Android continua sobre o ícone de OCR.")
+            }
+            android.os.SystemClock.sleep(50L)
+        } while (true)
     }
 
     private fun copyAllFromImage() {

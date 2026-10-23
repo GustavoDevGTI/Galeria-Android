@@ -608,8 +608,12 @@ class AlbumMutationInstrumentedTest {
         prefs.edit().putStringSet("hidden_folder_keys", oldHidden + source + target).commit()
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-                val stale = AlbumItem(source, "Contagem oculta", 99, null, 0, 0, 0, source)
-                val staleTarget = AlbumItem(target, "Destino oculto", 99, null, 0, 0, 0, target)
+                // The live catalog can replace metadata while the dialog opens.
+                // Use the real folder names; this fixture tests counts, not aliases.
+                val sourceName = source.trimEnd('/').substringAfterLast('/')
+                val targetName = target.trimEnd('/').substringAfterLast('/')
+                val stale = AlbumItem(source, sourceName, 99, null, 0, 0, 0, source)
+                val staleTarget = AlbumItem(target, targetName, 99, null, 0, 0, 0, target)
                 val refreshed = io { AlbumCountRefresh.refresh(context, listOf(stale, staleTarget)) }
                 assertEquals(2, refreshed.first { it.key == source }.count)
                 scenario.onActivity { activity ->
@@ -623,12 +627,12 @@ class AlbumMutationInstrumentedTest {
                         }
                     }.isSuccess
                 }
-                awaitCount("Contagem oculta", 2)
-                awaitCount("Destino oculto", 1)
+                awaitCount(sourceName, 2)
+                awaitCount(targetName, 1)
                 val third = insert(source, "third.png")
-                awaitCount("Contagem oculta", 3)
+                awaitCount(sourceName, 3)
                 context.contentResolver.delete(first, null, null)
-                awaitCount("Contagem oculta", 2)
+                awaitCount(sourceName, 2)
                 // No MediaStore notification: real .nomedia filesystem mutations.
                 val empty = java.io.File(Environment.getExternalStorageDirectory(), source + "empty.png")
                 auxiliaryFiles += empty
@@ -636,16 +640,16 @@ class AlbumMutationInstrumentedTest {
                 val direct = java.io.File(Environment.getExternalStorageDirectory(), source + "direct.png")
                 auxiliaryFiles += direct
                 context.contentResolver.openInputStream(second)!!.use { input -> direct.outputStream().use(input::copyTo) }
-                awaitCount("Contagem oculta", 3)
+                awaitCount(sourceName, 3)
                 val moved = java.io.File(Environment.getExternalStorageDirectory(), target + "direct.png")
                 auxiliaryFiles += moved
                 assertTrue(direct.renameTo(moved))
-                awaitCount("Contagem oculta", 2)
-                awaitCount("Destino oculto", 2)
+                awaitCount(sourceName, 2)
+                awaitCount(targetName, 2)
                 assertTrue(moved.delete())
-                awaitCount("Destino oculto", 1)
+                awaitCount(targetName, 1)
                 context.contentResolver.delete(third, null, null)
-                awaitCount("Contagem oculta", 1)
+                awaitCount(sourceName, 1)
                 assertTrue(source in prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty())
                 assertFalse(source in TemporaryAlbumVisibility.activeKeys())
                 context.contentResolver.delete(second, null, null)

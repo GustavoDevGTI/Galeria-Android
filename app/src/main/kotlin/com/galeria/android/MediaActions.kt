@@ -518,7 +518,7 @@ class MediaActions private constructor() {
             }
         }
 
-        internal fun fileFromMediaStore(activity: Activity, uri: Uri): File? {
+        internal fun fileFromMediaStore(activity: Context, uri: Uri): File? {
             if (uri.scheme == "file") {
                 return File(uri.path.orEmpty())
             }

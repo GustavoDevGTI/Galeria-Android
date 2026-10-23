@@ -1,4 +1,29 @@
 <resources>
+    <string name="action_organize">Organizar</string>
+    <string name="organizer_undo">Desfazer</string>
+    <string name="organizer_source">Escolha o álbum de origem</string>
+    <string name="organizer_destinations">Escolha de 1 a 8 destinos · %1$d/8</string>
+    <string name="organizer_destination_help">Selecione de 1 a 8 álbuns na ordem desejada e toque em Começar a organizar. Você poderá trocar as posições depois.</string>
+    <string name="organizer_start">Começar a organizar</string>
+    <string name="organizer_hint">Empurre ou arraste a mídia. Segure um álbum e arraste sobre outro para trocar as posições.</string>
+    <string name="organizer_reserve">Reservar · %1$d</string>
+    <string name="organizer_empty">Álbum organizado. Você ainda pode distribuir as mídias da reserva.</string>
+    <string name="organizer_move_failed">Não foi possível mover. A mídia voltou para a fila.</string>
+    <string name="organizer_undo_failed">Não foi possível desfazer. A mídia continua no destino; tente novamente.</string>
+    <string name="organizer_access">Permita gerenciar arquivos para mover as mídias continuamente.</string>
+    <string name="organizer_insufficient">Escolha pelo menos 1 álbum diferente da origem. Use Criar pasta para adicionar destinos.</string>
+    <string name="organizer_loading">Preparando as mídias…</string>
+    <plurals name="organizer_remaining">
+        <item quantity="one">%1$d mídia</item>
+        <item quantity="other">%1$d mídias</item>
+    </plurals>
+    <plurals name="organizer_saving">
+        <item quantity="one">Salvando %1$d movimento</item>
+        <item quantity="other">Salvando %1$d movimentos</item>
+    </plurals>
+    <string name="organizer_change">Escolher álbuns</string>
+    <string name="organizer_close_reserve">Recolher reserva</string>
+    <string name="organizer_send_to">Enviar para %1$s</string>
     <string name="loading_in_progress">Carregando</string>
     <string name="video_timeline_description">Linha do tempo do vídeo. Deslize as miniaturas para navegar por segundo.</string>
     <string name="video_timeline_show">Mostrar linha do tempo</string>

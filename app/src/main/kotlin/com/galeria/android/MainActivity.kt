@@ -425,7 +425,10 @@ class MainActivity : ComponentActivity() {
 
         browseBar = GalleryBrowseBar(this, navigationBarHeight(),
             onSort = ::showSortDialog,
-            onFilter = ::showMediaFilterDialog,
+            onOrganize = {
+                startActivity(OrganizerActivity.intent(this, adapter.allAlbumsSnapshot().map { it.key },
+                    shouldIncludeHiddenFilesystem()))
+            },
             onHidden = ::showFolderVisibilityDialog,
             onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) })
         root.addView(browseBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -460,6 +463,7 @@ class MainActivity : ComponentActivity() {
         }
 
     private fun showMenu(anchor: View) {
+        val filter = getString(R.string.action_filter_media)
         val organization = getString(R.string.main_folder_organization)
         val spacing = getString(R.string.main_album_spacing)
         val createFolder = getString(R.string.action_create_folder)
@@ -470,9 +474,10 @@ class MainActivity : ComponentActivity() {
         )
         Ui.showPopupOptions(
             anchor,
-            listOf(organization, spacing, createFolder, trashVisibility, refresh)
+            listOf(filter, organization, spacing, createFolder, trashVisibility, refresh)
         ) { selected ->
             when (selected) {
+                filter -> showMediaFilterDialog()
                 organization -> showFolderOrganizationDialog()
                 spacing -> showAlbumSpacingDialog()
                 createFolder -> FolderCreationMenu(this) { loadAlbums() }.show()

@@ -2,6 +2,8 @@
 
 App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, navegação fluida e gestão real de mídias e pastas do aparelho.
 
+Versão atual: **0.9** (código Android `9000`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9](docs/RELEASE-0.9.md).
+
 ## Stack atual
 
 - Kotlin nativo
@@ -47,7 +49,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Preferência de modo cinema e de trilhas aplicável a todos os vídeos de um álbum
 - Barra de ações unificada com ícones mais delicados e favoritos representados por coração em todas as telas
 - Excluir em posição fixa à direita para fotos e vídeos, sem deslocamento quando OCR ou Motion Photo ficam disponíveis
-- Barra inferior com Ordenar, Filtrar, Ocultos e Configurações na página inicial; dentro dos álbuns, Aleatório substitui Ocultos e inicia a reprodução das mídias da pasta. A seleção de itens utiliza a barra de ações própria.
+- Barra inferior com Ordenar, Organizar, Ocultos e Configurações na página inicial; dentro dos álbuns, Aleatório substitui Ocultos e inicia a reprodução das mídias da pasta. Filtrar fica no menu de três pontos. A seleção de itens utiliza a barra de ações própria.
 - Favorito por coração no topo do visualizador, próximo ao menu de opções
 - Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção ao abrir e reprodução sob demanda, sem alterar o original
 - Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção diretamente sobre a imagem, alças de ajuste, cópia do trecho escolhido e seleção integral
@@ -127,6 +129,8 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
   Textos, mensagens formatadas, plurais e listas traduzíveis das telas principal e de álbum
 
 ## Testes automatizados
+
+A versão 0.9 adiciona o organizador circular com **1 a 8 destinos**, envio por arrasto ou impulso, reserva em carrossel e reordenação salva. Com versão `0.9` e código `9000` definidos, passaram **250 unitários e 140 instrumentados**, sem falhas/ignorados; lint sem erros (132 avisos). O OCR do APK otimizado passou em fundos claro e escuro. As [notas da release](docs/RELEASE-0.9.md) registram a assinatura permanente, os hashes e o diagnóstico da prévia de cópia do Android que interceptava o toque de um teste.
 
 A versão 0.8.72 ajusta a prioridade dos álbuns por atividade, adiciona espaçamento configurável e alinha cinco atalhos no visualizador de fotos e vídeos. Com versão `0.8.72` e código `8072` definidos, passaram **241 unitários e 129 instrumentados**, sem falhas/ignorados; lint sem erros (130 avisos). O OCR também passou no código otimizado da release com fundos claro e preto. As [notas da versão](docs/RELEASE-0.8.72.md) registram a aprovação completa e as duas tentativas anteriores rejeitadas por sincronização dos testes.
 
@@ -331,9 +335,9 @@ O próximo critério de decisão é a validação em aparelho físico com biblio
 
 ## Histórico da linha 0.8
 
-A linha começou em `v0.8.0`. Cada lançamento posterior recebe um patch sequencial `v0.8.N`, sem reescrever o histórico. A versão atual é **0.8.62**.
+A linha começou em `v0.8.0` e terminou nesta etapa em `v0.8.72`, preservando o histórico. A versão atual é **0.9**, com o organizador circular e de 1 a 8 destinos.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.8.62 usa o código `8062`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; portanto, a versão 0.9 usa o código `9000`.
 
 | Versão | Data | Alteração |
 | --- | --- | --- |
@@ -410,6 +414,7 @@ O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 
 | [`v0.8.70`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.70) | 16/10/2026 | Inicialização do OCR no APK otimizado e indicador com contraste sobre imagens claras e escuras |
 | [`v0.8.71`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.71) | 19/10/2026 | Toque prolongado no OCR, atalho Aleatório, confirmação e contagem de ocultos e prévia fiel das cores do tema |
 | [`v0.8.72`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.8.72) | 20/10/2026 | Prioridade dos álbuns por atividade, espaçamento ajustável e cinco atalhos alinhados no visualizador |
+| [`v0.9`](https://github.com/GustavoDevGTI/Galeria-Android/releases/tag/v0.9) | 23/10/2026 | Organizador circular com 1 a 8 destinos, envio por gesto, reserva em carrossel, animações e reordenação salva |
 
 ## Relatório comparativo de desempenho
 
@@ -425,7 +430,7 @@ O relatório técnico compara três marcos do projeto usando o mesmo ambiente e 
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.8.72](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.8.72/Galeria-Android-versao-0.8.72.apk)
+[Baixar Galeria Android - versão 0.9](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9/Galeria-Android-versao-0.9.apk)
 
 Build padrão do Gradle:
 
@@ -436,10 +441,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado como anexo no GitHub Releases (os APKs históricos na raiz permanecem preservados):
 
 ```text
-Galeria-Android-versao-0.8.72.apk
+Galeria-Android-versao-0.9.apk
 ```
 
-O APK 0.8.72 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.9 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de entrega
 

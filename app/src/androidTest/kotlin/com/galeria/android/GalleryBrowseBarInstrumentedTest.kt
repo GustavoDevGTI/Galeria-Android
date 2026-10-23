@@ -60,7 +60,8 @@ class GalleryBrowseBarInstrumentedTest {
             onView(withTagValue(`is`("browse_sort"))).perform(click())
             onView(withText(R.string.action_sort_by)).inRoot(isDialog()).check(matches(isDisplayed()))
             pressBack()
-            onView(withTagValue(`is`("browse_filter"))).perform(click())
+            onView(withContentDescription(R.string.action_more_options)).perform(click())
+            onView(withText(R.string.action_filter_media)).perform(click())
             onView(withText(R.string.action_filter_media)).inRoot(isDialog()).check(matches(isDisplayed()))
             pressBack()
             onView(withTagValue(`is`("browse_hidden"))).perform(click())
@@ -76,6 +77,10 @@ class GalleryBrowseBarInstrumentedTest {
             onView(withTagValue(`is`("gallery_browse_bar"))).check(matches(isDisplayed()))
             scenario.onActivity { assertTrue(it.hasWindowFocus()); assertFalse(it.isFinishing); assertBar(it.window.decorView) }
             screenshot("browse-main-qa.png")
+            onView(withTagValue(`is`("browse_organize"))).perform(click())
+            onView(withText(R.string.organizer_source)).check(matches(isDisplayed()))
+            pressBack()
+            onView(withTagValue(`is`("gallery_browse_bar"))).check(matches(isDisplayed()))
         }
     }
 
@@ -304,7 +309,7 @@ class GalleryBrowseBarInstrumentedTest {
         assertTrue(bar.isShown)
         val dock = bar.getChildAt(0) as ViewGroup
         assertEquals(4, dock.childCount)
-        val tags = listOf("browse_sort", "browse_filter", thirdAction, "browse_settings")
+        val tags = listOf("browse_sort", "browse_organize", thirdAction, "browse_settings")
         tags.forEachIndexed { index, tag ->
             val action = dock.getChildAt(index)
             assertEquals(tag, action.tag)

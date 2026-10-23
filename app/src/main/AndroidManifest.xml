@@ -30,6 +30,7 @@
         <activity android:name=".MotionPhotoActivity" />
         <activity android:name=".SettingsActivity" />
         <activity android:name=".FolderPickerActivity" />
+        <activity android:name=".OrganizerActivity" />
         <activity android:name=".FileDetailActivity" />
         <activity android:name=".HiddenActivity" />
         <activity

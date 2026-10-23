@@ -142,8 +142,10 @@ class AlbumCoverInstrumentedTest {
             ActivityScenario.launch<AlbumMediaActivity>(Intent(context, AlbumMediaActivity::class.java).apply {
                 putExtra("album_key", path)
                 putExtra("album_name", "Capa de teste")
-            }).use {
+            }).use { scenario ->
                 waitForView { onView(withContentDescription(name)).check(matches(isDisplayed())) }
+                // A visible grid can precede window focus during ActivityScenario's launch transition.
+                waitForView { scenario.onActivity { activity -> assertTrue(activity.hasWindowFocus()) } }
                 onView(withContentDescription("Mais opções")).perform(click())
                 onView(withText("Escolher capa")).perform(click())
                 waitForView {
@@ -153,6 +155,7 @@ class AlbumCoverInstrumentedTest {
                 onView(withContentDescription(name)).perform(click())
                 assertTrue(MediaIdentityRules.sameUri(uri.toString(), prefs.getString(prefKey, null).orEmpty()))
                 onView(withContentDescription(name)).check(matches(isDisplayed()))
+                waitForView { scenario.onActivity { activity -> assertTrue(activity.hasWindowFocus()) } }
                 onView(withContentDescription("Mais opções")).perform(click())
                 onView(withText("Usar capa automática")).perform(click())
                 assertNull(prefs.getString(prefKey, null))

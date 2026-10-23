@@ -129,6 +129,7 @@ class AlbumFastScrollInstrumentedTest {
                     .check(matches(isDisplayed()))
                     .perform(slowDragToMiddle(movedBeforeRelease))
                 assertTrue("A grade ficou congelada durante o arrasto lento.", movedBeforeRelease.get())
+                waitUntilDisplayed(FAST_SCROLL_DESCRIPTION, scenario)
                 onView(withContentDescription(FAST_SCROLL_DESCRIPTION))
                     .perform(
                         GeneralSwipeAction(
@@ -243,7 +244,13 @@ class AlbumFastScrollInstrumentedTest {
     private fun waitUntilDisplayed(description: String, scenario: ActivityScenario<AlbumMediaActivity>) {
         val deadline = System.currentTimeMillis() + LOAD_TIMEOUT_MS
         while (System.currentTimeMillis() < deadline) {
-            if (viewIsDisplayed(description)) return
+            var readyForInput = false
+            scenario.onActivity { activity ->
+                val recycler = findRecyclerView(activity.findViewById(android.R.id.content))
+                readyForInput = activity.hasWindowFocus() && recycler != null &&
+                    recycler.isLaidOut && !recycler.isComputingLayout && !recycler.isLayoutRequested
+            }
+            if (readyForInput && viewIsDisplayed(description)) return
             Thread.sleep(100L)
         }
         var diagnostic = ""
