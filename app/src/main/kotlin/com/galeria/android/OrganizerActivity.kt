@@ -23,13 +23,17 @@ class OrganizerActivity : ComponentActivity() {
     private var board: OrganizerBoard? = null
     private var displayedStage = -1
     private var requestedAccess = false
-    private var startButton: Button? = null
+    private lateinit var saveButton: TextView
+    private var exitAfterSave = false
+    private var changeAfterSave = false
     private var list: ListView? = null
     private var pickerAdapter: BaseAdapter? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Ui.applySystemBars(this)
+        exitAfterSave = savedInstanceState?.getBoolean("exit_after_save") ?: false
+        changeAfterSave = savedInstanceState?.getBoolean("change_after_save") ?: false
         controller = lastCustomNonConfigurationInstance as? OrganizerController ?: OrganizerSessions.acquire(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setBackgroundColor(Ui.bg(this@OrganizerActivity))
@@ -43,10 +47,15 @@ class OrganizerActivity : ComponentActivity() {
             LinearLayout.LayoutParams(dp(48), dp(52)))
         title = Ui.title(this, getString(R.string.action_organize), 20)
         bar.addView(title, LinearLayout.LayoutParams(0, dp(52), 1f).apply { title.gravity = Gravity.CENTER_VERTICAL })
+        saveButton = Ui.label(this, "Salvar").apply {
+            tag = "organizer_save"; setTextColor(Ui.text(this@OrganizerActivity)); isClickable = true; isFocusable = true
+            setOnClickListener { board?.dismissPreviewImmediately(); controller.save() }
+        }
+        bar.addView(saveButton, LinearLayout.LayoutParams(dp(64), dp(48)))
         bar.addView(icon(R.drawable.ic_more_vertical, getString(R.string.action_more_options)) { anchor ->
             val change = getString(R.string.organizer_change)
             Ui.showPopupOptions(anchor, listOf(change)) {
-                if (!controller.chooseAgain()) Ui.toast(this, "Aguarde os movimentos em andamento.")
+                requestExit(true)
             }
         }, LinearLayout.LayoutParams(dp(48), dp(52)))
         root.addView(bar)
@@ -83,24 +92,30 @@ class OrganizerActivity : ComponentActivity() {
         if (isFinishing || isDestroyed) return
         controller.message?.let { Ui.toast(this, it); controller.message = null }
         title.text = if (controller.stage == 2) controller.source?.name else getString(R.string.action_organize)
+        status.visibility = if (controller.stage == 2 && resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) View.GONE else View.VISIBLE
         status.text = when {
             controller.loading -> getString(R.string.organizer_loading)
             controller.stage == 0 -> getString(R.string.organizer_source)
-            controller.stage == 1 -> getString(R.string.organizer_destinations, controller.destinations.size)
+            controller.stage == 1 -> getString(R.string.organizer_loading)
             else -> resources.getQuantityString(R.plurals.organizer_remaining, controller.media.queue.size, controller.media.queue.size) +
                 if (controller.pending == 0) "" else " · " + resources.getQuantityString(R.plurals.organizer_saving, controller.pending, controller.pending)
         }
         if (displayedStage != controller.stage) {
             displayedStage = controller.stage
-            content.removeAllViews(); board = null; startButton = null; list = null
+            content.removeAllViews(); board = null; list = null
             if (controller.stage == 2) {
-                board = OrganizerBoard(this, controller)
+                board = OrganizerBoard(this, controller, ::createFolder)
                 content.addView(board, FrameLayout.LayoutParams(-1, -1))
             } else buildPicker()
         }
+        saveButton.visibility = if (controller.stage == 2) View.VISIBLE else View.GONE
+        saveButton.isEnabled = controller.hasChanges && !controller.saving
+        saveButton.alpha = if (saveButton.isEnabled) 1f else .4f
+        if (!controller.saving && exitAfterSave) {
+            exitAfterSave = false
+            if (!controller.hasChanges) { if (changeAfterSave) controller.chooseAgain() else finish(); return }
+        }
         pickerAdapter?.notifyDataSetChanged()
-        startButton?.isEnabled = !controller.loading && OrganizerRules.validSelection(
-            controller.source?.key, controller.destinations.map { it.key })
         board?.render()
     }
 
@@ -111,27 +126,16 @@ class OrganizerActivity : ComponentActivity() {
             clipToOutline = true
             setPadding(0, dp(6), 0, dp(8))
         }
-        if (controller.stage == 1) {
-            panel.addView(Ui.label(this, getString(if (controller.albums.size < 2) R.string.organizer_insufficient else R.string.organizer_destination_help))
-                .apply { setPadding(dp(20), dp(4), dp(20), dp(12)) })
-        }
         pickerAdapter = object : BaseAdapter() {
-            private fun rows() = controller.albums.filter { controller.stage == 0 || it.key != controller.source?.key }
+            private fun rows() = controller.albums
             override fun getCount() = rows().size
             override fun getItem(position: Int) = rows()[position]
             override fun getItemId(position: Int) = position.toLong()
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                 val album = getItem(position)
-                val index = controller.destinations.indexOfFirst { it.key == album.key }
                 return Ui.albumTargetRow(this@OrganizerActivity, album).apply {
                     tag = "organizer_album_${album.key}"
-                    addView(Ui.title(context, if (controller.stage == 1 && index >= 0) "${index + 1}" else "", 16).apply {
-                        setTextColor(Ui.menuText(context))
-                    },
-                        LinearLayout.LayoutParams(dp(32), -2))
-                    isSelected = if (controller.stage == 0) album.key == controller.source?.key else index >= 0
-                    if (isSelected) background = Ui.rounded(Ui.blend(Ui.menuSurface(context), Ui.menuText(context), .10f), 10, context)
-                    contentDescription = album.name + if (index >= 0) ", destino ${index + 1}" else ""
+                    contentDescription = album.name
                 }
             }
         }
@@ -141,30 +145,11 @@ class OrganizerActivity : ComponentActivity() {
             setOnItemClickListener { _, _, position, _ ->
                 if (!controller.loading) {
                     val album = pickerAdapter!!.getItem(position) as AlbumItem
-                    if (controller.stage == 0) controller.chooseSource(album) else controller.toggleDestination(album)
+                    controller.chooseSource(album); startOrganizing()
                 }
             }
         }
         panel.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
-        if (controller.stage == 1) {
-            panel.addView(Ui.button(this, getString(R.string.action_create_folder)).apply {
-                setOnClickListener {
-                    FolderCreationMenu(this@OrganizerActivity) { file ->
-                        val root = Environment.getExternalStorageDirectory().canonicalFile
-                        val folder = file.canonicalFile
-                        if (folder.path.startsWith(root.path + File.separator)) {
-                            val key = folder.relativeTo(root).invariantSeparatorsPath + "/"
-                            controller.addFolder(AlbumItem(key, folder.name, 0, null, 0, 0, 0, key))
-                        } else Ui.toast(this@OrganizerActivity, "Escolha uma pasta no armazenamento interno.")
-                    }.show()
-                }
-            }, LinearLayout.LayoutParams(-1, dp(48)))
-            startButton = Ui.button(this, getString(R.string.organizer_start)).apply {
-                tag = "organizer_start"
-                setOnClickListener { startOrganizing() }
-            }
-            panel.addView(startButton, LinearLayout.LayoutParams(-1, dp(52)))
-        }
         content.addView(panel, FrameLayout.LayoutParams(-1, -1).apply {
             setMargins(dp(12), dp(6), dp(12), dp(12))
         })
@@ -172,9 +157,39 @@ class OrganizerActivity : ComponentActivity() {
 
     private fun handleBack() {
         if (board?.dismissPreview() == true) return
-        if (controller.stage == 1) controller.chooseAgain() else finish()
+        requestExit(false)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("exit_after_save", exitAfterSave)
+        outState.putBoolean("change_after_save", changeAfterSave)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onStop() { board?.dismissPreviewImmediately(); super.onStop() }
+
+    private fun requestExit(changeSource: Boolean) {
+        if (controller.saving) { Ui.toast(this, "Aguarde o salvamento."); return }
+        if (!controller.hasChanges) { if (changeSource) controller.chooseAgain() else finish(); return }
+        Ui.showActionDialog(this, "Salvar ${controller.unsavedCount} alterações?",
+            listOf("Salvar e sair", "Sair sem salvar", "Continuar")) { index ->
+            when (index) {
+                0 -> { changeAfterSave = changeSource; exitAfterSave = true; controller.save() }
+                1 -> { controller.discardChanges(); if (changeSource) controller.chooseAgain() else finish() }
+            }
+        }
+    }
+    private fun createFolder() {
+        if (controller.saving) return
+        FolderCreationMenu(this) { file ->
+            val root = Environment.getExternalStorageDirectory().canonicalFile
+            val folder = file.canonicalFile
+            if (folder.path.startsWith(root.path + File.separator)) {
+                val key = folder.relativeTo(root).invariantSeparatorsPath + "/"
+                controller.addFolder(AlbumItem(key, folder.name, 0, null, 0, 0, 0, key))
+            }
+        }.show()
+    }
     private fun startOrganizing() {
         if (Build.VERSION.SDK_INT >= 30 && !MediaActions.hasAllFilesAccess(this)) {
             Ui.toast(this, getString(R.string.organizer_access))

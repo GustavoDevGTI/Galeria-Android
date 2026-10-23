@@ -51,6 +51,7 @@ class DetailHudInstrumentedTest {
             }
 
             ActivityScenario.launch<DetailActivity>(intent).use {
+                awaitResumedWindow(DetailActivity::class.java)
                 waitForDisplayed(name)
                 onView(withContentDescription(context.getString(R.string.action_favorite))).check(matches(isDisplayed())).perform(click())
                 onView(withContentDescription(context.getString(R.string.action_unfavorite))).check(matches(isDisplayed()))
@@ -58,7 +59,9 @@ class DetailHudInstrumentedTest {
                 waitForView { onView(withContentDescription(R.string.image_edit_custom)).check(matches(isDisplayed())) }
                 onView(withContentDescription(R.string.image_edit_custom)).perform(clickClickableAncestor())
                 waitForDisplayed("Editar imagem")
+                awaitResumedWindow(ImageEditActivity::class.java)
                 pressBack()
+                awaitResumedWindow(DetailActivity::class.java)
                 waitForDisplayed(name)
                 onView(withContentDescription("Visualizador de mídia")).perform(click())
                 waitForHidden(name)
@@ -95,6 +98,25 @@ class DetailHudInstrumentedTest {
 
     private fun waitForDisplayed(text: String) = waitForView {
         onView(withText(text)).check(matches(isDisplayed()))
+    }
+
+    /** A visible label can precede completion of the Activity window transition.
+     * Synchronize the real resumed/focused window before Back and before Espresso
+     * chooses its root; do not repeat the navigation event or drop HUD assertions. */
+    private fun awaitResumedWindow(type: Class<out android.app.Activity>) {
+        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        val deadline = android.os.SystemClock.uptimeMillis() + 10_000L
+        do {
+            var ready = false
+            instrumentation.runOnMainSync {
+                ready = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                    .any { type.isInstance(it) && it.window.decorView.isShown && it.window.decorView.hasWindowFocus() }
+            }
+            if (ready) return
+            android.os.SystemClock.sleep(50)
+        } while (android.os.SystemClock.uptimeMillis() < deadline)
+        throw AssertionError("Janela retomada e com foco não apareceu: ${type.simpleName}")
     }
 
     private fun waitForHidden(text: String) = waitForView {

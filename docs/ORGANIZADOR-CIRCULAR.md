@@ -1,33 +1,36 @@
 # Organizador circular
 
-O organizador faz parte do aplicativo na versão **0.9.1** (`versionCode` 9001). As [notas da release v0.9.1](RELEASE-0.9.1.md) registram o APK publicado e sua validação.
+Na versão **0.9.2** (`versionCode` 9002), Organizar abre a escolha do álbum de origem e entra diretamente na roda. Filtrar continua no menu de três pontos.
 
-O atalho **Organizar** fica na barra da galeria e dos álbuns. **Filtrar** permanece no menu de três pontos.
+## Roda e gaveta
 
-## Uso
+A roda tem oito posições: a **Lixeira** é fixa embaixo e até sete álbuns físicos ocupam as demais. Posições vazias mostram **+**. A configuração anterior reaproveita até sete destinos, preservando o espaço da lixeira.
 
-1. Escolha um álbum físico de origem. A lista usa as mesmas capas, nomes e cores do menu **Mover para álbum**.
-2. Escolha de **1 a 8 destinos** e toque em **Começar a organizar**. A ordem escolhida define os setores a partir do topo, no sentido horário. A última configuração da origem é lembrada. Também é possível criar uma pasta nessa etapa.
-3. Empurre ou arraste a mídia central na direção de um setor. Segure um setor e arraste sobre outro para trocar as posições. O setor recebe um pequeno movimento radial; o destino do último envio usa o contraste do tema.
+A gaveta fica abaixo da roda, com espaço reservado no layout e rolagem própria. A seta ou um gesto vertical sobre o puxador abre e fecha a gaveta. A roda se ajusta sem ser coberta. **Nova pasta**, com miniatura **+**, é o primeiro item e abre o fluxo de criação de pasta do app. Os demais itens usam as capas e nomes do menu Mover.
 
-A reserva fica acima do círculo. Arrastar a mídia até ela a guarda na sessão sem mover o arquivo. O botão mostra a última mídia reservada em tamanho destacado e se transforma no próprio carrossel de miniaturas; nele é possível rolar lateralmente, selecionar e arrastar uma miniatura para um destino.
+Segure e arraste um álbum da gaveta para uma posição da roda. Sobre uma posição ocupada, o álbum anterior volta à gaveta. Segure um álbum da roda para trocá-lo de posição ou devolvê-lo à gaveta. A lixeira é fixa e a origem não aparece como destino. Menus de toque também oferecem essas ações.
 
-Toque na mídia central para ampliá-la em perspectiva, com o entorno desfocado. Toque novamente ou use **Voltar** para fechá-la. A prévia não altera a fila. A próxima mídia aparece no centro assim que a anterior é enviada, sem aguardar a animação ou a gravação. **Desfazer** fica na parte inferior da tela.
+## Marcar e salvar
 
-Cada setor mostra quantas mídias recebeu **nesta sessão**. O número aumenta após um movimento concluído com sucesso, acompanha o álbum quando setores são trocados e diminui ao desfazer. Falhas não alteram o contador.
+Empurrar ou arrastar uma mídia registra o destino e mostra imediatamente a próxima, sem alterar o arquivo. Cada marcação captura o álbum escolhido: retirar ou substituir um álbum da roda não muda as marcações anteriores. Os contadores incluem as mídias direcionadas na sessão.
 
-## Estrutura e integridade
+**Desfazer**, acima da roda, cancela a última marcação não salva. **Salvar**, na barra superior, aplica movimentos e exclusões. Ao sair com alterações pendentes, aparecem três opções separadas: **Salvar e sair**, **Sair sem salvar** e **Continuar**. Descartar mantém os arquivos na origem.
 
-- `OrganizerRules` define seleção, setores, gestos, trocas e fila recuperável.
-- `OrganizerController` mantém fila, reserva, contadores e histórico; preserva a sessão durante rotação e serializa os movimentos fora da thread da interface.
-- `OrganizerMediaMover` retorna a identidade real do arquivo movido, inclusive quando resolve uma colisão de nomes. O desfazer usa essa identidade. O destino é validado dentro do armazenamento e o caminho direto usa renomeação atômica sem sobrescrever arquivos.
-- `OrganizerBoard` desenha o círculo, gestos e animações. Antecipam-se doze imagens, com três posições visíveis na pilha. O carrossel carrega apenas as miniaturas necessárias.
-- `OrganizerActivity` cuida da seleção e das permissões. No Android 11 ou superior, solicita acesso de gerenciamento de arquivos antes dos movimentos contínuos.
+No salvamento, a Lixeira consulta a configuração atual: habilitada significa exclusão recuperável; desabilitada significa exclusão permanente. Nenhuma exclusão ocorre durante o arrasto. Falhas mantêm a marcação para tentar novamente ou desfazer. Arquivos já salvos não são repetidos nem pertencem mais ao desfazer da sessão.
 
-O arquivo só sai fisicamente da origem quando a operação termina com sucesso. Uma falha devolve a mídia à fila ou à reserva. A reserva e a ordem dos destinos são persistidas; contadores e histórico de desfazer pertencem à sessão. Após morte do processo, a origem é consultada novamente, sem repetir movimentos antigos.
+A reserva mostra a última mídia guardada e se transforma no próprio carrossel. Enviar uma mídia reservada não consome a fila central. A reserva persiste; marcações de arquivo ainda não salvas ficam na sessão. Após morte do processo, os arquivos não salvos continuam na origem.
 
-## Validação
+## Prévia
 
-`OrganizerRulesTest` cobre seleção e gestos para 1 a 8 destinos. `OrganizerInstrumentedTest` usa arquivos reais para verificar envio, reserva, colisões, falhas, contadores, troca de setores, rotação, prévia e desfazer. A entrega completa usa `scripts/run-validation.ps1 -Delivery` e confere os testes das demais áreas do aplicativo, além de lint e build.
+Tocar na mídia central amplia a foto **reta**, respeitando a proporção, com o entorno desfocado. Outro toque ou Voltar fecha a foto. Vídeos usam o mesmo fundo e iniciam a reprodução com apenas play/pausa central e barra de progresso. O player é liberado ao fechar ou sair da tela.
 
-Em 23/10/2026, a execução `20261023-142602-541-a83016fe` aprovou **250 testes unitários, 142 instrumentados e 45 contratos das ferramentas**, sem falhas ou ignorados. Lint: zero erros e 133 avisos. A checagem independente `scripts/assert-delivery-validation.ps1` aceitou o recibo. O APK assinado da 0.9.1 está descrito nas [notas da release](RELEASE-0.9.1.md).
+## Estrutura e validação
+
+- `OrganizerController` mantém posições protegidas, marcações, contadores, reserva e salvamento serial fora da thread da interface. A rotação preserva a sessão.
+- `OrganizerMediaMover` valida caminhos, resolve colisões e aplica movimentos, lixeira e exclusão, usando a lixeira recuperável existente quando necessário.
+- `OrganizerBoard` desenha a roda, gestos, doze imagens antecipadas e transições.
+- `OrganizerAlbumDrawer` mantém os álbuns e sua rolagem independente.
+- `OrganizerVideoPreview` limita os controles e usa textura transparente sobre o fundo da prévia.
+- `OrganizerActivity` cuida da origem, permissões, criação de pasta e confirmação de saída.
+
+Os testes usam arquivos reais para verificar marcações sem escrita, salvamento, falha parcial, tentativa seletiva, descarte, lixeira, migração, arrasto, rolagem, rotação, foto e vídeo. A entrega completa usa `scripts/run-validation.ps1 -Delivery`; o resultado e o APK estão nas [notas da 0.9.2](RELEASE-0.9.2.md).

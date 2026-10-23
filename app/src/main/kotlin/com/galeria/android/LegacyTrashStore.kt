@@ -16,7 +16,7 @@ object LegacyTrashStore {
     private const val PREF_ENTRIES = "legacy_trash_entries"
     private const val DIRECTORY = ".Galeria-Lixeira"
 
-    fun trash(activity: Activity, uri: Uri): Boolean {
+    fun trash(activity: Context, uri: Uri): Boolean {
         val source = MediaActions.fileFromMediaStore(activity, uri) ?: return false
         if (!source.exists()) return false
         val trashDir = File(Environment.getExternalStorageDirectory(), DIRECTORY)
