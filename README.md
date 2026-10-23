@@ -2,7 +2,7 @@
 
 App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, navegação fluida e gestão real de mídias e pastas do aparelho.
 
-Versão atual: **0.9** (código Android `9000`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9](docs/RELEASE-0.9.md).
+Versão atual: **0.9.1** (código Android `9001`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9.1](docs/RELEASE-0.9.1.md).
 
 ## Stack atual
 
@@ -130,7 +130,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A versão 0.9 adiciona o organizador circular com **1 a 8 destinos**, envio por arrasto ou impulso, reserva em carrossel e reordenação salva. Com versão `0.9` e código `9000` definidos, passaram **250 unitários e 140 instrumentados**, sem falhas/ignorados; lint sem erros (132 avisos). O OCR do APK otimizado passou em fundos claro e escuro. As [notas da release](docs/RELEASE-0.9.md) registram a assinatura permanente, os hashes e o diagnóstico da prévia de cópia do Android que interceptava o toque de um teste.
+A versão 0.9.1 refina o organizador circular: melhor uso da altura, animações de envio mais suaves, prévia ampliada com perspectiva e desfoque, reserva com miniatura maior, contadores por destino e Desfazer na base. A validação completa aprovou **250 unitários e 142 instrumentados**, sem falhas/ignorados; lint sem erros (133 avisos). Consulte as [notas da release](docs/RELEASE-0.9.1.md) para os detalhes do APK assinado.
 
 Os testes locais ficam em `app/src/test/kotlin` e as integrações Android em `app/src/androidTest/kotlin`. Os comandos por área, critérios de entrega e evidências estão no [guia de validação](docs/TESTES-VALIDACAO.md).
 
@@ -164,13 +164,13 @@ O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Med
 
 A árvore atual mantém o código e a documentação vigentes. APKs e notas de versões anteriores ficam nas [releases e tags do GitHub](https://github.com/GustavoDevGTI/Galeria-Android/releases), sem cópias de binários no repositório.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9 usa o código `9000`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9.1 usa o código `9001`.
 
 ## APK gerado
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.9](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9/Galeria-Android-versao-0.9.apk)
+[Baixar Galeria Android - versão 0.9.1](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9.1/Galeria-Android-versao-0.9.1.apk)
 
 Build padrão do Gradle:
 
@@ -181,10 +181,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado somente como anexo no GitHub Releases:
 
 ```text
-Galeria-Android-versao-0.9.apk
+Galeria-Android-versao-0.9.1.apk
 ```
 
-O APK 0.9 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.9.1 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de entrega
 
