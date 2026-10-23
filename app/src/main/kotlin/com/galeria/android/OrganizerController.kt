@@ -32,6 +32,8 @@ internal class OrganizerController(context: Context,
     private data class Action(var ticket: OrganizerQueue.Ticket<MediaItem>, val album: AlbumItem?,
         var result: MediaItem? = null, var working: Boolean = false)
     private val history = ArrayList<Action>()
+    private val sent = HashMap<String, Int>()
+    fun sentCount(albumKey: String): Int = sent[albumKey] ?: 0
     val lastAlbum: String? get() = history.lastOrNull { it.album != null }?.album?.key
     val canUndo: Boolean get() = history.lastOrNull()?.working == false
 
@@ -108,7 +110,7 @@ internal class OrganizerController(context: Context,
                     val byIdentity = items.associateBy(::identity)
                     val held = reserved.mapNotNull(byIdentity::get)
                     media = OrganizerQueue(items.filter { identity(it) !in reserved }, held)
-                    history.clear(); stage = 2
+                    history.clear(); sent.clear(); stage = 2
                 }.onFailure { message = app.getString(R.string.album_load_failed) }
                 notifyChange()
             }
@@ -136,7 +138,10 @@ internal class OrganizerController(context: Context,
                 if (result == null) {
                     media.restore(ticket); history.remove(action)
                     message = app.getString(R.string.organizer_move_failed)
-                } else action.result = result
+                } else {
+                    action.result = result
+                    sent[album.key] = sentCount(album.key) + 1
+                }
                 saveReserve(); notifyChange()
             }
         }
@@ -158,6 +163,7 @@ internal class OrganizerController(context: Context,
                 pending--; action.working = false
                 if (result != null) {
                     media.restore(action.ticket, result); history.remove(action)
+                    sent[action.album.key] = (sentCount(action.album.key) - 1).coerceAtLeast(0)
                     // An earlier reservation must undo the restored identity, which can
                     // have a new URI/name after a direct move or a filename collision.
                     history.filter { it.ticket.item === action.ticket.item }.forEach {

@@ -1,6 +1,8 @@
 package com.galeria.android
 
 import android.animation.ValueAnimator
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
@@ -8,6 +10,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.graphics.drawable.Drawable
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -15,12 +19,14 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
-import android.view.animation.DecelerateInterpolator
+import android.view.animation.PathInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.*
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.DiffUtil
 import coil3.load
+import coil3.asImage
 import coil3.request.allowHardware
 import coil3.request.crossfade
 import kotlin.math.*
@@ -30,7 +36,9 @@ import kotlin.math.*
 internal class OrganizerBoard(context: Context, private val controller: OrganizerController) : FrameLayout(context) {
     private val ring = RingView(context)
     private val pictures = LinkedHashMap<String, ImageView>()
-    private val labels = ArrayList<TextView>()
+    private val labels = ArrayList<LinearLayout>()
+    private val albumNames = ArrayList<TextView>()
+    private val albumCounts = ArrayList<TextView>()
     private val reserve = FrameLayout(context)
     private val compact = LinearLayout(context)
     private val reservePreview = ImageView(context)
@@ -40,7 +48,14 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
     private val reserveAdapter = ReserveAdapter()
     private val reserveEmpty = Ui.label(context, "Arraste uma mídia para cá")
     private val empty = Ui.label(context, context.getString(R.string.organizer_empty))
-    private val hint = Ui.label(context, context.getString(R.string.organizer_hint))
+    private val undo = LinearLayout(context)
+    private val fog = View(context)
+    private var preview: ImageView? = null
+    private var previewSource: ImageView? = null
+    private var previewAnimator: ValueAnimator? = null
+    private var previewProgress = 0f
+    private val flights = LinkedHashMap<ImageView, ValueAnimator>()
+    private val motion = PathInterpolator(.20f, 0f, .15f, 1f)
     private var reserveIds = emptyList<String>()
     private var selectedReserved: String? = null
     private var reserveProgress = if (controller.reserveOpen) 1f else 0f
@@ -50,6 +65,8 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
     private var cy = 0f
     private var sideLayout = false
     private var reservePaneWidth = 0
+    private var reserveTop = 0
+    private var reserveHeight = 0
     private var hover = -1
     private var topId: String? = null
     private var activeGhost: ImageView? = null
@@ -64,9 +81,9 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         empty.setPadding(dp(36), 0, dp(36), 0); empty.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         addView(empty)
         repeat(OrganizerRules.MAX_DESTINATIONS) { index ->
-            val label = Ui.label(context, "").apply {
-                tag = "organizer_destination_$index"; maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE; textSize = 12f
+            val label = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+                tag = "organizer_destination_$index"
                 isClickable = true; isFocusable = true
                 setOnClickListener {
                     val album = controller.destinations.getOrNull(index) ?: return@setOnClickListener
@@ -80,6 +97,17 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
                 setOnLongClickListener { chooseSwap(index, this); true }
                 installReordering(this, index)
             }
+            albumNames += Ui.label(context, "").apply {
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; textSize = 12f
+                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+                label.addView(this, LinearLayout.LayoutParams(-1, -2))
+            }
+            albumCounts += Ui.title(context, "0", 15).apply {
+                tag = "organizer_destination_count_$index"
+                gravity = Gravity.CENTER; alpha = .8f
+                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+                label.addView(this, LinearLayout.LayoutParams(-1, -2))
+            }
             labels.add(label); addView(label)
         }
         reserve.apply {
@@ -87,6 +115,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
             contentDescription = context.getString(R.string.organizer_reserve, 0)
         }
         compact.apply {
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL or Gravity.CENTER_HORIZONTAL; isClickable = true; isFocusable = true
             tag = "organizer_reserve_button"; setPadding(dp(12), dp(6), dp(12), dp(6))
             setOnClickListener { morphReserve(true) }
@@ -94,8 +123,12 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         reservePreview.scaleType = ImageView.ScaleType.CENTER_CROP
         reservePreview.setImageResource(R.drawable.ic_folder); reservePreview.setColorFilter(Ui.text(context))
         reservePreview.setPadding(dp(14), dp(14), dp(14), dp(14))
-        compact.addView(reservePreview, LinearLayout.LayoutParams(dp(52), dp(52)))
-        compact.addView(reserveLabel, LinearLayout.LayoutParams(0, -1, 1f))
+        compact.setPadding(dp(6), dp(6), dp(6), dp(4))
+        reservePreview.background = Ui.rounded(Color.TRANSPARENT, 10, context)
+        reservePreview.clipToOutline = true
+        compact.addView(reservePreview, LinearLayout.LayoutParams(-1, 0, 1f))
+        reserveLabel.textSize = 12f
+        compact.addView(reserveLabel, LinearLayout.LayoutParams(-1, dp(24)))
         reserve.addView(compact, LayoutParams(-1, -1))
         carousel.gravity = Gravity.CENTER_VERTICAL
         scroll.apply {
@@ -113,13 +146,35 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         }, LinearLayout.LayoutParams(dp(44), -1))
         reserve.addView(carousel, LayoutParams(-1, -1))
         addView(reserve)
-        hint.textSize = 12f; hint.setPadding(dp(18), dp(4), dp(18), dp(4)); addView(hint)
+        undo.apply {
+            tag = "organizer_undo"; gravity = Gravity.CENTER; isClickable = true; isFocusable = true
+            background = Ui.rounded(OrganizerColors.surface(context), 24, context)
+            contentDescription = context.getString(R.string.organizer_undo)
+            addView(ImageView(context).apply {
+                setImageResource(R.drawable.ic_undo); setColorFilter(Ui.text(context))
+                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(dp(22), dp(22)))
+            addView(Ui.label(context, context.getString(R.string.organizer_undo)).apply {
+                setTextColor(Ui.text(context)); setPadding(dp(10), 0, 0, 0)
+                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+            })
+            setOnClickListener { controller.undo() }
+        }
+        addView(undo)
+        fog.apply {
+            tag = "organizer_preview_fog"; setBackgroundColor(Ui.bg(context)); visibility = GONE
+            elevation = dp(32).toFloat()
+            contentDescription = context.getString(R.string.organizer_close_preview)
+            isClickable = true; setOnClickListener { dismissPreview() }
+        }
+        addView(fog)
         render()
     }
 
     fun render() {
         val previous = topId
         val next = controller.media.queue.take(12)
+        if (preview != null && previous != next.firstOrNull()?.uri?.toString()) clearPreview()
         val keep = next.map { it.uri.toString() }.toSet()
         pictures.keys.filter { it !in keep }.toList().forEach { key -> removeView(pictures.remove(key)) }
         next.forEach { item ->
@@ -127,7 +182,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
             pictures.getOrPut(key) {
                 ImageView(context).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
-                    contentDescription = if (item.isVideo()) "Vídeo para organizar" else "Foto para organizar"
+                    contentDescription = context.getString(R.string.organizer_preview)
                     visibility = INVISIBLE
                     addView(this, 1, LayoutParams(dp(160), dp(160)))
                     load(item.uri) {
@@ -153,17 +208,21 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         if (previous != null && topId != previous) pictures[topId]?.apply {
             animate().cancel(); alpha = 1f
             if (android.os.Build.VERSION.SDK_INT < 26 || ValueAnimator.areAnimatorsEnabled()) {
-                scaleX = .96f; scaleY = .96f
-                animate().scaleX(1f).scaleY(1f).setDuration(120).start()
+                scaleX = .965f; scaleY = .965f
+                animate().scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(motion).start()
             }
         }
         empty.visibility = if (next.isEmpty()) VISIBLE else GONE
         labels.forEachIndexed { index, label ->
             val album = controller.destinations.getOrNull(index)
             label.visibility = if (album == null) GONE else VISIBLE
-            label.text = album?.name.orEmpty()
-            label.contentDescription = album?.let { context.getString(R.string.organizer_send_to, it.name) }
-            label.setTextColor(if (album?.key == controller.lastAlbum) OrganizerColors.highlightText(context) else Ui.text(context))
+            val count = album?.let { controller.sentCount(it.key) } ?: 0
+            albumNames[index].text = album?.name.orEmpty()
+            albumCounts[index].text = count.toString()
+            label.contentDescription = album?.let { context.getString(R.string.organizer_send_to, it.name) + ", " +
+                resources.getQuantityString(R.plurals.organizer_sent, count, count) }
+            val color = if (album?.key == controller.lastAlbum) OrganizerColors.highlightText(context) else Ui.text(context)
+            albumNames[index].setTextColor(color); albumCounts[index].setTextColor(color)
         }
         reserveLabel.text = context.getString(R.string.organizer_reserve, controller.media.reserved.size)
         compact.contentDescription = reserveLabel.text
@@ -175,7 +234,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
                 reservePreview.setImageResource(R.drawable.ic_folder); reservePreview.setColorFilter(Ui.text(context))
             } else {
                 reservePreview.setPadding(0, 0, 0, 0); reservePreview.clearColorFilter()
-                reservePreview.load(recent.uri) { size(128); crossfade(false) }
+                reservePreview.load(recent.uri) { size(320); crossfade(false); ImageRotation.configureRequest(context, recent, this) }
             }
         }
         val ids = controller.media.reserved.map { it.uri.toString() }
@@ -190,44 +249,57 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
                 override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int) = true
             }).dispatchUpdatesTo(reserveAdapter)
         }
-        compact.visibility = if (controller.reserveOpen) GONE else VISIBLE
-        carousel.visibility = if (controller.reserveOpen) VISIBLE else GONE
+        updateReserveAppearance()
         scroll.visibility = if (ids.isEmpty()) GONE else VISIBLE
         reserveEmpty.visibility = if (ids.isEmpty()) VISIBLE else GONE
-        reserve.bringToFront(); activeGhost?.bringToFront(); reorderGhost?.bringToFront(); hint.bringToFront()
+        undo.isEnabled = controller.canUndo; undo.alpha = if (undo.isEnabled) 1f else .4f
+        reserve.bringToFront(); undo.bringToFront()
+        flights.keys.forEach { it.bringToFront() }; activeGhost?.bringToFront(); reorderGhost?.bringToFront()
+        if (preview != null) { fog.bringToFront(); preview?.bringToFront() }
         ring.invalidate(); requestLayout()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
         val available = MeasureSpec.getSize(heightMeasureSpec)
-        val desired = min(width, dp(480)) + dp(140)
+        val desired = min(width, dp(620)) + dp(230)
         val height = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.EXACTLY) available else max(available, desired)
         setMeasuredDimension(width, height)
         sideLayout = width > height
-        reservePaneWidth = if (sideLayout) (width * .42f).roundToInt() else width
-        diameter = if (sideLayout) min(width - reservePaneWidth - dp(20), height - dp(16)).coerceAtLeast(dp(80)).toFloat()
-            else min(min(width - dp(20), height - dp(138)), dp(480)).coerceAtLeast(dp(80)).toFloat()
+        reservePaneWidth = if (sideLayout) min(dp(280), max(dp(144), (width * .32f).roundToInt())) else width
+        reserveHeight = if (sideLayout) min(dp(148), max(dp(80), height - dp(86)))
+            else (height * .19f).roundToInt().coerceIn(dp(104), dp(148))
+        diameter = if (sideLayout) min(width - reservePaneWidth - dp(16), height - dp(18)).coerceAtLeast(dp(80)).toFloat()
+            else min(min(width - dp(16), height - reserveHeight - dp(104)), dp(620)).coerceAtLeast(dp(80)).toFloat()
         cx = if (sideLayout) reservePaneWidth + (width - reservePaneWidth) / 2f else width / 2f
-        cy = if (sideLayout) height / 2f else dp(84) + diameter / 2f
-        val imageSize = (diameter * .34f).roundToInt()
+        val breathingRoom = (height - reserveHeight - diameter - dp(104)).coerceAtLeast(0f)
+        reserveTop = if (sideLayout) max(dp(8), (height - dp(72) - reserveHeight) / 2)
+            else dp(8) + (breathingRoom * .22f).roundToInt()
+        cy = if (sideLayout) height / 2f
+            else reserveTop + reserveHeight + dp(16) + breathingRoom * .55f + diameter / 2f
+        val imageSize = (diameter * .43f).roundToInt()
         fun measure(view: View, w: Int, h: Int) = view.measure(MeasureSpec.makeMeasureSpec(max(0, w), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(max(0, h), MeasureSpec.EXACTLY))
         measure(ring, width, height)
         pictures.values.forEach { measure(it, imageSize, imageSize) }
         val labelFraction = min(.36f, 1.6f / controller.destinations.size.coerceAtLeast(1))
-        labels.forEach { it.textSize = if (sideLayout) 11f else 12f; measure(it, (diameter * labelFraction).roundToInt(), min(dp(52), (diameter * .19f).roundToInt())) }
-        val closed = min(dp(250), reservePaneWidth - dp(32))
-        val expanded = min(dp(500), reservePaneWidth - dp(24))
-        measure(reserve, (closed + (expanded - closed) * reserveProgress).roundToInt(), dp(68))
+        albumNames.forEach { it.textSize = if (sideLayout) 11f else 12f }
+        albumCounts.forEach { it.textSize = if (sideLayout) 12f else 15f }
+        labels.forEach { measure(it, (diameter * labelFraction).roundToInt(), min(dp(60), (diameter * .21f).roundToInt())) }
+        val closed = min((reserveHeight * .9f).roundToInt(), reservePaneWidth - dp(24))
+        val expanded = min(dp(600), reservePaneWidth - dp(24))
+        measure(reserve, (closed + (expanded - closed) * reserveProgress).roundToInt(), reserveHeight)
         measure(empty, (diameter * .52f).roundToInt(), (diameter * .52f).roundToInt())
-        measure(hint, reservePaneWidth - dp(20), dp(if (sideLayout) 110 else 50))
+        measure(undo, min(dp(172), reservePaneWidth - dp(24)), dp(48))
+        measure(fog, width, height)
+        preview?.let { val size = min(width - dp(56), height - dp(96)).coerceAtLeast(dp(48)); measure(it, size, size) }
         activeGhost?.let { measure(it, it.layoutParams.width, it.layoutParams.height) }
         reorderGhost?.let { measure(it, dp(110), dp(44)) }
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         ring.layout(0, 0, width, height)
-        reserve.layout((reservePaneWidth - reserve.measuredWidth) / 2, dp(8), (reservePaneWidth + reserve.measuredWidth) / 2, dp(76))
+        reserve.layout((reservePaneWidth - reserve.measuredWidth) / 2, reserveTop,
+            (reservePaneWidth + reserve.measuredWidth) / 2, reserveTop + reserveHeight)
         val queue = controller.media.queue.take(3)
         pictures.forEach { (key, view) ->
             val depth = queue.indexOfFirst { it.uri.toString() == key }.coerceAtLeast(0)
@@ -239,7 +311,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         labels.forEachIndexed { index, view ->
             if (view.visibility == GONE) return@forEachIndexed
             val angle = angle(index)
-            val nudge = ring.amount[index] * dp(6)
+            val nudge = ring.amount[index] * dp(8)
             val radius = diameter * .385f + nudge
             val x = (cx + cos(angle) * radius - view.measuredWidth / 2f).roundToInt()
             val y = (cy + sin(angle) * radius - view.measuredHeight / 2f).roundToInt()
@@ -247,8 +319,10 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         }
         empty.layout((cx - empty.measuredWidth / 2).toInt(), (cy - empty.measuredHeight / 2).toInt(),
             (cx + empty.measuredWidth / 2).toInt(), (cy + empty.measuredHeight / 2).toInt())
-        if (sideLayout) hint.layout(dp(10), dp(84), reservePaneWidth - dp(10), dp(194))
-        else hint.layout(dp(10), (cy + diameter / 2 + dp(4)).toInt(), width - dp(10), (cy + diameter / 2 + dp(54)).toInt())
+        val undoLeft = (reservePaneWidth - undo.measuredWidth) / 2
+        undo.layout(undoLeft, height - dp(56), undoLeft + undo.measuredWidth, height - dp(8))
+        fog.layout(0, 0, width, height)
+        preview?.let { it.layout(0, 0, it.measuredWidth, it.measuredHeight); applyPreviewTransform() }
         // Ghosts use x/y properties, so relayout cannot interrupt their flight.
         activeGhost?.let { it.layout(0, 0, it.measuredWidth, it.measuredHeight) }
         reorderGhost?.let { it.layout(0, 0, it.measuredWidth, it.measuredHeight) }
@@ -257,14 +331,99 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
     private fun morphReserve(open: Boolean) {
         controller.reserveOpen = open
         reserveAnimator?.cancel()
-        compact.visibility = if (open) GONE else VISIBLE
-        carousel.visibility = if (open) VISIBLE else GONE
         reserveAnimator = ValueAnimator.ofFloat(reserveProgress, if (open) 1f else 0f).apply {
-            duration = 220; interpolator = DecelerateInterpolator()
-            addUpdateListener { reserveProgress = it.animatedValue as Float; requestLayout() }
+            duration = if (motionEnabled()) 320 else 0; interpolator = motion
+            addUpdateListener { reserveProgress = it.animatedValue as Float; updateReserveAppearance(); requestLayout() }
             start()
         }
     }
+
+    private fun updateReserveAppearance() {
+        compact.visibility = if (reserveProgress >= 1f) GONE else VISIBLE
+        carousel.visibility = if (reserveProgress <= 0f) GONE else VISIBLE
+        compact.alpha = 1f - reserveProgress
+        carousel.alpha = reserveProgress
+        carousel.translationX = dp(10) * (1f - reserveProgress)
+    }
+
+    private fun showPreview(source: ImageView) {
+        if (preview != null || source.drawable == null) return
+        previewSource = source
+        source.animate().cancel(); source.alpha = 0f
+        previewProgress = 0f
+        preview = ImageView(context).apply {
+            tag = "organizer_preview"; setImageDrawable(source.drawable)
+            scaleType = ImageView.ScaleType.FIT_CENTER; cameraDistance = dp(1600).toFloat()
+            isClickable = true; isFocusable = true
+            contentDescription = context.getString(R.string.organizer_close_preview)
+            setOnClickListener { dismissPreview() }
+            addView(this); requestFocus()
+            controller.media.queue.firstOrNull()?.let { item ->
+                load(item.uri) {
+                    size(min(1600, max(this@OrganizerBoard.width, this@OrganizerBoard.height)))
+                    placeholder(source.drawable.asImage()); crossfade(120)
+                    ImageRotation.configureRequest(context, item, this)
+                }
+            }
+        }
+        fog.visibility = VISIBLE; fog.alpha = 0f; fog.bringToFront(); preview?.bringToFront()
+        blurBackground(true)
+        requestLayout()
+        animatePreview(1f)
+    }
+
+    fun dismissPreview(): Boolean {
+        if (preview == null) return false
+        animatePreview(0f)
+        return true
+    }
+
+    private fun animatePreview(target: Float) {
+        previewAnimator?.cancel()
+        val image = preview ?: return
+        previewAnimator = ValueAnimator.ofFloat(previewProgress, target).apply {
+            duration = if (motionEnabled()) (if (target == 1f) 340L else 260L) else 0L
+            interpolator = motion
+            addUpdateListener { previewProgress = it.animatedValue as Float; applyPreviewTransform() }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (preview === image && previewProgress == 0f) clearPreview()
+                }
+            })
+            start()
+        }
+    }
+
+    private fun applyPreviewTransform() {
+        val image = preview ?: return
+        val source = previewSource ?: return
+        if (image.width == 0) return
+        val t = previewProgress
+        val startScale = source.width.toFloat() / image.width
+        val scale = startScale + (1f - startScale) * t
+        image.scaleX = scale; image.scaleY = scale
+        image.x = source.x + source.width / 2f + (width / 2f - source.x - source.width / 2f) * t - image.width / 2f
+        image.y = source.y + source.height / 2f + (height / 2f - source.y - source.height / 2f) * t - image.height / 2f
+        image.rotationX = -7f * t; image.rotationY = -6f * t; image.rotation = -1.5f * t
+        image.elevation = dp(40) + dp(24) * t
+        fog.alpha = .48f * t
+    }
+
+    private fun blurBackground(enabled: Boolean) {
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            val effect = if (enabled) RenderEffect.createBlurEffect(dp(10).toFloat(), dp(10).toFloat(), Shader.TileMode.CLAMP) else null
+            (listOf(ring, reserve, undo, empty) + labels + pictures.values).forEach { it.setRenderEffect(effect) }
+        }
+    }
+
+    private fun clearPreview() {
+        val image = preview ?: return
+        preview = null; previewAnimator?.cancel(); previewAnimator = null
+        removeView(image); previewSource?.alpha = 1f; previewSource = null
+        fog.visibility = GONE; previewProgress = 0f; blurBackground(false)
+    }
+
+    private fun motionEnabled() = android.os.Build.VERSION.SDK_INT < 26 || ValueAnimator.areAnimatorsEnabled()
 
     private fun point(event: MotionEvent): Pair<Float, Float> {
         getLocationOnScreen(location)
@@ -274,6 +433,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
     @SuppressLint("ClickableViewAccessibility") // Every tap calls performClick; click menus expose all gesture actions.
     private fun installMediaGesture(view: ImageView, item: MediaItem, fromReserve: Boolean) {
         var downX = 0f; var downY = 0f; var start = 0L; var dragging = false; var scrolling = false
+        var originX = 0f; var originY = 0f; var gripX = 0f; var gripY = 0f
         var ghost: ImageView? = null
         view.setOnTouchListener { _, event ->
             if (!view.isEnabled) return@setOnTouchListener false
@@ -281,6 +441,9 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = x; downY = y; start = event.eventTime; dragging = false; scrolling = false
+                    val origin = IntArray(2); view.getLocationOnScreen(origin)
+                    originX = origin[0] - location[0].toFloat(); originY = origin[1] - location[1].toFloat()
+                    gripX = x - originX; gripY = y - originY
                     this@OrganizerBoard.parent?.requestDisallowInterceptTouchEvent(true)
                     if (!fromReserve || selectedReserved == item.uri.toString()) view.parent?.requestDisallowInterceptTouchEvent(true)
                     true
@@ -293,12 +456,17 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
                         else {
                             dragging = true; view.parent?.requestDisallowInterceptTouchEvent(true)
                             scroll.requestDisallowInterceptTouchEvent(true)
-                            ghost = ghost(view.drawable, view.width, view.height, x, y)
+                            ghost = ghost(view.drawable, view.width, view.height, originX + view.width / 2f, originY + view.height / 2f)
                             view.alpha = 0f
                         }
                     }
                     if (dragging) {
-                        ghost?.apply { this.x = x - width / 2; this.y = y - height / 2 }
+                        ghost?.apply {
+                            this.x = x - gripX; this.y = y - gripY
+                            rotationY = (dx / diameter * 16f).coerceIn(-9f, 9f)
+                            rotationX = (-dy / diameter * 12f).coerceIn(-7f, 7f)
+                            scaleX = 1.025f; scaleY = 1.025f; elevation = dp(12).toFloat()
+                        }
                         setHover(targetAt(x, y))
                     }
                     !scrolling
@@ -316,22 +484,24 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
                         val fly = ghost ?: ghost(view.drawable, view.width, view.height, x, y)
                         controller.reserve(); flyTo(fly, reserve.x + reserve.width / 2, reserve.y + reserve.height / 2)
                     } else if (dragging && target != null) launch(item, fromReserve, target, ghost)
-                    else { ghost?.let(::removeGhost); if (!dragging && !scrolling) view.performClick() }
+                    else {
+                        ghost?.let { view.alpha = 0f; returnToOrigin(it, view, originX, originY) }
+                        if (!dragging && !scrolling) view.performClick()
+                    }
                     ghost = null; dragging = false; setHover(-1); true
                 }
-                MotionEvent.ACTION_CANCEL -> { view.parent?.requestDisallowInterceptTouchEvent(false); view.alpha = 1f; ghost?.let(::removeGhost); ghost = null; dragging = false; setHover(-1); true }
+                MotionEvent.ACTION_CANCEL -> {
+                    this@OrganizerBoard.parent?.requestDisallowInterceptTouchEvent(false)
+                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                    ghost?.let { returnToOrigin(it, view, originX, originY) } ?: run { view.alpha = 1f }
+                    ghost = null; dragging = false; setHover(-1); true
+                }
                 else -> true
             }
         }
         if (!fromReserve) {
             view.isClickable = true; view.isFocusable = true
-            view.setOnClickListener {
-                val names = controller.destinations.mapIndexed { i, album -> "${i + 1}. ${album.name}" } + "Reservar"
-                Ui.showPopupOptions(view, names) { selected ->
-                    val index = names.indexOf(selected)
-                    if (index == controller.destinations.size) controller.reserve() else launch(item, false, index, null)
-                }
-            }
+            view.setOnClickListener { showPreview(view) }
         }
     }
 
@@ -340,13 +510,13 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         val originPoint = IntArray(2)
         origin?.getLocationOnScreen(originPoint); getLocationOnScreen(location)
         val fly = existing ?: ghost(origin?.drawable,
-            origin?.width ?: (diameter * .34f).toInt(), origin?.height ?: (diameter * .34f).toInt(),
+            origin?.width ?: (diameter * .43f).toInt(), origin?.height ?: (diameter * .43f).toInt(),
             if (origin != null) originPoint[0] - location[0] + origin.width / 2f else cx,
             if (origin != null) originPoint[1] - location[1] + origin.height / 2f else cy)
         if (!controller.send(item, fromReserve, target)) { removeGhost(fly); return }
         setHover(target); ring.receive(target)
         val angle = angle(target)
-        flyTo(fly, cx + cos(angle) * diameter * .40f, cy + sin(angle) * diameter * .40f)
+        flyTo(fly, cx + cos(angle) * diameter * .40f, cy + sin(angle) * diameter * .40f) { ring.receive(target) }
         performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
     }
 
@@ -359,11 +529,46 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         activeGhost = this; bringToFront()
     }
 
-    private fun flyTo(view: ImageView, x: Float, y: Float) {
-        view.animate().x(x - view.width / 2).y(y - view.height / 2)
-            .rotationX(if (y < cy) 56f else -56f).rotationY(if (x < cx) -56f else 56f)
-            .scaleX(.14f).scaleY(.14f).setDuration(260).setInterpolator(DecelerateInterpolator())
-            .withEndAction { removeGhost(view) }.start()
+    private fun flyTo(view: ImageView, x: Float, y: Float, arrived: (() -> Unit)? = null) {
+        val startX = view.x + view.width / 2f; val startY = view.y + view.height / 2f
+        val dx = x - startX; val dy = y - startY
+        val controlX = (startX + x) / 2f + dy * .12f
+        val controlY = (startY + y) / 2f - dx * .12f - dp(12)
+        val initialScale = view.scaleX; val initialX = view.rotationX; val initialY = view.rotationY
+        animateGhost(view, if (motionEnabled()) 340L else 0L, { t ->
+            val u = 1f - t
+            view.x = u * u * startX + 2f * u * t * controlX + t * t * x - view.width / 2f
+            view.y = u * u * startY + 2f * u * t * controlY + t * t * y - view.height / 2f
+            view.scaleX = initialScale + (.18f - initialScale) * t; view.scaleY = view.scaleX
+            view.rotationX = initialX + ((if (dy < 0) 22f else -22f) - initialX) * t
+            view.rotationY = initialY + ((if (dx < 0) -22f else 22f) - initialY) * t
+            view.alpha = (1f - ((t - .65f) / .35f).coerceIn(0f, 1f))
+        }, arrived)
+    }
+
+    private fun returnToOrigin(ghost: ImageView, source: ImageView, x: Float, y: Float) {
+        val sx = ghost.x; val sy = ghost.y; val rx = ghost.rotationX; val ry = ghost.rotationY
+        animateGhost(ghost, if (motionEnabled()) 240L else 0L, { t ->
+            ghost.x = sx + (x - sx) * t; ghost.y = sy + (y - sy) * t
+            ghost.rotationX = rx * (1f - t); ghost.rotationY = ry * (1f - t)
+            ghost.scaleX = 1f + .025f * (1f - t); ghost.scaleY = ghost.scaleX
+        }) { source.alpha = 1f }
+    }
+
+    private fun animateGhost(view: ImageView, durationMs: Long, frame: (Float) -> Unit, completed: (() -> Unit)?) {
+        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = durationMs; interpolator = motion
+            addUpdateListener { frame(it.animatedValue as Float) }
+            addListener(object : AnimatorListenerAdapter() {
+                private var cancelled = false
+                override fun onAnimationCancel(animation: Animator) { cancelled = true }
+                override fun onAnimationEnd(animation: Animator) {
+                    flights.remove(view); removeGhost(view)
+                    if (!cancelled) completed?.invoke()
+                }
+            })
+        }
+        flights[view] = animator; animator.start()
     }
 
     private fun removeGhost(view: ImageView) { removeView(view); if (activeGhost === view) activeGhost = null }
@@ -428,7 +633,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
     private inner class ReserveAdapter : RecyclerView.Adapter<ReserveHolder>() {
         override fun getItemCount() = controller.media.reserved.size
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = ReserveHolder(ImageView(context).apply {
-            layoutParams = RecyclerView.LayoutParams(dp(72), -1).apply { marginEnd = dp(8) }
+            layoutParams = RecyclerView.LayoutParams(dp(100), -1).apply { marginEnd = dp(8) }
             scaleType = ImageView.ScaleType.CENTER_CROP
             isClickable = true; isFocusable = true
         })
@@ -436,7 +641,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
             val item = controller.media.reserved[position]
             holder.image.apply {
                 tag = "organizer_reserved_${item.uri}"; contentDescription = "Mídia reservada ${position + 1}"
-                load(item.uri) { size(160); crossfade(false) }
+                load(item.uri) { size(320); crossfade(false); ImageRotation.configureRequest(context, item, this) }
                 isSelected = selectedReserved == item.uri.toString(); alpha = if (isSelected) .7f else 1f
                 installMediaGesture(this, item, true)
                 setOnClickListener {
@@ -467,9 +672,19 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
     private fun angle(index: Int) = Math.toRadians(-90.0 + index * 360.0 / controller.destinations.size.coerceAtLeast(1)).toFloat()
     private fun dp(value: Int) = Ui.dp(context, value)
 
+    override fun onDetachedFromWindow() {
+        clearPreview(); reserveAnimator?.cancel()
+        flights.values.toList().forEach { it.cancel() }
+        activeGhost?.let(::removeGhost)
+        pictures.values.forEach { it.animate().cancel() }
+        super.onDetachedFromWindow()
+    }
+
     private inner class RingView(context: Context) : View(context) {
         val amount = FloatArray(OrganizerRules.MAX_DESTINATIONS)
         private val animators = arrayOfNulls<ValueAnimator>(OrganizerRules.MAX_DESTINATIONS)
+        private val targets = FloatArray(OrganizerRules.MAX_DESTINATIONS)
+        private val settle = arrayOfNulls<Runnable>(OrganizerRules.MAX_DESTINATIONS)
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val path = Path()
         private val outer = RectF(); private val inner = RectF()
@@ -481,14 +696,18 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
             repeat(OrganizerRules.MAX_DESTINATIONS) { animateSector(it, if (it == index || android.os.SystemClock.uptimeMillis() < receivedUntil[it]) 1f else 0f) }
         }
         fun receive(index: Int) {
-            receivedUntil[index] = android.os.SystemClock.uptimeMillis() + 280
+            receivedUntil[index] = android.os.SystemClock.uptimeMillis() + 360
             animateSector(index, 1f)
-            postDelayed({ if (hovered != index && android.os.SystemClock.uptimeMillis() >= receivedUntil[index]) animateSector(index, 0f) }, 280)
+            settle[index]?.let(::removeCallbacks)
+            settle[index] = Runnable { if (hovered != index) animateSector(index, 0f) }.also { postDelayed(it, 360) }
         }
         private fun animateSector(index: Int, value: Float) {
+            if (targets[index] == value && (animators[index]?.isRunning == true || amount[index] == value)) return
+            targets[index] = value
             animators[index]?.cancel()
             animators[index] = ValueAnimator.ofFloat(amount[index], value).apply {
-                duration = 140; interpolator = DecelerateInterpolator()
+                duration = if (motionEnabled()) (if (value == 1f) 240L else 360L) else 0L
+                interpolator = if (value == 1f) OvershootInterpolator(.45f) else motion
                 addUpdateListener { amount[index] = it.animatedValue as Float; invalidate(); this@OrganizerBoard.requestLayout() }
                 start()
             }
@@ -499,7 +718,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
             val sweep = 360f / count
             repeat(count) { index ->
                 val radius = diameter * .48f; val hole = diameter * .278f
-                val nudge = amount[index] * dp(6)
+                val nudge = amount[index] * dp(8)
                 val x = cx + cos(angle(index)) * nudge; val y = cy + sin(angle(index)) * nudge
                 outer.set(x - radius, y - radius, x + radius, y + radius)
                 inner.set(x - hole, y - hole, x + hole, y + hole)
@@ -520,7 +739,10 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
                 canvas.drawPath(path, paint)
             }
         }
-        override fun onDetachedFromWindow() { animators.forEach { it?.cancel() }; super.onDetachedFromWindow() }
+        override fun onDetachedFromWindow() {
+            animators.forEach { it?.cancel() }; settle.forEach { it?.let(::removeCallbacks) }
+            super.onDetachedFromWindow()
+        }
     }
 }
 

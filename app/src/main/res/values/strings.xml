@@ -5,7 +5,12 @@
     <string name="organizer_destinations">Escolha de 1 a 8 destinos · %1$d/8</string>
     <string name="organizer_destination_help">Selecione de 1 a 8 álbuns na ordem desejada e toque em Começar a organizar. Você poderá trocar as posições depois.</string>
     <string name="organizer_start">Começar a organizar</string>
-    <string name="organizer_hint">Empurre ou arraste a mídia. Segure um álbum e arraste sobre outro para trocar as posições.</string>
+    <string name="organizer_preview">Ampliar mídia</string>
+    <string name="organizer_close_preview">Fechar prévia</string>
+    <plurals name="organizer_sent">
+        <item quantity="one">%1$d mídia enviada</item>
+        <item quantity="other">%1$d mídias enviadas</item>
+    </plurals>
     <string name="organizer_reserve">Reservar · %1$d</string>
     <string name="organizer_empty">Álbum organizado. Você ainda pode distribuir as mídias da reserva.</string>
     <string name="organizer_move_failed">Não foi possível mover. A mídia voltou para a fila.</string>

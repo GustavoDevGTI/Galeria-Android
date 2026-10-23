@@ -1,6 +1,5 @@
 package com.galeria.android
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -10,18 +9,17 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import coil3.load
-import coil3.request.crossfade
 import java.io.File
 
-class OrganizerActivity : Activity() {
+class OrganizerActivity : ComponentActivity() {
     internal lateinit var controller: OrganizerController; private set
     private lateinit var content: FrameLayout
     private lateinit var status: TextView
     private lateinit var title: TextView
-    private lateinit var undo: ImageButton
     private var board: OrganizerBoard? = null
     private var displayedStage = -1
     private var requestedAccess = false
@@ -32,7 +30,7 @@ class OrganizerActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Ui.applySystemBars(this)
-        controller = lastNonConfigurationInstance as? OrganizerController ?: OrganizerSessions.acquire(this)
+        controller = lastCustomNonConfigurationInstance as? OrganizerController ?: OrganizerSessions.acquire(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setBackgroundColor(Ui.bg(this@OrganizerActivity))
         }
@@ -41,13 +39,10 @@ class OrganizerActivity : Activity() {
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom); insets
         }
         val bar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        bar.addView(icon(R.drawable.ic_back, getString(R.string.album_back)) {
-            if (controller.stage == 1) controller.chooseAgain() else finish()
-        }, LinearLayout.LayoutParams(dp(48), dp(52)))
+        bar.addView(icon(R.drawable.ic_back, getString(R.string.album_back)) { handleBack() },
+            LinearLayout.LayoutParams(dp(48), dp(52)))
         title = Ui.title(this, getString(R.string.action_organize), 20)
         bar.addView(title, LinearLayout.LayoutParams(0, dp(52), 1f).apply { title.gravity = Gravity.CENTER_VERTICAL })
-        undo = icon(R.drawable.ic_undo, getString(R.string.organizer_undo)) { controller.undo() }.apply { tag = "organizer_undo" }
-        bar.addView(undo, LinearLayout.LayoutParams(dp(48), dp(52)))
         bar.addView(icon(R.drawable.ic_more_vertical, getString(R.string.action_more_options)) { anchor ->
             val change = getString(R.string.organizer_change)
             Ui.showPopupOptions(anchor, listOf(change)) {
@@ -60,6 +55,9 @@ class OrganizerActivity : Activity() {
         content = FrameLayout(this)
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() = handleBack()
+        })
         controller.onChange = ::render
         if (controller.albums.isEmpty() && !controller.loading) controller.loadAlbums(
             intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS),
@@ -67,7 +65,7 @@ class OrganizerActivity : Activity() {
         render()
     }
 
-    override fun onRetainNonConfigurationInstance(): Any = controller
+    override fun onRetainCustomNonConfigurationInstance(): Any = controller
     override fun onDestroy() {
         controller.onChange = null
         if (!isChangingConfigurations) OrganizerSessions.release(controller)
@@ -84,8 +82,6 @@ class OrganizerActivity : Activity() {
     private fun render() {
         if (isFinishing || isDestroyed) return
         controller.message?.let { Ui.toast(this, it); controller.message = null }
-        undo.visibility = if (controller.stage == 2) View.VISIBLE else View.GONE
-        undo.isEnabled = controller.canUndo; undo.alpha = if (undo.isEnabled) 1f else .35f
         title.text = if (controller.stage == 2) controller.source?.name else getString(R.string.action_organize)
         status.text = when {
             controller.loading -> getString(R.string.organizer_loading)
@@ -109,7 +105,12 @@ class OrganizerActivity : Activity() {
     }
 
     private fun buildPicker() {
-        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = Ui.rounded(Ui.menuSurface(this@OrganizerActivity), 18, this@OrganizerActivity)
+            clipToOutline = true
+            setPadding(0, dp(6), 0, dp(8))
+        }
         if (controller.stage == 1) {
             panel.addView(Ui.label(this, getString(if (controller.albums.size < 2) R.string.organizer_insufficient else R.string.organizer_destination_help))
                 .apply { setPadding(dp(20), dp(4), dp(20), dp(12)) })
@@ -122,36 +123,21 @@ class OrganizerActivity : Activity() {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                 val album = getItem(position)
                 val index = controller.destinations.indexOfFirst { it.key == album.key }
-                return LinearLayout(this@OrganizerActivity).apply {
-                    gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(6), dp(16), dp(6))
-                    minimumHeight = dp(68)
+                return Ui.albumTargetRow(this@OrganizerActivity, album).apply {
                     tag = "organizer_album_${album.key}"
-                    addView(ImageView(context).apply {
-                        scaleType = ImageView.ScaleType.CENTER_CROP
-                        if (album.cover != null) load(album.cover.uri) { size(128); crossfade(false) }
-                        else { setImageResource(R.drawable.ic_folder); setColorFilter(Ui.text(context)) }
-                    }, LinearLayout.LayoutParams(dp(52), dp(52)))
-                    addView(LinearLayout(context).apply {
-                        orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, dp(8), 0)
-                        addView(Ui.label(context, album.name).apply {
-                            gravity = Gravity.START; setTextColor(Ui.text(context)); textSize = 16f
-                            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-                        })
-                        addView(Ui.label(context, album.key.trimEnd('/')).apply {
-                            gravity = Gravity.START; textSize = 12f
-                            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-                        })
-                    }, LinearLayout.LayoutParams(0, -2, 1f))
-                    addView(Ui.title(context, if (controller.stage == 1 && index >= 0) "${index + 1}" else "", 18),
+                    addView(Ui.title(context, if (controller.stage == 1 && index >= 0) "${index + 1}" else "", 16).apply {
+                        setTextColor(Ui.menuText(context))
+                    },
                         LinearLayout.LayoutParams(dp(32), -2))
                     isSelected = if (controller.stage == 0) album.key == controller.source?.key else index >= 0
-                    if (isSelected) background = Ui.rounded(Ui.surface(context), 12, context)
-                    contentDescription = album.name + ", " + album.key + if (index >= 0) ", destino ${index + 1}" else ""
+                    if (isSelected) background = Ui.rounded(Ui.blend(Ui.menuSurface(context), Ui.menuText(context), .10f), 10, context)
+                    contentDescription = album.name + if (index >= 0) ", destino ${index + 1}" else ""
                 }
             }
         }
         list = ListView(this).apply {
             divider = null; adapter = pickerAdapter; tag = "organizer_album_picker"
+            selector = Ui.actionFeedback(this@OrganizerActivity, Ui.menuText(this@OrganizerActivity))
             setOnItemClickListener { _, _, position, _ ->
                 if (!controller.loading) {
                     val album = pickerAdapter!!.getItem(position) as AlbumItem
@@ -179,7 +165,14 @@ class OrganizerActivity : Activity() {
             }
             panel.addView(startButton, LinearLayout.LayoutParams(-1, dp(52)))
         }
-        content.addView(panel, FrameLayout.LayoutParams(-1, -1))
+        content.addView(panel, FrameLayout.LayoutParams(-1, -1).apply {
+            setMargins(dp(12), dp(6), dp(12), dp(12))
+        })
+    }
+
+    private fun handleBack() {
+        if (board?.dismissPreview() == true) return
+        if (controller.stage == 1) controller.chooseAgain() else finish()
     }
 
     private fun startOrganizing() {
@@ -193,7 +186,7 @@ class OrganizerActivity : Activity() {
         controller.begin()
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == 800 && grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) controller.begin()
     }

@@ -868,6 +868,42 @@ class Ui private constructor() {
             tag = DIALOG_PRIMARY_ACTION_TAG
         }
 
+        /** Shared album presentation for moving files and configuring the organizer. */
+        fun albumTargetRow(context: Context, album: AlbumItem): LinearLayout {
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dp(context, 60)
+                setPadding(dp(context, 12), dp(context, 6), dp(context, 14), dp(context, 6))
+                contentDescription = "Álbum ${album.name}"
+            }
+            row.addView(ImageView(context).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = rounded(Color.BLACK, 6, context)
+                clipToOutline = true
+                album.cover?.let { media ->
+                    load(media.uri) {
+                        ImageRotation.configureRequest(context, media, this)
+                        size(dp(context, 48), dp(context, 48))
+                        precision(Precision.INEXACT)
+                        memoryCacheKey("album-target:${MediaContentRevision.key(context, media.uri)}:48")
+                        diskCacheKey("album-target:${MediaContentRevision.key(context, media.uri)}")
+                        allowHardware(true)
+                        crossfade(160)
+                    }
+                }
+            }, LinearLayout.LayoutParams(dp(context, 46), dp(context, 46)))
+            row.addView(TextView(context).apply {
+                text = album.name
+                textSize = 16f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(menuText(context))
+                setPadding(dp(context, 12), 0, 0, 0)
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            return row
+        }
+
         @JvmStatic
         fun showAlbumTargets(
             anchor: View,
@@ -899,41 +935,7 @@ class Ui private constructor() {
             val pendingSelection = arrayOfNulls<AlbumItem>(1)
             val localPopupRef = arrayOfNulls<PopupWindow>(1)
             albums.forEach { album ->
-                val row = LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    minimumHeight = dp(context, 60)
-                    setPadding(dp(context, 12), dp(context, 6), dp(context, 14), dp(context, 6))
-                    contentDescription = "Álbum ${album.name}"
-                }
-                val cover = ImageView(context).apply {
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                    background = rounded(Color.BLACK, 6, context)
-                    clipToOutline = true
-                    album.cover?.let { media ->
-                        load(media.uri) {
-                            ImageRotation.configureRequest(context, media, this)
-                            size(dp(context, 48), dp(context, 48))
-                            precision(Precision.INEXACT)
-                            memoryCacheKey("album-target:${MediaContentRevision.key(context, media.uri)}:48")
-                            diskCacheKey("album-target:${MediaContentRevision.key(context, media.uri)}")
-                            allowHardware(true)
-                            crossfade(160)
-                        }
-                    }
-                }
-                row.addView(cover, LinearLayout.LayoutParams(dp(context, 46), dp(context, 46)))
-                row.addView(
-                    TextView(context).apply {
-                        text = album.name
-                        textSize = 16f
-                        maxLines = 1
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                        setTextColor(menuText(context))
-                        setPadding(dp(context, 12), 0, 0, 0)
-                    },
-                    LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                )
+                val row = albumTargetRow(context, album)
                 row.setOnClickListener {
                     pendingSelection[0] = album
                     localPopupRef[0]?.dismiss()

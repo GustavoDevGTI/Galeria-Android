@@ -65,6 +65,9 @@ class OrganizerInstrumentedTest {
                 assertEquals(0, activity.controller.stage)
                 val list = activity.window.decorView.findViewWithTag<ListView>("organizer_album_picker")
                 val index = (0 until list.adapter.count).first { (list.adapter.getItem(it) as AlbumItem).key == source }
+                val row = list.adapter.getView(index, null, list) as ViewGroup
+                assertEquals("A capa deve usar a mesma medida do painel Mover", Ui.dp(activity, 46), row.getChildAt(0).layoutParams.width)
+                assertEquals("Mostrar somente o nome do álbum, sem caminho", "A Origem", (row.getChildAt(1) as android.widget.TextView).text.toString())
                 list.performItemClick(null, index, index.toLong())
                 assertEquals(1, activity.controller.stage)
                 val destinations = activity.window.decorView.findViewWithTag<ListView>("organizer_album_picker")
@@ -162,7 +165,8 @@ class OrganizerInstrumentedTest {
                 val carousel = activity.window.decorView.findViewWithTag<View>("organizer_reserve_carousel")
                 assertTrue(carousel.isShown)
                 assertEquals(View.GONE, reserve.findViewWithTag<View>("organizer_reserve_button").visibility)
-                assertEquals(Ui.dp(activity, 68), reserve.height)
+                assertTrue("A reserva deve ter espaço para miniaturas grandes", reserve.height >= Ui.dp(activity, 104))
+                assertTrue("O mesmo controle se expande horizontalmente", reserve.width > reserve.height)
                 val position = IntArray(2); val other = IntArray(2)
                 reserve.getLocationOnScreen(position); carousel.getLocationOnScreen(other)
                 assertEquals(position[1], other[1])
@@ -200,6 +204,90 @@ class OrganizerInstrumentedTest {
                 assertEquals(targets[5], activity.controller.destinations[0].key)
                 assertEquals(targets[0], activity.controller.destinations[5].key)
             }
+        }
+    }
+
+    @Test fun portraitUsesItsHeightAndTappingTheMediaOpensAReadOnlyPerspectivePreview() {
+        organized().use { scenario ->
+            var original: Uri? = null
+            scenario.onActivity { activity ->
+                original = activity.controller.media.queue.first().uri
+                val root = activity.window.decorView
+                val board = root.findViewWithTag<View>("organizer_board")
+                val reserve = root.findViewWithTag<ViewGroup>("organizer_reserve")
+                val compact = root.findViewWithTag<ViewGroup>("organizer_reserve_button")
+                val undo = root.findViewWithTag<View>("organizer_undo")
+                val bottomAlbum = root.findViewWithTag<View>("organizer_destination_4")
+                assertTrue(reserve.height >= Ui.dp(activity, 104))
+                assertTrue(reserve.width <= reserve.height * 1.1f)
+                assertTrue("A miniatura ocupa a maior parte da reserva", compact.getChildAt(0).height > reserve.height * .6f)
+                assertTrue("Desfazer fica abaixo do círculo", undo.y > bottomAlbum.y + bottomAlbum.height)
+                assertTrue("O círculo aproveita também a metade inferior", undo.y - bottomAlbum.y < board.height * .22f)
+                assertTrue("Desfazer permanece junto à base útil", board.height - undo.bottom <= Ui.dp(activity, 12))
+            }
+            screenshot("organizer-refined-portrait.png")
+            awaitAndroidInputReady()
+            gesture(scenario, "organizer_current", "organizer_current", 80)
+            waitUntil {
+                var open = false
+                scenario.onActivity { activity ->
+                    val image = activity.window.decorView.findViewWithTag<View>("organizer_preview")
+                    open = image != null && image.isShown && image.rotationY <= -5f
+                }
+                open
+            }
+            scenario.onActivity { activity ->
+                val root = activity.window.decorView
+                val image = root.findViewWithTag<View>("organizer_preview")
+                val current = root.findViewWithTag<View>("organizer_current")
+                assertTrue(image.width * image.scaleX > current.width * 1.5f)
+                assertTrue(root.findViewWithTag<View>("organizer_preview_fog").alpha > .42f)
+                assertEquals(4, activity.controller.media.queue.size)
+                assertEquals(original, activity.controller.media.queue.first().uri)
+                assertEquals(source, path(original!!))
+            }
+            screenshot("organizer-refined-preview.png")
+            androidx.test.espresso.Espresso.pressBack()
+            waitUntil {
+                var closed = false
+                scenario.onActivity { closed = it.window.decorView.findViewWithTag<View>("organizer_preview") == null }
+                closed
+            }
+            scenario.onActivity {
+                assertEquals(1f, it.window.decorView.findViewWithTag<View>("organizer_current").alpha, .001f)
+                assertEquals(original, it.controller.media.queue.first().uri)
+            }
+            gesture(scenario, "organizer_current", "organizer_destination_0", 120)
+            waitUntil { path(original!!) == targets[0] }
+        }
+    }
+
+    @Test fun destinationCountsFollowSuccessfulMovesReorderingRotationAndUndo() {
+        organized().use { scenario ->
+            repeat(2) {
+                gesture(scenario, "organizer_current", "organizer_destination_0", 100)
+                waitUntil { var idle = false; scenario.onActivity { idle = it.controller.pending == 0 }; idle }
+            }
+            scenario.onActivity {
+                assertEquals(2, it.controller.sentCount(targets[0]))
+                assertEquals(0, it.controller.sentCount(targets[1]))
+                assertEquals("2", it.window.decorView.findViewWithTag<android.widget.TextView>("organizer_destination_count_0").text.toString())
+            }
+            gesture(scenario, "organizer_destination_0", "organizer_destination_1", 200, ViewConfiguration.getLongPressTimeout() + 100L)
+            scenario.recreate(); awaitBoard(scenario)
+            scenario.onActivity {
+                assertEquals(targets[0], it.controller.destinations[1].key)
+                assertEquals("2", it.window.decorView.findViewWithTag<android.widget.TextView>("organizer_destination_count_1").text.toString())
+            }
+            for (expected in 1 downTo 0) {
+                scenario.onActivity { it.controller.undo() }
+                waitUntil {
+                    var done = false
+                    scenario.onActivity { done = it.controller.pending == 0 && it.controller.sentCount(targets[0]) == expected }
+                    done
+                }
+            }
+            scenario.onActivity { assertEquals(4, it.controller.media.queue.size) }
         }
     }
 
@@ -258,6 +346,7 @@ class OrganizerInstrumentedTest {
             val original = controller.media.queue.toList()
             instrumentation.runOnMainSync {
                 assertTrue(controller.send(original[0], false, 0))
+                assertEquals("Movimento pendente não conta como concluído", 0, controller.sentCount(targets[0]))
                 assertEquals(original[1], controller.media.queue.first())
                 assertTrue(controller.send(original[1], false, 1))
                 assertEquals(original[2], controller.media.queue.first())
@@ -357,7 +446,7 @@ class OrganizerInstrumentedTest {
             var ready = false
             scenario.onActivity { activity ->
                 val current = activity.window.decorView.findViewWithTag<ImageView>("organizer_current")
-                ready = activity.controller.stage == 2 && current != null && current.isShown && current.drawable != null && current.width > 0
+                ready = activity.controller.stage == 2 && current != null && current.isShown && current.drawable != null && current.width > 0 && current.hasWindowFocus()
             }
             ready
         }
