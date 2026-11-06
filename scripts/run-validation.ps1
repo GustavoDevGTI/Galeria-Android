@@ -1,7 +1,10 @@
 #requires -Version 7.0
 param(
-    [ValidateSet('All', 'Viewer', 'Playback', 'Cinema', 'Timeline', 'Ocr', 'Editing', 'ImageEditing', 'VideoEditing', 'Albums', 'Catalog', 'Appearance')]
-    [string[]]$Area = @('All'),
+    [ValidateSet('Essential', 'All', 'Viewer', 'Playback', 'Cinema', 'Timeline', 'Ocr', 'Editing', 'ImageEditing', 'VideoEditing', 'Albums', 'Catalog', 'Appearance')]
+    [string[]]$Area = @('Essential'),
+    [string[]]$Test = @(),
+    [switch]$Extended,
+    [switch]$List,
     [switch]$UnitOnly,
     [switch]$Delivery,
     [string]$Device = 'emulator-5554',
@@ -10,8 +13,13 @@ param(
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'validation-common.ps1')
 $root = Split-Path -Parent $PSScriptRoot
-if ($Delivery -and ($UnitOnly -or $Area.Count -ne 1 -or $Area[0] -ne 'All')) { throw 'Entrega exige todas as áreas e emulador; não pode usar -UnitOnly.' }
-$plan = Get-GalleryTestPlan $root $Area
+$plan = Get-GalleryValidationPlan $root -Area $Area -Test $Test -UnitOnly:$UnitOnly -Delivery:$Delivery -Extended:$Extended
+$Area = $plan.Area
+if ($List) {
+    Write-Output "Perfil: $($plan.Mode). Unitários: todos."
+    if (!$UnitOnly) { Write-Output "Lint e build debug. Interface: $($plan.Expected) testes."; $plan.Classes | Write-Output }
+    return
+}
 $fingerprint = Get-GalleryInputFingerprint $root
 $reports = Join-Path $root 'app/build/reports/validation'
 $run = Join-Path $reports ((Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -58,7 +66,7 @@ try {
         $nativePath = [string]$nativePath
     }
     if ($fingerprint -ne (Get-GalleryInputFingerprint $root)) { throw 'Entradas mudaram durante os testes; aprovação rejeitada.' }
-    $mode = if ($Delivery) { 'delivery' } elseif ($UnitOnly) { 'unit' } else { 'area' }
+    $mode = $plan.Mode
     $unitFiles = @(Get-ChildItem -LiteralPath $unitsDirectory -Filter 'TEST-*.xml')
     $evidence = @($unitFiles.FullName) + @(Join-Path $run 'gradle.txt')
     if (!$UnitOnly) {
@@ -67,6 +75,7 @@ try {
     $relative = { param($path) [IO.Path]::GetRelativePath($root, $path).Replace('\', '/') }
     $record = [ordered]@{
         schema = 1; runId = $runId; mode = $mode; status = 'passed'; area = $Area
+        selectedTests = if ($UnitOnly) { @() } else { $plan.Classes }
         device = if (!$UnitOnly) { $Device } else { $null }; buildType = 'debug'
         completedUtc = [DateTime]::UtcNow.ToString('o'); fingerprint = $fingerprint
         unitReports = @($unitFiles | ForEach-Object { & $relative $_.FullName })

@@ -2,7 +2,7 @@
 
 App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, navegação fluida e gestão real de mídias e pastas do aparelho.
 
-Versão atual: **0.9.2** (código Android `9002`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9.2](docs/RELEASE-0.9.2.md).
+Versão atual: **0.9.3** (código Android `9003`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9.3](docs/RELEASE-0.9.3.md).
 
 ## Stack atual
 
@@ -130,7 +130,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A versão 0.9.2 traz a roda com lixeira fixa e até sete destinos configurados pela gaveta inferior, salvamento explícito, confirmação ao sair, zoom reto e player mínimo dentro da prévia. Passaram **250 testes unitários e 148 instrumentados**, sem falhas ou ignorados; lint sem erros (142 avisos). Os testes do organizador cobrem arquivos reais, lixeira, marcações sem escrita, falhas parciais, arrasto, rolagem e rotação. Consulte as [notas da release](docs/RELEASE-0.9.2.md) para a validação completa e o APK assinado.
+A versão 0.9.3 corrige a navegação lateral do visualizador para respeitar a ordenação escolhida no álbum, incluindo direção e agrupamento, sem reaplicar a ordem manual antiga. Os testes reproduzem a mudança pelo menu, os deslizes e a recriação da tela. A validação de release aprovou **250 unitários e 150 instrumentados**, sem falhas ou ignorados; lint sem erros (142 avisos). Consulte as [notas da release](docs/RELEASE-0.9.3.md) para a validação completa e o APK assinado.
 
 Os testes locais ficam em `app/src/test/kotlin` e as integrações Android em `app/src/androidTest/kotlin`. Os comandos por área, critérios de entrega e evidências estão no [guia de validação](docs/TESTES-VALIDACAO.md).
 
@@ -164,13 +164,13 @@ O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Med
 
 A árvore atual mantém o código e a documentação vigentes. APKs e notas de versões anteriores ficam nas [releases e tags do GitHub](https://github.com/GustavoDevGTI/Galeria-Android/releases), sem cópias de binários no repositório.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9.2 usa o código `9002`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9.3 usa o código `9003`.
 
 ## APK gerado
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.9.2](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9.2/Galeria-Android-versao-0.9.2.apk)
+[Baixar Galeria Android - versão 0.9.3](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9.3/Galeria-Android-versao-0.9.3.apk)
 
 Build padrão do Gradle:
 
@@ -181,14 +181,14 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado somente como anexo no GitHub Releases:
 
 ```text
-Galeria-Android-versao-0.9.2.apk
+Galeria-Android-versao-0.9.3.apk
 ```
 
-O APK 0.9.2 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.9.3 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
-### Fluxo obrigatório de entrega
+### Fluxo obrigatório de release no GitHub
 
-Antes de uma entrega/publicação autorizada:
+Antes de publicar uma release autorizada no GitHub (não a cada mudança local ou push):
 
 1. Finalize código e versão; execute `./scripts/run-validation.ps1 -Delivery` e `./scripts/assert-delivery-validation.ps1`. Depois gere/verifique o release assinado. A aprovação automatizada é de debug e não substitui a validação do APK release/aparelhos reais.
 2. Gere o APK release assinado e publique-o como anexo no GitHub Releases usando a versão atual no nome, sem adicionar novos binários ao histórico Git.
@@ -199,15 +199,18 @@ A assinatura release usa as variáveis locais `GALERIA_KEYSTORE_FILE`, `GALERIA_
 
 ### Testes locais rápidos (Windows)
 
-O fluxo recomendado agora usa PowerShell 7:
+O padrão diário usa **todos os unitários, lint/build e quatro testes essenciais no emulador**, mais os casos focados na alteração. Os extensos ficam para suspeita concreta na feature ou antes de uma release.
 
 ```powershell
-./scripts/run-validation.ps1 -UnitOnly
-./scripts/run-validation.ps1 -Area Ocr
-./scripts/run-validation.ps1 -Area Viewer,Playback
+./scripts/run-validation.ps1                       # Base essencial
+./scripts/run-validation.ps1 -Area Albums          # Base + foco em álbuns
+./scripts/run-validation.ps1 -Test 'OrganizerInstrumentedTest#photoPreviewRemainsStraightAndClosesWithoutChangingTheQueue'
+./scripts/run-validation.ps1 -Area Albums -List    # Conferir sem executar
+./scripts/run-validation.ps1 -Extended -Area Ocr   # Suspeita de bug no OCR
+./scripts/run-validation.ps1 -Delivery             # Antes da release: suíte completa
 ```
 
-Lógica é validada sem emulador; as áreas selecionam interface e integrações relevantes. Para fechar a entrega, `-Delivery` sempre exige regressão completa. A checagem invalida evidências depois de mudanças nos fontes/APKs ou de novas falhas. Não publica automaticamente, não usa chaves e não altera proteção de branches.
+As áreas diárias usam pacotes curtos; acrescente os casos do comportamento alterado com `-Test`. `-UnitOnly` continua disponível para iteração sem emulador. Documentação dispensa Android; alterações nas ferramentas usam seus contratos e planos. Resultados diários ou extensos não viram aprovação de release. A checagem de publicação continua exigindo a regressão completa e rejeita evidências desatualizadas ou com falhas.
 
 [Áreas, comandos, evidências e limites do portão de entrega](docs/TESTES-VALIDACAO.md).
 
@@ -220,7 +223,7 @@ Com o emulador aberto, execute somente as classes afetadas, reutilizando os mesm
 ./scripts/run-android-tests.ps1 -Class 'com.galeria.android.HiddenAlbumDialogInstrumentedTest,com.galeria.android.ImageMenuInstrumentedTest' -Repeat 3
 ```
 
-O script instala os APKs uma vez, imprime apenas o resultado e o primeiro erro de cada execução e retorna código diferente de zero se algum teste falhar. Use `-SkipInstall` para repetições sem recompilação nem reinstalação; use `-All` para a suíte instrumentada completa. A sequência de duas classes acima também detecta interferência de estado entre testes. Antes de entregar uma alteração, execute testes unitários, lint e a suíte de interface completa; os testes direcionados servem para o ciclo de diagnóstico, não substituem a validação final.
+O script instala os APKs uma vez, imprime apenas o resultado e o primeiro erro de cada execução e retorna código diferente de zero se algum teste falhar. Use `-SkipInstall` para repetições sem recompilação nem reinstalação; use `-All` para a suíte instrumentada completa. A sequência de duas classes acima também detecta interferência de estado entre testes. Para concluir uma alteração local, use a base diária mais os testes focados. Execute a suíte completa antes de publicar uma release no GitHub ou numa investigação transversal explícita.
 
 Se o Java no Windows falhar com `Unable to establish loopback connection` antes de executar os testes unitários, use `./gradlew.bat -I scripts/direct-unit-tests.gradle :app:directUnitTests`. Essa alternativa executa as mesmas classes JUnit com o mesmo classpath sem o protocolo de comunicação do worker de testes; falhas de asserção continuam interrompendo a validação. O CI permanece usando `testDebugUnitTest`, com seus relatórios padrão.
 

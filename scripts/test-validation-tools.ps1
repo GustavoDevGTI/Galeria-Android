@@ -70,7 +70,54 @@ Check 'combinação remove duplicatas' {
     Require ($plan.Classes -contains 'com.galeria.android.VideoViewerRegressionTest')
 }
 Check 'All não pode virar área parcial' { Reject { Get-GalleryTestPlan $repo @('All', 'Ocr') } }
+Check 'All não pode ocultar uma seleção explícita de métodos' { Reject { Get-GalleryTestPlan $repo @('All') -Test MainActivitySmokeTest } }
 Check 'área inexistente falha' { Reject { Get-GalleryTestPlan $repo @('Typo') } }
+Check 'padrão diário tem somente quatro integrações essenciais' {
+    $plan = Get-GalleryValidationPlan $repo
+    Require ($plan.Mode -eq 'daily' -and $plan.Expected -eq 4)
+    Require ($plan.Classes -contains 'com.galeria.android.OrganizerInstrumentedTest#pushIsOnlyAPlanUntilSaveAndUndoDoesNotTouchTheFile')
+}
+Check 'perfil diário acrescenta foco sem repetir essenciais' {
+    $plan = Get-GalleryValidationPlan $repo -Area Playback
+    Require ($plan.Expected -eq 5)
+    Require ($plan.Classes -contains 'com.galeria.android.DetailPlaybackInstrumentedTest')
+    Require (!($plan.Classes | Where-Object { $_ -like 'com.galeria.android.DetailPlaybackInstrumentedTest#*' }))
+}
+Check 'todas as áreas focadas incluem a base e são menores que as extensas' {
+    foreach ($area in @('Viewer', 'Playback', 'Cinema', 'Timeline', 'Ocr', 'Editing', 'ImageEditing', 'VideoEditing', 'Albums', 'Catalog', 'Appearance')) {
+        $daily = Get-GalleryValidationPlan $repo -Area $area
+        $extended = Get-GalleryValidationPlan $repo -Area $area -Extended
+        Require ($daily.Classes -contains 'com.galeria.android.MainActivitySmokeTest#mainScreenOpensWithSearchAvailable')
+        Require ($extended.Mode -eq 'extended')
+        Require ($daily.Expected -le $extended.Expected + 4)
+    }
+}
+Check 'método focado aceita nome completo e não duplica' {
+    $plan = Get-GalleryValidationPlan $repo -Test @('MainActivitySmokeTest#mainScreenOpensWithSearchAvailable', 'com.galeria.android.OrganizerInstrumentedTest#photoPreviewRemainsStraightAndClosesWithoutChangingTheQueue')
+    Require ($plan.Expected -eq 5)
+}
+Check 'classe ou método inexistente não produz plano válido' {
+    Reject { Get-GalleryValidationPlan $repo -Test 'MissingTest' }
+    Reject { Get-GalleryValidationPlan $repo -Test 'MainActivitySmokeTest#missing' }
+    Reject { Get-GalleryValidationPlan $repo -Test 'MainActivitySmokeTest,bad' }
+}
+Check 'release sempre resolve toda a suíte' {
+    $plan = Get-GalleryValidationPlan $repo -Delivery
+    Require ($plan.Mode -eq 'delivery')
+    Require ($plan.Expected -eq (Get-GalleryTestPlan $repo @('All')).Expected)
+}
+Check 'All exige investigação ou release explícita' {
+    Reject { Get-GalleryValidationPlan $repo -Area All }
+    Require ((Get-GalleryValidationPlan $repo -Extended -Area All).Expected -eq (Get-GalleryTestPlan $repo @('All')).Expected)
+}
+Check 'release rejeita seleções parciais e atalhos' {
+    Reject { Get-GalleryValidationPlan $repo -Delivery -Area Ocr }
+    Reject { Get-GalleryValidationPlan $repo -Delivery -Test MainActivitySmokeTest }
+    Reject { Get-GalleryValidationPlan $repo -Delivery -Extended }
+    Reject { Get-GalleryValidationPlan $repo -Delivery -UnitOnly }
+    Reject { Get-GalleryValidationPlan $repo -Extended }
+    Reject { Get-GalleryValidationPlan $repo -UnitOnly -Area Ocr }
+}
 
 # Synthetic receipts exercise the automation only, never the Android app. They
 # live in a unique temporary fixture and cannot match the real source/APK hashes.
@@ -149,7 +196,10 @@ Check 'relatório adulterado invalida aprovação' {
     NativeLines 89 | Set-Content -LiteralPath $nativePath
 }
 Check 'teste parcial não libera entrega' {
-    $record.mode = 'area'; SaveReceipt; Reject { Assert-GalleryDelivery $fixture $receipt }; $record.mode = 'delivery'; SaveReceipt
+    foreach ($mode in @('area', 'daily', 'extended', 'unit')) {
+        $record.mode = $mode; SaveReceipt; Reject { Assert-GalleryDelivery $fixture $receipt }
+    }
+    $record.mode = 'delivery'; SaveReceipt
 }
 Check 'tentativa posterior falhada bloqueia aprovação antiga' {
     SaveAttempt 'failed'; Reject { Assert-GalleryDelivery $fixture $receipt }; SaveAttempt

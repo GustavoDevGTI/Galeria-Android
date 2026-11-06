@@ -8,9 +8,10 @@ function Assert-GalleryDeviceWindow {
 }
 
 function Get-GalleryTestPlan {
-    param([string]$Root, [string[]]$Area = @('All'))
+    param([string]$Root, [string[]]$Area = @('Essential'), [string[]]$Test = @(), [switch]$Focused, [switch]$IncludeEssential)
     $groups = [ordered]@{
-        Viewer = @('VideoViewerRegressionTest', 'DetailShuffleRotationInstrumentedTest', 'DetailHudInstrumentedTest', 'ExternalMediaOpenInstrumentedTest')
+        Essential = @('MainActivitySmokeTest#mainScreenOpensWithSearchAvailable', 'GalleryBrowseBarInstrumentedTest#mainBarHasFourEqualActionsAndOverflowKeepsTheRemainingFeatures', 'OrganizerInstrumentedTest#pushIsOnlyAPlanUntilSaveAndUndoDoesNotTouchTheFile', 'DetailPlaybackInstrumentedTest#quickTapsChangeThePlayerAndHoldingOpensTheExistingSelectorWithoutCycling')
+        Viewer = @('AlbumViewerOrderInstrumentedTest', 'VideoViewerRegressionTest', 'DetailShuffleRotationInstrumentedTest', 'DetailHudInstrumentedTest', 'ExternalMediaOpenInstrumentedTest')
         Playback = @('DetailPlaybackInstrumentedTest', 'PlaybackMemoryInstrumentedTest', 'PlaybackResumeInstrumentedTest', 'VideoMenuInstrumentedTest', 'VideoTimelineInstrumentedTest#playPauseOverridesFingerStillOnTimelineWithoutRestartingOnRelease', 'VideoTimelineInstrumentedTest#backgroundDuringDragKeepsSamePlayerAndLateReleaseCannotUndoPause', 'VideoTimelineInstrumentedTest#dragSeeksBeforeFingerIsReleasedAndRestoresPlaybackState', 'VideoTimelineInstrumentedTest#playbackBarSeeksWithFilmstripClosedAndToggleKeepsBothAvailable')
         Cinema = @('CinemaModeInstrumentedTest', 'AlbumMediaHeaderInstrumentedTest#albumMenuShowsOnlyCinemaModeNameAndPersistsSelection', 'PlaybackResumeInstrumentedTest', 'VideoTimelineInstrumentedTest#playPauseOverridesFingerStillOnTimelineWithoutRestartingOnRelease', 'VideoTimelineInstrumentedTest#backgroundDuringDragKeepsSamePlayerAndLateReleaseCannotUndoPause')
         Timeline = @('VideoTimelineInstrumentedTest', 'PlaybackResumeInstrumentedTest', 'MotionPhotoInstrumentedTest')
@@ -22,7 +23,23 @@ function Get-GalleryTestPlan {
         Catalog = @('AutomaticHiddenAlbumsInstrumentedTest', 'HiddenAlbumDialogInstrumentedTest', 'CatalogMutationStateInstrumentedTest', 'MediaActionsInstrumentedTest', 'VirtualAlbumsInstrumentedTest', 'AlbumCoverInstrumentedTest', 'AlbumMutationInstrumentedTest', 'GalleryDatabaseInstrumentedTest', 'GalleryMigrationInstrumentedTest', 'GalleryUpgradeInstrumentedTest', 'VideoThumbnailFrameInstrumentedTest', 'OptimizationInstrumentedTest', 'EssentialAlbumOrderingInstrumentedTest')
         Appearance = @('GalleryBrowseBarInstrumentedTest', 'ActionClickFeedbackInstrumentedTest', 'ActivityLoadingFeedbackInstrumentedTest', 'DialogActionAlignmentInstrumentedTest', 'SettingsOverviewInstrumentedTest', 'ThemeCustomizationInstrumentedTest', 'DetailHudInstrumentedTest', 'DetailMetadataInstrumentedTest', 'MainActivitySmokeTest', 'AlbumMediaHeaderInstrumentedTest#albumTitleAndSearchShareTheSameToolbar', 'AlbumMediaHeaderInstrumentedTest#sortAndNewFolderOpenAsRightSidePanels', 'HiddenAlbumDialogInstrumentedTest')
     }
+    # Small entry checks for daily changes. The complete feature groups above
+    # remain available for an explicit investigation (-Extended) and release.
+    if ($Focused) {
+        $groups.Viewer = @('AlbumViewerOrderInstrumentedTest', 'DetailHudInstrumentedTest', 'DetailShuffleRotationInstrumentedTest')
+        $groups.Playback = @('DetailPlaybackInstrumentedTest')
+        $groups.Cinema = @('CinemaModeInstrumentedTest#cinemaButtonChangesModeWithoutReplacingPlayer', 'CinemaModeInstrumentedTest#albumCinemaPreferenceOpensVideoInCinemaMode')
+        $groups.Timeline = @('VideoTimelineInstrumentedTest#playPauseOverridesFingerStillOnTimelineWithoutRestartingOnRelease', 'VideoTimelineInstrumentedTest#dragSeeksBeforeFingerIsReleasedAndRestoresPlaybackState')
+        $groups.Ocr = @('ImageTextRecognitionInstrumentedTest#recognizesTextFromPhotoWithoutChangingSource', 'ImageTextRecognitionInstrumentedTest#viewerDetectsTextAutomaticallyAndCopiesItFromTheIcon')
+        $groups.ImageEditing = @('ImageEditorInstrumentedTest#editButtonOffersFocusedCropRotateAndCustomEditor', 'ImageEditorInstrumentedTest#cropRotateTextAndFilterSaveCopyWithoutChangingOriginal')
+        $groups.VideoEditing = @('VideoEditInstrumentedTest#editorDisplaysVisibleTrimActions', 'VideoEditInstrumentedTest#trimmingCreatesPlayableCopyAndPreservesSourceTracks')
+        $groups.Editing = $groups.ImageEditing + $groups.VideoEditing
+        $groups.Albums = @('OrganizerInstrumentedTest#sourceSelectionEntersTheWheelWithAFixedTrashSlot', 'OrganizerInstrumentedTest#destinationIsCapturedBeforeAnAlbumIsRemovedOrReplaced', 'AlbumSelectionInstrumentedTest', 'MediaActionsInstrumentedTest')
+        $groups.Catalog = @('GalleryDatabaseInstrumentedTest#albumSummaryUsesNewestCoverAndAggregatesMetadata', 'GalleryDatabaseInstrumentedTest#replacingOneScopeDoesNotEraseTheOtherScope', 'MediaActionsInstrumentedTest')
+        $groups.Appearance = @('GalleryBrowseBarInstrumentedTest#settingsOpenedFromAlbumReturnsWithTheNewThemeAndSameItems', 'ActionClickFeedbackInstrumentedTest')
+    }
     if (!$Area.Count -or ($Area -contains 'All' -and $Area.Count -ne 1)) { throw 'All não pode ser combinado com outras áreas.' }
+    if ($Area -contains 'All' -and $Test.Count) { throw 'All já contém todos os testes; não combine com -Test.' }
     $directory = Join-Path $Root 'app/src/androidTest/kotlin/com/galeria/android'
     $inventory = @{}
     foreach ($file in Get-ChildItem -LiteralPath $directory -Filter '*.kt') {
@@ -36,6 +53,12 @@ function Get-GalleryTestPlan {
         foreach ($name in $Area) {
             if (!$groups.Contains($name)) { throw "Área desconhecida: $name" }
             $selected += $groups[$name]
+        }
+        if ($IncludeEssential) { $selected += $groups.Essential }
+        foreach ($entry in $Test) {
+            $name = $entry -replace '^com\.galeria\.android\.', ''
+            if ($name -notmatch '^[A-Za-z][A-Za-z0-9_]*(#[A-Za-z][A-Za-z0-9_]*)?$') { throw "Classe/método inválido: $entry" }
+            $selected += $name
         }
         # A whole class subsumes any explicitly selected method from that class.
         $selected = @($selected | Sort-Object -Unique | Where-Object { !($_ -match '#' -and $selected -contains ($_ -split '#')[0]) })
@@ -51,6 +74,28 @@ function Get-GalleryTestPlan {
     }
     if ($expected -le 0) { throw 'Nenhum teste selecionado.' }
     return [pscustomobject]@{ Area = $Area; Classes = @($selected | ForEach-Object { "com.galeria.android.$_" }); Expected = $expected }
+}
+
+function Get-GalleryValidationPlan {
+    param([string]$Root, [string[]]$Area = @('Essential'), [string[]]$Test = @(),
+        [switch]$UnitOnly, [switch]$Delivery, [switch]$Extended)
+    if ($Delivery) {
+        if ($UnitOnly -or $Extended -or $Test.Count -or ($Area -join ',') -notin @('Essential', 'All')) {
+            throw 'Release exige todas as áreas e emulador; não combine -Delivery com seleção parcial.'
+        }
+        $Area = @('All')
+    } elseif ($Area -contains 'All' -and !$Extended) {
+        throw 'A suíte completa exige -Delivery (release) ou -Extended -Area All (investigação).'
+    }
+    if ($UnitOnly -and ($Extended -or $Test.Count -or ($Area -join ',') -ne 'Essential')) {
+        throw '-UnitOnly é uma checagem intermediária sem seleção de interface.'
+    }
+    if ($Extended -and ($Area -join ',') -eq 'Essential' -and !$Test.Count) {
+        throw 'Informe a área sob suspeita com -Extended -Area ou use -Test.'
+    }
+    $mode = if ($Delivery) { 'delivery' } elseif ($UnitOnly) { 'unit' } elseif ($Extended) { 'extended' } else { 'daily' }
+    $plan = Get-GalleryTestPlan $Root $Area -Test $Test -Focused:(!$Delivery -and !$Extended) -IncludeEssential:(!$Delivery -and !$Extended)
+    return [pscustomobject]@{ Mode = $mode; Area = $Area; Classes = $plan.Classes; Expected = $plan.Expected }
 }
 
 function ConvertFrom-GalleryInstrumentation {

@@ -43,7 +43,7 @@ class DetailMediaQueueController(context: Context) {
         val request = ++generation
         executor.execute {
             val loaded = MediaStoreRepository.loadMediaForAlbum(appContext, albumKey, includeHiddenFilesystem)
-            val ordered = applyCustomOrder(loaded, albumKey)
+            val ordered = applyAlbumOrder(loaded, albumKey)
             val available = if (presentationMode) ordered.filter { it.isImage() } else ordered
             if (available.isEmpty()) return@execute
             val arranged = if (shuffleMode) shuffledFromCurrent(available, currentUri, shuffleSeed) else available
@@ -105,18 +105,29 @@ class DetailMediaQueueController(context: Context) {
         executor.shutdownNow()
     }
 
-    private fun applyCustomOrder(items: List<MediaItem>, albumKey: String): List<MediaItem> {
-        val saved = GalleryCatalogStore.migrateLegacyOrder(appContext, albumKey)
-        if (saved.isEmpty()) return items
-        val byUri = items.associateBy { it.uri.toString() }
-        val ordered = ArrayList<MediaItem>()
-        val used = HashSet<String>()
-        for (uri in ViewerStateRules.orderedUris(byUri.keys.toList(), saved)) {
-            byUri[uri]?.let(ordered::add)
-            used.add(uri)
-        }
-        items.filterTo(ordered) { !used.contains(it.uri.toString()) }
-        return ordered
+    private fun applyAlbumOrder(items: List<MediaItem>, albumKey: String): List<MediaItem> {
+        val prefs = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        fun key(option: String) = AlbumCoverRules.optionKey(albumKey, option)
+        val chronological = albumKey == VirtualAlbumRules.RECENT_KEY || albumKey == VirtualAlbumRules.TRASH_KEY
+        val defaultSort = if (chronological) MediaSortRules.SORT_DATE else MediaSortRules.SORT_CUSTOM
+        // Use the grid's preparation rules, including direction and grouping.
+        // A saved manual order must not override an explicit sort selection.
+        return AlbumMediaRules.prepare(
+            items,
+            AlbumMediaPreparationOptions(
+                MediaFilterOptions(
+                    prefs.getBoolean(key("filter_images"), true),
+                    prefs.getBoolean(key("filter_videos"), true),
+                    prefs.getBoolean(key("filter_gifs"), true),
+                    prefs.getBoolean(key("filter_raw"), true),
+                    prefs.getBoolean(key("filter_svg"), true)
+                ),
+                prefs.getString(key("group_mode"), AlbumMediaRules.GROUP_NONE) ?: AlbumMediaRules.GROUP_NONE,
+                prefs.getString(key("sort_mode"), defaultSort) ?: defaultSort,
+                prefs.getBoolean(key("sort_desc"), true)
+            ),
+            GalleryCatalogStore.migrateLegacyOrder(appContext, albumKey)
+        )
     }
 
     private fun shuffledFromCurrent(items: List<MediaItem>, currentUri: Uri, seed: Long): List<MediaItem> {

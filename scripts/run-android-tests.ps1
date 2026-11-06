@@ -21,6 +21,10 @@ if (!(Test-Path -LiteralPath $appApk) -or !(Test-Path -LiteralPath $testApk)) {
     throw 'APKs de teste ausentes. Compile com :app:assembleDebug :app:assembleDebugAndroidTest primeiro.'
 }
 
+if ($Device -eq 'emulator-5554') {
+    & (Join-Path $PSScriptRoot 'start-test-emulator.ps1') -Project Galeria | Out-Host
+}
+
 $booted = (& adb -s $Device shell getprop sys.boot_completed).Trim()
 if ($LASTEXITCODE -ne 0 -or $booted -ne '1') {
     throw "Emulador $Device não está pronto."

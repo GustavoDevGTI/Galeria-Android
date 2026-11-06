@@ -1,10 +1,10 @@
-# Validação por área e preparação de entrega
+# Validação diária, investigação e release
 
-Esta automação não publica releases, não altera permissões do GitHub e não usa chaves de assinatura. Os testes de interface são executados no dispositivo já aberto/conectado; o script não inicia nem apaga o emulador. Prefira o AVD dedicado `Galeria_Codex_Test_36`: os testes usam fixtures próprias e podem modificar permissões/preferências de teste, restaurando-as conforme seus respectivos casos.
+Esta automação não publica releases, não altera permissões do GitHub e não usa chaves de assinatura. Na porta padrão, os testes de interface reutilizam ou iniciam o AVD dedicado por `scripts/start-test-emulator.ps1`, sem snapshots e sem criar cópias. Dispositivos selecionados explicitamente continuam sendo usados como informados. O runner não apaga AVDs nem dados; consulte [a política dos emuladores](EMULADORES-TESTE.md). Prefira o AVD dedicado `Galeria_Codex_Test_36`: os testes usam fixtures próprias e podem modificar permissões/preferências de teste, restaurando-as conforme seus respectivos casos.
 
 Antes de instalar os APKs e iniciar instrumentação, o runner guarda o dump da janela ativa e rejeita uma janela ANR (“não está respondendo”), seja do SystemUI ou de outro app. Isso evita desperdiçar a bateria inteira com entrada interceptada. A verificação é somente leitura; não fecha diálogos nem recupera/limpa o dispositivo automaticamente. Se um snapshot restaurado estiver comprometido, reinicie o AVD dedicado sem carregar esse snapshot e verifique sua saúde antes de repetir. Um ANR que surja depois do início continua sujeito às verificações e bloqueios da suíte, não é ignorado.
 
-## Uso diário — PowerShell 7
+## Verificação do APK otimizado antes da release
 
 ### OCR no APK otimizado
 
@@ -54,63 +54,77 @@ troca de URI entre as coleções Images e Files do MediaStore após o carregamen
 Ela confere o gesto em fundos branco e preto, zoom, indicador de análise, cópia,
 preservação do original e ausência de navegação indevida durante o toque mantido.
 
-Execute na raiz do projeto, com Java 17, SDK Android e `adb` no PATH:
+## Fluxo diário — PowerShell 7
+
+O comando padrão **não executa mais toda a suíte Android**. Em cada mudança do aplicativo, rode a base essencial mais os casos focados no que foi alterado. Mantenha a bateria extensa para uma suspeita concreta na feature ou antes de uma release no GitHub. Finalizar uma mudança local ou fazer um push comum não exige regressão completa.
+
+A base diária mantém todos os testes unitários (250 na versão atual), pois são rápidos e dispensam emulador, os contratos das ferramentas, lint/build debug e estas **quatro integrações**:
+
+| Caso essencial | Proteção |
+| --- | --- |
+| `MainActivitySmokeTest#mainScreenOpensWithSearchAvailable` | Abertura da galeria e pesquisa |
+| `GalleryBrowseBarInstrumentedTest#mainBarHasFourEqualActionsAndOverflowKeepsTheRemainingFeatures` | Navegação principal e menu |
+| `OrganizerInstrumentedTest#pushIsOnlyAPlanUntilSaveAndUndoDoesNotTouchTheFile` | Marcação, desfazer e salvamento de um arquivo real |
+| `DetailPlaybackInstrumentedTest#quickTapsChangeThePlayerAndHoldingOpensTheExistingSelectorWithoutCycling` | Player real e controles de reprodução |
 
 ```powershell
-# Regras de todos os controladores, sem emulador ou APK.
-pwsh -NoProfile -File ./scripts/run-validation.ps1 -UnitOnly
+# Base diária: unitários + lint/build + 4 integrações essenciais.
+./scripts/run-validation.ps1
 
-# Lógica completa + lint/build + somente a interface e integrações de OCR.
-pwsh -NoProfile -File ./scripts/run-validation.ps1 -Area Ocr
+# Base + pacote curto da área afetada.
+./scripts/run-validation.ps1 -Area Albums
+./scripts/run-validation.ps1 -Area Viewer,Playback
 
-# Combine áreas quando uma alteração atravessar mais de um contrato.
-./scripts/run-validation.ps1 -Area Viewer,Ocr
+# Base + o caso exato alterado (classe inteira também é aceita).
+./scripts/run-validation.ps1 -Test 'OrganizerInstrumentedTest#photoPreviewRemainsStraightAndClosesWithoutChangingTheQueue'
 
-# Editor de fotos ou corte de vídeos, sem executar o outro editor.
-./scripts/run-validation.ps1 -Area ImageEditing
-./scripts/run-validation.ps1 -Area VideoEditing
+# Combine pacote curto e verificações adicionais da mudança.
+./scripts/run-validation.ps1 -Area Albums -Test 'OrganizerInstrumentedTest#trashIsRecoverableWhenEnabledAndPermanentOnlyAfterSavingWhenDisabled'
 
-# Diagnóstico bruto continua disponível; falha também bloqueia aprovação antiga.
-./scripts/run-android-tests.ps1 -Class 'com.galeria.android.CinemaModeInstrumentedTest' -Repeat 3
+# Liste o plano e a contagem sem build, instalação ou instrumentação.
+./scripts/run-validation.ps1 -Area Albums -List
+
+# Iteração intermediária somente na lógica, sem emulador (não é a base completa).
+./scripts/run-validation.ps1 -UnitOnly
 ```
 
-O caminho por área executa todos os unitários, pois as regras são rápidas e não precisam do emulador. Só reduz os instrumentados. Gradle reaproveita tarefas atualizadas; logs extensos ficam nos relatórios, enquanto o terminal mostra os resultados e erros relevantes. Não há retry automático para transformar uma falha em aprovação.
+Os pacotes curtos são pontos de partida: acrescente o teste do comportamento efetivamente alterado. As áreas podem ser combinadas; uma classe completa absorve seus métodos individuais e as duplicatas são removidas. `-Test` aceita `Classe`, `Classe#metodo` e o prefixo `com.galeria.android.`. Nomes inválidos ou inexistentes interrompem a execução; a quantidade esperada é calculada a partir dos fontes.
 
-| Área | Interface e integrações selecionadas | Casos na base atual |
-| --- | --- | --- |
-| Viewer | Navegação/zoom/OCR atrasado, aleatório/rotação, HUD e abertura externa | 10 |
-| Playback | Play/pause, memória, retorno, menu e quatro integrações de timeline | 9 |
-| Cinema | Cinema/trilhas/barras, opção do álbum, retorno e duas integrações de timeline | 10 |
-| Timeline | Scrubbing/barra/cache, retorno e Motion Photos | 9 |
-| Ocr | Detecção/cópia/editor e pedido atrasado após troca de mídia | 6 |
-| ImageEditing | Cortar/girar/editor, menu, OCR no editor e Motion Photos | 10 |
-| VideoEditing | Corte de vídeo, ações e preservação das trilhas | 3 |
-| Editing | União de ImageEditing e VideoEditing | 13 |
-| Albums | Pinça, seleção, fast scroll, ordenação, mutações e coleções | 25 |
-| Catalog | Ocultos, catálogo, banco/migração, arquivos, capas e thumbnails | 36 |
-| Appearance | Feedback, submenus, configurações, tema, HUD, metadados, cabeçalho e tela principal | 15 |
-| All | Descoberta de todos os casos de interface, sem filtro por área | 100 |
+| Área | Diário: base + foco | Extenso: somente a área |
+| --- | ---: | ---: |
+| Essential | 4 | 4 |
+| Viewer | 8 | 13 |
+| Playback | 5 | 10 |
+| Cinema | 6 | 10 |
+| Timeline | 6 | 12 |
+| Ocr | 6 | 10 |
+| ImageEditing | 6 | 11 |
+| VideoEditing | 6 | 3 |
+| Editing | 8 | 14 |
+| Albums | 8 | 47 |
+| Catalog | 7 | 47 |
+| Appearance | 7 | 27 |
 
-Os grupos podem se sobrepor. Ao combinar áreas, uma classe inteira substitui seleções de seus métodos, evitando executar o mesmo caso duas vezes. Os totais são calculados dos fontes atuais e conferidos com o resultado instrumentado; não ficam fixos nessa tabela. Para novos testes parametrizados ou outra linguagem/estrutura de fontes, adapte e valide a descoberta antes de usá-la: atualmente ela conta `@Test` em arquivos Kotlin da suíte existente, sem parametrização.
+Contagens atuais, sujeitas a novos testes; `-List` é a referência executável. Todos os unitários continuam rodando nos dois perfis. Os totais diários incluem a base; os extensos incluem apenas a feature investigada e por isso podem ser menores em áreas pequenas.
 
-### Como escolher sem perder cobertura
+## Investigação de bug
 
-- Mudança apenas em uma regra/controlador puro: `-UnitOnly`.
-- Mudança no editor de fotos: `-Area ImageEditing`; no corte de vídeo: `-Area VideoEditing`.
-- Mudança no reconhecimento/preparação de texto, inclusive no editor: acrescente `Ocr`. A seleção ImageEditing cobre o acesso ao OCR pelo editor, não todos os casos de orientação e detecção automática.
-- Mudança em extração/cache de frames: `Timeline`; se modificar também a thumbnail principal/capa, acrescente `Catalog`.
-- Mudança nas Views, tema, alinhamento ou submenus: acrescente `Appearance`. Aparência não é irrelevante; só não precisa acompanhar alterações exclusivamente na lógica de reprodução.
-- Mudança compartilhada entre várias áreas: combine as áreas afetadas. Antes de publicação ou após uma mudança transversal, execute `-Delivery`.
+```powershell
+# Suspeita concreta no OCR: todas as integrações dessa feature.
+./scripts/run-validation.ps1 -Extended -Area Ocr
 
-Três testes instrumentados foram migrados, não eliminados: os dois cálculos de invalidação do catálogo estão em `CatalogFingerprintRulesTest`, e a escolha automática/manual da capa está em `AlbumCoverSelectionTest`. A base passou de 222 unitários + 92 instrumentados para **225 + 89**, mantendo os mesmos 314 casos do app. Banco, SharedPreferences, MediaStore e interface continuam com integração Android. Os testes do estado dirty do catálogo foram mantidos porque verificam também a persistência real, não apenas aritmética.
+# Suspeita transversal: suíte completa explicitamente solicitada.
+./scripts/run-validation.ps1 -Extended -Area All
 
-As correções seguintes de mutações/ocultos acrescentaram dois casos de regras de pasta vazia e três integrações: configuração de exclusão definitiva sem apagar lixo anterior, retorno à lista após excluir o último item e contagem atualizada no painel de ocultos após uma mudança real no MediaStore. A base dessa etapa era **227 unitários + 92 instrumentados**. O teste existente de mover tudo também mantém documento/subpasta na origem para verificar que somente as mídias daquele álbum determinam o redirecionamento. Nenhuma cobertura anterior foi removida para acomodar esses casos.
+# Diagnóstico isolado com APKs já compilados.
+./scripts/run-android-tests.ps1 -Class 'com.galeria.android.DetailHudInstrumentedTest' -ExpectedTests 1
+```
 
-A otimização de 05/10 acrescenta oito integrações, chegando a **227 unitários + 100 instrumentados**. Elas verificam independência de filas/varreduras globais, atualização automática e retorno de foco, geração do MediaStore após reabertura, cache de duração, agendamento único e rejeição de gravação obsoleta. O teste do painel também exige que álbuns entregues posteriormente entrem no submenu já aberto. Veja [a descrição da otimização](OTIMIZACAO-CATALOGO-2026-10-05.md).
+`-Area` sem `-Extended` usa o pacote curto mais a base; com `-Extended`, usa a bateria completa da área. O comando `-Area All` sozinho é recusado para evitar regressão completa acidental. `-Extended` exige a indicação da área ou dos testes sob suspeita. Após uma falha, investigue e repita o foco pertinente; uma nova execução de toda a suíte não é obrigatória para cada correção local.
 
-O teste isolado do gesto da timeline usa uma Activity vazia da variante **debug**, sem abrir o visualizador/player. Essa Activity não é compilada no release. O teste de trilhas usa dois áudios e duas legendas em arquivos privados, verifica a seleção ativa, desativação/reativação da legenda e restauração num novo ExoPlayer. Não depende de inserir/remover mídia no catálogo. Isso verifica seleção real de trilhas, não a qualidade sonora ou todos os codecs de fabricantes.
+Para mudanças somente na documentação não é necessário executar Android. Para mudanças nestes scripts, rode `scripts/test-validation-tools.ps1` e confira os planos com `-List`. Isso testa seleção, deduplicação, recusas, parser e integridade dos recibos sem iniciar o emulador. Não considere contratos sintéticos como testes do aplicativo.
 
-Os testes de OCR no visualizador aguardam o pedido do controlador, incluindo o início automático agendado e o callback final, antes de clicar uma única vez em Copiar. Há uma barreira da fila para o caso de resultados antigos após navegação; ela não executa outro reconhecimento de imagem vazia. O limite de 60 s é um teto para detectar travamento, não uma espera fixa nem um retry. O reconhecimento real, o ícone, o texto copiado e a rejeição de resultados de outras mídias continuam obrigatórios. Os helpers vivem somente em androidTest e não alteram a fila/modelo/controlador do app.
+Gradle reaproveita tarefas atualizadas. Logs completos ficam nos relatórios; o terminal mostra o resumo e os erros relevantes. Não há retry automático. Se o aparelho estiver indisponível, registre o que não rodou. Nenhum teste extenso foi apagado: permanece na investigação e na validação completa de release.
 
 ## Antes de uma publicação autorizada
 
@@ -121,7 +135,7 @@ Finalize código, testes, configuração e versão **antes** de validar:
 ./scripts/assert-delivery-validation.ps1
 ```
 
-`-Delivery` não aceita área parcial nem `-UnitOnly`. Compila debug e APK de testes, executa todos os unitários, lint e todos os instrumentados. Instala os APKs dessa própria execução: não aceita `-SkipInstall` como fonte de aprovação. A checagem final confirma os fontes/configurações/scripts e os hashes dos APKs/relatórios; só então grava `app/build/reports/validation/delivery.json`.
+`-Delivery` seleciona automaticamente todas as áreas, mesmo com o novo padrão diário. Não aceita área parcial, `-Test`, `-Extended` nem `-UnitOnly`. Compila debug e APK de testes, executa todos os unitários, lint e todos os instrumentados. Instala os APKs dessa própria execução: não aceita `-SkipInstall` como fonte de aprovação. A checagem final confirma os fontes/configurações/scripts e os hashes dos APKs/relatórios; só então grava `app/build/reports/validation/delivery.json`.
 
 Depois disso, continue o fluxo de release assinado existente **somente quando solicitado**, verificando assinatura, versão, certificado e integridade do APK. A evidência automatizada é da build **debug**: não significa que um APK release foi compilado, instalado, testado ou aprovado. Codecs, dual áudio/legendas reais, Motion Photos de fabricantes e comportamento de aparelhos continuam exigindo confirmação manual complementar.
 
@@ -146,7 +160,7 @@ A impressão digital inclui `app/src`, schemas, bibliotecas locais, fontes de be
 
 Cada execução guarda seus logs, XMLs e `result.json` em `app/build/reports/validation/<data-id>/`. Falhas mantêm `failure.json`, sem apagar relatórios anteriores. `delivery-attempt.json` distingue aprovação, execução pendente e falha; `last-failure.json` bloqueia uma aprovação anterior. Esses arquivos são outputs locais ignorados pelo Git, sem credenciais.
 
-O workflow Android CI mantém Java 17, cache Gradle, pushes/PRs em `main` e artefatos temporários por sete dias; permite disparo manual. Executa também os contratos das ferramentas, confere relatórios unitários não vazios/sem skips e compila/publica como artefato o APK de testes. **O CI não roda o emulador nesta configuração** e, portanto, não produz aprovação de entrega. A suíte completa local continua obrigatória no fluxo adotado.
+O workflow Android CI mantém Java 17, cache Gradle, pushes/PRs em `main` e artefatos temporários por sete dias; permite disparo manual. Executa também os contratos das ferramentas, confere relatórios unitários não vazios/sem skips e compila/publica como artefato o APK de testes. **O CI não roda o emulador nesta configuração** e, portanto, não produz aprovação de entrega. A suíte completa local é obrigatória antes de uma release no GitHub; no desenvolvimento, use base diária mais foco.
 
 A seleção por classe/método usa a CLI do [AndroidJUnitRunner](https://developer.android.com/studio/test/command-line). O parser diferencia sucesso, erro, ignore e assumption pelos códigos do [runner AndroidX](https://github.com/android/android-test/blob/main/runner/android_junit_runner/java/androidx/test/internal/runner/listener/InstrumentationResultPrinter.java). O disparo manual segue a [sintaxe oficial de workflows GitHub](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
 
