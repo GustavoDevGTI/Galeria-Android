@@ -148,6 +148,47 @@ class OrganizerInstrumentedTest {
         }
     }
 
+    @Test fun mediaDropsOnDrawerAlbumWithoutPuttingItOnWheelAndSavesOnlyOnRequest() {
+        organized().use { scenario ->
+            val destination = targets[7]
+            val tag = "organizer_drawer_$destination"
+            lateinit var original: Uri
+            scenario.onActivity { original = it.controller.media.queue.first().uri }
+            gesture(scenario, "organizer_current", "organizer_drawer_handle", 330)
+            scenario.onActivity { assertEquals(0, it.controller.unsavedCount) }
+            gesture(scenario, "organizer_current", tag, 330)
+            scenario.onActivity {
+                val root = it.window.decorView
+                assertEquals(1, it.controller.unsavedCount)
+                assertEquals(3, it.controller.media.queue.size)
+                assertTrue(it.controller.destinations.none { a -> a.key == destination })
+                assertEquals(source, path(original))
+                assertEquals("1", root.findViewWithTag<android.widget.TextView>("organizer_drawer_count_$destination").text.toString())
+                assertNotNull(root.findViewWithTag<View>(tag).background)
+                it.controller.undo()
+                assertEquals(0, it.controller.sentCount(destination))
+                assertNull(root.findViewWithTag<View>(tag).background)
+                it.controller.reserve()
+                root.findViewWithTag<View>("organizer_reserve_button").performClick()
+            }
+            val reservedTag = "organizer_reserved_$original"
+            waitUntil {
+                var ready = false
+                scenario.onActivity { ready = it.window.decorView.findViewWithTag<View>(reservedTag)?.let { v -> v.isShown && v.width > 0 } == true }
+                ready
+            }
+            gesture(scenario, reservedTag, tag, 380)
+            scenario.onActivity {
+                assertTrue(it.controller.media.reserved.isEmpty())
+                assertEquals(1, it.controller.sentCount(destination))
+                assertEquals(source, path(original))
+                it.controller.save()
+            }
+            waitUntil { path(original) == destination }; waitIdle(scenario)
+            scenario.onActivity { assertEquals(1, it.controller.sentCount(destination)); assertFalse(it.controller.hasChanges) }
+        }
+    }
+
     @Test fun photoPreviewRemainsStraightAndClosesWithoutChangingTheQueue() {
         organized().use { scenario ->
             gesture(scenario, "organizer_current", "organizer_current", 80)

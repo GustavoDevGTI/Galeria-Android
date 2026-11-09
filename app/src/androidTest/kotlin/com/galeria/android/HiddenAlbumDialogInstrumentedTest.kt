@@ -6,6 +6,7 @@ import android.content.Context
 import android.provider.MediaStore
 import android.view.Gravity
 import android.widget.TextView
+import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
@@ -227,6 +228,36 @@ class HiddenAlbumDialogInstrumentedTest {
                     }
                     waitUntilDisplayedContaining(revealName)
                     assertTrue(prefs.getStringSet(PREF_HIDDEN_KEYS, emptySet()).orEmpty().contains(revealKey))
+
+                    val eye = onView(allOf(withContentDescription(R.string.main_hide_revealed_album),
+                        withParent(withParent(hasDescendant(withText(containsString(revealName)))))))
+                    awaitAndroidInputReady()
+                    // The new tile can be visible while the RecyclerView is still moving it.
+                    waitForView {
+                        eye.check { view, missing ->
+                            if (missing != null) throw missing
+                            val target = requireNotNull(view)
+                            val grid = generateSequence(target.parent) { it.parent }
+                                .filterIsInstance<RecyclerView>().first()
+                            assertTrue("A grade deve terminar a atualização antes do toque.",
+                                target.hasWindowFocus() && !grid.isAnimating && !grid.isLayoutRequested &&
+                                    !grid.hasPendingAdapterUpdates())
+                        }
+                    }
+                    eye.perform(click())
+                    assertFalse("O olho da grade deve cancelar a revelação.", revealKey in TemporaryAlbumVisibility.activeKeys())
+                    waitForView { onView(withText(containsString(revealName))).check(doesNotExist()) }
+                    assertTrue(revealKey in prefs.getStringSet(PREF_HIDDEN_KEYS, emptySet()).orEmpty())
+
+                    onView(withContentDescription(R.string.main_folder_visibility)).perform(click())
+                    waitUntilDialogDisplayedContaining(revealName)
+                    onView(allOf(withContentDescription("Exibir por 30 minutos"),
+                        withParent(hasDescendant(withText(containsString(revealName))))))
+                        .inRoot(isDialog()).perform(clickClickableAncestor())
+                    waitForView {
+                        onView(withContentDescription(R.string.main_folder_visibility)).check(matches(isDisplayed()))
+                    }
+                    waitUntilDisplayedContaining(revealName)
 
                     onView(withContentDescription(R.string.main_folder_visibility)).perform(click())
                     waitUntilDialogDisplayedContaining(revealName)

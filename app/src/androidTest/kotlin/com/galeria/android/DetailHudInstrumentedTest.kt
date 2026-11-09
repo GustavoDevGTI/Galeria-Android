@@ -58,8 +58,10 @@ class DetailHudInstrumentedTest {
                 onView(withContentDescription(R.string.action_edit)).check(matches(isDisplayed())).perform(click())
                 waitForView { onView(withContentDescription(R.string.image_edit_custom)).check(matches(isDisplayed())) }
                 onView(withContentDescription(R.string.image_edit_custom)).perform(clickClickableAncestor())
-                waitForDisplayed("Editar imagem")
-                awaitResumedWindow(ImageEditActivity::class.java)
+                val editorRoot = awaitResumedWindow(ImageEditActivity::class.java)
+                onView(withText("Editar imagem")).inRoot(androidx.test.espresso.matcher.RootMatchers.withDecorView(
+                    org.hamcrest.Matchers.sameInstance(editorRoot)
+                )).check(matches(isDisplayed()))
                 pressBack()
                 awaitResumedWindow(DetailActivity::class.java)
                 waitForDisplayed(name)
@@ -103,17 +105,18 @@ class DetailHudInstrumentedTest {
     /** A visible label can precede completion of the Activity window transition.
      * Synchronize the real resumed/focused window before Back and before Espresso
      * chooses its root; do not repeat the navigation event or drop HUD assertions. */
-    private fun awaitResumedWindow(type: Class<out android.app.Activity>) {
+    private fun awaitResumedWindow(type: Class<out android.app.Activity>): android.view.View {
         val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
         val deadline = android.os.SystemClock.uptimeMillis() + 10_000L
         do {
-            var ready = false
+            var root: android.view.View? = null
             instrumentation.runOnMainSync {
-                ready = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                root = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
                     .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
-                    .any { type.isInstance(it) && it.window.decorView.isShown && it.window.decorView.hasWindowFocus() }
+                    .asSequence().filter(type::isInstance).map { it.window.decorView }
+                    .firstOrNull { it.isShown && it.hasWindowFocus() && it.isLaidOut && !it.isLayoutRequested }
             }
-            if (ready) return
+            root?.let { return it }
             android.os.SystemClock.sleep(50)
         } while (android.os.SystemClock.uptimeMillis() < deadline)
         throw AssertionError("Janela retomada e com foco não apareceu: ${type.simpleName}")

@@ -180,7 +180,7 @@
     <string name="main_hidden_dialog_help">Marque as pastas que devem aparecer sempre e confirme em OK. O olho exibe uma pasta oculta por 30 minutos, sem mudar sua configuração.</string>
     <string name="main_hidden_refresh_failed">Não foi possível atualizar as pastas ocultas.</string>
     <string name="main_hidden_refresh_instruction">Use o botão Carregar ocultos para procurar novas pastas.</string>
-    <string name="sort_name">Nome</string>
+    <string name="sort_name">Nome alfabético</string>
     <string name="sort_path">Caminho</string>
     <string name="sort_size">Tamanho</string>
     <string name="sort_modified_date">Data de modificação</string>
@@ -216,7 +216,6 @@
     <string name="album_group_month">Data da foto (por mês)</string>
     <string name="album_sort_custom">Ordem personalizada</string>
     <string name="album_sort_added_date">Data de adição/download</string>
-    <string name="album_sort_name">Nome alfabético</string>
     <string name="album_sort_duration">Duração</string>
     <string name="album_sort_type">Tipo e formato</string>
     <string name="album_sort_group_hint">A ordenação funciona junto com o agrupamento atual.</string>
@@ -463,7 +462,7 @@
     <string-array name="album_sort_labels">
         <item>@string/album_sort_custom</item>
         <item>@string/album_sort_added_date</item>
-        <item>@string/album_sort_name</item>
+        <item>@string/sort_name</item>
         <item>@string/sort_size</item>
         <item>@string/album_sort_duration</item>
         <item>@string/album_sort_type</item>

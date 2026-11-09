@@ -162,8 +162,17 @@ internal class OrganizerController(context: Context,
     }
 
     fun send(item: MediaItem, fromReserve: Boolean, index: Int): Boolean {
-        if (saving) return false
         val album = destinations.getOrNull(index)?.takeUnless(::isEmpty) ?: return false
+        return stageSend(item, fromReserve, album)
+    }
+
+    fun sendToAlbum(item: MediaItem, fromReserve: Boolean, albumKey: String): Boolean {
+        val album = albums.firstOrNull { it.key == albumKey && it.key != source?.key } ?: return false
+        return stageSend(item, fromReserve, album)
+    }
+
+    private fun stageSend(item: MediaItem, fromReserve: Boolean, album: AlbumItem): Boolean {
+        if (saving) return false
         val ticket = media.take(item, fromReserve) ?: return false
         history.add(Action(ticket, album)); notifyChange()
         return true

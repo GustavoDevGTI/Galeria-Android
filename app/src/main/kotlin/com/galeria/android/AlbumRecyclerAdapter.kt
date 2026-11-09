@@ -28,6 +28,7 @@ class AlbumRecyclerAdapter(
     interface Callbacks {
         fun onAlbumClick(position: Int)
         fun onAlbumLongClick(view: View, position: Int): Boolean
+        fun onHideTemporarilyVisibleAlbum(albumKey: String) = Unit
     }
 
     private val allAlbums = ArrayList<AlbumItem>()
@@ -241,7 +242,8 @@ class AlbumRecyclerAdapter(
             setColorFilter(Color.WHITE)
             background = Ui.rounded(0x99000000.toInt(), 8, context)
             setPadding(Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4))
-            contentDescription = context.getString(R.string.main_reveal_hidden_temporarily)
+            contentDescription = context.getString(R.string.main_hide_revealed_album)
+            isFocusable = true
         }
         thumb.addView(temporaryEye, FrameLayout.LayoutParams(Ui.dp(context, 28), Ui.dp(context, 28), Gravity.BOTTOM or Gravity.END).apply {
             marginEnd = Ui.dp(context, 6)
@@ -269,6 +271,9 @@ class AlbumRecyclerAdapter(
         bindSelection(holder, album)
         holder.pin.visibility = if (album.key in pinnedKeys) View.VISIBLE else View.GONE
         holder.temporaryEye.visibility = if (album.key in temporarilyVisibleKeys) View.VISIBLE else View.GONE
+        holder.temporaryEye.setOnClickListener {
+            if (album.key in temporarilyVisibleKeys) callbacks.onHideTemporarilyVisibleAlbum(album.key)
+        }
         holder.name.text = context.getString(R.string.main_album_count_label, album.name, album.count)
         holder.name.setTextColor(Ui.text(context))
         bindCover(holder, album)

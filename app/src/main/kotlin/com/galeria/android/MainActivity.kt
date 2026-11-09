@@ -340,6 +340,12 @@ class MainActivity : ComponentActivity() {
                 startActivity(intent)
             }
 
+            override fun onHideTemporarilyVisibleAlbum(albumKey: String) {
+                TemporaryAlbumVisibility.hide(albumKey)
+                scheduleRevealExpiry()
+                loadAlbums()
+            }
+
             override fun onAlbumLongClick(view: View, position: Int): Boolean {
                 if (position !in 0 until adapter.getCount()) return true
                 if (VirtualAlbumRules.isVirtual(adapter.getItem(position).key)) return true

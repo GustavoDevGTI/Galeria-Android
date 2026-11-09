@@ -91,6 +91,38 @@ class ViewerCinemaControllerTest {
         f.controller.refreshBars(); assertEquals(before + "bars:true", f.events)
         assertEquals(7, f.controller.previousOrientation); assertTrue(f.jobs.isEmpty())
     }
+
+    @Test fun automaticCinemaFollowsRotationWithoutLockingTheDisplayOrChangingManualMode() {
+        val f = Fixture()
+        f.controller.open(true)
+        f.controller.followRotation(true, true, mediaTransitionBusy = false)
+        assertTrue(f.controller.enabled)
+        assertTrue(f.controller.automatic)
+        assertEquals(7, f.orientation)
+        assertNull(f.controller.previousOrientation)
+        f.controller.followRotation(true, false, mediaTransitionBusy = false)
+        assertFalse(f.controller.enabled)
+        assertEquals(7, f.orientation)
+        f.controller.followRotation(false, true, mediaTransitionBusy = false)
+        assertFalse(f.controller.enabled)
+        f.controller.open(true, albumEnabled = true, automaticLandscape = true)
+        f.controller.followRotation(true, false, mediaTransitionBusy = false)
+        assertTrue(f.controller.enabled)
+        assertFalse(f.controller.automatic)
+        assertEquals(6, f.orientation)
+    }
+
+    @Test fun recreatedAutomaticCinemaDoesNotBecomeALockedManualMode() {
+        val f = Fixture()
+        f.controller.restore(true, null, automatic = true)
+        f.controller.open(true, automaticLandscape = true)
+        assertTrue(f.controller.automatic)
+        assertEquals(7, f.orientation)
+        f.controller.restore(true, null, automatic = true)
+        f.controller.open(true, automaticLandscape = false)
+        assertFalse(f.controller.enabled)
+        assertEquals(7, f.orientation)
+    }
     @Test fun modeEffectCannotReenterToggleBeforeReservation() {
         val f = Fixture(); f.onMode = { assertFalse(f.toggle()) }
         assertTrue(f.toggle()); assertEquals(2, f.jobs.size)

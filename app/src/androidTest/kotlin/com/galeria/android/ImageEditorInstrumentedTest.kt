@@ -188,14 +188,22 @@ class ImageEditorInstrumentedTest {
                 // not injected tap timing. Under emulator load Espresso can turn
                 // a short tap into a tooltip long press (MotionEvents: Overslept).
                 onView(withContentDescription("Girar")).inRoot(isDialog()).perform(clickClickableAncestor())
-                val deadline = System.currentTimeMillis() + 10_000L
-                var rotated = false
-                var rotationState = "Aguardando orientação e imagem"
-                while (!rotated && System.currentTimeMillis() < deadline) {
-                    val orientation = context.contentResolver.openInputStream(source)?.use {
+                // Writing the file and loading the new drawable are separate async steps.
+                val writeDeadline = android.os.SystemClock.uptimeMillis() + 20_000L
+                var orientation: Int?
+                do {
+                    orientation = context.contentResolver.openInputStream(source)?.use {
                         ExifInterface(it).rotationDegrees
                     }
-                    var displayed = false
+                    if (orientation == 90) break
+                    Thread.sleep(100L)
+                } while (android.os.SystemClock.uptimeMillis() < writeDeadline)
+                assertTrue("Girar deve gravar a nova orientação EXIF. EXIF=$orientation", orientation == 90)
+
+                val renderDeadline = android.os.SystemClock.uptimeMillis() + 10_000L
+                var displayed = false
+                var rotationState = "Aguardando imagem"
+                while (!displayed && android.os.SystemClock.uptimeMillis() < renderDeadline) {
                     scenario.onActivity { activity ->
                         val images = descendants(activity.window.decorView).filterIsInstance<ImageView>().filter {
                             it.tag is android.net.Uri && MediaIdentityRules.sameUri(it.tag.toString(), source.toString())
@@ -208,10 +216,9 @@ class ImageEditorInstrumentedTest {
                                 height > 0 && kotlin.math.abs(width.toFloat() / height - 0.75f) < 0.02f
                         }
                     }
-                    rotated = orientation == 90 && displayed
-                    if (!rotated) Thread.sleep(100L)
+                    if (!displayed) Thread.sleep(100L)
                 }
-                assertTrue("Girar deve atualizar a orientação EXIF e a imagem exibida, sem reutilizar o cache antigo. $rotationState", rotated)
+                assertTrue("Girar deve atualizar a orientação EXIF e a imagem exibida, sem reutilizar o cache antigo. $rotationState", displayed)
             }
         } finally {
             context.contentResolver.delete(source, null, null)

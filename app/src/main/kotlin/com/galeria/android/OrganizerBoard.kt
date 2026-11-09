@@ -488,7 +488,9 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
                             rotationX = (-dy / diameter * 12f).coerceIn(-7f, 7f)
                             scaleX = 1.025f; scaleY = 1.025f; elevation = dp(12).toFloat()
                         }
-                        setHover(targetAt(x, y))
+                        val drawerTarget = drawer.targetAt(x - drawer.left, y - drawer.top)
+                        drawer.hover(drawerTarget?.albumKey)
+                        setHover(if (drawerTarget == null) targetAt(x, y) else -1)
                     }
                     !scrolling
                 }
@@ -499,23 +501,28 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
                     val dx = x - downX; val dy = y - downY
                     val velocity = hypot(dx, dy) / max(1L, event.eventTime - start)
                     val inReserve = !fromReserve && x >= reserve.left && x <= reserve.right && y >= reserve.top && y <= reserve.bottom
-                    val target = if (fromReserve) targetAt(x, y).takeIf { it >= 0 }
+                    val overDrawer = x >= drawer.left && x < drawer.right && y >= drawer.top && y < drawer.bottom
+                    val drawerTarget = if (overDrawer) drawer.targetAt(x - drawer.left, y - drawer.top) else null
+                    val target = if (overDrawer) null else if (fromReserve) targetAt(x, y).takeIf { it >= 0 }
                         else OrganizerRules.releasedTarget(dx, dy, diameter, velocity / resources.displayMetrics.density, controller.destinations.size)
                     if (dragging && inReserve) {
                         val fly = ghost ?: ghost(view.drawable, view.width, view.height, x, y)
                         controller.reserve(); flyTo(fly, reserve.x + reserve.width / 2, reserve.y + reserve.height / 2)
+                    } else if (dragging && drawerTarget != null && controller.sendToAlbum(item, fromReserve, drawerTarget.albumKey)) {
+                        ghost?.let { flyTo(it, drawer.left + drawerTarget.centerX, drawer.top + drawerTarget.centerY) }
+                        performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                     } else if (dragging && target != null) launch(item, fromReserve, target, ghost)
                     else {
                         ghost?.let { view.alpha = 0f; returnToOrigin(it, view, originX, originY) }
                         if (!dragging && !scrolling) view.performClick()
                     }
-                    ghost = null; dragging = false; setHover(-1); true
+                    ghost = null; dragging = false; setHover(-1); drawer.hover(null); true
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     this@OrganizerBoard.parent?.requestDisallowInterceptTouchEvent(false)
                     view.parent?.requestDisallowInterceptTouchEvent(false)
                     ghost?.let { returnToOrigin(it, view, originX, originY) } ?: run { view.alpha = 1f }
-                    ghost = null; dragging = false; setHover(-1); true
+                    ghost = null; dragging = false; setHover(-1); drawer.hover(null); true
                 }
                 else -> true
             }

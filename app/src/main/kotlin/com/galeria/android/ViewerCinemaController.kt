@@ -21,10 +21,13 @@ internal class ViewerCinemaController(
     }
     var enabled = false
         private set
+    var automatic = false
+        private set
     var previousOrientation: Int? = null
         private set
     val transitioning: Boolean get() = transition != null
     private var restoredMode: Boolean? = null
+    private var restoredAutomatic = false
     private var closed = false
     private class Transition {
         var orientation: Runnable? = null
@@ -32,24 +35,39 @@ internal class ViewerCinemaController(
     }
     private var transition: Transition? = null
 
-    fun restore(mode: Boolean?, orientation: Int?) {
+    fun restore(mode: Boolean?, orientation: Int?, automatic: Boolean = false) {
         if (closed) return
         restoredMode = mode
+        restoredAutomatic = automatic
         previousOrientation = orientation
     }
 
-    fun open(isVideo: Boolean, albumEnabled: Boolean = false) {
+    fun open(isVideo: Boolean, albumEnabled: Boolean = false, automaticLandscape: Boolean = false) {
         if (closed) return
         settle()
         val restored = restoredMode
         restoredMode = null
-        enabled = isVideo && (restored ?: albumEnabled)
+        val manual = isVideo && (if (restoredAutomatic) albumEnabled else restored ?: albumEnabled)
+        automatic = isVideo && !manual && automaticLandscape && (restored == null || restoredAutomatic)
+        restoredAutomatic = false
+        enabled = manual || automatic
         applyOrientation()
+    }
+
+    /** Follow the display while rotating automatically; only manual cinema locks landscape. */
+    fun followRotation(isVideo: Boolean, automaticLandscape: Boolean, mediaTransitionBusy: Boolean) {
+        if (closed || transitioning || mediaTransitionBusy || (enabled && !automatic)) return
+        val next = isVideo && automaticLandscape
+        if (enabled == next) return
+        automatic = next
+        enabled = next
+        effects.modeChanged(enabled)
     }
 
     fun toggle(isVideo: Boolean, mediaTransitionBusy: Boolean): Boolean {
         if (closed || !isVideo || mediaTransitionBusy || transitioning) return false
         enabled = !enabled
+        automatic = false
         val current = Transition()
         transition = current
         effects.modeChanged(enabled)
@@ -90,7 +108,7 @@ internal class ViewerCinemaController(
     }
 
     private fun applyOrientation() {
-        if (enabled) {
+        if (enabled && !automatic) {
             if (previousOrientation == null) previousOrientation = requestedOrientation()
             effects.orientationChanged(landscapeOrientation)
         } else {

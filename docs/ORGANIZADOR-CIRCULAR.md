@@ -1,6 +1,6 @@
 # Organizador circular
 
-Na versão **0.9.3** (`versionCode` 9003), Organizar abre a escolha do álbum de origem e entra diretamente na roda. Filtrar continua no menu de três pontos.
+Na versão **0.9.4** (`versionCode` 9004), Organizar abre a escolha do álbum de origem e entra diretamente na roda. Filtrar continua no menu de três pontos.
 
 ## Roda e gaveta
 
@@ -12,7 +12,7 @@ Segure e arraste um álbum da gaveta para uma posição da roda. Sobre uma posi�
 
 ## Marcar e salvar
 
-Empurrar ou arrastar uma mídia registra o destino e mostra imediatamente a próxima, sem alterar o arquivo. Cada marcação captura o álbum escolhido: retirar ou substituir um álbum da roda não muda as marcações anteriores. Os contadores incluem as mídias direcionadas na sessão.
+Empurrar ou arrastar uma mídia registra o destino e mostra imediatamente a próxima, sem alterar o arquivo. Cada marcação captura o álbum escolhido: retirar ou substituir um álbum da roda não muda as marcações anteriores. Também dá para arrastar uma mídia do centro ou da reserva direto para um álbum da gaveta. A linha do álbum ganha destaque e mostra quantas mídias foram direcionadas para ele na sessão.
 
 **Desfazer**, acima da roda, cancela a última marcação não salva. **Salvar**, na barra superior, aplica movimentos e exclusões. Ao sair com alterações pendentes, aparecem três opções separadas: **Salvar e sair**, **Sair sem salvar** e **Continuar**. Descartar mantém os arquivos na origem.
 
@@ -33,4 +33,4 @@ Tocar na mídia central amplia a foto **reta**, respeitando a proporção, com o
 - `OrganizerVideoPreview` limita os controles e usa textura transparente sobre o fundo da prévia.
 - `OrganizerActivity` cuida da origem, permissões, criação de pasta e confirmação de saída.
 
-Os testes usam arquivos reais para verificar marcações sem escrita, salvamento, falha parcial, tentativa seletiva, descarte, lixeira, migração, arrasto, rolagem, rotação, foto e vídeo. A entrega completa usa `scripts/run-validation.ps1 -Delivery`; o resultado e o APK estão nas [notas da 0.9.3](RELEASE-0.9.3.md).
+Os testes usam arquivos reais para verificar marcações sem escrita, salvamento, falha parcial, tentativa seletiva, descarte, lixeira, migração, arrasto, rolagem, rotação, foto e vídeo. A entrega completa usa `scripts/run-validation.ps1 -Delivery`; o resultado e o APK estão nas [notas da 0.9.4](RELEASE-0.9.4.md).

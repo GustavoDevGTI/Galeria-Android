@@ -319,13 +319,16 @@ class DetailActivity : ComponentActivity() {
         })
         Ui.applyOpenTransition(this)
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
+        val normalOrientation = viewerRotationPreference()
+        if (normalOrientation != ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) requestedOrientation = normalOrientation
         cinemaPreferences = CinemaModePreferences(prefs)
         videoTrackController = VideoTrackController(cinemaPreferences)
         sourceAlbumKey = intent.getStringExtra("album_key")
         pendingDeletePermanent = savedInstanceState?.getBoolean("pending_delete_permanent") ?: false
         cinemaController.restore(
             savedInstanceState?.takeIf { it.containsKey(STATE_CINEMA_MODE) }?.getBoolean(STATE_CINEMA_MODE),
-            savedInstanceState?.takeIf { it.containsKey(STATE_ORIENTATION_BEFORE_CINEMA) }?.getInt(STATE_ORIENTATION_BEFORE_CINEMA)
+            savedInstanceState?.takeIf { it.containsKey(STATE_ORIENTATION_BEFORE_CINEMA) }?.getInt(STATE_ORIENTATION_BEFORE_CINEMA),
+            savedInstanceState?.getBoolean(STATE_AUTOMATIC_CINEMA) ?: false
         )
         playbackController = DetailPlaybackController(
             context = applicationContext,
@@ -1520,7 +1523,8 @@ class DetailActivity : ComponentActivity() {
     private fun createCurrentPage(): FrameLayout {
         val page = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         val item = currentItem()
-        cinemaController.open(item.isVideo(), item.isVideo() && cinemaPreferences.isEnabled(cinemaAlbumKey(item)))
+        cinemaController.open(item.isVideo(), item.isVideo() && cinemaPreferences.isEnabled(cinemaAlbumKey(item)),
+            item.isVideo() && automaticCinemaLandscape(resources.configuration))
         title.text = item.name
         updateFavoriteButton()
         if (item.isVideo()) {
@@ -1801,6 +1805,23 @@ class DetailActivity : ComponentActivity() {
         cinemaController.toggle(currentItem().isVideo(), switchingItem)
     }
 
+    private fun viewerRotationPreference(): Int = when (prefs.getString("rotation_criterion", null)) {
+        getString(R.string.settings_value_sensor) -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        getString(R.string.settings_value_portrait) -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        getString(R.string.settings_value_landscape) -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+
+    private fun automaticCinemaLandscape(config: Configuration): Boolean {
+        if (config.orientation != Configuration.ORIENTATION_LANDSCAPE) return false
+        return when (viewerRotationPreference()) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR -> true
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED ->
+                Settings.System.getInt(contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) == 1
+            else -> false
+        }
+    }
+
     private fun updateCinemaButton() {
         if (!::cinemaButton.isInitialized) return
         cinemaButton.setImageResource(if (cinemaMode) R.drawable.ic_movie_open else R.drawable.ic_movie)
@@ -1881,6 +1902,8 @@ class DetailActivity : ComponentActivity() {
             navigationBarSideInset() + Ui.dp(this, 14), navigationBarBottomInset() + Ui.dp(this, 8)
         )
         cinemaController.settle()
+        val video = mediaQueue.getOrNull(currentIndex)?.isVideo() == true
+        cinemaController.followRotation(video, video && automaticCinemaLandscape(newConfig), switchingItem)
     }
 
     private fun cinemaGesturesEnabled(): Boolean =
@@ -2800,6 +2823,7 @@ class DetailActivity : ComponentActivity() {
         outState.putBoolean(STATE_VIDEO_MUTED, videoMuted)
         outState.putBoolean(STATE_CINEMA_MODE, cinemaMode)
         cinemaController.previousOrientation?.let { outState.putInt(STATE_ORIENTATION_BEFORE_CINEMA, it) }
+        outState.putBoolean(STATE_AUTOMATIC_CINEMA, cinemaController.automatic)
         playbackController.savedPlayWhenReady()?.let { playWhenReady ->
             outState.putLong(STATE_VIDEO_POSITION, playbackController.rememberedPosition())
             outState.putBoolean(
@@ -2940,6 +2964,7 @@ class DetailActivity : ComponentActivity() {
         private const val STATE_VIDEO_MUTED = "viewer_video_muted"
         private const val STATE_CINEMA_MODE = "viewer_cinema_mode"
         private const val STATE_ORIENTATION_BEFORE_CINEMA = "viewer_orientation_before_cinema"
+        private const val STATE_AUTOMATIC_CINEMA = "viewer_automatic_cinema"
         private const val CINEMA_BUTTON_TAG = "viewer_cinema_mode_button"
         private const val CINEMA_TRANSITION_TAG = "viewer_cinema_transition_message"
         private const val CINEMA_INDICATOR_HIDE_MS = 650L

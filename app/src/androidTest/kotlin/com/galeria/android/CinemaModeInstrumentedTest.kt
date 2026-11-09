@@ -45,6 +45,38 @@ import org.junit.runner.RunWith
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class CinemaModeInstrumentedTest {
     @Test
+    fun automaticRotationEntersAndLeavesCinemaWithoutReplacingPlayer() = withVideo { context, uri, albumKey ->
+        val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val previous = prefs.getString("rotation_criterion", null)
+        prefs.edit().putString("rotation_criterion", context.getString(R.string.settings_value_sensor)).commit()
+        try {
+            ActivityScenario.launch<DetailActivity>(videoIntent(context, uri, albumKey)).use { scenario ->
+                waitForOrientation(scenario, Configuration.ORIENTATION_PORTRAIT)
+                var player: androidx.media3.common.Player? = null
+                scenario.onActivity {
+                    assertFalse(it.cinemaController.enabled)
+                    player = requireNotNull(find<PlayerView>(it.window.decorView)?.player)
+                    it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                }
+                waitForOrientation(scenario, Configuration.ORIENTATION_LANDSCAPE)
+                waitForSystemBars(scenario, visible = false)
+                scenario.onActivity {
+                    assertTrue(it.cinemaController.automatic)
+                    assertEquals(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, it.requestedOrientation)
+                    assertSame(player, find<PlayerView>(it.window.decorView)?.player)
+                    it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                }
+                waitForOrientation(scenario, Configuration.ORIENTATION_PORTRAIT)
+                waitForSystemBars(scenario, visible = true)
+                scenario.onActivity {
+                    assertFalse(it.cinemaController.enabled)
+                    assertSame(player, find<PlayerView>(it.window.decorView)?.player)
+                }
+            }
+        } finally { prefs.edit().putString("rotation_criterion", previous).commit() }
+    }
+
+    @Test
     fun cinemaButtonChangesModeWithoutReplacingPlayer() = withVideo { context, uri, albumKey ->
         val intent = videoIntent(context, uri, albumKey)
         ActivityScenario.launch<DetailActivity>(intent).use { scenario ->
