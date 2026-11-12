@@ -344,6 +344,7 @@ class SettingsActivity : Activity() {
             )
             setOnCheckedChangeListener(CompoundButton.OnCheckedChangeListener { _, isChecked ->
                 prefs.edit().putBoolean(key, isChecked).apply()
+                Haptics.perform(this, Haptics.toggle(isChecked))
                 afterChange?.run()
             })
         }
@@ -437,6 +438,7 @@ class SettingsActivity : Activity() {
         val restore = textAction(R.string.settings_theme_restore, false) {
             applied = true
             prefs.edit().remove(Ui.THEME_COLOR_PREF).apply()
+            Haptics.perform(this@SettingsActivity, Haptics.Effect.CONFIRM)
             Ui.clearThemePreview()
             LauncherIconManager.syncWithPreferences(this@SettingsActivity)
             dialogRef[0]?.dismiss()
@@ -447,6 +449,7 @@ class SettingsActivity : Activity() {
         val confirm = textAction(R.string.settings_theme_apply, true) {
             applied = true
             prefs.edit().putInt(Ui.THEME_COLOR_PREF, selectedColor).apply()
+            Haptics.perform(this@SettingsActivity, Haptics.Effect.CONFIRM)
             Ui.clearThemePreview()
             LauncherIconManager.syncWithPreferences(this@SettingsActivity)
             dialogRef[0]?.dismiss()

@@ -1,9 +1,9 @@
-<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Conceito A: 8-sector wheel with lighter inner step band (approved border) -->
     <path
         android:fillColor="#FFFFFFFF"
         android:pathData="M 54.75,19.41 A 34.6,34.6 0 0,1 77.93,29.01 L 67.69,39.7 A 19.8,19.8 0 0,0 54.43,34.2 Z" />
@@ -28,36 +28,22 @@
     <path
         android:fillColor="#FFFFFFFF"
         android:pathData="M 30.07,29.01 A 34.6,34.6 0 0,1 53.25,19.41 L 53.57,34.2 A 19.8,19.8 0 0,0 40.31,39.7 Z" />
-
-    <group android:pivotX="54" android:pivotY="54" android:rotation="0">
-        <path
-            android:fillColor="#FFFFFFFF"
-            android:pathData="M 50.6,50.0 L 49.3,43.6 C 49.0,40.4 51.2,39.0 54.0,39.0 C 56.8,39.0 59.0,40.4 58.7,43.6 L 57.4,50.0 Z" />
-        <path
-            android:fillColor="#FFFFFFFF"
-            android:pathData="M 50.6,58.0 L 49.3,64.4 C 49.0,67.6 51.2,69.0 54.0,69.0 C 56.8,69.0 59.0,67.6 58.7,64.4 L 57.4,58.0 Z" />
-    </group>
-
-    <group android:pivotX="54" android:pivotY="54" android:rotation="60">
-        <path
-            android:fillColor="#FFFFFFFF"
-            android:pathData="M 50.6,50.0 L 49.3,43.6 C 49.0,40.4 51.2,39.0 54.0,39.0 C 56.8,39.0 59.0,40.4 58.7,43.6 L 57.4,50.0 Z" />
-        <path
-            android:fillColor="#FFFFFFFF"
-            android:pathData="M 50.6,58.0 L 49.3,64.4 C 49.0,67.6 51.2,69.0 54.0,69.0 C 56.8,69.0 59.0,67.6 58.7,64.4 L 57.4,58.0 Z" />
-    </group>
-
-    <group android:pivotX="54" android:pivotY="54" android:rotation="120">
-        <path
-            android:fillColor="#FFFFFFFF"
-            android:pathData="M 50.6,50.0 L 49.3,43.6 C 49.0,40.4 51.2,39.0 54.0,39.0 C 56.8,39.0 59.0,40.4 58.7,43.6 L 57.4,50.0 Z" />
-        <path
-            android:fillColor="#FFFFFFFF"
-            android:pathData="M 50.6,58.0 L 49.3,64.4 C 49.0,67.6 51.2,69.0 54.0,69.0 C 56.8,69.0 59.0,67.6 58.7,64.4 L 57.4,58.0 Z" />
-    </group>
-
     <path
-        android:fillColor="#FFFFFFFF"
-        android:fillType="evenOdd"
-        android:pathData="M 54,46.6 A 7.4,7.4 0 1,1 53.99,46.6 Z M 54,50.3 A 3.7,3.7 0 1,1 53.99,50.3 Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.2"
+        android:pathData="M 54,36 A 18,18 0 1,1 53.99,36 Z" />
+    <!-- Lens: layered mountains and warm sun, clipped to the lens aperture -->
+    <group>
+        <clip-path android:pathData="M 54,37.1 A 16.9,16.9 0 1,1 53.99,37.1 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M 54,47.4 A 7,7 0 1,1 53.99,47.4 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M 36,72 L 36,62.8 L 42.2,57.4 L 44.8,59.2 L 52.6,51 L 55.8,54.6 L 57.8,53.4 L 66.2,62.4 L 72,64.8 L 72,72 Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M 36,72 L 36,64.4 L 41,61.8 L 47.6,65 L 55,62 L 62.8,65.8 L 72,62.6 L 72,72 Z" />
+    </group>
 </vector>

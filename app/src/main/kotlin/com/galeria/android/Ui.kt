@@ -12,7 +12,6 @@ import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.view.Gravity
 import android.view.View
-import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
@@ -274,8 +273,7 @@ class Ui private constructor() {
          */
         @JvmStatic
         fun longPressFeedback(view: View, shrink: Boolean = true) {
-            view.isHapticFeedbackEnabled = true
-            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            Haptics.perform(view, Haptics.Effect.LONG_PRESS)
             view.isHapticFeedbackEnabled = false
             if (shrink) {
                 view.animate().scaleX(LONG_PRESS_SCALE).scaleY(LONG_PRESS_SCALE).alpha(LONG_PRESS_ALPHA)
@@ -609,6 +607,7 @@ class Ui private constructor() {
                     } else label
                     styleDialogChoiceRow(this, active)
                     setOnClickListener {
+                        Haptics.performFromOverlay(this, Haptics.Effect.TAP)
                         val nextDescending = SortDirectionRules.whenModeSelected(
                             modes[selected], modes[index], descending
                         )
@@ -921,6 +920,7 @@ class Ui private constructor() {
                         setTypeface(Typeface.DEFAULT_BOLD)
                     }
                     setOnClickListener {
+                        Haptics.performFromOverlay(this, Haptics.Effect.TAP)
                         pendingSelection[0] = item
                         localPopupRef[0]?.dismiss()
                     }
@@ -1163,7 +1163,10 @@ class Ui private constructor() {
                 )
                 isClickable = true
                 isFocusable = true
-                setOnClickListener { onClick(this) }
+                setOnClickListener {
+                    Haptics.performFromOverlay(this, Haptics.Effect.TAP)
+                    onClick(this)
+                }
             }
 
         private fun styleDialogChoiceRow(row: LinearLayout, selected: Boolean) {
@@ -1201,7 +1204,10 @@ class Ui private constructor() {
                 isFocusable = true
                 background = flatRowBackground(context, false)
                 setPadding(dp(context, 16), dp(context, 10), dp(context, 16), dp(context, 10))
-                setOnClickListener { onClick() }
+                setOnClickListener {
+                    Haptics.performFromOverlay(this, if (primary) Haptics.Effect.CONFIRM else Haptics.Effect.TAP)
+                    onClick()
+                }
             }
 
         private fun themedActionPair(

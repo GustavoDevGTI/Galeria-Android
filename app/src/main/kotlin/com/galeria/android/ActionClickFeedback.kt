@@ -71,7 +71,10 @@ internal class ClickFeedbackImageButton(context: Context) : ImageButton(context)
     private val clickFeedback = ActionClickFeedback(this)
 
     override fun performClick(): Boolean {
-        if (hasOnClickListeners()) clickFeedback.play()
+        if (hasOnClickListeners()) {
+            clickFeedback.play()
+            Haptics.perform(this, Haptics.Effect.TAP)
+        }
         return super.performClick()
     }
 

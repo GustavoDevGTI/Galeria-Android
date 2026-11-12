@@ -419,9 +419,11 @@ class AlbumMediaActivity : ComponentActivity() {
                         choosingAlbumCover = false
                         searchInput.isEnabled = true
                         updateSearchPresentation()
+                        Haptics.perform(this@AlbumMediaActivity, Haptics.Effect.CONFIRM)
                         Ui.toast(this@AlbumMediaActivity, getString(R.string.album_cover_saved))
                     } else if (adapter.isSelectionMode()) {
                         adapter.toggleSelection(position)
+                        Haptics.perform(this@AlbumMediaActivity, Haptics.Effect.TICK)
                         updateSelectionUi()
                     } else {
                         openDetail(adapter.getItem(position), position)
@@ -1247,7 +1249,10 @@ class AlbumMediaActivity : ComponentActivity() {
                 val targetView = grid.findChildViewUnder(event.x, event.y)
                 val target = targetView?.let(grid::getChildAdapterPosition) ?: RecyclerView.NO_POSITION
                 if (selectionDragActive) {
-                    if (gridGestureController.selectThrough(target, adapter::selectPosition)) updateSelectionUi()
+                    if (gridGestureController.selectThrough(target, adapter::selectPosition)) {
+                        Haptics.perform(grid, Haptics.Effect.TICK)
+                        updateSelectionUi()
+                    }
                     val edge = Ui.dp(this, SELECTION_DRAG_EDGE_DP)
                     when {
                         event.y < edge -> grid.scrollBy(0, -Ui.dp(this, SELECTION_DRAG_SCROLL_DP))
@@ -1524,6 +1529,7 @@ class AlbumMediaActivity : ComponentActivity() {
         if (MediaActions.createFolder(this, target)) {
             Ui.toast(this, getString(R.string.album_folder_created))
         } else {
+            Haptics.perform(this, Haptics.Effect.REJECT)
             Ui.toast(this, getString(R.string.album_folder_create_failed))
         }
     }

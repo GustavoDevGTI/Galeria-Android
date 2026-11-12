@@ -189,10 +189,12 @@ class ThemeCustomizationInstrumentedTest {
             try {
                 mask.setBounds(0, 0, bitmap.width, bitmap.height)
                 mask.draw(Canvas(bitmap))
-                assertEquals("O miolo da flor deve aparecer como recorte no ícone temático.", 0,
-                    Color.alpha(bitmap.getPixel(54, 54)))
-                assertTrue("O ícone temático deve preservar a flor.",
-                    Color.alpha(bitmap.getPixel(54, 43)) > 0)
+                assertEquals("O céu da lente deve ficar transparente no ícone temático.", 0,
+                    Color.alpha(bitmap.getPixel(54, 42)))
+                assertTrue("O ícone temático deve preservar o sol.",
+                    Color.alpha(bitmap.getPixel(54, 50)) > 0)
+                assertTrue("O ícone temático deve preservar as montanhas.",
+                    Color.alpha(bitmap.getPixel(54, 66)) > 0)
                 assertTrue("O ícone temático deve preservar a roda.",
                     Color.alpha(bitmap.getPixel(76, 44)) > 0)
             } finally {

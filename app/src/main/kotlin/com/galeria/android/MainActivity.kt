@@ -321,6 +321,7 @@ class MainActivity : ComponentActivity() {
                 if (position !in 0 until adapter.getCount()) return
                 if (adapter.isSelectionMode()) {
                     adapter.toggleSelection(position)
+                    Haptics.perform(this@MainActivity, Haptics.Effect.TICK)
                     updateSelectionUi()
                     return
                 }

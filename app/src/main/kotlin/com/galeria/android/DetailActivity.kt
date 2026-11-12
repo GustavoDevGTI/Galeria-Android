@@ -205,7 +205,10 @@ class DetailActivity : ComponentActivity() {
                                 showRecognizedText(document)
                             }
                         },
-                        onFailure = { Ui.toast(this@DetailActivity, getString(R.string.ocr_error)) }
+                        onFailure = {
+                            Haptics.perform(this@DetailActivity, Haptics.Effect.REJECT)
+                            Ui.toast(this@DetailActivity, getString(R.string.ocr_error))
+                        }
                     )
                 }
             }
@@ -603,6 +606,7 @@ class DetailActivity : ComponentActivity() {
             background = Ui.actionFeedback(this@DetailActivity, Color.WHITE)
             setOnClickListener {
                 playbackController.setSpeed(DetailPlaybackRules.nextQuickSpeed(playbackSpeed))
+                Haptics.perform(this, Haptics.Effect.TICK)
                 updateSpeedButton()
             }
             setOnLongClickListener { showSpeedPopup(); true }
@@ -672,6 +676,7 @@ class DetailActivity : ComponentActivity() {
                 timelineExpanded = false
                 timelineButton.alpha = 0.65f
                 timelineButton.contentDescription = getString(R.string.video_timeline_show)
+                Haptics.perform(this, Haptics.Effect.REJECT)
                 Ui.toast(this, getString(R.string.video_timeline_load_failed))
             }
         }
@@ -1795,6 +1800,7 @@ class DetailActivity : ComponentActivity() {
     private fun toggleVideoSound() {
         if (!currentItem().isVideo()) return
         playbackController.toggleMuted()
+        Haptics.perform(this, Haptics.toggle(!videoMuted))
         updateSoundButton()
     }
 
@@ -1806,7 +1812,9 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun toggleCinemaMode() {
+        val wasCinema = cinemaMode
         cinemaController.toggle(currentItem().isVideo(), switchingItem)
+        Haptics.perform(this, Haptics.toggle(if (cinemaMode != wasCinema) cinemaMode else !wasCinema))
     }
 
     private fun viewerRotationPreference(): Int = when (prefs.getString("rotation_criterion", null)) {
@@ -2047,7 +2055,7 @@ class DetailActivity : ComponentActivity() {
             // its controller must not receive the obsolete URI/cache key.
             if (imageGestures.claimText { MediaIdentityRules.sameUri(current.uri.toString(), item.uri.toString()) }) {
                 cancelPendingSingleTap()
-                image.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                Haptics.perform(image, Haptics.Effect.LONG_PRESS)
                 recognizeCurrentImageText(current, android.graphics.PointF(offset.x, offset.y))
             }
         }
@@ -2273,6 +2281,7 @@ class DetailActivity : ComponentActivity() {
     private fun toggleFavorite() {
         val item = currentItem()
         val favorite = mediaActions.toggleFavorite(item)
+        Haptics.perform(this, Haptics.toggle(favorite))
         Ui.toast(this, if (favorite) "Adicionado aos favoritos." else "Removido dos favoritos.")
         updateFavoriteButton()
     }
@@ -2462,6 +2471,7 @@ class DetailActivity : ComponentActivity() {
                     imageRotationRunning = false
                     if (!requestPermission || !requestRotationPermission(item, error)) {
                         pendingRotateItem = null
+                        Haptics.perform(this, Haptics.Effect.REJECT)
                         Ui.toast(this, getString(R.string.image_rotate_permission_error))
                     }
                 }
@@ -2470,6 +2480,7 @@ class DetailActivity : ComponentActivity() {
                 runOnUiThread {
                     imageRotationRunning = false
                     pendingRotateItem = null
+                    Haptics.perform(this, Haptics.Effect.REJECT)
                     Ui.toast(this, getString(R.string.image_rotate_error))
                 }
             }
@@ -2918,6 +2929,7 @@ class DetailActivity : ComponentActivity() {
         cancelPendingSingleTap()
         // Hide the bars before shrinking so they never appear inside the thumbnail or its animation.
         pictureInPictureShownPlaying = true
+        Haptics.perform(this, Haptics.Effect.THRESHOLD)
         hideViewerChromeForPictureInPicture()
         val entered = try {
             enterPictureInPictureMode(pictureInPictureParams())
