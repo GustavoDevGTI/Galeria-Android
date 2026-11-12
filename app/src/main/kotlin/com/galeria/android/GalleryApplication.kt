@@ -13,6 +13,7 @@ import okio.Path.Companion.toPath
 class GalleryApplication : Application(), SingletonImageLoader.Factory, Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
+        LauncherIconManager.syncWithPreferences(this)
         GalleryUpgradeCoordinator.initialize(this)
     }
 

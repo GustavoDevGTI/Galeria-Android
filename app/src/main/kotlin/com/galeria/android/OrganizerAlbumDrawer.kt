@@ -26,6 +26,8 @@ internal class OrganizerAlbumDrawer(context: Context, private val controller: Or
     private val createFolder: () -> Unit, private val toggle: (Boolean) -> Unit) : LinearLayout(context) {
     data class DropTarget(val albumKey: String, val centerX: Float, val centerY: Float)
 
+    private val menuTones = Ui.menuTones(context)
+    private val menuText = Ui.menuText(context)
     private val handle = Ui.label(context, "")
     private val list = RecyclerView(context)
     private var rows = emptyList<AlbumItem>()
@@ -42,6 +44,7 @@ internal class OrganizerAlbumDrawer(context: Context, private val controller: Or
                 addView(Ui.title(context, "+", 30).apply { gravity = Gravity.CENTER; setTextColor(Ui.menuText(context)) },
                     LayoutParams(Ui.dp(context, 46), Ui.dp(context, 46)))
                 addView(Ui.label(context, "Nova pasta").apply { setTextColor(Ui.menuText(context)) }, LayoutParams(0, -2, 1f))
+                background = Ui.rounded(menuTones[1], 10, context)
                 tag = "organizer_new_folder"
             } else Ui.albumTargetRow(context, album).apply { tag = "organizer_drawer_${album.key}" }
             holder.album = album
@@ -67,13 +70,14 @@ internal class OrganizerAlbumDrawer(context: Context, private val controller: Or
                 }
             }
             content.setOnLongClickListener {
-                if (album == null || controller.saving) false else content.startOrganizerAlbumDrag(OrganizerAlbumDrag(album))
+                if (album == null || controller.saving) false
+                else content.startOrganizerAlbumDrag(OrganizerAlbumDrag(album)).also { started -> if (started) Ui.longPressFeedback(content, shrink = false) }
             }
         }
     }
     init {
         orientation = VERTICAL; tag = "organizer_album_drawer"
-        background = Ui.rounded(Ui.menuSurface(context), 16, context); clipToOutline = true
+        background = Ui.rounded(menuTones[0], 16, context, Ui.menuBorder(context), 1); clipToOutline = true
         handle.apply {
             tag = "organizer_drawer_handle"; setTextColor(Ui.menuText(context)); isClickable = true; isFocusable = true
             setOnClickListener { toggle(!controller.drawerOpen) }
@@ -128,16 +132,16 @@ internal class OrganizerAlbumDrawer(context: Context, private val controller: Or
         val row = holder.content ?: return
         val count = controller.sentCount(album.key)
         val highlighted = album.key == hoveredKey || (count > 0 && album.key == controller.lastAlbum)
-        val color = if (highlighted) OrganizerColors.highlightText(context) else Ui.menuText(context)
-        row.background = when {
-            highlighted -> Ui.rounded(OrganizerColors.highlight(context), 10, context)
-            count > 0 -> Ui.rounded(Ui.blend(Ui.menuSurface(context), Ui.menuText(context), .16f), 10, context)
-            else -> null
+        val tone = when {
+            highlighted -> menuTones[3]
+            count > 0 -> menuTones[2]
+            else -> menuTones[1]
         }
-        (row.getChildAt(1) as TextView).setTextColor(color)
+        row.background = Ui.rounded(tone, 10, context)
+        (row.getChildAt(1) as TextView).setTextColor(menuText)
         holder.count?.apply {
             text = count.toString()
-            setTextColor(color)
+            setTextColor(menuText)
             visibility = if (count > 0) VISIBLE else GONE
         }
         row.contentDescription = if (count == 0) album.name else

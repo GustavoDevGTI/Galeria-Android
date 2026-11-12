@@ -265,10 +265,8 @@
     <string name="settings_theme_color_applied">Cor aplicada.</string>
     <string name="settings_theme_color_instruction">Arraste pelo círculo e acompanhe a prévia em tempo real.</string>
     <string name="settings_theme_color_wheel_description">Círculo de cores do tema</string>
-    <string name="settings_theme_tone">Luminosidade</string>
-    <string name="settings_theme_preview_title">Prévia do tema</string>
-    <string name="settings_theme_preview_subtitle">Cor e contraste usados nos submenus.</string>
     <string name="settings_theme_apply">Aplicar</string>
+    <string name="settings_theme_restore">Restaurar padrão</string>
     <string name="settings_language">Idioma</string>
     <string name="settings_language_portuguese">Português</string>
     <string name="settings_language_english">English</string>

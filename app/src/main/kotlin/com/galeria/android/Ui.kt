@@ -12,6 +12,7 @@ import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.view.Gravity
 import android.view.View
+import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
@@ -45,80 +46,92 @@ class Ui private constructor() {
         @JvmField val TEXT: Int = Color.rgb(245, 247, 250)
         @JvmField val MUTED: Int = Color.rgb(170, 178, 189)
         @JvmField val ACCENT: Int = Color.rgb(245, 247, 250)
-        private const val MAX_THEME_SATURATION = 0.48f
+        internal const val THEME_COLOR_PREF = "theme_color"
+        internal const val DEFAULT_THEME_SEED = 0xFF121212.toInt()
+        private const val MAX_THEME_SATURATION = ThemeToneRules.MAX_THEME_SATURATION
         private var previewThemeSeed: Int? = null
 
         @JvmStatic
-        fun darkMode(context: Context): Boolean = luminance(themeSeed(context)) < 0.56
+        fun darkMode(context: Context): Boolean = ThemeToneRules.darkMode(themeSeed(context))
+
+        /**
+         * Returns the 4 derived screen tones for the active theme:
+         * [0] Base background (`bg`)
+         * [1] Primary surface (`surface`)
+         * [2] Elevated card / secondary control surface (`elevatedSurface`)
+         * [3] Highlight / active selection surface (`highlightSurface`)
+         */
+        @JvmStatic
+        fun themeTones(context: Context): IntArray = ThemeToneRules.screenTones(themeSeed(context))
+
+        /**
+         * Returns the 4 derived submenu/dialog tones for the active theme, each with a single semantic role:
+         * [0] Submenu/dialog container backdrop (`menuSurface`)
+         * [1] Standard unselected option row surface (`menuOptionSurface`)
+         * [2] Distinct interactive control / secondary action surface (`menuElevatedSurface`)
+         * [3] Active/selected option / primary confirmation surface (`menuHighlightSurface`)
+         */
+        @JvmStatic
+        fun menuTones(context: Context): IntArray = ThemeToneRules.menuTones(themeSeed(context))
 
         @JvmStatic
-        fun bg(context: Context): Int {
-            val seed = themeSeed(context)
-            return if (darkMode(context)) blend(seed, Color.BLACK, 0.72f) else blend(seed, Color.WHITE, 0.82f)
-        }
+        fun bg(context: Context): Int = themeTones(context)[0]
 
         @JvmStatic
-        fun surface(context: Context): Int {
-            val seed = themeSeed(context)
-            return if (darkMode(context)) blend(seed, Color.BLACK, 0.52f) else blend(seed, Color.WHITE, 0.66f)
-        }
+        fun surface(context: Context): Int = themeTones(context)[1]
 
         @JvmStatic
-        fun search(context: Context): Int {
-            val seed = themeSeed(context)
-            return if (darkMode(context)) blend(seed, Color.BLACK, 0.62f) else blend(seed, Color.WHITE, 0.74f)
-        }
+        fun elevatedSurface(context: Context): Int = themeTones(context)[2]
 
         @JvmStatic
-        fun menuSurface(context: Context): Int {
-            val seed = themeSeed(context)
-            return if (darkMode(context)) blend(seed, Color.BLACK, 0.74f) else blend(seed, Color.BLACK, 0.58f)
-        }
+        fun highlightSurface(context: Context): Int = themeTones(context)[3]
 
         @JvmStatic
-        fun menuText(context: Context): Int =
-            if (darkMode(context)) TEXT else blend(Color.WHITE, themeSeed(context), 0.10f)
+        fun search(context: Context): Int = ThemeToneRules.search(themeSeed(context))
 
         @JvmStatic
-        fun text(context: Context): Int = if (darkMode(context)) TEXT else Color.rgb(18, 18, 18)
+        fun menuSurface(context: Context): Int = menuTones(context)[0]
+
+        @JvmStatic
+        fun menuOptionSurface(context: Context): Int = menuTones(context)[1]
+
+        @JvmStatic
+        fun menuElevatedSurface(context: Context): Int = menuTones(context)[2]
+
+        @JvmStatic
+        fun menuHighlightSurface(context: Context): Int = menuTones(context)[3]
+
+        @JvmStatic
+        fun menuText(context: Context): Int = ThemeToneRules.menuText(themeSeed(context))
+
+        @JvmStatic
+        fun text(context: Context): Int = ThemeToneRules.text(themeSeed(context))
 
         @JvmStatic
         fun selectionActionIcon(context: Context): Int =
             if (luminance(text(context)) >= 0.5) Color.WHITE else Color.BLACK
 
         @JvmStatic
-        fun muted(context: Context): Int {
-            val base = text(context)
-            return if (darkMode(context)) blend(base, bg(context), 0.36f) else blend(base, bg(context), 0.46f)
-        }
+        fun muted(context: Context): Int = ThemeToneRules.muted(themeSeed(context))
 
         @JvmStatic
-        fun accent(context: Context): Int {
-            val seed = themeSeed(context)
-            if (darkMode(context) && luminance(seed) < 0.35) {
-                return blend(seed, Color.WHITE, 0.45f)
-            }
-            if (!darkMode(context) && luminance(seed) > 0.72) {
-                return blend(seed, Color.BLACK, 0.25f)
-            }
-            return seed
-        }
+        fun accent(context: Context): Int = ThemeToneRules.accent(themeSeed(context))
+
+        @JvmStatic
+        fun border(context: Context): Int = ThemeToneRules.border(themeSeed(context))
+
+        @JvmStatic
+        fun menuBorder(context: Context): Int = ThemeToneRules.menuBorder(themeSeed(context))
 
         @JvmStatic
         fun themeSeed(context: Context): Int {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             return previewThemeSeed
-                ?: normalizeThemeSeed(prefs.getInt("theme_color", Color.rgb(18, 18, 18)))
+                ?: normalizeThemeSeed(prefs.getInt(THEME_COLOR_PREF, DEFAULT_THEME_SEED))
         }
 
         @JvmStatic
-        fun normalizeThemeSeed(color: Int): Int {
-            val hsv = FloatArray(3)
-            Color.colorToHSV(color, hsv)
-            hsv[1] = hsv[1].coerceAtMost(MAX_THEME_SATURATION)
-            if (hsv[1] >= 0.08f) hsv[2] = hsv[2].coerceIn(0.24f, 0.92f)
-            return Color.HSVToColor(hsv)
-        }
+        fun normalizeThemeSeed(color: Int): Int = ThemeToneRules.normalizeSeed(color)
 
         @JvmStatic
         fun setThemePreview(color: Int) {
@@ -224,6 +237,20 @@ class Ui private constructor() {
             }
 
         @JvmStatic
+        fun rounded(
+            color: Int,
+            radiusDp: Int,
+            context: Context,
+            strokeColor: Int,
+            strokeWidthDp: Int = 1
+        ): GradientDrawable =
+            GradientDrawable().apply {
+                setColor(color)
+                cornerRadius = dp(context, radiusDp).toFloat()
+                setStroke(max(1, dp(context, strokeWidthDp)), strokeColor)
+            }
+
+        @JvmStatic
         fun styleSelectionToggle(view: TextView, checked: Boolean) {
             val context = view.context
             view.text = if (checked) "✓" else ""
@@ -238,6 +265,26 @@ class Ui private constructor() {
 
         const val ACTION_ICON_SIZE_DP = 22
         const val ACTION_TOUCH_HEIGHT_DP = 56
+
+        /**
+         * Reaction to pressing and holding a media item or album: vibration (only when touch
+         * feedback is enabled in the phone settings) plus a short shrink of the item.
+         * The view's own automatic feedback is turned off so the phone vibrates only once,
+         * even when the list rebinds the item during the long press.
+         */
+        @JvmStatic
+        fun longPressFeedback(view: View, shrink: Boolean = true) {
+            view.isHapticFeedbackEnabled = true
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            view.isHapticFeedbackEnabled = false
+            if (shrink) {
+                view.animate().scaleX(LONG_PRESS_SCALE).scaleY(LONG_PRESS_SCALE).alpha(LONG_PRESS_ALPHA)
+                    .setDuration(90).start()
+            }
+        }
+
+        const val LONG_PRESS_SCALE = 0.94f
+        const val LONG_PRESS_ALPHA = 0.78f
 
         fun actionFeedback(context: Context, color: Int, selected: Boolean = false): RippleDrawable =
             RippleDrawable(
@@ -445,11 +492,13 @@ class Ui private constructor() {
                     val radio = row.findViewWithTag<RadioButton>("radio")
                     radio.isChecked = i == selected
                     styleDialogChoiceRow(row, radio.isChecked)
-                    row.alpha = if (radio.isChecked) 1f else 0.72f
                 }
             }
             val body = themedDialogBody(context, title, message)
-            content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            content = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(context, 10), 0, dp(context, 10), dp(context, 8))
+            }
             labels.forEachIndexed { index, label ->
                 val row = themedChoiceRow(context, label, true) {
                     selected = index
@@ -458,7 +507,12 @@ class Ui private constructor() {
                     onConfirm(selected)
                 }
                 row.findViewWithTag<RadioButton>("radio").visibility = View.GONE
-                content.addView(row)
+                content.addView(row, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = 0
+                })
             }
             body.addView(content)
             if (neutralText != null && onNeutral != null) {
@@ -485,6 +539,10 @@ class Ui private constructor() {
             require(labels.isNotEmpty())
             lateinit var dialog: AlertDialog
             val body = themedDialogBody(context, title, null)
+            val content = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(context, 10), 0, dp(context, 10), dp(context, 10))
+            }
             labels.forEachIndexed { index, label ->
                 val row = themedChoiceRow(context, label, true) {
                     dialog.dismiss()
@@ -492,8 +550,14 @@ class Ui private constructor() {
                 }
                 row.findViewWithTag<RadioButton>("radio").visibility = View.GONE
                 styleDialogChoiceRow(row, false)
-                body.addView(row)
+                content.addView(row, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = 0
+                })
             }
+            body.addView(content)
             dialog = AlertDialog.Builder(context).setView(body).create()
             return showCenteredPanel(dialog)
         }
@@ -513,7 +577,10 @@ class Ui private constructor() {
             val selected = checkedIndex.coerceIn(0, labels.lastIndex)
             lateinit var dialog: AlertDialog
             val body = themedDialogBody(context, title, message)
-            val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            val content = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(context, 10), 0, dp(context, 10), dp(context, 8))
+            }
             labels.forEachIndexed { index, label ->
                 val active = index == selected
                 val arrow = TextView(context).apply {
@@ -527,8 +594,8 @@ class Ui private constructor() {
                     tag = "sort_option_${modes[index]}"
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    minimumHeight = dp(context, 52)
-                    setPadding(dp(context, 18), dp(context, 4), dp(context, 18), dp(context, 4))
+                    minimumHeight = dp(context, 50)
+                    setPadding(dp(context, 16), dp(context, 4), dp(context, 16), dp(context, 4))
                     addView(TextView(context).apply {
                         text = label
                         textSize = 16f
@@ -540,7 +607,6 @@ class Ui private constructor() {
                     contentDescription = if (active && SortDirectionRules.supportsDirection(modes[index])) {
                         "$label, ${context.getString(if (descending) R.string.action_descending else R.string.action_ascending)}"
                     } else label
-                    alpha = if (active) 1f else 0.82f
                     styleDialogChoiceRow(this, active)
                     setOnClickListener {
                         val nextDescending = SortDirectionRules.whenModeSelected(
@@ -549,6 +615,11 @@ class Ui private constructor() {
                         dialog.dismiss()
                         onConfirm(index, nextDescending)
                     }
+                }, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = 0
                 })
             }
             body.addView(content)
@@ -569,22 +640,28 @@ class Ui private constructor() {
             val selected = checked.copyOf()
             lateinit var dialog: AlertDialog
             val body = themedDialogBody(context, title, message)
-            val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            val content = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(context, 10), 0, dp(context, 10), dp(context, 8))
+            }
             labels.forEachIndexed { index, label ->
                 val row = themedChoiceRow(context, label, false) {
                     selected[index] = !selected[index]
                     val check = it.findViewWithTag<CheckBox>("check")
                     check.isChecked = selected[index]
                     styleDialogChoiceRow(it, selected[index])
-                    it.alpha = if (selected[index]) 1f else 0.72f
                     dialog.dismiss()
                     onConfirm(selected.copyOf())
                 }
                 val check = row.findViewWithTag<CheckBox>("check")
                 check.isChecked = selected[index]
                 styleDialogChoiceRow(row, selected[index])
-                row.alpha = if (selected[index]) 1f else 0.72f
-                content.addView(row)
+                content.addView(row, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = 0
+                })
             }
             body.addView(content)
             dialog = AlertDialog.Builder(context).setView(body).create()
@@ -603,21 +680,35 @@ class Ui private constructor() {
             onConfirm: (String) -> Unit
         ): AlertDialog {
             lateinit var dialog: AlertDialog
-            val body = themedDialogBody(context, title, message)
+            val body = themedDialogBody(context, title, null)
+            if (!message.isNullOrBlank()) {
+                body.addView(TextView(context).apply {
+                    text = message
+                    textSize = 14f
+                    setTextColor(menuText(context))
+                    background = rounded(menuOptionSurface(context), 10, context)
+                    setPadding(dp(context, 14), dp(context, 10), dp(context, 14), dp(context, 10))
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    marginStart = dp(context, 14)
+                    marginEnd = dp(context, 14)
+                    bottomMargin = dp(context, 8)
+                })
+            }
             val input = EditText(context).apply {
                 setSingleLine(true)
                 this.hint = hint
                 textSize = 16f
                 setTextColor(menuText(context))
-                setHintTextColor(blend(menuText(context), menuSurface(context), 0.45f))
-                backgroundTintList = ColorStateList.valueOf(blend(menuText(context), menuSurface(context), 0.45f))
-                setPadding(0, dp(context, 8), 0, dp(context, 4))
+                setHintTextColor(menuText(context))
+                background = rounded(menuElevatedSurface(context), 10, context, menuBorder(context), 1)
+                setPadding(dp(context, 14), dp(context, 10), dp(context, 14), dp(context, 10))
                 setText(initialValue)
                 setSelection(initialValue.length)
             }
-            body.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 58)).apply {
-                marginStart = dp(context, 18)
-                marginEnd = dp(context, 18)
+            body.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 52)).apply {
+                marginStart = dp(context, 14)
+                marginEnd = dp(context, 14)
+                bottomMargin = dp(context, 4)
             })
             body.addView(
                 themedActionPair(
@@ -672,14 +763,14 @@ class Ui private constructor() {
             for (section in sections) {
                 val group = LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
-                    background = rounded(blend(menuSurface(context), menuText(context), 0.06f), 12, context)
+                    background = rounded(menuOptionSurface(context), 12, context, menuBorder(context), 1)
                     setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 8))
                 }
                 group.addView(TextView(context).apply {
                     text = section.title
                     textSize = 14f
                     setTypeface(Typeface.DEFAULT_BOLD)
-                    setTextColor(accent(context))
+                    setTextColor(menuText(context))
                     setPadding(0, 0, 0, dp(context, 8))
                 })
                 for (field in section.fields) {
@@ -772,9 +863,10 @@ class Ui private constructor() {
                     gravity = Gravity.CENTER
                     textSize = 14f
                     minHeight = dp(context, 64)
+                    val tone = if (primary) menuHighlightSurface(context) else menuElevatedSurface(context)
                     background = RippleDrawable(
                         ColorStateList.valueOf((menuText(context) and 0x00FFFFFF) or 0x22000000),
-                        rounded(blend(menuSurface(context), menuText(context), if (primary) 0.12f else 0.06f), 12, context),
+                        rounded(tone, 12, context, menuBorder(context), 1),
                         rounded(Color.WHITE, 12, context)
                     )
                     setPadding(dp(context, 8), dp(context, 8), dp(context, 8), dp(context, 8))
@@ -807,23 +899,25 @@ class Ui private constructor() {
             val context = anchor.context
             val scroll = ScrollView(context).apply {
                 isVerticalScrollBarEnabled = false
-                background = rounded(menuSurface(context), SIDE_PANEL_RADIUS_DP, context)
+                background = rounded(menuSurface(context), SIDE_PANEL_RADIUS_DP, context, menuBorder(context), 1)
                 clipToOutline = true
             }
             val content = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
+                setPadding(dp(context, 6), dp(context, 6), dp(context, 6), dp(context, 6))
             }
             val pendingSelection = arrayOfNulls<String>(1)
             val localPopupRef = arrayOfNulls<PopupWindow>(1)
-            for (item in items) {
+            items.forEachIndexed { index, item ->
+                val isSelected = selectedItems.contains(item)
                 val row = TextView(context).apply {
                     text = item
                     setTextColor(menuText(context))
                     textSize = 15f
                     gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                    setPadding(dp(context, 18), dp(context, 16), dp(context, 18), dp(context, 16))
-                    if (selectedItems.contains(item)) {
-                        background = rounded(blend(menuSurface(context), menuText(context), 0.10f), 0, context)
+                    setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 12))
+                    background = flatRowBackground(context, isSelected)
+                    if (isSelected) {
                         setTypeface(Typeface.DEFAULT_BOLD)
                     }
                     setOnClickListener {
@@ -836,7 +930,9 @@ class Ui private constructor() {
                     LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
+                    ).apply {
+                        bottomMargin = 0
+                    }
                 )
             }
             scroll.addView(
@@ -914,33 +1010,40 @@ class Ui private constructor() {
             val context = anchor.context
             val scroll = ScrollView(context).apply {
                 isVerticalScrollBarEnabled = true
-                background = rounded(menuSurface(context), SIDE_PANEL_RADIUS_DP, context)
+                background = rounded(menuSurface(context), SIDE_PANEL_RADIUS_DP, context, menuBorder(context), 1)
                 clipToOutline = true
             }
             val content = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(0, dp(context, 4), 0, dp(context, 6))
+                setPadding(dp(context, 6), dp(context, 4), dp(context, 6), dp(context, 6))
                 addView(
                     TextView(context).apply {
                         text = title
                         textSize = 13f
                         setTypeface(Typeface.DEFAULT, Typeface.BOLD)
                         setTextColor(menuText(context))
-                        alpha = 0.72f
-                        setPadding(dp(context, 16), dp(context, 12), dp(context, 16), dp(context, 8))
+                        alpha = 0.78f
+                        setPadding(dp(context, 10), dp(context, 10), dp(context, 10), dp(context, 8))
                     },
                     LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 )
             }
             val pendingSelection = arrayOfNulls<AlbumItem>(1)
             val localPopupRef = arrayOfNulls<PopupWindow>(1)
-            albums.forEach { album ->
+            albums.forEachIndexed { index, album ->
                 val row = albumTargetRow(context, album)
+                row.background = RippleDrawable(
+                    ColorStateList.valueOf((menuText(context) and 0x00FFFFFF) or 0x22000000),
+                    rounded(menuOptionSurface(context), 10, context),
+                    rounded(Color.WHITE, 10, context)
+                )
                 row.setOnClickListener {
                     pendingSelection[0] = album
                     localPopupRef[0]?.dismiss()
                 }
-                content.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 60)))
+                content.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 60)).apply {
+                    bottomMargin = if (index < albums.lastIndex) dp(context, 3) else 0
+                })
             }
             scroll.addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             val width = min(dp(context, 320), context.resources.displayMetrics.widthPixels - dp(context, 24))
@@ -948,7 +1051,7 @@ class Ui private constructor() {
             anchor.getLocationOnScreen(location)
             val top = location[1] + anchor.height + dp(context, 6)
             val availableHeight = max(dp(context, 180), context.resources.displayMetrics.heightPixels - top - dp(context, 16))
-            val desiredHeight = dp(context, 50 + albums.size * 60)
+            val desiredHeight = dp(context, 56 + albums.size * 63)
             val popup = PopupWindow(scroll, width, min(availableHeight, desiredHeight), true).apply {
                 isOutsideTouchable = true
                 setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
@@ -990,7 +1093,7 @@ class Ui private constructor() {
         private fun themedDialogBody(context: Context, title: String, message: String?): LinearLayout {
             val body = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                background = rounded(menuSurface(context), SIDE_PANEL_RADIUS_DP, context)
+                background = rounded(menuSurface(context), SIDE_PANEL_RADIUS_DP, context, menuBorder(context), 1)
                 clipToOutline = true
             }
             body.addView(
@@ -1027,8 +1130,8 @@ class Ui private constructor() {
             LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = dp(context, 52)
-                setPadding(dp(context, 10), dp(context, 4), dp(context, 14), dp(context, 4))
+                minimumHeight = dp(context, 50)
+                setPadding(dp(context, 12), dp(context, 4), dp(context, 14), dp(context, 4))
                 background = actionFeedback(context, menuText(context))
                 if (radio) {
                     addView(
@@ -1066,32 +1169,38 @@ class Ui private constructor() {
         private fun styleDialogChoiceRow(row: LinearLayout, selected: Boolean) {
             val context = row.context
             row.isSelected = selected
-            row.background = RippleDrawable(
+            row.background = flatRowBackground(context, selected)
+        }
+
+        /** Linha de lista sem cartão: só a seleção recebe um fundo suave; as demais mostram apenas o toque. */
+        private fun flatRowBackground(context: Context, selected: Boolean): RippleDrawable =
+            RippleDrawable(
                 ColorStateList.valueOf((menuText(context) and 0x00FFFFFF) or 0x22000000),
-                if (selected) rounded(blend(menuSurface(context), accent(context), 0.12f), 10, context) else null,
+                if (selected) rounded(menuHighlightSurface(context), 10, context) else null,
                 rounded(Color.WHITE, 10, context)
             )
+
+        private fun dialogActionColor(context: Context, primary: Boolean): Int {
+            if (!primary) return menuText(context)
+            val accent = accent(context)
+            return if (ThemeToneRules.contrastRatio(accent, menuSurface(context)) >= 4.5) accent else menuText(context)
         }
 
         private fun themedDialogButton(context: Context, label: String, primary: Boolean = false, onClick: () -> Unit): TextView =
             TextView(context).apply {
                 text = label
                 textSize = 15f
-                setTextColor(menuText(context))
+                setTextColor(dialogActionColor(context, primary))
                 if (primary) {
                     setTypeface(Typeface.DEFAULT_BOLD)
                     tag = DIALOG_PRIMARY_ACTION_TAG
                 }
-                gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                minimumHeight = dp(context, 50)
+                gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                minimumHeight = dp(context, 48)
                 isClickable = true
                 isFocusable = true
-                background = if (primary) {
-                    rounded(blend(menuSurface(context), menuText(context), 0.08f), 0, context)
-                } else {
-                    ColorDrawable(Color.TRANSPARENT)
-                }
-                setPadding(dp(context, 18), dp(context, 12), dp(context, 18), dp(context, 12))
+                background = flatRowBackground(context, false)
+                setPadding(dp(context, 16), dp(context, 10), dp(context, 16), dp(context, 10))
                 setOnClickListener { onClick() }
             }
 
@@ -1103,21 +1212,16 @@ class Ui private constructor() {
             onSecond: () -> Unit
         ): LinearLayout = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(context, 12), dp(context, 8), dp(context, 12), dp(context, 12))
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            setPadding(dp(context, 8), dp(context, 4), dp(context, 8), dp(context, 8))
             fun addAction(label: String, primary: Boolean, marginStart: Int, marginEnd: Int, action: () -> Unit) {
                 val button = themedDialogButton(context, label, primary, action).apply {
                     tag = null
                     gravity = Gravity.CENTER
-                    textSize = 14f
-                    background = RippleDrawable(
-                        ColorStateList.valueOf((menuText(context) and 0x00FFFFFF) or 0x22000000),
-                        rounded(blend(menuSurface(context), menuText(context), if (primary) 0.12f else 0.06f), 10, context),
-                        rounded(Color.WHITE, 10, context)
-                    )
-                    setPadding(dp(context, 6), dp(context, 6), dp(context, 6), dp(context, 6))
                 }
-                addView(button, LinearLayout.LayoutParams(0, dp(context, 52), 1f).apply {
+                addView(button, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
                     this.marginStart = dp(context, marginStart)
                     this.marginEnd = dp(context, marginEnd)
                 })
@@ -1138,7 +1242,11 @@ class Ui private constructor() {
         }
 
         private fun menuActionParams(): LinearLayout.LayoutParams =
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                marginStart = 20
+                marginEnd = 20
+                bottomMargin = 16
+            }
 
         private const val POPUP_ACTION_DELAY_MS = 48L
         private const val SIDE_PANEL_LAYOUT_DELAY_MS = 16L
@@ -1148,7 +1256,7 @@ class Ui private constructor() {
         private const val SELECTION_ACTION_DOCK_TAG = "selection_action_dock"
         private const val DIALOG_PRIMARY_ACTION_TAG = "dialog_primary_action"
         private const val SIDE_PANEL_MAX_WIDTH_DP = 280
-        private const val SIDE_PANEL_RADIUS_DP = 14
+        private const val SIDE_PANEL_RADIUS_DP = 16
         private const val SIDE_PANEL_END_MARGIN_DP = 8
         private const val SIDE_PANEL_TOP_MARGIN_DP = 72
         private const val SIDE_PANEL_BOTTOM_MARGIN_DP = 28

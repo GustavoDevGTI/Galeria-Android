@@ -11,6 +11,8 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.matcher.RootMatchers.isDialog
+import androidx.test.espresso.matcher.RootMatchers.withDecorView
+import org.hamcrest.Matchers.sameInstance
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
@@ -215,7 +217,7 @@ class HiddenAlbumDialogInstrumentedTest {
                     .putStringSet(PREF_EVER_VISIBLE,
                         prefs.getStringSet(PREF_EVER_VISIBLE, emptySet()).orEmpty() + revealKey)
                     .commit()
-                ActivityScenario.launch(MainActivity::class.java).use {
+                ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                     onView(withContentDescription(R.string.main_folder_visibility)).perform(click())
                     waitUntilDialogDisplayedContaining(revealName)
                     onView(allOf(withContentDescription("Exibir por 30 minutos"),
@@ -223,9 +225,7 @@ class HiddenAlbumDialogInstrumentedTest {
                         .inRoot(isDialog()).perform(clickClickableAncestor())
                     assertTrue("O toque no olho deve ativar a visualização temporária.",
                         TemporaryAlbumVisibility.activeKeys().contains(revealKey))
-                    waitForView {
-                        onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
-                    }
+                    waitForMainAfterDialog(scenario)
                     waitUntilDisplayedContaining(revealName)
                     assertTrue(prefs.getStringSet(PREF_HIDDEN_KEYS, emptySet()).orEmpty().contains(revealKey))
 
@@ -254,9 +254,7 @@ class HiddenAlbumDialogInstrumentedTest {
                     onView(allOf(withContentDescription("Exibir por 30 minutos"),
                         withParent(hasDescendant(withText(containsString(revealName))))))
                         .inRoot(isDialog()).perform(clickClickableAncestor())
-                    waitForView {
-                        onView(withContentDescription(R.string.main_folder_visibility)).check(matches(isDisplayed()))
-                    }
+                    waitForMainAfterDialog(scenario)
                     waitUntilDisplayedContaining(revealName)
 
                     onView(withContentDescription(R.string.main_folder_visibility)).perform(click())
@@ -266,9 +264,7 @@ class HiddenAlbumDialogInstrumentedTest {
                         .inRoot(isDialog()).perform(clickClickableAncestor())
                     assertFalse("O segundo toque deve ocultar o álbum novamente.",
                         TemporaryAlbumVisibility.activeKeys().contains(revealKey))
-                    waitForView {
-                        onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
-                    }
+                    waitForMainAfterDialog(scenario)
                     waitForView {
                         onView(withText(containsString(revealName))).check(doesNotExist())
                     }
@@ -277,9 +273,7 @@ class HiddenAlbumDialogInstrumentedTest {
                     onView(allOf(withContentDescription("Exibir por 30 minutos"),
                         withParent(hasDescendant(withText(containsString(revealName))))))
                         .inRoot(isDialog()).perform(clickClickableAncestor())
-                    waitForView {
-                        onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
-                    }
+                    waitForMainAfterDialog(scenario)
                     waitUntilDisplayedContaining(revealName)
                 }
                 assertFalse(TemporaryAlbumVisibility.activeKeys().contains(revealKey))
@@ -340,6 +334,18 @@ class HiddenAlbumDialogInstrumentedTest {
 
     private fun waitUntilDialogDisplayedContaining(text: String) = waitForView {
         onView(withText(containsString(text))).inRoot(isDialog()).check(matches(isDisplayed()))
+    }
+
+    private fun waitForMainAfterDialog(scenario: ActivityScenario<MainActivity>) = waitForView {
+        lateinit var root: android.view.View
+        scenario.onActivity { activity ->
+            root = activity.window.decorView
+            assertTrue("A janela principal precisa receber o foco após fechar o diálogo.",
+                root.hasWindowFocus() && !root.isLayoutRequested)
+        }
+        onView(withContentDescription(R.string.action_more_options))
+            .inRoot(withDecorView(sameInstance(root)))
+            .check(matches(isDisplayed()))
     }
 
     private fun waitForView(assertion: () -> Unit) {

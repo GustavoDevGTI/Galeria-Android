@@ -147,6 +147,12 @@ internal class DetailPlaybackController(
         commands.channel?.toggle()
     }
 
+    /** Play or pause by the requested state instead of the instant isPlaying flag (stable for short loops). */
+    fun setPlaying(playing: Boolean) {
+        val channel = commands.channel ?: return
+        if (playing) channel.play() else channel.pause()
+    }
+
     fun seekBy(deltaMs: Long) {
         commands.channel?.seekBy(deltaMs)
     }

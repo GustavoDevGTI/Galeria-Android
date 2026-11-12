@@ -445,7 +445,7 @@ class AlbumMediaActivity : ComponentActivity() {
                     if (!adapter.isSelected(position)) adapter.selectPosition(position)
                     if (!wasSelectionMode || !wasSelected) beginSelectionDrag(position)
                     updateSelectionUi()
-                    view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
+                    Ui.longPressFeedback(view)
                     return true
                 }
                 if (!adapter.isSelectionMode()) {
@@ -453,16 +453,17 @@ class AlbumMediaActivity : ComponentActivity() {
                     adapter.selectPosition(position)
                     beginSelectionDrag(position)
                     updateSelectionUi()
-                    view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
+                    Ui.longPressFeedback(view)
                     return true
                 }
                 if (!adapter.isSelected(position)) {
                     adapter.selectPosition(position)
                     beginSelectionDrag(position)
                     updateSelectionUi()
-                    view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
+                    Ui.longPressFeedback(view)
                     return true
                 }
+                Ui.longPressFeedback(view, shrink = false)
                 dragging = true
                 dragPosition = position
                 dragMoved = false
@@ -788,13 +789,13 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun showSpacingDialog() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = Ui.rounded(Ui.menuSurface(this@AlbumMediaActivity), 14, this@AlbumMediaActivity)
+            background = Ui.rounded(Ui.menuSurface(this@AlbumMediaActivity), 16, this@AlbumMediaActivity, Ui.menuBorder(this@AlbumMediaActivity), 1)
             clipToOutline = true
             setPadding(
                 Ui.dp(this@AlbumMediaActivity, 24),
                 Ui.dp(this@AlbumMediaActivity, 20),
                 Ui.dp(this@AlbumMediaActivity, 24),
-                Ui.dp(this@AlbumMediaActivity, 8)
+                Ui.dp(this@AlbumMediaActivity, 12)
             )
         }
         panel.addView(
@@ -872,7 +873,7 @@ class AlbumMediaActivity : ComponentActivity() {
         selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
         Ui.styleSelectionToggle(selectAllChip, adapter.allVisibleSelected())
         searchInput.isEnabled = !active
-        moreButton.setImageResource(if (active) R.drawable.ic_back else R.drawable.ic_more_vertical)
+        moreButton.setImageResource(if (active) R.drawable.ic_close else R.drawable.ic_more_vertical)
         moreButton.contentDescription = getString(
             if (active) R.string.action_cancel_selection else R.string.action_more_options
         )

@@ -314,6 +314,9 @@ class DetailActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (closeOcrSelection()) return
+                // A playing video (also in cinema mode) shrinks to a floating thumbnail
+                // so the user can keep browsing the gallery or other apps.
+                if (enterPictureInPictureIfPlaying()) return
                 resetSpeedAndFinish()
             }
         })
@@ -1610,6 +1613,7 @@ class DetailActivity : ComponentActivity() {
                 override fun onPlaybackChanged() {
                     updatePlayPauseButton()
                     updateTimeline()
+                    updatePictureInPictureActions()
                 }
 
                 override fun onPlaybackEnded() {
@@ -2861,7 +2865,170 @@ class DetailActivity : ComponentActivity() {
         scheduleShuffleAdvance()
     }
 
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (isInPictureInPictureMode) {
+            hideViewerChromeForPictureInPicture()
+            registerPictureInPictureControls()
+            return
+        }
+        pictureInPictureShownPlaying = null
+        unregisterPictureInPictureControls()
+        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+            // The thumbnail was closed: stop the video instead of leaving it playing invisibly.
+            playbackController.pauseForLifecycle()
+            resetSpeedAndFinish()
+            return
+        }
+        restoreViewerChromeAfterPictureInPicture()
+        applyViewerSystemBars()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (isInPictureInPictureModeCompat()) playbackController.pauseForLifecycle()
+    }
+
+    private fun isInPictureInPictureModeCompat(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode
+
+    // "Playing" here means the user asked the video to play: a short looping video passes through
+    // brief ended/buffering moments where isPlaying is false, and back must still go to the thumbnail.
+    private fun videoActiveForPictureInPicture(): Boolean {
+        val player = playbackController.player() ?: return false
+        return player.playWhenReady && player.playbackState != androidx.media3.common.Player.STATE_ENDED
+    }
+
+    private fun pictureInPictureSupported(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
+
+    private fun enterPictureInPictureIfPlaying(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        val allowed = DetailPictureInPictureRules.shouldEnter(
+            supported = pictureInPictureSupported(),
+            isVideo = mediaQueue.getOrNull(currentIndex)?.isVideo() == true,
+            playing = videoActiveForPictureInPicture(),
+            alreadyInPictureInPicture = isInPictureInPictureModeCompat(),
+            finishing = isFinishing
+        )
+        if (!allowed) return false
+        closeOcrSelection()
+        speedPopup?.dismiss()
+        cancelPendingSingleTap()
+        // Hide the bars before shrinking so they never appear inside the thumbnail or its animation.
+        pictureInPictureShownPlaying = true
+        hideViewerChromeForPictureInPicture()
+        val entered = try {
+            enterPictureInPictureMode(pictureInPictureParams())
+        } catch (_: IllegalStateException) {
+            false
+        } catch (_: IllegalArgumentException) {
+            false
+        }
+        if (entered) registerPictureInPictureControls() else restoreViewerChromeAfterPictureInPicture()
+        return entered
+    }
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
+    private fun pictureInPictureParams(): android.app.PictureInPictureParams {
+        val size = playbackController.player()?.videoSize
+        val (width, height) = DetailPictureInPictureRules.aspectRatio(size?.width ?: 0, size?.height ?: 0)
+        val playing = videoActiveForPictureInPicture()
+        val label = getString(if (playing) R.string.video_pause else R.string.video_play)
+        val toggle = android.app.PendingIntent.getBroadcast(
+            this,
+            0,
+            Intent(ACTION_PICTURE_IN_PICTURE_TOGGLE).setPackage(packageName),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val action = android.app.RemoteAction(
+            android.graphics.drawable.Icon.createWithResource(this, if (playing) R.drawable.ic_pause else R.drawable.ic_play),
+            label,
+            label,
+            toggle
+        )
+        return android.app.PictureInPictureParams.Builder()
+            .setAspectRatio(android.util.Rational(width, height))
+            .setActions(listOf(action))
+            .build()
+    }
+
+    // Last play state sent to the thumbnail. Re-sending the same buttons on every player
+    // callback makes Android rebuild them constantly and the user's tap gets lost.
+    private var pictureInPictureShownPlaying: Boolean? = null
+
+    private fun updatePictureInPictureActions() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || !isInPictureInPictureModeCompat()) return
+        val playing = videoActiveForPictureInPicture()
+        if (pictureInPictureShownPlaying == playing) return
+        pictureInPictureShownPlaying = playing
+        runCatching { setPictureInPictureParams(pictureInPictureParams()) }
+    }
+
+    private var pictureInPictureReceiver: android.content.BroadcastReceiver? = null
+    private val viewsHiddenForPictureInPicture = mutableListOf<Pair<View, Int>>()
+
+    private fun registerPictureInPictureControls() {
+        if (pictureInPictureReceiver != null) return
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context, intent: Intent) {
+                if (intent.action == ACTION_PICTURE_IN_PICTURE_TOGGLE) {
+                    playbackController.setPlaying(!videoActiveForPictureInPicture())
+                    updatePlayPauseButton()
+                    updatePictureInPictureActions()
+                }
+            }
+        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            receiver,
+            android.content.IntentFilter(ACTION_PICTURE_IN_PICTURE_TOGGLE),
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        pictureInPictureReceiver = receiver
+    }
+
+    private fun unregisterPictureInPictureControls() {
+        pictureInPictureReceiver?.let { runCatching { unregisterReceiver(it) } }
+        pictureInPictureReceiver = null
+    }
+
+    private fun hideViewerChromeForPictureInPicture() {
+        // Already hidden right before entering: keep the visibility saved at that moment.
+        if (viewsHiddenForPictureInPicture.isNotEmpty()) return
+        val chrome = listOfNotNull(
+            topBar.takeIf { ::topBar.isInitialized },
+            bottomBar.takeIf { ::bottomBar.isInitialized },
+            cinemaGestureIndicator.takeIf { ::cinemaGestureIndicator.isInitialized },
+            cinemaModeIndicator.takeIf { ::cinemaModeIndicator.isInitialized }
+        )
+        for (view in chrome) {
+            viewsHiddenForPictureInPicture += view to view.visibility
+            view.visibility = View.GONE
+        }
+    }
+
+    private fun restoreViewerChromeAfterPictureInPicture() {
+        cancelPendingSingleTap()
+        // Back from the thumbnail the controls are always shown, so a tap delivered while
+        // expanding cannot leave the viewer without its bars.
+        hudVisible = true
+        for ((view, visibility) in viewsHiddenForPictureInPicture) {
+            view.animate().cancel()
+            view.alpha = 1f
+            view.visibility = if (view === topBar || view === bottomBar) View.VISIBLE else visibility
+        }
+        viewsHiddenForPictureInPicture.clear()
+        updatePlayPauseButton()
+    }
+
     override fun onPause() {
+        if (isInPictureInPictureModeCompat()) {
+            // Entering the floating thumbnail pauses the activity, but the video must keep playing.
+            super.onPause()
+            return
+        }
         closeOcrSelection()
         clearOcrProgress()
         // Settle before pausing so a new video cannot start after lifecycle pause.
@@ -2883,6 +3050,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        unregisterPictureInPictureControls()
         closeOcrSelection()
         clearOcrProgress()
         operations.close()
@@ -2938,6 +3106,7 @@ class DetailActivity : ComponentActivity() {
         if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 0 else navigationBarHeight()
 
     companion object {
+        private const val ACTION_PICTURE_IN_PICTURE_TOGGLE = "com.galeria.android.PICTURE_IN_PICTURE_TOGGLE"
         private const val REQ_DELETE = 31
         private const val REQ_RESTORE = 36
         private const val REQ_HIDE_DELETE = 32

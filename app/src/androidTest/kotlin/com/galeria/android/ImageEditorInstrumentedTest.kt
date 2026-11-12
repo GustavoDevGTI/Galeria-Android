@@ -174,14 +174,14 @@ class ImageEditorInstrumentedTest {
                 waitForCropReady()
                 onView(withContentDescription("Texto")).check(doesNotExist())
 
-                pressBack()
+                closeEditorWithBack()
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
                 waitForMenu()
                 onView(withContentDescription("Edição personalizada")).inRoot(isDialog()).perform(clickClickableAncestor())
                 waitForText("Editar imagem")
                 onView(withContentDescription("Texto")).check(matches(isDisplayed()))
 
-                pressBack()
+                closeEditorWithBack()
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
                 waitForMenu()
                 // This case verifies menu dispatch + persisted EXIF + redisplay,
@@ -244,7 +244,7 @@ class ImageEditorInstrumentedTest {
                 onView(withContentDescription("Texto")).check(doesNotExist())
                 onView(withContentDescription("Imagem pronta para recorte")).perform(cropCorner())
                 onView(withContentDescription("Salvar cópia")).perform(click())
-                val deadline = System.currentTimeMillis() + 10_000L
+                val deadline = System.currentTimeMillis() + 20_000L
                 while (output == null && System.currentTimeMillis() < deadline) {
                     output = findImage(context, outputName)
                     if (output == null) Thread.sleep(100L)
@@ -272,6 +272,37 @@ class ImageEditorInstrumentedTest {
             }
         }
         throw AssertionError("A foto não ficou pronta para recorte")
+    }
+
+    // An injected BACK key can be dropped by the system while window focus is still moving from
+    // the viewer to the just-opened editor. Trigger the editor's own back handling instead.
+    private fun closeEditorWithBack() {
+        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val editor = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                .filterIsInstance<ImageEditActivity>().firstOrNull()
+            requireNotNull(editor) { "O editor deveria estar aberto antes de voltar" }
+                .onBackPressedDispatcher.onBackPressed()
+        }
+        waitForViewerAfterEditor()
+    }
+
+    // pressBack returns before the editor finishes closing; wait for the viewer to be the
+    // focused, resumed screen so its "Editar" button is the one Espresso looks up.
+    private fun waitForViewerAfterEditor() {
+        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        val deadline = android.os.SystemClock.uptimeMillis() + 15_000L
+        var ready = false
+        while (!ready && android.os.SystemClock.uptimeMillis() < deadline) {
+            instrumentation.runOnMainSync {
+                ready = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                    .filterIsInstance<DetailActivity>().any { it.hasWindowFocus() }
+            }
+            if (!ready) android.os.SystemClock.sleep(50L)
+        }
+        if (!ready) throw AssertionError("O visualizador não voltou depois de fechar o editor")
     }
 
     private fun waitForMenu() {

@@ -164,10 +164,13 @@ class OrganizerInstrumentedTest {
                 assertTrue(it.controller.destinations.none { a -> a.key == destination })
                 assertEquals(source, path(original))
                 assertEquals("1", root.findViewWithTag<android.widget.TextView>("organizer_drawer_count_$destination").text.toString())
-                assertNotNull(root.findViewWithTag<View>(tag).background)
+                val row = root.findViewWithTag<View>(tag)
+                assertEquals(Ui.menuHighlightSurface(it),
+                    (row.background as android.graphics.drawable.GradientDrawable).color!!.defaultColor)
                 it.controller.undo()
                 assertEquals(0, it.controller.sentCount(destination))
-                assertNull(root.findViewWithTag<View>(tag).background)
+                assertEquals(Ui.menuOptionSurface(it),
+                    (row.background as android.graphics.drawable.GradientDrawable).color!!.defaultColor)
                 it.controller.reserve()
                 root.findViewWithTag<View>("organizer_reserve_button").performClick()
             }
@@ -430,18 +433,24 @@ class OrganizerInstrumentedTest {
         assertTrue(file.isFile)
     }
 
-    @Test fun contrastingHighlightFollowsLightDarkBlackAndWhiteThemes() {
-        val oldTheme = prefs.getInt("theme_color", Color.BLACK)
+    @Test fun organizerTonesKeepHighlightDistinctAndLegibleAcrossThemes() {
+        val original = prefs.getInt(Ui.THEME_COLOR_PREF, Ui.DEFAULT_THEME_SEED)
+        val customized = prefs.contains(Ui.THEME_COLOR_PREF)
         try {
             for (color in listOf(Color.BLACK, Color.WHITE, Color.rgb(40, 70, 95), Color.rgb(200, 220, 240))) {
-                prefs.edit().putInt("theme_color", color).commit()
-                val fill = OrganizerColors.highlight(context)
-                if (color == Color.BLACK) assertEquals(Color.WHITE, fill)
-                if (color == Color.WHITE) assertEquals(Color.BLACK, fill)
-                assertTrue(if (Ui.darkMode(context)) Ui.luminance(fill) > .56 else Ui.luminance(fill) < .56)
-                assertEquals(if (Ui.luminance(fill) > .56) Color.BLACK else Color.WHITE, OrganizerColors.highlightText(context))
+                prefs.edit().putInt(Ui.THEME_COLOR_PREF, color).commit()
+                val tones = Ui.menuTones(context)
+                assertEquals(4, tones.toSet().size)
+                assertEquals(Ui.menuHighlightSurface(context), tones.last())
+                for (tone in tones) {
+                    assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(Ui.menuText(context), tone) >= 4.5)
+                }
             }
-        } finally { prefs.edit().putInt("theme_color", oldTheme).commit() }
+        } finally {
+            prefs.edit().apply {
+                if (customized) putInt(Ui.THEME_COLOR_PREF, original) else remove(Ui.THEME_COLOR_PREF)
+            }.commit()
+        }
     }
 
     private fun launch() = ActivityScenario.launch<OrganizerActivity>(OrganizerActivity.intent(context, listOf(source) + targets, false, source))

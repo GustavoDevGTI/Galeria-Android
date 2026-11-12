@@ -352,7 +352,7 @@ class MainActivity : ComponentActivity() {
                 enterSelectionMode()
                 adapter.selectPosition(position)
                 updateSelectionUi()
-                view.animate().scaleX(0.94f).scaleY(0.94f).alpha(0.78f).setDuration(90).start()
+                Ui.longPressFeedback(view)
                 return true
             }
         })
@@ -519,7 +519,7 @@ class MainActivity : ComponentActivity() {
             getString(R.string.main_search_folders)
         }
         searchInput.isEnabled = !active
-        moreButton.setImageResource(if (active) R.drawable.ic_back else R.drawable.ic_more_vertical)
+        moreButton.setImageResource(if (active) R.drawable.ic_close else R.drawable.ic_more_vertical)
         moreButton.contentDescription = getString(
             if (active) R.string.action_cancel_selection else R.string.action_more_options
         )
@@ -824,7 +824,7 @@ class MainActivity : ComponentActivity() {
     private fun applyThemeColors() {
         Ui.applySystemBars(this)
         if (::root.isInitialized) root.setBackgroundColor(Ui.bg(this))
-        if (::top.isInitialized) top.background = Ui.rounded(Ui.search(this), 22, this)
+        if (::top.isInitialized) top.background = Ui.rounded(Ui.search(this), 22, this, Ui.border(this), 1)
         if (::searchInput.isInitialized) {
             searchInput.setTextColor(Ui.text(this))
             searchInput.setHintTextColor(Ui.muted(this))
@@ -843,7 +843,7 @@ class MainActivity : ComponentActivity() {
             swipeRefresh.setColorSchemeColors(Ui.accent(this))
             swipeRefresh.setProgressBackgroundColorSchemeColor(Ui.surface(this))
         }
-        if (::selectionBar.isInitialized) selectionBar.background = Ui.rounded(Ui.surface(this), 8, this)
+        if (::selectionBar.isInitialized) selectionBar.background = Ui.rounded(Ui.elevatedSurface(this), 10, this, Ui.border(this), 1)
         if (::browseBar.isInitialized) browseBar.restyle()
         if (::selectionActions.isInitialized) {
             selectionActions.setBackgroundColor(Ui.surface(this))
@@ -906,9 +906,9 @@ class MainActivity : ComponentActivity() {
     private fun showAlbumSpacingDialog() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = Ui.rounded(Ui.menuSurface(this@MainActivity), 14, this@MainActivity)
+            background = Ui.rounded(Ui.menuSurface(this@MainActivity), 16, this@MainActivity, Ui.menuBorder(this@MainActivity), 1)
             clipToOutline = true
-            Ui.setPadding(this, 24, 20, 24, 8)
+            Ui.setPadding(this, 24, 20, 24, 12)
         }
         panel.addView(TextView(this).apply {
             setText(R.string.main_album_spacing)
@@ -1028,7 +1028,9 @@ class MainActivity : ComponentActivity() {
         val checkedKeys = HashSet<String>()
         lateinit var dialog: AlertDialog
         val dialogBg = Ui.menuSurface(this)
-        val dialogRow = Ui.blend(dialogBg, Color.WHITE, 0.04f)
+        val dialogRow = Ui.menuOptionSurface(this)
+        val dialogElevated = Ui.menuElevatedSurface(this)
+        val dialogHighlight = Ui.menuHighlightSurface(this)
         val dialogText = Ui.menuText(this)
         val dialogMuted = Ui.blend(dialogText, dialogBg, 0.34f)
         for (album in mutableAlbums) {
@@ -1197,8 +1199,8 @@ class MainActivity : ComponentActivity() {
                     }, 190L)
                 }
                 check.isChecked = checkedKeys.contains(album.key)
-                row.alpha = if (check.isChecked) 1f else 0.56f
-                row.setBackgroundColor(if (position % 2 == 0) dialogBg else dialogRow)
+                val rowTone = if (pinned || temporarilyRevealed) dialogElevated else dialogRow
+                row.setBackgroundColor(rowTone)
                 row.setOnClickListener {
                     if (checkedKeys.contains(album.key)) {
                         checkedKeys.remove(album.key)
@@ -1403,7 +1405,11 @@ class MainActivity : ComponentActivity() {
                 minimumHeight = Ui.dp(this@MainActivity, 50)
                 isClickable = true
                 isFocusable = true
-                background = Ui.rounded(Color.TRANSPARENT, 0, this@MainActivity)
+                background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x18000000),
+                    Ui.rounded(dialogElevated, 10, this@MainActivity, Ui.menuBorder(this@MainActivity), 1),
+                    Ui.rounded(Color.WHITE, 10, this@MainActivity)
+                )
                 setPadding(
                     Ui.dp(this@MainActivity, 14),
                     Ui.dp(this@MainActivity, 8),
@@ -1472,7 +1478,14 @@ class MainActivity : ComponentActivity() {
                         FrameLayout(this@MainActivity).apply {
                           addView(dialogButton(getString(R.string.main_load_hidden)) { loadHiddenAlbums() }.apply {
                             loadHiddenButton = this
-                            textSize = 13f
+                            textSize = 14f
+                            setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+                            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                            background = android.graphics.drawable.RippleDrawable(
+                                android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x18000000),
+                                null,
+                                Ui.rounded(Color.WHITE, 10, this@MainActivity)
+                            )
                             setPadding(
                                 Ui.dp(this@MainActivity, 8),
                                 Ui.dp(this@MainActivity, 8),
@@ -1500,8 +1513,8 @@ class MainActivity : ComponentActivity() {
             contentDescription = getString(R.string.action_ok)
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
             background = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x14000000),
-                Ui.rounded(Ui.blend(dialogBg, dialogText, 0.08f), 0, this@MainActivity),
+                android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x18000000),
+                Ui.rounded(dialogHighlight, 0, this@MainActivity),
                 Color.WHITE.toDrawable()
             )
             setOnClickListener {
@@ -1513,6 +1526,7 @@ class MainActivity : ComponentActivity() {
                 TextView(this@MainActivity).apply {
                     setText(R.string.action_ok)
                     textSize = 14f
+                    setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
                     setTextColor(dialogText)
                     gravity = Gravity.CENTER
                     importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -1521,7 +1535,7 @@ class MainActivity : ComponentActivity() {
             )
         }
         val panel = FrameLayout(this).apply {
-            background = Ui.rounded(dialogBg, 14, this@MainActivity)
+            background = Ui.rounded(dialogBg, 16, this@MainActivity, Ui.menuBorder(this@MainActivity), 1)
             clipToOutline = true
             addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(

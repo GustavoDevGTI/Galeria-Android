@@ -6,12 +6,20 @@ param(
     [switch]$StatusOnly
 )
 $ErrorActionPreference = 'Stop'
+# Android build/test caches live in the existing profile-quota exclusion.
+if ($IsWindows) { $env:GRADLE_USER_HOME = Join-Path $env:LOCALAPPDATA 'Gradle' }
 $devices = @{
     Galeria = @{ Name = 'Galeria_Codex_Test_36'; Port = 5554 }
     Downloader = @{ Name = 'Definitive_API_36'; Port = 5560 }
 }
 $selected = $devices[$Project]
 $avdName = $selected.Name
+$localAvdHome = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Android/avd'))
+if (Test-Path -LiteralPath (Join-Path $localAvdHome ($avdName + '.ini'))) {
+    # Use the durable local data area even from an app opened before the user's
+    # ANDROID_AVD_HOME environment variable was updated.
+    $env:ANDROID_AVD_HOME = $localAvdHome
+}
 $serial = 'emulator-' + $selected.Port
 $adb = Join-Path $SdkRoot 'platform-tools/adb.exe'
 $emulator = Join-Path $SdkRoot 'emulator/emulator.exe'
@@ -77,8 +85,11 @@ try {
         $pathLine = Get-Content -LiteralPath $ini | Where-Object { $_ -match '^path=' } | Select-Object -First 1
         if (!$pathLine) { throw "Caminho do AVD ausente em $ini." }
         $avdFolder = [IO.Path]::GetFullPath($pathLine.Substring(5))
-        $expected = Join-Path $avdHome ($avdName + '.avd')
-        if ($avdFolder -ne $expected) { throw "Local do AVD personalizado: $avdFolder. Revisar manualmente antes de limpar snapshots." }
+        $expected = @(
+            [IO.Path]::GetFullPath((Join-Path $avdHome ($avdName + '.avd'))),
+            [IO.Path]::GetFullPath((Join-Path $localAvdHome ($avdName + '.avd')))
+        )
+        if ($avdFolder -notin $expected) { throw "Local do AVD não aprovado para manutenção: $avdFolder." }
         if ((Get-Item -LiteralPath $avdFolder -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Pasta do AVD é um link; limpeza recusada.' }
         $snapshots = [IO.Path]::GetFullPath((Join-Path $avdFolder 'snapshots'))
         if (!$snapshots.StartsWith($avdFolder + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Caminho de snapshots fora do AVD.' }

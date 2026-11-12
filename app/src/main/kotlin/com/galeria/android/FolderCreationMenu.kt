@@ -84,10 +84,16 @@ class FolderCreationMenu(
 
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                 val folder = getItem(position)
+                val rowTone = if (folder == null) {
+                    Ui.menuElevatedSurface(activity)
+                } else {
+                    Ui.menuOptionSurface(activity)
+                }
                 return LinearLayout(activity).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
                     minimumHeight = Ui.dp(activity, 52)
+                    setBackgroundColor(rowTone)
                     setPadding(Ui.dp(activity, 14), Ui.dp(activity, 5), Ui.dp(activity, 14), Ui.dp(activity, 5))
                     addView(
                         ImageView(activity).apply {
@@ -323,7 +329,7 @@ class FolderCreationMenu(
 
     private fun panel(): LinearLayout = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
-        background = Ui.rounded(Ui.menuSurface(activity), 14, activity)
+        background = Ui.rounded(Ui.menuSurface(activity), 16, activity, Ui.menuBorder(activity), 1)
         clipToOutline = true
         setPadding(0, Ui.dp(activity, 4), 0, Ui.dp(activity, 4))
     }
@@ -350,7 +356,17 @@ class FolderCreationMenu(
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = Ui.dp(activity, 62)
             alpha = if (enabled) 1f else 0.46f
-            setPadding(Ui.dp(activity, 16), Ui.dp(activity, 6), Ui.dp(activity, 16), Ui.dp(activity, 6))
+            val rowTone = if (enabled) Ui.menuOptionSurface(activity) else Ui.menuSurface(activity)
+            background = Ui.rounded(rowTone, 10, activity, Ui.menuBorder(activity), 1)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = Ui.dp(activity, 10)
+                marginEnd = Ui.dp(activity, 10)
+                bottomMargin = Ui.dp(activity, 4)
+            }
+            setPadding(Ui.dp(activity, 14), Ui.dp(activity, 6), Ui.dp(activity, 14), Ui.dp(activity, 6))
             addView(
                 ImageView(activity).apply {
                     setImageResource(R.drawable.ic_folder)
@@ -392,9 +408,9 @@ class FolderCreationMenu(
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
             minimumHeight = Ui.dp(activity, 50)
             background = if (primary) {
-                Ui.rounded(Ui.blend(Ui.menuSurface(activity), Ui.menuText(activity), 0.08f), 0, activity)
+                Ui.rounded(Ui.menuHighlightSurface(activity), 0, activity)
             } else {
-                Ui.rounded(Color.TRANSPARENT, 0, activity)
+                Ui.rounded(Ui.menuElevatedSurface(activity), 0, activity)
             }
             setPadding(Ui.dp(activity, 18), Ui.dp(activity, 10), Ui.dp(activity, 18), Ui.dp(activity, 10))
             setOnClickListener { onClick() }

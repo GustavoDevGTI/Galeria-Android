@@ -3,16 +3,122 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- Base shadow plate for Conceito A wheel -->
     <path
-        android:fillColor="#4BA3FF"
-        android:pathData="M20,24h68a8,8 0,0 1,8 8v44a8,8 0,0 1,-8 8H20a8,8 0,0 1,-8 -8V32a8,8 0,0 1,8 -8z" />
+        android:fillColor="#0B0E14"
+        android:pathData="M 54,18.8 A 35.2,35.2 0 1,1 53.99,18.8 Z" />
+
+    <!-- Conceito A: 8-sector wheel (+ and x dividers) with distinct lighter inner step band -->
     <path
-        android:fillColor="#101214"
-        android:pathData="M27,34h54a5,5 0,0 1,5 5v30a5,5 0,0 1,-5 5H27a5,5 0,0 1,-5 -5V39a5,5 0,0 1,5 -5z" />
+        android:fillColor="#94A3BC"
+        android:pathData="M 54.75,19.41 A 34.6,34.6 0 0,1 77.93,29.01 L 67.69,39.7 A 19.8,19.8 0 0,0 54.43,34.2 Z" />
     <path
-        android:fillColor="#F5F7FA"
-        android:pathData="M28,68l14,-17 10,12 8,-9 20,14z" />
+        android:fillColor="#B6C4DA"
+        android:pathData="M 54.51,30.61 A 23.4,23.4 0 0,1 70.18,37.1 L 67.69,39.7 A 19.8,19.8 0 0,0 54.43,34.2 Z" />
     <path
-        android:fillColor="#FFD166"
-        android:pathData="M68,42a7,7 0,1 0,0.1 0z" />
+        android:fillColor="#6B778D"
+        android:pathData="M 78.99,30.07 A 34.6,34.6 0 0,1 88.59,53.25 L 73.8,53.57 A 19.8,19.8 0 0,0 68.3,40.31 Z" />
+    <path
+        android:fillColor="#8C99B0"
+        android:pathData="M 70.9,37.82 A 23.4,23.4 0 0,1 77.39,53.49 L 73.8,53.57 A 19.8,19.8 0 0,0 68.3,40.31 Z" />
+    <path
+        android:fillColor="#4D5666"
+        android:pathData="M 88.59,54.75 A 34.6,34.6 0 0,1 78.99,77.93 L 68.3,67.69 A 19.8,19.8 0 0,0 73.8,54.43 Z" />
+    <path
+        android:fillColor="#6C778A"
+        android:pathData="M 77.39,54.51 A 23.4,23.4 0 0,1 70.9,70.18 L 68.3,67.69 A 19.8,19.8 0 0,0 73.8,54.43 Z" />
+    <path
+        android:fillColor="#94A3BC"
+        android:pathData="M 77.93,78.99 A 34.6,34.6 0 0,1 54.75,88.59 L 54.43,73.8 A 19.8,19.8 0 0,0 67.69,68.3 Z" />
+    <path
+        android:fillColor="#B6C4DA"
+        android:pathData="M 70.18,70.9 A 23.4,23.4 0 0,1 54.51,77.39 L 54.43,73.8 A 19.8,19.8 0 0,0 67.69,68.3 Z" />
+    <path
+        android:fillColor="#4D5666"
+        android:pathData="M 53.25,88.59 A 34.6,34.6 0 0,1 30.07,78.99 L 40.31,68.3 A 19.8,19.8 0 0,0 53.57,73.8 Z" />
+    <path
+        android:fillColor="#6C778A"
+        android:pathData="M 53.49,77.39 A 23.4,23.4 0 0,1 37.82,70.9 L 40.31,68.3 A 19.8,19.8 0 0,0 53.57,73.8 Z" />
+    <path
+        android:fillColor="#4D5666"
+        android:pathData="M 29.01,77.93 A 34.6,34.6 0 0,1 19.41,54.75 L 34.2,54.43 A 19.8,19.8 0 0,0 39.7,67.69 Z" />
+    <path
+        android:fillColor="#6C778A"
+        android:pathData="M 37.1,70.18 A 23.4,23.4 0 0,1 30.61,54.51 L 34.2,54.43 A 19.8,19.8 0 0,0 39.7,67.69 Z" />
+    <path
+        android:fillColor="#353B47"
+        android:pathData="M 19.41,53.25 A 34.6,34.6 0 0,1 29.01,30.07 L 39.7,40.31 A 19.8,19.8 0 0,0 34.2,53.57 Z" />
+    <path
+        android:fillColor="#525A6A"
+        android:pathData="M 30.61,53.49 A 23.4,23.4 0 0,1 37.1,37.82 L 39.7,40.31 A 19.8,19.8 0 0,0 34.2,53.57 Z" />
+    <path
+        android:fillColor="#353B47"
+        android:pathData="M 30.07,29.01 A 34.6,34.6 0 0,1 53.25,19.41 L 53.57,34.2 A 19.8,19.8 0 0,0 40.31,39.7 Z" />
+    <path
+        android:fillColor="#525A6A"
+        android:pathData="M 37.82,37.1 A 23.4,23.4 0 0,1 53.49,30.61 L 53.57,34.2 A 19.8,19.8 0 0,0 40.31,39.7 Z" />
+
+    <!-- Conceito A: Slim, delicate dark camera lens bezel (19.1 -> 16.9) -->
+    <path
+        android:fillColor="#181C26"
+        android:pathData="M 54,34.9 A 19.1,19.1 0 1,1 53.99,34.9 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#525E75"
+        android:strokeWidth="0.6"
+        android:pathData="M 54,36.0 A 18.0,18.0 0 1,1 53.99,36.0 Z" />
+
+    <!-- Clean dark optical glass lens interior (no colored background) -->
+    <path
+        android:fillColor="#11141C"
+        android:pathData="M 54,37.1 A 16.9,16.9 0 1,1 53.99,37.1 Z" />
+    <path
+        android:fillColor="#151923"
+        android:pathData="M 54,38.6 A 15.4,15.4 0 1,1 53.99,38.6 Z" />
+
+    <!-- Enlarged 6-petal rounded flower in the exact theme color (R = 15.0) -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="0">
+        <path
+            android:fillColor="#94A3BC"
+            android:pathData="M 50.6,50.0 L 49.3,43.6 C 49.0,40.4 51.2,39.0 54.0,39.0 C 56.8,39.0 59.0,40.4 58.7,43.6 L 57.4,50.0 Z" />
+        <path
+            android:fillColor="#94A3BC"
+            android:pathData="M 50.6,58.0 L 49.3,64.4 C 49.0,67.6 51.2,69.0 54.0,69.0 C 56.8,69.0 59.0,67.6 58.7,64.4 L 57.4,58.0 Z" />
+    </group>
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="60">
+        <path
+            android:fillColor="#94A3BC"
+            android:pathData="M 50.6,50.0 L 49.3,43.6 C 49.0,40.4 51.2,39.0 54.0,39.0 C 56.8,39.0 59.0,40.4 58.7,43.6 L 57.4,50.0 Z" />
+        <path
+            android:fillColor="#94A3BC"
+            android:pathData="M 50.6,58.0 L 49.3,64.4 C 49.0,67.6 51.2,69.0 54.0,69.0 C 56.8,69.0 59.0,67.6 58.7,64.4 L 57.4,58.0 Z" />
+    </group>
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="120">
+        <path
+            android:fillColor="#94A3BC"
+            android:pathData="M 50.6,50.0 L 49.3,43.6 C 49.0,40.4 51.2,39.0 54.0,39.0 C 56.8,39.0 59.0,40.4 58.7,43.6 L 57.4,50.0 Z" />
+        <path
+            android:fillColor="#94A3BC"
+            android:pathData="M 50.6,58.0 L 49.3,64.4 C 49.0,67.6 51.2,69.0 54.0,69.0 C 56.8,69.0 59.0,67.6 58.7,64.4 L 57.4,58.0 Z" />
+    </group>
+    <path
+        android:fillColor="#94A3BC"
+        android:pathData="M 54,46.6 A 7.4,7.4 0 1,1 53.99,46.6 Z" />
+    <path
+        android:fillColor="#11141C"
+        android:pathData="M 54,50.3 A 3.7,3.7 0 1,1 53.99,50.3 Z" />
+    <!-- Subtle glass dome reflection over top of lens -->
+    <path
+        android:fillColor="#16FFFFFF"
+        android:pathData="M 40.8,45.0 A 15.2,15.2 0 0,1 67.2,45.0 A 18.0,11.4 0 0,0 40.8,45.0 Z" />
 </vector>

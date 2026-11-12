@@ -36,6 +36,11 @@ import kotlin.math.*
 @SuppressLint("ViewConstructor") // Programmatic screen; a retained session is required.
 internal class OrganizerBoard(context: Context, private val controller: OrganizerController, private val createFolder: () -> Unit = {}) : FrameLayout(context) {
     private val ring = RingView(context)
+    private val controlSurface = Ui.surface(context).let { surface ->
+        if (abs(Ui.luminance(surface) - Ui.luminance(Ui.bg(context))) < .025)
+            Ui.blend(surface, Ui.text(context), .10f) else surface
+    }
+    private val destinationText = Ui.menuText(context)
     private val pictures = LinkedHashMap<String, ImageView>()
     private val labels = ArrayList<LinearLayout>()
     private val albumNames = ArrayList<TextView>()
@@ -120,7 +125,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
             labels.add(label); addView(label)
         }
         reserve.apply {
-            tag = "organizer_reserve"; background = Ui.rounded(OrganizerColors.surface(context), 14, context)
+            tag = "organizer_reserve"; background = Ui.rounded(controlSurface, 14, context)
             contentDescription = context.getString(R.string.organizer_reserve, 0)
         }
         compact.apply {
@@ -157,7 +162,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         addView(reserve)
         undo.apply {
             tag = "organizer_undo"; gravity = Gravity.CENTER; isClickable = true; isFocusable = true
-            background = Ui.rounded(OrganizerColors.surface(context), 24, context)
+            background = Ui.rounded(controlSurface, 24, context)
             contentDescription = context.getString(R.string.organizer_undo)
             addView(ImageView(context).apply {
                 setImageResource(R.drawable.ic_undo); setColorFilter(Ui.text(context))
@@ -225,6 +230,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         }
         empty.visibility = if (next.isEmpty()) VISIBLE else GONE
         drawer.render()
+        val lastAlbum = controller.lastAlbum
         labels.forEachIndexed { index, label ->
             val album = controller.destinations.getOrNull(index)
             label.visibility = if (album == null) GONE else VISIBLE
@@ -234,8 +240,14 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
             albumCounts[index].visibility = if (album != null && OrganizerController.isEmpty(album)) GONE else VISIBLE
             label.contentDescription = album?.let { context.getString(R.string.organizer_send_to, it.name) + ", " +
                 resources.getQuantityString(R.plurals.organizer_sent, count, count) }
-            val color = if (album?.key == controller.lastAlbum) OrganizerColors.highlightText(context) else Ui.text(context)
-            albumNames[index].setTextColor(color); albumCounts[index].setTextColor(color)
+            ring.updateTone(index, when {
+                album == null || OrganizerController.isEmpty(album) -> 0
+                album.key == lastAlbum -> 3
+                count > 0 -> 2
+                else -> 1
+            })
+            albumNames[index].setTextColor(destinationText)
+            albumCounts[index].setTextColor(destinationText)
         }
         reserveLabel.text = context.getString(R.string.organizer_reserve, controller.media.reserved.size)
         compact.contentDescription = reserveLabel.text
@@ -618,7 +630,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         label.setOnLongClickListener {
             val album = controller.destinations.getOrNull(index)
             if (controller.saving || index == OrganizerController.TRASH_SLOT || album == null || OrganizerController.isEmpty(album)) false
-            else label.startOrganizerAlbumDrag(OrganizerAlbumDrag(slot = index))
+            else label.startOrganizerAlbumDrag(OrganizerAlbumDrag(slot = index)).also { started -> if (started) Ui.longPressFeedback(label, shrink = false) }
         }
     }
 
@@ -713,10 +725,16 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         private val path = Path()
         private val outer = RectF(); private val inner = RectF()
         private val receivedUntil = LongArray(OrganizerRules.MAX_DESTINATIONS)
+        private val menuTones = Ui.menuTones(context)
+        private val sectorTones = IntArray(OrganizerRules.MAX_DESTINATIONS)
         private var hovered = -1
         init { importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO }
+        fun updateTone(index: Int, tone: Int) {
+            sectorTones[index] = tone
+        }
         fun hover(index: Int) {
             hovered = index
+            invalidate()
             repeat(OrganizerRules.MAX_DESTINATIONS) { animateSector(it, if (it == index || android.os.SystemClock.uptimeMillis() < receivedUntil[it]) 1f else 0f) }
         }
         fun receive(index: Int) {
@@ -757,9 +775,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
                     path.arcTo(outer, start, sweep - 1f)
                     path.arcTo(inner, start + sweep - 1f, 1f - sweep); path.close()
                 }
-                val selected = controller.destinations.getOrNull(index)?.key == controller.lastAlbum
-                paint.color = if (selected) OrganizerColors.highlight(context)
-                    else Ui.blend(OrganizerColors.surface(context), Ui.bg(context), if (index % 2 == 0) .05f else .25f)
+                paint.color = menuTones[if (index == hovered) 3 else sectorTones[index]]
                 canvas.drawPath(path, paint)
             }
         }
@@ -769,21 +785,3 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         }
     }
 }
-
-internal object OrganizerColors {
-    fun surface(context: Context): Int {
-        val normal = Ui.surface(context)
-        return if (abs(Ui.luminance(normal) - Ui.luminance(Ui.bg(context))) < .025)
-            Ui.blend(normal, Ui.text(context), .10f) else normal
-    }
-    fun highlight(context: Context): Int {
-        val seed = Ui.themeSeed(context)
-        return when (seed) {
-            Color.BLACK -> Color.WHITE
-            Color.WHITE -> Color.BLACK
-            else -> if (Ui.darkMode(context)) Ui.blend(seed, Color.WHITE, .72f) else Ui.menuSurface(context)
-        }
-    }
-    fun highlightText(context: Context) = if (Ui.luminance(highlight(context)) > .56) Color.BLACK else Color.WHITE
-}
-

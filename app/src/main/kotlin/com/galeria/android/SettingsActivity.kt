@@ -12,7 +12,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.CompoundButton
 import android.widget.LinearLayout
-import android.widget.SeekBar
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
@@ -217,10 +216,10 @@ class SettingsActivity : Activity() {
         val advancedToggle = Ui.title(
             this,
             getString(R.string.settings_advanced_options) + if (advancedOptionsExpanded) "  ▴" else "  ▾",
-            16
+            15
         ).apply {
             gravity = Gravity.CENTER_VERTICAL
-            minHeight = Ui.dp(this@SettingsActivity, 52)
+            minHeight = Ui.dp(this@SettingsActivity, 50)
             setPadding(Ui.dp(this@SettingsActivity, 16), 0, Ui.dp(this@SettingsActivity, 16), 0)
             contentDescription = getString(
                 if (advancedOptionsExpanded) R.string.settings_hide_advanced_options
@@ -228,7 +227,23 @@ class SettingsActivity : Activity() {
             )
             isClickable = true
             isFocusable = true
-            background = Ui.actionFeedback(this@SettingsActivity, Ui.accent(this@SettingsActivity))
+            val toggleTone = if (advancedOptionsExpanded) {
+                Ui.highlightSurface(this@SettingsActivity)
+            } else {
+                Ui.elevatedSurface(this@SettingsActivity)
+            }
+            background = android.graphics.drawable.RippleDrawable(
+                ColorStateList.valueOf((Ui.text(this@SettingsActivity) and 0x00FFFFFF) or 0x18000000),
+                Ui.rounded(toggleTone, 12, this@SettingsActivity, Ui.border(this@SettingsActivity), 1),
+                Ui.rounded(android.graphics.Color.WHITE, 12, this@SettingsActivity)
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = Ui.dp(this@SettingsActivity, 4)
+                bottomMargin = Ui.dp(this@SettingsActivity, 8)
+            }
             setOnClickListener {
                 advancedOptionsExpanded = !advancedOptionsExpanded
                 fillContent()
@@ -269,8 +284,12 @@ class SettingsActivity : Activity() {
 
     private fun addSection(title: String) {
         val view = Ui.title(this, title, 13).apply {
-            setTextColor(Ui.muted(this@SettingsActivity))
+            val accent = Ui.accent(this@SettingsActivity)
+            if (ThemeToneRules.contrastRatio(accent, Ui.bg(this@SettingsActivity)) >= 4.5) {
+                setTextColor(accent)
+            }
             isAllCaps = true
+            letterSpacing = 0.04f
         }
         val params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = Ui.dp(this@SettingsActivity, 18)
@@ -309,8 +328,20 @@ class SettingsActivity : Activity() {
         texts.addView(subtitleView)
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
+        val states = arrayOf(
+            intArrayOf(android.R.attr.state_checked),
+            intArrayOf(-android.R.attr.state_checked)
+        )
         val toggle = Switch(this).apply {
             isChecked = prefs.getBoolean(key, defaultValue)
+            thumbTintList = ColorStateList(
+                states,
+                intArrayOf(Ui.accent(this@SettingsActivity), Ui.muted(this@SettingsActivity))
+            )
+            trackTintList = ColorStateList(
+                states,
+                intArrayOf(Ui.highlightSurface(this@SettingsActivity), Ui.elevatedSurface(this@SettingsActivity))
+            )
             setOnCheckedChangeListener(CompoundButton.OnCheckedChangeListener { _, isChecked ->
                 prefs.edit().putBoolean(key, isChecked).apply()
                 afterChange?.run()
@@ -329,10 +360,17 @@ class SettingsActivity : Activity() {
         texts.addView(subtitleView)
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
-        val preview = TextView(this).apply {
-            background = Ui.rounded(Ui.themeSeed(this@SettingsActivity), 6, this@SettingsActivity)
+        val swatch = View(this).apply {
+            tag = "settings_theme_swatch"
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(Ui.highlightSurface(this@SettingsActivity))
+                setStroke(Ui.dp(this@SettingsActivity, 1), Ui.border(this@SettingsActivity))
+            }
         }
-        row.addView(preview, LinearLayout.LayoutParams(Ui.dp(this, 42), Ui.dp(this, 42)))
+        row.addView(swatch, LinearLayout.LayoutParams(Ui.dp(this, 28), Ui.dp(this, 28)).apply {
+            marginStart = Ui.dp(this@SettingsActivity, 12)
+        })
         row.setOnClickListener { showThemeColorDialog() }
         content.addView(row)
     }
@@ -344,9 +382,9 @@ class SettingsActivity : Activity() {
         val panel = LinearLayout(this).apply {
             tag = "theme_color_panel"
             orientation = LinearLayout.VERTICAL
-            background = Ui.rounded(Ui.bg(this@SettingsActivity), 14, this@SettingsActivity)
+            background = Ui.rounded(Ui.bg(this@SettingsActivity), 16, this@SettingsActivity, Ui.border(this@SettingsActivity), 1)
             clipToOutline = true
-            Ui.setPadding(this, 18, 18, 18, 12)
+            Ui.setPadding(this, 20, 18, 12, 8)
         }
 
         val title = TextView(this).apply {
@@ -354,7 +392,9 @@ class SettingsActivity : Activity() {
             textSize = 19f
             setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
         }
-        panel.addView(title)
+        panel.addView(title, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { marginEnd = Ui.dp(this@SettingsActivity, 8) })
 
         val instruction = TextView(this).apply {
             setText(R.string.settings_theme_color_instruction)
@@ -363,8 +403,9 @@ class SettingsActivity : Activity() {
         panel.addView(
             instruction,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = Ui.dp(this@SettingsActivity, 3)
-                bottomMargin = Ui.dp(this@SettingsActivity, 10)
+                topMargin = Ui.dp(this@SettingsActivity, 4)
+                bottomMargin = Ui.dp(this@SettingsActivity, 8)
+                marginEnd = Ui.dp(this@SettingsActivity, 8)
             }
         )
 
@@ -375,130 +416,106 @@ class SettingsActivity : Activity() {
         }
         panel.addView(
             wheel,
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 238)).apply {
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 260)).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
+                marginEnd = Ui.dp(this@SettingsActivity, 8)
             }
         )
 
-        val toneLabel = TextView(this).apply {
-            setText(R.string.settings_theme_tone)
-            textSize = 13f
-        }
-        panel.addView(toneLabel)
-
-        val tone = SeekBar(this).apply {
-            max = 1000
-            progress = (((wheel.selectedTone() - ThemeColorWheelView.MIN_TONE) /
-                (ThemeColorWheelView.MAX_TONE - ThemeColorWheelView.MIN_TONE)) * max).toInt()
-        }
-        panel.addView(tone, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42)))
-
-        val sample = LinearLayout(this).apply {
-            tag = "theme_submenu_preview"
-            orientation = LinearLayout.VERTICAL
-            Ui.setPadding(this, 14, 12, 14, 12)
-        }
-        val sampleTitle = TextView(this).apply {
-            setText(R.string.settings_theme_preview_title)
-            textSize = 15f
-            setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-        }
-        val sampleSubtitle = TextView(this).apply {
-            setText(R.string.settings_theme_preview_subtitle)
-            textSize = 12f
-        }
-        val sampleAccent = TextView(this).apply {
-            text = "●"
-            textSize = 22f
-            gravity = Gravity.END
-        }
-        sample.addView(sampleTitle)
-        sample.addView(sampleSubtitle)
-        sample.addView(sampleAccent)
-        panel.addView(
-            sample,
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = Ui.dp(this@SettingsActivity, 8)
-            }
-        )
-
-        val buttons = LinearLayout(this).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL }
         val dialogRef = arrayOfNulls<AlertDialog>(1)
-        val cancel = TextView(this).apply {
-            setText(R.string.action_cancel)
+        fun textAction(label: Int, bold: Boolean, onClick: () -> Unit) = TextView(this).apply {
+            setText(label)
             textSize = 15f
+            if (bold) setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
             gravity = Gravity.CENTER
+            minHeight = Ui.dp(this@SettingsActivity, 48)
             isClickable = true
             isFocusable = true
-            Ui.setPadding(this, 14, 12, 14, 12)
-            setOnClickListener { dialogRef[0]?.dismiss() }
+            Ui.setPadding(this, 12, 0, 12, 0)
+            setOnClickListener { onClick() }
         }
-        val confirm = TextView(this).apply {
-            setText(R.string.settings_theme_apply)
-            textSize = 15f
-            gravity = Gravity.CENTER
-            isClickable = true
-            isFocusable = true
-            Ui.setPadding(this, 14, 12, 14, 12)
-            setOnClickListener {
-                applied = true
-                prefs.edit().putInt("theme_color", Ui.normalizeThemeSeed(selectedColor)).apply()
-                Ui.clearThemePreview()
-                dialogRef[0]?.dismiss()
-                Ui.toast(this@SettingsActivity, getString(R.string.settings_theme_color_applied))
-                Ui.applySystemBars(this@SettingsActivity)
-                buildLayout()
-            }
+        val restore = textAction(R.string.settings_theme_restore, false) {
+            applied = true
+            prefs.edit().remove(Ui.THEME_COLOR_PREF).apply()
+            Ui.clearThemePreview()
+            LauncherIconManager.syncWithPreferences(this@SettingsActivity)
+            dialogRef[0]?.dismiss()
+            Ui.applySystemBars(this@SettingsActivity)
+            buildLayout()
+        }.apply { visibility = if (prefs.contains(Ui.THEME_COLOR_PREF)) View.VISIBLE else View.GONE }
+        val cancel = textAction(R.string.action_cancel, false) { dialogRef[0]?.dismiss() }
+        val confirm = textAction(R.string.settings_theme_apply, true) {
+            applied = true
+            prefs.edit().putInt(Ui.THEME_COLOR_PREF, selectedColor).apply()
+            Ui.clearThemePreview()
+            LauncherIconManager.syncWithPreferences(this@SettingsActivity)
+            dialogRef[0]?.dismiss()
+            Ui.toast(this@SettingsActivity, getString(R.string.settings_theme_color_applied))
+            Ui.applySystemBars(this@SettingsActivity)
+            buildLayout()
         }
-        buttons.addView(cancel)
-        buttons.addView(confirm)
-        panel.addView(buttons)
+        val actions = LinearLayout(this).apply {
+            tag = "theme_color_actions"
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(restore)
+            addView(View(this@SettingsActivity), LinearLayout.LayoutParams(0, 1, 1f))
+            addView(cancel)
+            addView(confirm, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { marginStart = Ui.dp(this@SettingsActivity, 4) })
+        }
+        panel.addView(actions, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply {
+            topMargin = Ui.dp(this@SettingsActivity, 12)
+            marginStart = -Ui.dp(this@SettingsActivity, 12)
+        })
 
+        // Rebuilds the screen behind the dialog so cards and texts follow the preview too,
+        // at most once per short pause while the finger is dragging on the wheel.
+        val refreshScreen = Runnable { if (!isFinishing) buildLayout() }
         fun applyPreview(color: Int) {
             selectedColor = Ui.normalizeThemeSeed(color)
             Ui.setThemePreview(selectedColor)
             root.setBackgroundColor(Ui.bg(this@SettingsActivity))
+            window.decorView.removeCallbacks(refreshScreen)
+            window.decorView.postDelayed(refreshScreen, PREVIEW_REFRESH_DELAY_MS)
             Ui.applySystemBars(this@SettingsActivity)
-            panel.background = Ui.rounded(Ui.bg(this@SettingsActivity), 14, this@SettingsActivity)
+            val bg = Ui.bg(this@SettingsActivity)
+            panel.background = Ui.rounded(bg, 16, this@SettingsActivity, Ui.border(this@SettingsActivity), 1)
             val mainText = Ui.text(this@SettingsActivity)
-            val menuText = Ui.menuText(this@SettingsActivity)
             title.setTextColor(mainText)
             instruction.setTextColor(Ui.muted(this@SettingsActivity))
-            toneLabel.setTextColor(mainText)
-            cancel.setTextColor(mainText)
-            confirm.setTextColor(mainText)
-            tone.progressTintList = ColorStateList.valueOf(Ui.accent(this@SettingsActivity))
-            tone.thumbTintList = ColorStateList.valueOf(Ui.accent(this@SettingsActivity))
-            sample.background = Ui.rounded(Ui.menuSurface(this@SettingsActivity), 10, this@SettingsActivity)
-            sampleTitle.setTextColor(menuText)
-            sampleSubtitle.setTextColor(menuText)
-            sampleAccent.setTextColor(menuText)
+            val accent = Ui.accent(this@SettingsActivity)
+            val confirmColor = if (ThemeToneRules.contrastRatio(accent, bg) >= 4.5) accent else mainText
+            listOf(restore to Ui.muted(this@SettingsActivity), cancel to mainText, confirm to confirmColor)
+                .forEach { (action, color) ->
+                    action.setTextColor(color)
+                    action.background = android.graphics.drawable.RippleDrawable(
+                        ColorStateList.valueOf((mainText and 0x00FFFFFF) or 0x22000000),
+                        null,
+                        Ui.rounded(android.graphics.Color.WHITE, 10, this@SettingsActivity)
+                    )
+                }
         }
 
         wheel.onColorChanged = ::applyPreview
-        tone.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
-                val fraction = progress / 1000f
-                wheel.setTone(
-                    ThemeColorWheelView.MIN_TONE +
-                        fraction * (ThemeColorWheelView.MAX_TONE - ThemeColorWheelView.MIN_TONE)
-                )
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
-            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
-        })
         applyPreview(initialColor)
 
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(panel)
+        }
         dialogRef[0] = AlertDialog.Builder(this)
-            .setView(panel)
+            .setView(scroll)
             .create()
         dialogRef[0]?.setOnDismissListener {
+            window.decorView.removeCallbacks(refreshScreen)
             Ui.clearThemePreview()
             if (!applied && !isFinishing) {
-                root.setBackgroundColor(Ui.bg(this@SettingsActivity))
                 Ui.applySystemBars(this@SettingsActivity)
+                buildLayout()
             }
         }
         dialogRef[0]?.let { dialog -> Ui.showCenteredPanel(dialog) }
@@ -507,7 +524,11 @@ class SettingsActivity : Activity() {
     private fun rowBase(): LinearLayout =
         LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
-            background = Ui.rounded(Ui.surface(this@SettingsActivity), 8, this@SettingsActivity)
+            background = android.graphics.drawable.RippleDrawable(
+                ColorStateList.valueOf((Ui.text(this@SettingsActivity) and 0x00FFFFFF) or 0x16000000),
+                Ui.rounded(Ui.surface(this@SettingsActivity), 12, this@SettingsActivity, Ui.border(this@SettingsActivity), 1),
+                Ui.rounded(android.graphics.Color.WHITE, 12, this@SettingsActivity)
+            )
             Ui.setPadding(this, 14, 12, 14, 12)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 bottomMargin = Ui.dp(this@SettingsActivity, 8)
@@ -604,5 +625,6 @@ class SettingsActivity : Activity() {
 
     private companion object {
         const val REQ_MEDIA_LIBRARY = 20
+        const val PREVIEW_REFRESH_DELAY_MS = 60L
     }
 }

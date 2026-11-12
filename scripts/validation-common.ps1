@@ -1,4 +1,6 @@
 Set-StrictMode -Version Latest
+# Android build/test caches live in the existing profile-quota exclusion.
+if ($IsWindows) { $env:GRADLE_USER_HOME = Join-Path $env:LOCALAPPDATA 'Gradle' }
 
 function Assert-GalleryDeviceWindow {
     param([string]$WindowDump)
