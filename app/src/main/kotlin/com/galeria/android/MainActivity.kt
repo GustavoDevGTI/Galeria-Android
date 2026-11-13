@@ -533,10 +533,11 @@ class MainActivity : ComponentActivity() {
         searchIconButton.visibility = if (active) View.GONE else View.VISIBLE
         Ui.styleSelectionToggle(selectAllChip, adapter.allVisibleSelected())
         searchInput.hint = if (active) {
-            resources.getQuantityString(R.plurals.selected_count, adapter.selectedCount(), adapter.selectedCount())
+            getString(R.string.album_selected_of_total, adapter.selectedCount(), adapter.getCount())
         } else {
             getString(R.string.main_search_folders)
         }
+        Ui.styleSelectionCounter(searchInput, active, idleTextSizeSp = 14f)
         searchInput.isEnabled = !active
         moreButton.setImageResource(if (active) R.drawable.ic_close else R.drawable.ic_more_vertical)
         moreButton.contentDescription = getString(

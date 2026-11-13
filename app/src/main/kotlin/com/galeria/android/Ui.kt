@@ -249,6 +249,20 @@ class Ui private constructor() {
                 setStroke(max(1, dp(context, strokeWidthDp)), strokeColor)
             }
 
+        /**
+         * The selection counter shares one look on every screen (albums and media inside an album):
+         * same size, weight and color, and the same "selected/total" format.
+         */
+        @JvmStatic
+        fun styleSelectionCounter(input: TextView, selecting: Boolean, idleTextSizeSp: Float) {
+            val context = input.context
+            input.textSize = if (selecting) SELECTION_COUNTER_SP else idleTextSizeSp
+            input.setTypeface(Typeface.DEFAULT, if (selecting) Typeface.BOLD else Typeface.NORMAL)
+            input.setHintTextColor(if (selecting) text(context) else muted(context))
+        }
+
+        const val SELECTION_COUNTER_SP = 20f
+
         @JvmStatic
         fun styleSelectionToggle(view: TextView, checked: Boolean) {
             val context = view.context

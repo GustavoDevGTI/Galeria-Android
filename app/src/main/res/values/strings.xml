@@ -3,9 +3,10 @@
     <string name="organizer_undo">Desfazer</string>
     <string name="organizer_source">Escolha o álbum de origem</string>
     <plurals name="organizer_in_progress">
-        <item quantity="one">Em organização · %d já movida</item>
-        <item quantity="other">Em organização · %d já movidas</item>
+        <item quantity="one">Em organização · %d distribuída</item>
+        <item quantity="other">Em organização · %d distribuídas</item>
     </plurals>
+    <string name="organizer_in_progress_plain">Em organização</string>
     <string name="organizer_continue">Continuar organização</string>
     <string name="organizer_restart">Reiniciar do zero</string>
     <string name="organizer_destinations">Escolha de 1 a 8 destinos · %1$d/8</string>
@@ -52,7 +53,6 @@
     <string name="video_pause">Pausar vídeo</string>
     <string name="viewer_previous_media">Mídia anterior</string>
     <string name="viewer_next_media">Próxima mídia</string>
-    <string name="viewer_hold_speed">2x ▸▸</string>
     <string name="ocr_text_available">Texto detectado: selecionar ou copiar</string>
     <string name="settings_advanced_options">Opções avançadas</string>
     <string name="settings_show_advanced_options">Mostrar opções avançadas</string>
@@ -118,10 +118,6 @@
     <string name="view_grid">Grade</string>
     <string name="view_list">Lista</string>
 
-    <plurals name="selected_count">
-        <item quantity="one">%d selecionado</item>
-        <item quantity="other">%d selecionados</item>
-    </plurals>
     <plurals name="items_added_to_favorites">
         <item quantity="one">%d item adicionado aos favoritos.</item>
         <item quantity="other">%d itens adicionados aos favoritos.</item>

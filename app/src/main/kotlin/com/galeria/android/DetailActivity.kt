@@ -1125,9 +1125,10 @@ class DetailActivity : ComponentActivity() {
                 return true
             }
         }
-        if (holdSpeedActive && action == MotionEvent.ACTION_MOVE) return true // dragging keeps the boost
+        // While boosted, every move (any direction, any distance) only keeps the 2x until the finger lifts.
+        if (holdSpeedActive) return true
         if (action == MotionEvent.ACTION_MOVE &&
-            HoldSpeedRules.movedBeforeHold(holdDownX, holdDownY, event.rawX, event.rawY, gestureTouchSlop.toInt())
+            HoldSpeedRules.movedBeforeHold(holdDownX, holdDownY, event.rawX, event.rawY, (gestureTouchSlop * 2).toInt())
         ) handler.removeCallbacks(startHoldSpeed)
         if (switchingItem) return true
         when (event.actionMasked) {
@@ -1195,7 +1196,6 @@ class DetailActivity : ComponentActivity() {
     private var holdSpeedPrevious = 1f
     private var holdDownX = 0f
     private var holdDownY = 0f
-    private var holdSpeedIndicator: TextView? = null
     private val startHoldSpeed = Runnable { beginHoldSpeed() }
 
     private fun beginHoldSpeed() {
@@ -1216,26 +1216,14 @@ class DetailActivity : ComponentActivity() {
         playbackController.setSpeed(HoldSpeedRules.BOOST_SPEED)
         updateSpeedButton()
         Haptics.perform(this, Haptics.Effect.LONG_PRESS)
-        val indicator = holdSpeedIndicator ?: TextView(this).apply {
-            tag = "viewer_hold_speed"
-            setText(R.string.viewer_hold_speed)
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-            background = Ui.rounded(0xB3161719.toInt(), 16, this@DetailActivity)
-            setPadding(Ui.dp(this@DetailActivity, 14), Ui.dp(this@DetailActivity, 6), Ui.dp(this@DetailActivity, 14), Ui.dp(this@DetailActivity, 6))
-            (content.parent as? FrameLayout)?.addView(
-                this,
-                FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                ).apply { topMargin = statusBarHeight() + Ui.dp(this@DetailActivity, 64) }
-            )
-            holdSpeedIndicator = this
-        }
-        indicator.visibility = View.VISIBLE
+        // Keep the touch stream here so no parent view turns the drag into another gesture.
+        activePage?.requestDisallowInterceptTouchEvent(true)
+        // The speed shows only on the usual label in the lower right corner, so bring the controls up.
+        holdSpeedRevealedHud = !hudVisible
+        if (holdSpeedRevealedHud) toggleHud()
     }
+
+    private var holdSpeedRevealedHud = false
 
     private fun endHoldSpeed() {
         handler.removeCallbacks(startHoldSpeed)
@@ -1243,7 +1231,9 @@ class DetailActivity : ComponentActivity() {
         holdSpeedActive = false
         playbackController.setSpeed(HoldSpeedRules.speedAfterRelease(holdSpeedPrevious))
         updateSpeedButton()
-        holdSpeedIndicator?.visibility = View.GONE
+        if (holdSpeedRevealedHud && hudVisible) toggleHud()
+        holdSpeedRevealedHud = false
+        activePage?.requestDisallowInterceptTouchEvent(false)
         Haptics.perform(this, Haptics.Effect.TICK)
     }
 
@@ -1706,6 +1696,8 @@ class DetailActivity : ComponentActivity() {
                 }
 
                 override fun onFirstFrame() {
+                    // The video shape is known now: give the thumbnail the right orientation.
+                    playerView.post { updatePictureInPictureActions() }
                     playerView.animate().alpha(1f).setDuration(90).start()
                     preview.animate()
                         .alpha(0f)
@@ -3023,8 +3015,9 @@ class DetailActivity : ComponentActivity() {
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
     private fun pictureInPictureParams(): android.app.PictureInPictureParams {
-        val size = playbackController.player()?.videoSize
-        val (width, height) = DetailPictureInPictureRules.aspectRatio(size?.width ?: 0, size?.height ?: 0)
+        val (shownWidth, shownHeight) = videoDisplaySize()
+        val (width, height) = DetailPictureInPictureRules.aspectRatio(shownWidth, shownHeight)
+        pictureInPictureShownRatio = width to height
         val playing = videoActiveForPictureInPicture()
         val label = getString(if (playing) R.string.video_pause else R.string.video_play)
         fun action(requestCode: Int, command: Int, icon: Int, text: String) = android.app.RemoteAction(
@@ -3061,9 +3054,29 @@ class DetailActivity : ComponentActivity() {
     private fun updatePictureInPictureActions() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || !isInPictureInPictureModeCompat()) return
         val playing = videoActiveForPictureInPicture()
-        if (pictureInPictureShownPlaying == playing) return
+        val (shownWidth, shownHeight) = videoDisplaySize()
+        val ratio = DetailPictureInPictureRules.aspectRatio(shownWidth, shownHeight)
+        if (pictureInPictureShownPlaying == playing && pictureInPictureShownRatio == ratio) return
         pictureInPictureShownPlaying = playing
         runCatching { setPictureInPictureParams(pictureInPictureParams()) }
+    }
+
+    private var pictureInPictureShownRatio: Pair<Int, Int>? = null
+
+    /**
+     * Shape of the video exactly as the viewer shows it, so a vertical video gets a vertical thumbnail.
+     * The player frame already applies rotation and pixel shape; the decoder size is the fallback.
+     */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun videoDisplaySize(): Pair<Int, Int> {
+        val frame = activePage?.findViewWithTag<PlayerView>("detail_video_player")
+            ?.findViewById<AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame)
+        if (frame != null && frame.width > 0 && frame.height > 0) return frame.width to frame.height
+        val size = playbackController.player()?.videoSize ?: return 0 to 0
+        @Suppress("DEPRECATION")
+        return DetailPictureInPictureRules.orientedSize(
+            size.width, size.height, size.pixelWidthHeightRatio, size.unappliedRotationDegrees
+        )
     }
 
     private var pictureInPictureReceiver: android.content.BroadcastReceiver? = null

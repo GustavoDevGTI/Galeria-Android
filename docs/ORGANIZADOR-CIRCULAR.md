@@ -1,6 +1,6 @@
 # Organizador circular
 
-Na versão **0.9.7** (`versionCode` 9007), Organizar abre a escolha do álbum de origem e entra diretamente na roda. Filtrar continua no menu de três pontos.
+Na versão **0.9.8** (`versionCode` 9008), Organizar abre a escolha do álbum de origem e entra diretamente na roda. Filtrar continua no menu de três pontos.
 
 ## Roda e gaveta
 
@@ -14,7 +14,9 @@ Segure e arraste um álbum da gaveta para uma posição da roda. Sobre uma posi�
 
 Empurrar ou arrastar uma mídia registra o destino e mostra imediatamente a próxima, sem alterar o arquivo. Cada marcação captura o álbum escolhido: retirar ou substituir um álbum da roda não muda as marcações anteriores. Também dá para arrastar uma mídia do centro ou da reserva direto para um álbum da gaveta. A linha do álbum ganha destaque e mostra quantas mídias foram direcionadas para ele na sessão.
 
-**Desfazer**, acima da roda, cancela a última marcação não salva. **Salvar**, na barra superior, aplica movimentos e exclusões. Ao sair com alterações pendentes, aparecem três opções separadas: **Salvar e sair**, **Sair sem salvar** e **Continuar**. Descartar mantém os arquivos na origem.
+**Desfazer**, acima da roda, cancela a última marcação não salva. **Salvar**, na barra superior, aplica movimentos e exclusões. Ao sair com alterações pendentes, aparecem três opções: **Salvar e sair**, **Sair sem salvar** e **Continuar**. **Sair sem salvar** não mexe nos arquivos e guarda as marcações para depois.
+
+Um álbum com marcações guardadas, mídias já movidas ou reserva aparece na escolha de origem com o selo **Em organização**. Ao tocar nele, escolha **Continuar organização**, que reaplica as marcações guardadas, ou **Reiniciar do zero**, que limpa a roda, a reserva e as marcações sem desfazer o que já foi salvo.
 
 No salvamento, a Lixeira consulta a configuração atual: habilitada significa exclusão recuperável; desabilitada significa exclusão permanente. Nenhuma exclusão ocorre durante o arrasto. Falhas mantêm a marcação para tentar novamente ou desfazer. Arquivos já salvos não são repetidos nem pertencem mais ao desfazer da sessão.
 
@@ -33,4 +35,4 @@ Tocar na mídia central amplia a foto **reta**, respeitando a proporção, com o
 - `OrganizerVideoPreview` limita os controles e usa textura transparente sobre o fundo da prévia.
 - `OrganizerActivity` cuida da origem, permissões, criação de pasta e confirmação de saída.
 
-Os testes usam arquivos reais para verificar marcações sem escrita, salvamento, falha parcial, tentativa seletiva, descarte, lixeira, migração, arrasto, rolagem, rotação, foto e vídeo. A entrega completa usa `scripts/run-validation.ps1 -Delivery`; o resultado e o APK estão nas [notas da 0.9.7](RELEASE-0.9.7.md).
+Os testes usam arquivos reais para verificar marcações sem escrita, salvamento, falha parcial, tentativa seletiva, descarte, lixeira, migração, arrasto, rolagem, rotação, foto e vídeo. A entrega completa usa `scripts/run-validation.ps1 -Delivery`; o resultado e o APK estão nas [notas da 0.9.8](RELEASE-0.9.8.md).

@@ -18,6 +18,17 @@ internal object DetailPictureInPictureRules {
         finishing: Boolean
     ): Boolean = supported && isVideo && playing && !alreadyInPictureInPicture && !finishing
 
+    /**
+     * Size of the video as it is shown: a phone video recorded upright is stored sideways with a
+     * rotation tag, and some videos use non-square pixels. Both are applied before choosing the shape.
+     */
+    fun orientedSize(width: Int, height: Int, pixelWidthHeightRatio: Float, rotationDegrees: Int): Pair<Int, Int> {
+        if (width <= 0 || height <= 0) return 0 to 0
+        val shownWidth = (width * (if (pixelWidthHeightRatio > 0f) pixelWidthHeightRatio else 1f)).toInt().coerceAtLeast(1)
+        val quarterTurn = ((rotationDegrees % 360) + 360) % 180 == 90
+        return if (quarterTurn) height to shownWidth else shownWidth to height
+    }
+
     /** Width and height for the thumbnail, following the video and kept within Android's limits. */
     fun aspectRatio(videoWidth: Int, videoHeight: Int): Pair<Int, Int> {
         if (videoWidth <= 0 || videoHeight <= 0) return 16 to 9

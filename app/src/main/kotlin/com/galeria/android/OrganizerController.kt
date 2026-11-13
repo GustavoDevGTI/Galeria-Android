@@ -97,6 +97,62 @@ internal class OrganizerController(context: Context,
     /** Media already saved from an album whose organization was left unfinished (0 = not started). */
     fun organizedCount(albumKey: String): Int = prefs.getInt("organizer_done_$albumKey", 0)
 
+    /** Marks made but not saved yet, kept when the user leaves so the plan can be continued. */
+    fun plannedCount(albumKey: String): Int = readPlan(albumKey).size
+
+    /** An album counts as being organized after any saved move, unsaved mark or reserved media. */
+    fun inProgress(albumKey: String): Boolean = OrganizerRules.inProgress(
+        organizedCount(albumKey), plannedCount(albumKey), readArray(prefs.getString("organizer_reserve_$albumKey", null)).size
+    )
+
+    /** Saved moves plus unsaved marks, shown next to the album in the picker. */
+    fun distributedCount(albumKey: String): Int = organizedCount(albumKey) + plannedCount(albumKey)
+
+    private data class PlannedSend(val identity: String, val albumKey: String, val fromReserve: Boolean)
+
+    private fun readPlan(albumKey: String): List<PlannedSend> = runCatching {
+        val array = JSONArray(prefs.getString("organizer_plan_$albumKey", null) ?: "[]")
+        (0 until array.length()).map { index ->
+            val entry = array.getJSONObject(index)
+            PlannedSend(entry.getString("item"), entry.getString("album"), entry.optBoolean("reserve"))
+        }
+    }.getOrDefault(emptyList())
+
+    /** Writes the unsaved marks of the current album; called after every mark, undo and save. */
+    private fun savePlan() {
+        val key = source?.key ?: return
+        val plan = JSONArray()
+        history.filter { it.album != null }.forEach { action ->
+            plan.put(org.json.JSONObject()
+                .put("item", identity(action.ticket.item))
+                .put("album", requireNotNull(action.album).key)
+                .put("reserve", action.ticket.reserved))
+        }
+        prefs.edit { if (plan.length() == 0) remove("organizer_plan_$key") else putString("organizer_plan_$key", plan.toString()) }
+    }
+
+    /** Re-applies the saved marks after the album media load, in the order they were made. */
+    private fun restorePlan(origin: AlbumItem, items: List<MediaItem>) {
+        val byIdentity = items.associateBy(::identity)
+        readPlan(origin.key).forEach { planned ->
+            val item = byIdentity[planned.identity] ?: return@forEach
+            val album = destinations.firstOrNull { it.key == planned.albumKey && !isEmpty(it) }
+                ?: albums.firstOrNull { it.key == planned.albumKey && it.key != origin.key } ?: return@forEach
+            val ticket = media.takeAnywhere(item, planned.fromReserve) ?: return@forEach
+            history.add(Action(ticket, album))
+        }
+    }
+
+    /**
+     * Leaves the album without saving: the marks stay stored for later and the files are untouched.
+     * The in-memory session is cleared so another album can be chosen.
+     */
+    fun keepForLater() {
+        if (saving) return
+        savePlan(); saveReserve()
+        history.clear(); media = OrganizerQueue(emptyList())
+    }
+
     /** Forgets the wheel, the reserve and the progress of an album so it starts from scratch. */
     fun restart(album: AlbumItem) {
         if (saving || hasChanges) return
@@ -105,6 +161,7 @@ internal class OrganizerController(context: Context,
             remove("organizer_targets_${album.key}")
             remove("organizer_reserve_${album.key}")
             remove("organizer_done_${album.key}")
+            remove("organizer_plan_${album.key}")
         }
     }
 
@@ -168,6 +225,7 @@ internal class OrganizerController(context: Context,
                     val held = reserved.mapNotNull(byIdentity::get)
                     media = OrganizerQueue(items.filter { identity(it) !in reserved }, held)
                     history.clear(); sent.clear(); committedAlbum = null; stage = 2
+                    restorePlan(origin, items)
                 }.onFailure { message = app.getString(R.string.album_load_failed) }
                 notifyChange()
             }
@@ -198,7 +256,7 @@ internal class OrganizerController(context: Context,
     private fun stageSend(item: MediaItem, fromReserve: Boolean, album: AlbumItem): Boolean {
         if (saving) return false
         val ticket = media.take(item, fromReserve) ?: return false
-        history.add(Action(ticket, album)); notifyChange()
+        history.add(Action(ticket, album)); savePlan(); notifyChange()
         return true
     }
 
@@ -206,7 +264,7 @@ internal class OrganizerController(context: Context,
         if (!canUndo) return
         val action = history.removeAt(history.lastIndex)
         if (action.album == null) media.reserved.remove(action.ticket.item)
-        media.restore(action.ticket); saveReserve(); notifyChange()
+        media.restore(action.ticket); saveReserve(); savePlan(); notifyChange()
     }
 
     /** Commit a snapshot. Destinations are captured in each action, never looked up by slot. */
@@ -237,7 +295,7 @@ internal class OrganizerController(context: Context,
                         rememberProgress()
                         message = if (hasChanges) "Algumas mídias não foram salvas. Tente novamente ou desfaça as marcações." else "Alterações salvas."
                     }
-                    saveReserve(); notifyChange()
+                    saveReserve(); savePlan(); notifyChange()
                 }
             }
         }

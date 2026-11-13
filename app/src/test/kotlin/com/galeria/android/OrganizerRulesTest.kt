@@ -88,4 +88,21 @@ class OrganizerRulesTest {
         org.junit.Assert.assertNull("Álbum terminado deixa de aparecer como pendente", OrganizerRules.progressAfterSave(8, 35, 0))
         org.junit.Assert.assertNull("Sem nada salvo não há organização pendente", OrganizerRules.progressAfterSave(0, 0, 40))
     }
+
+    @Test
+    fun leavingWithUnsavedMarksOrAReserveStillCountsAsInProgress() {
+        org.junit.Assert.assertTrue("Marcações sem salvar", OrganizerRules.inProgress(saved = 0, planned = 2, reserved = 0))
+        org.junit.Assert.assertTrue("Mídias já movidas", OrganizerRules.inProgress(3, 0, 0))
+        org.junit.Assert.assertTrue("Reserva pendente", OrganizerRules.inProgress(0, 0, 1))
+        org.junit.Assert.assertFalse("Entrar e sair sem fazer nada", OrganizerRules.inProgress(0, 0, 0))
+    }
+
+    @Test
+    fun savedMarksAreReappliedEvenIfTheMediaOrderChanged() {
+        val queue = OrganizerQueue(listOf("a", "b", "c"), listOf("r"))
+        org.junit.Assert.assertNotNull("Item fora da frente da fila", queue.takeAnywhere("c", false))
+        org.junit.Assert.assertNotNull("Item da reserva", queue.takeAnywhere("r", true))
+        org.junit.Assert.assertNull("Item que não existe mais", queue.takeAnywhere("z", false))
+        org.junit.Assert.assertEquals(listOf("a", "b"), queue.queue)
+    }
 }

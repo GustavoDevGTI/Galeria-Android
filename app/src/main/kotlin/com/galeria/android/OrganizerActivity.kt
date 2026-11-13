@@ -133,13 +133,15 @@ class OrganizerActivity : ComponentActivity() {
             override fun getItemId(position: Int) = position.toLong()
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                 val album = getItem(position)
-                val done = controller.organizedCount(album.key)
+                val inProgress = controller.inProgress(album.key)
+                val done = controller.distributedCount(album.key)
                 return Ui.albumTargetRow(this@OrganizerActivity, album).apply {
                     tag = "organizer_album_${album.key}"
                     contentDescription = album.name
-                    if (done > 0) {
+                    if (inProgress) {
                         // This album was left half-organized: say so and how much was already done.
-                        val label = resources.getQuantityString(R.plurals.organizer_in_progress, done, done)
+                        val label = if (done > 0) resources.getQuantityString(R.plurals.organizer_in_progress, done, done)
+                            else getString(R.string.organizer_in_progress_plain)
                         contentDescription = "${album.name}, $label"
                         addView(TextView(this@OrganizerActivity).apply {
                             tag = "organizer_in_progress_${album.key}"
@@ -160,7 +162,7 @@ class OrganizerActivity : ComponentActivity() {
             setOnItemClickListener { _, _, position, _ ->
                 if (!controller.loading) {
                     val album = pickerAdapter!!.getItem(position) as AlbumItem
-                    if (controller.organizedCount(album.key) > 0) {
+                    if (controller.inProgress(album.key)) {
                         Ui.showActionDialog(
                             this@OrganizerActivity,
                             album.name,
@@ -201,7 +203,8 @@ class OrganizerActivity : ComponentActivity() {
             listOf("Salvar e sair", "Sair sem salvar", "Continuar")) { index ->
             when (index) {
                 0 -> { changeAfterSave = changeSource; exitAfterSave = true; controller.save() }
-                1 -> { controller.discardChanges(); if (changeSource) controller.chooseAgain() else finish() }
+                // Leaving without saving keeps the marks; the album picker offers to continue or restart.
+                1 -> { controller.keepForLater(); if (changeSource) controller.chooseAgain() else finish() }
             }
         }
     }

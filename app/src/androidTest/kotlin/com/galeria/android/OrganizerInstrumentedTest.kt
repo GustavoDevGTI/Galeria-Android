@@ -53,7 +53,8 @@ class OrganizerInstrumentedTest {
         // Direct moves may be rescanned with a new MediaStore row; remove only this fixture's subtree.
         context.contentResolver.delete(MediaStore.Files.getContentUri("external"),
             "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?", arrayOf("$prefix%"))
-        prefs.edit().remove("organizer_slots_$source").remove("organizer_targets_$source").remove("organizer_reserve_$source").commit()
+        prefs.edit().remove("organizer_slots_$source").remove("organizer_targets_$source").remove("organizer_reserve_$source")
+            .remove("organizer_plan_$source").remove("organizer_done_$source").commit()
         shell("appops set ${context.packageName} MANAGE_EXTERNAL_STORAGE $oldAccess")
         MediaStoreRepository.invalidateCache(); GalleryCatalogStore.markCatalogDirty(context)
     }
@@ -222,7 +223,7 @@ class OrganizerInstrumentedTest {
         }
     }
 
-    @Test fun backOffersDiscardAndLeavesFilesUntouched() {
+    @Test fun backWithoutSavingKeepsTheMarksForLaterAndLeavesFilesUntouched() {
         organized().use { scenario ->
             lateinit var uri: Uri
             scenario.onActivity { uri = it.controller.media.queue.first().uri; it.controller.send(it.controller.media.queue.first(), false, 0) }
@@ -232,6 +233,8 @@ class OrganizerInstrumentedTest {
             androidx.test.espresso.Espresso.pressBack()
             androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText("Sair sem salvar")).perform(androidx.test.espresso.action.ViewActions.click())
             assertEquals(source, path(uri))
+            assertTrue("A marcação não salva deve ficar guardada para continuar depois.",
+                prefs.contains("organizer_plan_$source"))
         }
     }
 

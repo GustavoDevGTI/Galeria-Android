@@ -14,6 +14,9 @@ internal object OrganizerRules {
     fun progressAfterSave(previousDone: Int, savedNow: Int, remaining: Int): Int? =
         if (remaining <= 0) null else (previousDone + savedNow).takeIf { it > 0 }
 
+    /** Saved moves, unsaved marks or a reserve all mean the album was left half-organized. */
+    fun inProgress(saved: Int, planned: Int, reserved: Int): Boolean = saved > 0 || planned > 0 || reserved > 0
+
     fun sector(dx: Float, dy: Float, count: Int = MAX_DESTINATIONS): Int {
         require(count in 1..MAX_DESTINATIONS)
         val sweep = 360.0 / count
@@ -62,6 +65,15 @@ internal class OrganizerQueue<T>(items: List<T>, reservedItems: List<T> = emptyL
         order[item] = ticket.order
         val index = list.indexOfFirst { (order[it] ?: Long.MAX_VALUE) > ticket.order }.let { if (it < 0) list.size else it }
         if (item !in list) list.add(index, item)
+    }
+
+    /** Takes an item from any position; used only to re-apply marks saved before the media order changed. */
+    fun takeAnywhere(item: T, fromReserve: Boolean): Ticket<T>? {
+        val list = if (fromReserve) reserved else queue
+        val index = list.indexOf(item)
+        if (index < 0) return null
+        list.removeAt(index)
+        return Ticket(item, fromReserve, index, (if (fromReserve) reserveOrder else queueOrder)[item] ?: 0L)
     }
 
     fun reserve(): Ticket<T>? {

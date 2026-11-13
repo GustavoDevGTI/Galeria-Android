@@ -929,9 +929,8 @@ class AlbumMediaActivity : ComponentActivity() {
             searching -> getString(R.string.album_search_folder)
             else -> getString(R.string.album_search_in, albumName)
         }
-        searchInput.setHintTextColor(if (selecting || choosingAlbumCover) Ui.text(this) else Ui.muted(this))
-        searchInput.textSize = if (selecting) 20f else if (searching) 14f else 15f
-        searchInput.setTypeface(Typeface.DEFAULT, if (selecting) Typeface.BOLD else Typeface.NORMAL)
+        Ui.styleSelectionCounter(searchInput, selecting, idleTextSizeSp = if (searching) 14f else 15f)
+        if (choosingAlbumCover) searchInput.setHintTextColor(Ui.text(this))
         searchInput.isCursorVisible = searching && searchInput.hasFocus()
 
         val searchIcon = if (selecting) null else getDrawable(R.drawable.ic_search)?.mutate()?.apply {
