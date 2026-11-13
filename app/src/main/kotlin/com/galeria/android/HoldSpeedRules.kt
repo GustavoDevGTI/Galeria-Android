@@ -1,9 +1,9 @@
 package com.galeria.android
 
 /**
- * Press and hold on a vertical video to play it faster, like short-video apps:
- * the boost lasts only while the finger stays down, including while dragging,
- * and the previous speed comes back on release.
+ * Press and hold on a vertical video to play it faster, like short-video apps.
+ * Just holding is temporary: lifting the finger brings the previous speed back.
+ * Holding and pulling down past [LOCK_DISTANCE_DP] keeps 2x as the chosen speed after release.
  */
 internal object HoldSpeedRules {
     const val BOOST_SPEED = 2f
@@ -24,6 +24,11 @@ internal object HoldSpeedRules {
         return dx * dx + dy * dy > touchSlop.toFloat() * touchSlop
     }
 
-    /** Speed to return to on release; an already boosted speed is kept as it was. */
-    fun speedAfterRelease(speedBeforeHold: Float): Float = speedBeforeHold
+    const val LOCK_DISTANCE_DP = 48
+
+    /** Pulling the held finger down far enough turns the temporary 2x into the selected speed. */
+    fun locksBoost(downY: Float, y: Float, lockDistancePx: Float): Boolean = y - downY >= lockDistancePx
+
+    /** Speed after lifting the finger: the boost stays only when it was locked by pulling down. */
+    fun speedAfterRelease(speedBeforeHold: Float, locked: Boolean): Float = if (locked) BOOST_SPEED else speedBeforeHold
 }

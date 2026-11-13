@@ -25,9 +25,17 @@ class HoldSpeedRulesTest {
     }
 
     @Test
-    fun releaseReturnsToTheSpeedUsedBeforeTheHold() {
+    fun justHoldingIsTemporaryAndPullingDownKeepsTheBoost() {
         assertEquals(2f, HoldSpeedRules.BOOST_SPEED, 0f)
-        assertEquals(1f, HoldSpeedRules.speedAfterRelease(1f), 0f)
-        assertEquals(1.5f, HoldSpeedRules.speedAfterRelease(1.5f), 0f)
+        assertEquals("Só segurar volta à velocidade anterior", 1f, HoldSpeedRules.speedAfterRelease(1f, locked = false), 0f)
+        assertEquals(1.5f, HoldSpeedRules.speedAfterRelease(1.5f, locked = false), 0f)
+        assertEquals("Segurar e puxar mantém 2x ao soltar", 2f, HoldSpeedRules.speedAfterRelease(1f, locked = true), 0f)
+    }
+
+    @Test
+    fun onlyAPullDownFarEnoughLocksTheBoost() {
+        assertTrue(HoldSpeedRules.locksBoost(downY = 500f, y = 640f, lockDistancePx = 130f))
+        assertFalse("Puxar pouco não fixa", HoldSpeedRules.locksBoost(500f, 560f, 130f))
+        assertFalse("Puxar para cima não fixa", HoldSpeedRules.locksBoost(500f, 300f, 130f))
     }
 }

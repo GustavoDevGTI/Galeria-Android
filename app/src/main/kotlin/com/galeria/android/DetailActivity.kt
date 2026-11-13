@@ -1125,8 +1125,16 @@ class DetailActivity : ComponentActivity() {
                 return true
             }
         }
-        // While boosted, every move (any direction, any distance) only keeps the 2x until the finger lifts.
-        if (holdSpeedActive) return true
+        // While boosted, moving the finger never starts another gesture. Pulling down far enough locks the 2x.
+        if (holdSpeedActive) {
+            if (action == MotionEvent.ACTION_MOVE && !holdSpeedLocked &&
+                HoldSpeedRules.locksBoost(holdDownY, event.rawY, Ui.dp(this, HoldSpeedRules.LOCK_DISTANCE_DP).toFloat())
+            ) {
+                holdSpeedLocked = true
+                Haptics.perform(this, Haptics.Effect.CONFIRM)
+            }
+            return true
+        }
         if (action == MotionEvent.ACTION_MOVE &&
             HoldSpeedRules.movedBeforeHold(holdDownX, holdDownY, event.rawX, event.rawY, (gestureTouchSlop * 2).toInt())
         ) handler.removeCallbacks(startHoldSpeed)
@@ -1193,6 +1201,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private var holdSpeedActive = false
+    private var holdSpeedLocked = false
     private var holdSpeedPrevious = 1f
     private var holdDownX = 0f
     private var holdDownY = 0f
@@ -1210,6 +1219,7 @@ class DetailActivity : ComponentActivity() {
         )
         if (!allowed) return
         holdSpeedActive = true
+        holdSpeedLocked = false
         holdSpeedPrevious = playbackSpeed
         cancelPendingSingleTap()
         cinemaGestureController.cancel()
@@ -1229,7 +1239,8 @@ class DetailActivity : ComponentActivity() {
         handler.removeCallbacks(startHoldSpeed)
         if (!holdSpeedActive) return
         holdSpeedActive = false
-        playbackController.setSpeed(HoldSpeedRules.speedAfterRelease(holdSpeedPrevious))
+        playbackController.setSpeed(HoldSpeedRules.speedAfterRelease(holdSpeedPrevious, holdSpeedLocked))
+        holdSpeedLocked = false
         updateSpeedButton()
         if (holdSpeedRevealedHud && hudVisible) toggleHud()
         holdSpeedRevealedHud = false
