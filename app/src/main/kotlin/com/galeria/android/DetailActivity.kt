@@ -200,8 +200,11 @@ class DetailActivity : ComponentActivity() {
                     clearOcrProgress()
                     result.fold(
                         onSuccess = { document ->
-                            if (document.text.isBlank()) Ui.toast(this@DetailActivity, getString(R.string.ocr_no_text))
-                            else {
+                            if (document.text.isBlank()) {
+                                Haptics.perform(this@DetailActivity, Haptics.Effect.REJECT)
+                                Ui.toast(this@DetailActivity, getString(R.string.ocr_no_text))
+                            } else {
+                                Haptics.perform(this@DetailActivity, Haptics.Effect.CONFIRM)
                                 showRecognizedText(document)
                             }
                         },
@@ -1110,11 +1113,31 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun handleSwipeOrTap(event: MotionEvent): Boolean {
+        val action = event.actionMasked
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            handler.removeCallbacks(startHoldSpeed)
+            if (holdSpeedActive) {
+                // Lifting the finger only ends the 2x boost; it is neither a tap nor a swipe.
+                endHoldSpeed()
+                completedViewerTap = false
+                cinemaGestureController.cancel()
+                cancelInteractiveSwipe()
+                return true
+            }
+        }
+        if (holdSpeedActive && action == MotionEvent.ACTION_MOVE) return true // dragging keeps the boost
+        if (action == MotionEvent.ACTION_MOVE &&
+            HoldSpeedRules.movedBeforeHold(holdDownX, holdDownY, event.rawX, event.rawY, gestureTouchSlop.toInt())
+        ) handler.removeCallbacks(startHoldSpeed)
         if (switchingItem) return true
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 completedViewerTap = false
                 beginPointerGesture(event)
+                holdDownX = event.rawX
+                holdDownY = event.rawY
+                handler.removeCallbacks(startHoldSpeed)
+                handler.postDelayed(startHoldSpeed, ViewConfiguration.getLongPressTimeout().toLong())
                 if (cinemaGesturesEnabled()) {
                     cinemaGestureController.start(
                         event.x,
@@ -1166,6 +1189,62 @@ class DetailActivity : ComponentActivity() {
             }
         }
         return true
+    }
+
+    private var holdSpeedActive = false
+    private var holdSpeedPrevious = 1f
+    private var holdDownX = 0f
+    private var holdDownY = 0f
+    private var holdSpeedIndicator: TextView? = null
+    private val startHoldSpeed = Runnable { beginHoldSpeed() }
+
+    private fun beginHoldSpeed() {
+        if (holdSpeedActive || isFinishing || !::content.isInitialized) return
+        val allowed = HoldSpeedRules.canBoost(
+            isVideo = mediaQueue.getOrNull(currentIndex)?.isVideo() == true,
+            portrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT,
+            cinemaMode = cinemaMode,
+            playing = playbackController.player()?.playWhenReady == true,
+            swipingToAnotherMedia = dragPreviewPage != null || switchingItem,
+            inPictureInPicture = isInPictureInPictureModeCompat()
+        )
+        if (!allowed) return
+        holdSpeedActive = true
+        holdSpeedPrevious = playbackSpeed
+        cancelPendingSingleTap()
+        cinemaGestureController.cancel()
+        playbackController.setSpeed(HoldSpeedRules.BOOST_SPEED)
+        updateSpeedButton()
+        Haptics.perform(this, Haptics.Effect.LONG_PRESS)
+        val indicator = holdSpeedIndicator ?: TextView(this).apply {
+            tag = "viewer_hold_speed"
+            setText(R.string.viewer_hold_speed)
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            background = Ui.rounded(0xB3161719.toInt(), 16, this@DetailActivity)
+            setPadding(Ui.dp(this@DetailActivity, 14), Ui.dp(this@DetailActivity, 6), Ui.dp(this@DetailActivity, 14), Ui.dp(this@DetailActivity, 6))
+            (content.parent as? FrameLayout)?.addView(
+                this,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                ).apply { topMargin = statusBarHeight() + Ui.dp(this@DetailActivity, 64) }
+            )
+            holdSpeedIndicator = this
+        }
+        indicator.visibility = View.VISIBLE
+    }
+
+    private fun endHoldSpeed() {
+        handler.removeCallbacks(startHoldSpeed)
+        if (!holdSpeedActive) return
+        holdSpeedActive = false
+        playbackController.setSpeed(HoldSpeedRules.speedAfterRelease(holdSpeedPrevious))
+        updateSpeedButton()
+        holdSpeedIndicator?.visibility = View.GONE
+        Haptics.perform(this, Haptics.Effect.TICK)
     }
 
     private fun handleTap(x: Float, y: Float) {
@@ -2948,21 +3027,30 @@ class DetailActivity : ComponentActivity() {
         val (width, height) = DetailPictureInPictureRules.aspectRatio(size?.width ?: 0, size?.height ?: 0)
         val playing = videoActiveForPictureInPicture()
         val label = getString(if (playing) R.string.video_pause else R.string.video_play)
-        val toggle = android.app.PendingIntent.getBroadcast(
-            this,
-            0,
-            Intent(ACTION_PICTURE_IN_PICTURE_TOGGLE).setPackage(packageName),
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        fun action(requestCode: Int, command: Int, icon: Int, text: String) = android.app.RemoteAction(
+            android.graphics.drawable.Icon.createWithResource(this, icon),
+            text,
+            text,
+            android.app.PendingIntent.getBroadcast(
+                this,
+                requestCode,
+                Intent(ACTION_PICTURE_IN_PICTURE_TOGGLE).setPackage(packageName)
+                    .putExtra(EXTRA_PICTURE_IN_PICTURE_COMMAND, command),
+                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            )
         )
-        val action = android.app.RemoteAction(
-            android.graphics.drawable.Icon.createWithResource(this, if (playing) R.drawable.ic_pause else R.drawable.ic_play),
-            label,
-            label,
-            toggle
-        )
+        val toggle = action(0, PIP_COMMAND_TOGGLE, if (playing) R.drawable.ic_pause else R.drawable.ic_play, label)
+        // Android lays the buttons out in a row: previous, play/pause in the center, next.
+        val actions = if (mediaQueue.size > 1) {
+            listOf(
+                action(1, PIP_COMMAND_PREVIOUS, R.drawable.ic_skip_previous, getString(R.string.viewer_previous_media)),
+                toggle,
+                action(2, PIP_COMMAND_NEXT, R.drawable.ic_skip_next, getString(R.string.viewer_next_media))
+            )
+        } else listOf(toggle)
         return android.app.PictureInPictureParams.Builder()
             .setAspectRatio(android.util.Rational(width, height))
-            .setActions(listOf(action))
+            .setActions(actions)
             .build()
     }
 
@@ -2985,10 +3073,15 @@ class DetailActivity : ComponentActivity() {
         if (pictureInPictureReceiver != null) return
         val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(context: android.content.Context, intent: Intent) {
-                if (intent.action == ACTION_PICTURE_IN_PICTURE_TOGGLE) {
-                    playbackController.setPlaying(!videoActiveForPictureInPicture())
-                    updatePlayPauseButton()
-                    updatePictureInPictureActions()
+                if (intent.action != ACTION_PICTURE_IN_PICTURE_TOGGLE) return
+                when (intent.getIntExtra(EXTRA_PICTURE_IN_PICTURE_COMMAND, PIP_COMMAND_TOGGLE)) {
+                    PIP_COMMAND_PREVIOUS -> switchFromPictureInPicture(-1)
+                    PIP_COMMAND_NEXT -> switchFromPictureInPicture(1)
+                    else -> {
+                        playbackController.setPlaying(!videoActiveForPictureInPicture())
+                        updatePlayPauseButton()
+                        updatePictureInPictureActions()
+                    }
                 }
             }
         }
@@ -2999,6 +3092,15 @@ class DetailActivity : ComponentActivity() {
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
         )
         pictureInPictureReceiver = receiver
+    }
+
+    private fun switchFromPictureInPicture(direction: Int) {
+        switchItem(direction, true)
+        // The new media has its own shape and play state: resend the thumbnail buttons once it settles.
+        handler.postDelayed({
+            pictureInPictureShownPlaying = null
+            updatePictureInPictureActions()
+        }, PIP_SWITCH_REFRESH_MS)
     }
 
     private fun unregisterPictureInPictureControls() {
@@ -3036,6 +3138,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        endHoldSpeed()
         if (isInPictureInPictureModeCompat()) {
             // Entering the floating thumbnail pauses the activity, but the video must keep playing.
             super.onPause()
@@ -3119,6 +3222,11 @@ class DetailActivity : ComponentActivity() {
 
     companion object {
         private const val ACTION_PICTURE_IN_PICTURE_TOGGLE = "com.galeria.android.PICTURE_IN_PICTURE_TOGGLE"
+        private const val EXTRA_PICTURE_IN_PICTURE_COMMAND = "command"
+        private const val PIP_COMMAND_TOGGLE = 0
+        private const val PIP_COMMAND_PREVIOUS = 1
+        private const val PIP_COMMAND_NEXT = 2
+        private const val PIP_SWITCH_REFRESH_MS = 700L
         private const val REQ_DELETE = 31
         private const val REQ_RESTORE = 36
         private const val REQ_HIDE_DELETE = 32

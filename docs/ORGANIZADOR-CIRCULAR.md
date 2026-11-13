@@ -1,6 +1,6 @@
 # Organizador circular
 
-Na versão **0.9.6** (`versionCode` 9006), Organizar abre a escolha do álbum de origem e entra diretamente na roda. Filtrar continua no menu de três pontos.
+Na versão **0.9.7** (`versionCode` 9007), Organizar abre a escolha do álbum de origem e entra diretamente na roda. Filtrar continua no menu de três pontos.
 
 ## Roda e gaveta
 
@@ -33,4 +33,4 @@ Tocar na mídia central amplia a foto **reta**, respeitando a proporção, com o
 - `OrganizerVideoPreview` limita os controles e usa textura transparente sobre o fundo da prévia.
 - `OrganizerActivity` cuida da origem, permissões, criação de pasta e confirmação de saída.
 
-Os testes usam arquivos reais para verificar marcações sem escrita, salvamento, falha parcial, tentativa seletiva, descarte, lixeira, migração, arrasto, rolagem, rotação, foto e vídeo. A entrega completa usa `scripts/run-validation.ps1 -Delivery`; o resultado e o APK estão nas [notas da 0.9.6](RELEASE-0.9.6.md).
+Os testes usam arquivos reais para verificar marcações sem escrita, salvamento, falha parcial, tentativa seletiva, descarte, lixeira, migração, arrasto, rolagem, rotação, foto e vídeo. A entrega completa usa `scripts/run-validation.ps1 -Delivery`; o resultado e o APK estão nas [notas da 0.9.7](RELEASE-0.9.7.md).

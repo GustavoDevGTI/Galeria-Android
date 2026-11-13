@@ -216,24 +216,24 @@ class AlbumRecyclerAdapter(
 
         val check = TextView(context).apply {
             setTextColor(Color.WHITE)
-            textSize = 15f
+            textSize = 12f
             gravity = Gravity.CENTER
             background = Ui.rounded(0x99000000.toInt(), 4, context)
         }
-        val checkParams = FrameLayout.LayoutParams(Ui.dp(context, 24), Ui.dp(context, 24)).apply {
+        val checkParams = FrameLayout.LayoutParams(Ui.dp(context, OVERLAY_CHECK_DP), Ui.dp(context, OVERLAY_CHECK_DP)).apply {
             gravity = Gravity.TOP or Gravity.START
-            marginStart = Ui.dp(context, 6)
-            topMargin = Ui.dp(context, 6)
+            marginStart = Ui.dp(context, 5)
+            topMargin = Ui.dp(context, 5)
         }
         thumb.addView(check, checkParams)
         val pin = ImageView(context).apply {
             setImageResource(R.drawable.ic_pin_filled)
             setColorFilter(Color.WHITE)
             background = Ui.rounded(0x99000000.toInt(), 8, context)
-            setPadding(Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4))
+            setPadding(Ui.dp(context, 3), Ui.dp(context, 3), Ui.dp(context, 3), Ui.dp(context, 3))
             contentDescription = context.getString(R.string.album_pinned)
         }
-        thumb.addView(pin, FrameLayout.LayoutParams(Ui.dp(context, 28), Ui.dp(context, 28), Gravity.TOP or Gravity.END).apply {
+        thumb.addView(pin, FrameLayout.LayoutParams(Ui.dp(context, OVERLAY_ACTION_DP), Ui.dp(context, OVERLAY_ACTION_DP), Gravity.TOP or Gravity.END).apply {
             marginEnd = Ui.dp(context, 6)
             topMargin = Ui.dp(context, 6)
         })
@@ -241,11 +241,11 @@ class AlbumRecyclerAdapter(
             setImageResource(R.drawable.ic_eye)
             setColorFilter(Color.WHITE)
             background = Ui.rounded(0x99000000.toInt(), 8, context)
-            setPadding(Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4))
+            setPadding(Ui.dp(context, 3), Ui.dp(context, 3), Ui.dp(context, 3), Ui.dp(context, 3))
             contentDescription = context.getString(R.string.main_hide_revealed_album)
             isFocusable = true
         }
-        thumb.addView(temporaryEye, FrameLayout.LayoutParams(Ui.dp(context, 28), Ui.dp(context, 28), Gravity.BOTTOM or Gravity.END).apply {
+        thumb.addView(temporaryEye, FrameLayout.LayoutParams(Ui.dp(context, OVERLAY_ACTION_DP), Ui.dp(context, OVERLAY_ACTION_DP), Gravity.BOTTOM or Gravity.END).apply {
             marginEnd = Ui.dp(context, 6)
             bottomMargin = Ui.dp(context, 6)
         })
@@ -415,6 +415,8 @@ class AlbumRecyclerAdapter(
     }
 
     private companion object {
+        const val OVERLAY_CHECK_DP = 20
+        const val OVERLAY_ACTION_DP = 24
         const val PAYLOAD_SELECTION = "selection"
         const val PAYLOAD_SPACING = "spacing"
         const val PAYLOAD_COVER = "cover"

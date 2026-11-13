@@ -122,7 +122,7 @@ class AlbumSelectionInstrumentedTest {
                 }
                 onView(withContentDescription(displayedOrder.first().name))
                     .perform(longPressAndDragTo(displayedOrder.last().name))
-                waitUntilHint(context.resources.getQuantityString(R.plurals.selected_count, 3, 3))
+                waitUntilHint(context.getString(R.string.album_selected_of_total, 3, 3))
                 scenario.onActivity { activity ->
                     val refresh = descendants(activity.window.decorView).filterIsInstance<SwipeRefreshLayout>().first()
                     assertEquals("Arrastar a seleção não deve atualizar a pasta.", false, refresh.isRefreshing)
@@ -153,7 +153,7 @@ class AlbumSelectionInstrumentedTest {
                 onView(withContentDescription("Visualizar $secondName sem alterar a seleção")).perform(tapVisibleCenter())
                 waitUntilText(secondName)
                 pressBack()
-                waitUntilHint("3 selecionados")
+                waitUntilHint("3/3")
                 onView(withContentDescription("Mover")).check(matches(isDisplayed())).perform(click())
                 waitUntilText("Mover para")
                 onView(withContentDescription("Álbum Oculto")).check(doesNotExist())

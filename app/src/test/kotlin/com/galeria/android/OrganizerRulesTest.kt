@@ -80,4 +80,12 @@ class OrganizerRulesTest {
         media.reserved.remove(ticket.item); media.restore(ticket); media.restore(ticket)
         assertEquals(listOf("last"), media.queue); assertTrue(media.reserved.isEmpty())
     }
+
+    @Test
+    fun unfinishedAlbumKeepsHowMuchWasAlreadyMovedUntilNothingRemains() {
+        org.junit.Assert.assertEquals(3, OrganizerRules.progressAfterSave(previousDone = 0, savedNow = 3, remaining = 40))
+        org.junit.Assert.assertEquals(8, OrganizerRules.progressAfterSave(previousDone = 3, savedNow = 5, remaining = 35))
+        org.junit.Assert.assertNull("Álbum terminado deixa de aparecer como pendente", OrganizerRules.progressAfterSave(8, 35, 0))
+        org.junit.Assert.assertNull("Sem nada salvo não há organização pendente", OrganizerRules.progressAfterSave(0, 0, 40))
+    }
 }

@@ -98,7 +98,10 @@ internal class OcrSelectionOverlay @JvmOverloads constructor(
             isClickable = true; isFocusable = true
             setPadding(Ui.dp(context, 12), 0, Ui.dp(context, 12), 0)
             background = Ui.actionFeedback(context, Color.WHITE)
-            setOnClickListener { action() }
+            setOnClickListener {
+                Haptics.perform(this, Haptics.Effect.TAP)
+                action()
+            }
         }
         toolbar = LinearLayout(context).apply {
             tag = "ocr_selection_actions"
@@ -125,12 +128,17 @@ internal class OcrSelectionOverlay @JvmOverloads constructor(
         if (text.isBlank()) return
         (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
             .setPrimaryClip(ClipData.newPlainText(context.getString(R.string.action_recognize_text), text))
+        Haptics.perform(this, Haptics.Effect.CONFIRM)
         Ui.toast(context, context.getString(R.string.ocr_copied))
     }
 
     private fun select(start: Int, end: Int) {
-        first = minOf(start, end)
-        last = maxOf(start, end)
+        val newFirst = minOf(start, end)
+        val newLast = maxOf(start, end)
+        // One tick per word that enters or leaves the selection while tapping or dragging.
+        if (newFirst != first || newLast != last) Haptics.perform(this, Haptics.Effect.TICK)
+        first = newFirst
+        last = newLast
         invalidate()
         accessibility.invalidateRoot()
         positionToolbar()

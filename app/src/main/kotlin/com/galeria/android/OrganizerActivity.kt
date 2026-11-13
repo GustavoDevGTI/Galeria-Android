@@ -133,9 +133,24 @@ class OrganizerActivity : ComponentActivity() {
             override fun getItemId(position: Int) = position.toLong()
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
                 val album = getItem(position)
+                val done = controller.organizedCount(album.key)
                 return Ui.albumTargetRow(this@OrganizerActivity, album).apply {
                     tag = "organizer_album_${album.key}"
                     contentDescription = album.name
+                    if (done > 0) {
+                        // This album was left half-organized: say so and how much was already done.
+                        val label = resources.getQuantityString(R.plurals.organizer_in_progress, done, done)
+                        contentDescription = "${album.name}, $label"
+                        addView(TextView(this@OrganizerActivity).apply {
+                            tag = "organizer_in_progress_${album.key}"
+                            text = label
+                            textSize = 12f
+                            setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+                            setTextColor(Ui.menuText(this@OrganizerActivity))
+                            background = Ui.rounded(Ui.menuHighlightSurface(this@OrganizerActivity), 10, this@OrganizerActivity)
+                            setPadding(dp(8), dp(3), dp(8), dp(3))
+                        }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+                    }
                 }
             }
         }
@@ -145,7 +160,18 @@ class OrganizerActivity : ComponentActivity() {
             setOnItemClickListener { _, _, position, _ ->
                 if (!controller.loading) {
                     val album = pickerAdapter!!.getItem(position) as AlbumItem
-                    controller.chooseSource(album); startOrganizing()
+                    if (controller.organizedCount(album.key) > 0) {
+                        Ui.showActionDialog(
+                            this@OrganizerActivity,
+                            album.name,
+                            listOf(getString(R.string.organizer_continue), getString(R.string.organizer_restart))
+                        ) { choice ->
+                            if (choice == 1) controller.restart(album)
+                            controller.chooseSource(album); startOrganizing()
+                        }
+                    } else {
+                        controller.chooseSource(album); startOrganizing()
+                    }
                 }
             }
         }
@@ -208,7 +234,8 @@ class OrganizerActivity : ComponentActivity() {
 
     private fun icon(resource: Int, description: String, action: (View) -> Unit) = ImageButton(this).apply {
         setImageResource(resource); setColorFilter(Ui.text(context)); setBackgroundColor(android.graphics.Color.TRANSPARENT)
-        contentDescription = description; setOnClickListener(action)
+        contentDescription = description
+        setOnClickListener { Haptics.perform(it, Haptics.Effect.TAP); action(it) }
     }
     private fun dp(value: Int) = Ui.dp(this, value)
 

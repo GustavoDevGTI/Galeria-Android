@@ -94,6 +94,30 @@ internal class OrganizerController(context: Context,
         fun isEmpty(album: AlbumItem) = album.key.startsWith("@organizer.empty.")
     }
 
+    /** Media already saved from an album whose organization was left unfinished (0 = not started). */
+    fun organizedCount(albumKey: String): Int = prefs.getInt("organizer_done_$albumKey", 0)
+
+    /** Forgets the wheel, the reserve and the progress of an album so it starts from scratch. */
+    fun restart(album: AlbumItem) {
+        if (saving || hasChanges) return
+        prefs.edit {
+            remove("organizer_slots_${album.key}")
+            remove("organizer_targets_${album.key}")
+            remove("organizer_reserve_${album.key}")
+            remove("organizer_done_${album.key}")
+        }
+    }
+
+    private var savedInBatch = 0
+    private fun rememberProgress() {
+        val key = source?.key ?: return
+        val done = OrganizerRules.progressAfterSave(
+            organizedCount(key), savedInBatch, media.queue.size + media.reserved.size
+        )
+        savedInBatch = 0
+        prefs.edit { if (done == null) remove("organizer_done_$key") else putInt("organizer_done_$key", done) }
+    }
+
     fun chooseSource(album: AlbumItem) {
         if (saving || hasChanges) return
         source = album
@@ -206,9 +230,11 @@ internal class OrganizerController(context: Context,
                         history.removeAll { it.album == null && it.ticket.item == action.ticket.item }
                         sent[album.key] = (sent[album.key] ?: 0) + 1
                         committedAlbum = album.key
+                        savedInBatch++
                     }
                     if (pending == 0) {
                         saving = false
+                        rememberProgress()
                         message = if (hasChanges) "Algumas mídias não foram salvas. Tente novamente ou desfaça as marcações." else "Alterações salvas."
                     }
                     saveReserve(); notifyChange()

@@ -7,6 +7,13 @@ import kotlin.math.hypot
 internal object OrganizerRules {
     const val MAX_DESTINATIONS = 8
 
+    /**
+     * How many media an album left half-organized already had saved, kept so the album picker can
+     * offer to continue. Null when nothing was saved yet or nothing is left to organize.
+     */
+    fun progressAfterSave(previousDone: Int, savedNow: Int, remaining: Int): Int? =
+        if (remaining <= 0) null else (previousDone + savedNow).takeIf { it > 0 }
+
     fun sector(dx: Float, dy: Float, count: Int = MAX_DESTINATIONS): Int {
         require(count in 1..MAX_DESTINATIONS)
         val sweep = 360.0 / count

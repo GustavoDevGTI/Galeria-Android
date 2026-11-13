@@ -245,6 +245,7 @@ class SettingsActivity : Activity() {
                 bottomMargin = Ui.dp(this@SettingsActivity, 8)
             }
             setOnClickListener {
+                Haptics.perform(this, Haptics.toggle(!advancedOptionsExpanded))
                 advancedOptionsExpanded = !advancedOptionsExpanded
                 fillContent()
             }
@@ -307,7 +308,10 @@ class SettingsActivity : Activity() {
         texts.addView(subtitleView)
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (listener != null) {
-            row.setOnClickListener { listener() }
+            row.setOnClickListener {
+                Haptics.perform(row, Haptics.Effect.TAP)
+                listener()
+            }
         }
         content.addView(row)
         return subtitleView
@@ -372,7 +376,10 @@ class SettingsActivity : Activity() {
         row.addView(swatch, LinearLayout.LayoutParams(Ui.dp(this, 28), Ui.dp(this, 28)).apply {
             marginStart = Ui.dp(this@SettingsActivity, 12)
         })
-        row.setOnClickListener { showThemeColorDialog() }
+        row.setOnClickListener {
+            Haptics.perform(row, Haptics.Effect.TAP)
+            showThemeColorDialog()
+        }
         content.addView(row)
     }
 

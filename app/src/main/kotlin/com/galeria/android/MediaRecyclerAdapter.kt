@@ -435,25 +435,25 @@ class MediaRecyclerAdapter(
 
         val check = TextView(context).apply {
             setTextColor(Color.WHITE)
-            textSize = 15f
+            textSize = 12f
             gravity = Gravity.CENTER
             background = Ui.rounded(0x99000000.toInt(), 4, context)
         }
-        val checkParams = FrameLayout.LayoutParams(Ui.dp(context, 24), Ui.dp(context, 24)).apply {
+        val checkParams = FrameLayout.LayoutParams(Ui.dp(context, OVERLAY_CHECK_DP), Ui.dp(context, OVERLAY_CHECK_DP)).apply {
             gravity = Gravity.TOP or Gravity.START
-            marginStart = Ui.dp(context, 6)
-            topMargin = Ui.dp(context, 6)
+            marginStart = Ui.dp(context, 5)
+            topMargin = Ui.dp(context, 5)
         }
         thumb.addView(check, checkParams)
         val preview = ImageView(context).apply {
             setImageResource(R.drawable.ic_view_media)
             setColorFilter(Color.WHITE)
             background = Ui.rounded(0x99000000.toInt(), 8, context)
-            setPadding(Ui.dp(context, 5), Ui.dp(context, 5), Ui.dp(context, 5), Ui.dp(context, 5))
+            setPadding(Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4))
             isClickable = true
             isFocusable = true
         }
-        thumb.addView(preview, FrameLayout.LayoutParams(Ui.dp(context, 36), Ui.dp(context, 36), Gravity.BOTTOM or Gravity.END).apply {
+        thumb.addView(preview, FrameLayout.LayoutParams(Ui.dp(context, OVERLAY_ACTION_DP), Ui.dp(context, OVERLAY_ACTION_DP), Gravity.BOTTOM or Gravity.END).apply {
             marginEnd = Ui.dp(context, 5)
             bottomMargin = Ui.dp(context, 5)
         })
@@ -544,7 +544,7 @@ class MediaRecyclerAdapter(
         holder.itemView.scaleY = if (selected) 0.94f else 1f
         holder.itemView.translationZ = if (selected) -Ui.dp(context, 2).toFloat() else 0f
         holder.check.visibility = if (selectionMode || selected) View.VISIBLE else View.GONE
-        holder.preview.visibility = if (selectionMode && selected) View.VISIBLE else View.GONE
+        holder.preview.visibility = if (selectionMode) View.VISIBLE else View.GONE
         holder.check.text = if (selected) "\u2713" else ""
         holder.check.setTextColor(if (selected) Ui.bg(context) else Color.WHITE)
         holder.check.background = GradientDrawable().apply {
@@ -698,6 +698,8 @@ class MediaRecyclerAdapter(
     }
 
     private companion object {
+        const val OVERLAY_CHECK_DP = 20
+        const val OVERLAY_ACTION_DP = 28
         const val PAYLOAD_SELECTION = "selection"
         const val PAYLOAD_THUMBNAIL_SIZE = "thumbnail_size"
         const val PAYLOAD_POSITION = "position"

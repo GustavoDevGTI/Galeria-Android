@@ -137,6 +137,24 @@ class MainActivity : ComponentActivity() {
         catalogController = AlbumCatalogController(applicationContext)
         loadSettings()
         buildLayout()
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // Back undoes the last thing on screen first: selection, then the search. Only a clean album list closes.
+                if (::adapter.isInitialized && adapter.isSelectionMode()) {
+                    exitSelectionMode()
+                    return
+                }
+                if (::searchInput.isInitialized && (searchInput.hasFocus() || searchInput.text.isNotEmpty())) {
+                    searchInput.setText("")
+                    searchInput.clearFocus()
+                    (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                        .hideSoftInputFromWindow(searchInput.windowToken, 0)
+                    return
+                }
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+            }
+        })
         registerMediaObserver()
         accessCoordinator.start(::scheduleInitialCatalogLoad)
         if (isHiddenPanelHost()) root.post {
@@ -1417,7 +1435,10 @@ class MainActivity : ComponentActivity() {
                     Ui.dp(this@MainActivity, 14),
                     Ui.dp(this@MainActivity, 8)
                 )
-                setOnClickListener { onClick() }
+                setOnClickListener {
+                    Haptics.perform(this, Haptics.Effect.TAP)
+                    onClick()
+                }
             }
 
         val content = LinearLayout(this).apply {

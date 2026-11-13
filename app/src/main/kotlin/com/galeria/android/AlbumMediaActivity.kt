@@ -432,7 +432,7 @@ class AlbumMediaActivity : ComponentActivity() {
             }
 
             override fun onMediaPreview(position: Int) {
-                if (position in 0 until adapter.getCount() && adapter.isSelected(position)) {
+                if (position in 0 until adapter.getCount()) {
                     openDetail(adapter.getItem(position), position)
                 }
             }
@@ -925,11 +925,7 @@ class AlbumMediaActivity : ComponentActivity() {
         }
         searchInput.hint = when {
             choosingAlbumCover -> getString(R.string.album_choose_cover_hint)
-            selecting -> resources.getQuantityString(
-                R.plurals.selected_count,
-                adapter.selectedCount(),
-                adapter.selectedCount()
-            )
+            selecting -> getString(R.string.album_selected_of_total, adapter.selectedCount(), adapter.getCount())
             searching -> getString(R.string.album_search_folder)
             else -> getString(R.string.album_search_in, albumName)
         }

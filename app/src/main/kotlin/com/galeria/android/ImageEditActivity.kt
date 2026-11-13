@@ -137,7 +137,10 @@ class ImageEditActivity : ComponentActivity() {
         stage = FrameLayout(this)
         editor = EditorView(this)
         editor.tag = "editor_canvas"
-        editor.setOnLongClickListener { recognizeText(); true }
+        editor.setOnLongClickListener {
+            Haptics.perform(editor, Haptics.Effect.LONG_PRESS)
+            recognizeText(); true
+        }
         stage.addView(editor, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         root.addView(stage, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
@@ -285,7 +288,11 @@ class ImageEditActivity : ComponentActivity() {
             setProcessing(false)
             if (!ocrHostResumed) return@recognizeBitmap
             result.fold(onSuccess = { document ->
-                if (document.text.isBlank()) Ui.toast(this, getString(R.string.ocr_no_text)) else {
+                if (document.text.isBlank()) {
+                    Haptics.perform(this, Haptics.Effect.REJECT)
+                    Ui.toast(this, getString(R.string.ocr_no_text))
+                } else {
+                    Haptics.perform(this, Haptics.Effect.CONFIRM)
                     setProcessing(true)
                     lateinit var selection: OcrSelectionOverlay
                     selection = OcrSelectionOverlay(this, document, { editor.normalizedImageMatrix() }) {
@@ -297,7 +304,10 @@ class ImageEditActivity : ComponentActivity() {
                     ocrSelection = selection
                     selection.attachTo(stage)
                 }
-            }, onFailure = { Ui.toast(this, getString(R.string.ocr_error)) })
+            }, onFailure = {
+                Haptics.perform(this, Haptics.Effect.REJECT)
+                Ui.toast(this, getString(R.string.ocr_error))
+            })
         }
     }
 
