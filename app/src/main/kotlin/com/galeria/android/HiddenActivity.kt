@@ -13,6 +13,10 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 class HiddenActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     private lateinit var adapter: HiddenFileAdapter
     private lateinit var emptyView: TextView
 
@@ -36,7 +40,7 @@ class HiddenActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             Ui.setPadding(this, 10, 8, 10, 8)
         }
-        val back = Ui.title(this, "Voltar", 16).apply {
+        val back = Ui.title(this, getString(R.string.msg_back), 16).apply {
             gravity = Gravity.CENTER
             setOnClickListener { finish() }
         }
@@ -72,7 +76,7 @@ class HiddenActivity : Activity() {
         }
         content.addView(grid)
 
-        emptyView = Ui.label(this, "Nenhum item oculto.")
+        emptyView = Ui.label(this, getString(R.string.msg_no_hidden_items))
         content.addView(
             emptyView,
             FrameLayout.LayoutParams(

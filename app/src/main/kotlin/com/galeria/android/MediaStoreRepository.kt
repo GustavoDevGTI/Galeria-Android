@@ -161,7 +161,8 @@ object MediaStoreRepository {
         // A physical album must not wait for a device-wide dirty catalog or scan.
         if (isPhysicalAlbum(albumKey)) return queryAlbumMedia(context, albumKey!!, includeHiddenFilesystem)
         val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
-        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
+        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty() +
+            SecurityStore(prefs).secureFolderKeys()
         if (albumKey == VirtualAlbumRules.TRASH_KEY) {
             val trash = loadTrashedMedia(context)
             val visibleAndTrash = loadMedia(context, false) + trash
@@ -169,7 +170,7 @@ object MediaStoreRepository {
                 trash,
                 hiddenKeys + AutomaticHiddenAlbums.keysForMedia(context, visibleAndTrash,
                     HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())),
-                prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
+                GalleryPreferences.hiddenFlag(context, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)
             )
         }
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)

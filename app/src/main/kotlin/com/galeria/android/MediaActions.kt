@@ -126,14 +126,14 @@ class MediaActions private constructor() {
                 } catch (_: Exception) {
                     val trashed = setTrashed(activity, uri, true)
                     if (!trashed) {
-                        Ui.toast(activity, "Não foi possível mover o item para a Lixeira.")
+                        Ui.toast(activity, activity.getString(R.string.msg_trash_failed))
                     }
                     if (trashed) RESULT_DONE else RESULT_FAILED
                 }
             }
 
             val trashed = LegacyTrashStore.trash(activity, uri)
-            Ui.toast(activity, if (trashed) "Item movido para a Lixeira." else "Não foi possível mover para a Lixeira.")
+            Ui.toast(activity, activity.getString(if (trashed) R.string.msg_moved_to_trash else R.string.msg_trash_failed))
             return if (trashed) RESULT_DONE else RESULT_FAILED
         }
 
@@ -194,7 +194,7 @@ class MediaActions private constructor() {
                 } catch (_: Exception) {
                     val deleted = deleteDirect(activity, uri)
                     if (!deleted) {
-                        Ui.toast(activity, "Não foi possível pedir permissão para excluir.")
+                        Ui.toast(activity, activity.getString(R.string.msg_delete_permission_failed))
                     }
                     if (deleted) RESULT_DONE else RESULT_FAILED
                 }
@@ -258,7 +258,7 @@ class MediaActions private constructor() {
                     )
                     launchPermission(activity, pendingIntent, requestCode)
                 } catch (_: Exception) {
-                    Ui.toast(activity, "Não foi possível pedir permissão para mover.")
+                    Ui.toast(activity, activity.getString(R.string.msg_move_permission_failed))
                 }
             }
         }
@@ -277,6 +277,9 @@ class MediaActions private constructor() {
                 try {
                     val updated = activity.contentResolver.update(item.uri, values, null, null)
                     if (updated > 0) {
+                        if (!GalleryPreferences.flag(activity, GalleryPreferences.KEEP_MODIFIED_DATE)) {
+                            ModifiedDatePolicy.apply(activity, fileFromMediaStore(activity, item.uri), 0L)
+                        }
                         MediaStoreRepository.invalidateCache()
                         GalleryCatalogStore.markCatalogDirty(activity.applicationContext)
                         return RESULT_DONE
@@ -302,7 +305,7 @@ class MediaActions private constructor() {
                     try {
                         activity.startIntentSenderForResult(permission.intentSender, requestCode, null, 0, 0, 0)
                     } catch (_: Exception) {
-                        Ui.toast(activity, "Não foi possível abrir a solicitação de permissão.")
+                        Ui.toast(activity, activity.getString(R.string.msg_permission_request_failed))
                     }
                 }
             }
@@ -549,6 +552,7 @@ class MediaActions private constructor() {
             }
 
             val targetFile = uniqueFile(targetDir, currentFile.name)
+            val sourceModified = currentFile.lastModified()
             var moved = currentFile.renameTo(targetFile)
             if (!moved) {
                 try {
@@ -566,6 +570,7 @@ class MediaActions private constructor() {
             }
 
             if (moved) {
+                ModifiedDatePolicy.apply(activity, targetFile, sourceModified)
                 try {
                     activity.contentResolver.delete(item.uri, null, null)
                 } catch (_: Exception) {
@@ -601,6 +606,7 @@ class MediaActions private constructor() {
                         copy(input, output)
                     }
                 }
+                ModifiedDatePolicy.apply(activity, targetFile, currentFile.lastModified())
                 MediaScannerConnection.scanFile(activity, arrayOf(targetFile.absolutePath), null, null)
                 MediaStoreRepository.invalidateCache()
                 GalleryCatalogStore.markCatalogDirty(activity.applicationContext)

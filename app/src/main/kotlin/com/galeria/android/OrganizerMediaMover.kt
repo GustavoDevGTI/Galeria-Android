@@ -54,6 +54,9 @@ internal object OrganizerMediaMover {
                         resolver.query(item.uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)
                             ?.use { if (it.moveToFirst()) it.getString(0) else null }
                     }.getOrNull() ?: name
+                    if (!GalleryPreferences.flag(context, GalleryPreferences.KEEP_MODIFIED_DATE)) {
+                        ModifiedDatePolicy.apply(context, MediaActions.fileFromMediaStore(context, item.uri), 0L)
+                    }
                     changed(context)
                     return relocated(item, item.uri, actualName, relative)
                 }
@@ -72,6 +75,7 @@ internal object OrganizerMediaMover {
         }
         // Same storage volume: atomic rename. Never copy/delete a large video on the UI thread.
         if (!source.renameTo(target)) return null
+        ModifiedDatePolicy.apply(context, target, source.lastModified().takeIf { it > 0L } ?: target.lastModified())
         try {
             if (item.uri.scheme == "content") resolver.delete(item.uri, null, null)
         } catch (_: Exception) { }

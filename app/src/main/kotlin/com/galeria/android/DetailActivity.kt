@@ -34,6 +34,7 @@ import android.util.Size
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
@@ -74,11 +75,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
-import java.text.DateFormat
-import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.abs
@@ -88,6 +88,10 @@ import kotlin.math.roundToInt
 
 @OptIn(UnstableApi::class)
 class DetailActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     private val operations = ActivityOperationRunner(this)
     private val executor = Executors.newSingleThreadExecutor()
     private val videoPreviewExecutor = Executors.newSingleThreadExecutor()
@@ -123,6 +127,7 @@ class DetailActivity : ComponentActivity() {
     private lateinit var topBar: LinearLayout
     private lateinit var bottomBar: LinearLayout
     private lateinit var title: TextView
+    private lateinit var fullscreenDetails: TextView
     private lateinit var currentTime: TextView
     private lateinit var durationTime: TextView
     private lateinit var speedButton: TextView
@@ -333,6 +338,11 @@ class DetailActivity : ComponentActivity() {
         cinemaPreferences = CinemaModePreferences(prefs)
         videoTrackController = VideoTrackController(cinemaPreferences)
         sourceAlbumKey = intent.getStringExtra("album_key")
+        if (sourceAlbumKey?.let { SecurityStore(this).isSecureFolder(it) && !SecuritySession.isFolderUnlocked(it) } == true) {
+            Ui.toast(this, getString(R.string.security_folder_locked))
+            finish()
+            return
+        }
         pendingDeletePermanent = savedInstanceState?.getBoolean("pending_delete_permanent") ?: false
         cinemaController.restore(
             savedInstanceState?.takeIf { it.containsKey(STATE_CINEMA_MODE) }?.getBoolean(STATE_CINEMA_MODE),
@@ -360,14 +370,14 @@ class DetailActivity : ComponentActivity() {
         metadataFormatter = DetailMetadataFormatter(
             fileSizeFormatter = { bytes -> Formatter.formatFileSize(this, bytes) },
             dateAddedFormatter = { seconds ->
-                DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                    .format(Date(seconds * 1000L))
+                DateTimeDisplay.format(this, seconds * 1000L)
             },
-            durationFormatter = ::formatTime
+            durationFormatter = ::formatTime,
+            label = { MetadataLabels.translate(this, it) }
         )
         val uri = resolveInitialUri(savedInstanceState)
         if (uri == null) {
-            Ui.toast(this, "Não foi possível abrir esta mídia.")
+            Ui.toast(this, getString(R.string.msg_open_media_failed))
             finish()
             return
         }
@@ -381,7 +391,7 @@ class DetailActivity : ComponentActivity() {
             ?: runCatching { contentResolver.getType(uri) }.getOrNull()
         val mime = ExternalMediaRules.normalizedMime(name, declaredMime)
         if (!ExternalMediaRules.isSupported(mime)) {
-            Ui.toast(this, "Formato de mídia não compatível.")
+            Ui.toast(this, getString(R.string.msg_unsupported_format))
             finish()
             return
         }
@@ -398,7 +408,10 @@ class DetailActivity : ComponentActivity() {
         prepareInitialMedia(uri, name, mime, path)
         buildLayout()
         loadCurrentItem()
-        loadAlbumQueueAsync(uri)
+        // "Abrir vídeos em tela separada": the video plays alone, without swiping to the rest of the album.
+        val videoAlone = (mime ?: contentResolver.getType(uri))?.startsWith("video/") == true &&
+            GalleryPreferences.flag(this, GalleryPreferences.VIDEO_SEPARATE_SCREEN)
+        if (!videoAlone) loadAlbumQueueAsync(uri)
     }
 
     private fun resolveInitialUri(savedInstanceState: Bundle?): Uri? {
@@ -442,7 +455,7 @@ class DetailActivity : ComponentActivity() {
         val navSideInset = navigationBarSideInset()
         val navBottomInset = navigationBarBottomInset()
         val root = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(viewerBackground())
         }
 
         topBar = LinearLayout(this).apply {
@@ -470,7 +483,20 @@ class DetailActivity : ComponentActivity() {
             marginStart = Ui.dp(this@DetailActivity, 4)
             marginEnd = Ui.dp(this@DetailActivity, 20)
         }
-        topBar.addView(title, titleParams)
+        // "Exibir detalhes em tela cheia": date, size and length under the name.
+        fullscreenDetails = TextView(this).apply {
+            setTextColor(0xCCFFFFFF.toInt())
+            textSize = 12f
+            setSingleLine(true)
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            visibility = View.GONE
+        }
+        val titleColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(title, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(fullscreenDetails, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        topBar.addView(titleColumn, titleParams)
 
         favoriteButton = iconButton(R.drawable.ic_heart, Ui.dp(this, 44)).apply {
             contentDescription = getString(R.string.action_favorite)
@@ -480,7 +506,7 @@ class DetailActivity : ComponentActivity() {
         topBar.addView(favoriteButton, LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)))
 
         val more = iconButton(R.drawable.ic_more_vertical, Ui.dp(this, 48)).apply {
-            contentDescription = "Mais opções"
+            contentDescription = getString(R.string.action_more_options)
             setOnClickListener { showMediaMenu(it) }
         }
         topBar.addView(more, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 44)))
@@ -488,8 +514,8 @@ class DetailActivity : ComponentActivity() {
         var touchClickX = Float.NaN
         var touchClickY = Float.NaN
         content = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
-            contentDescription = "Visualizador de mídia"
+            setBackgroundColor(viewerBackground())
+            contentDescription = getString(R.string.msg_media_viewer)
             isClickable = true
             setOnClickListener {
                 val x = touchClickX.takeIf { it.isFinite() } ?: width / 2f
@@ -709,7 +735,7 @@ class DetailActivity : ComponentActivity() {
                 if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) R.string.action_delete_permanently
                 else R.string.action_delete
             )
-            setOnClickListener { confirmDeleteCurrent() }
+            setOnClickListener { SecurityGate.requireFileOperation(this@DetailActivity) { confirmDeleteCurrent() } }
         }
         val restore = actionButton(R.drawable.ic_restore).apply {
             contentDescription = getString(R.string.action_restore)
@@ -721,7 +747,7 @@ class DetailActivity : ComponentActivity() {
         }
         soundButton = actionButton(R.drawable.ic_volume_on).apply {
             tag = "viewer_sound"
-            contentDescription = "Desativar som"
+            contentDescription = getString(R.string.msg_mute)
             setOnClickListener { toggleVideoSound() }
         }
         cinemaButton = actionButton(R.drawable.ic_movie).apply {
@@ -771,6 +797,7 @@ class DetailActivity : ComponentActivity() {
         actionsBar.addView(restore, actionParams())
         actionsBar.addView(trash, actionParams())
         bottomBar.addView(actionsBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, Ui.ACTION_TOUCH_HEIGHT_DP)))
+        if (!GalleryPreferences.flag(this, GalleryPreferences.SHOW_BOTTOM_ACTIONS)) actionsBar.visibility = View.GONE
 
         root.addView(topBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
         root.addView(bottomBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
@@ -860,11 +887,11 @@ class DetailActivity : ComponentActivity() {
             widthDp = 216
         ) { selected ->
             when (selected) {
-                ViewerMenuRules.RENAME -> askRenameCurrentImage()
+                ViewerMenuRules.RENAME -> SecurityGate.requireFileOperation(this) { askRenameCurrentImage() }
                 ViewerMenuRules.OPEN_WITH -> openCurrentWithAnotherApp()
                 ViewerMenuRules.COPY_TO -> askFolderForCopyOrMove(true, anchor)
-                ViewerMenuRules.MOVE_TO -> askFolderForCopyOrMove(false, anchor)
-                ViewerMenuRules.HIDE -> confirmHideCurrent()
+                ViewerMenuRules.MOVE_TO -> SecurityGate.requireFileOperation(this) { askFolderForCopyOrMove(false, anchor) }
+                ViewerMenuRules.HIDE -> SecurityGate.requireFileOperation(this) { confirmHideCurrent() }
                 ViewerMenuRules.INFORMATION -> if (item.isVideo()) {
                     showCurrentVideoInformation()
                 } else {
@@ -887,11 +914,11 @@ class DetailActivity : ComponentActivity() {
 
     private fun openCurrentWithAnotherApp() {
         val item = currentItem()
-        val mediaLabel = if (item.isVideo()) "vídeo" else "imagem"
+        val openWithTitle = getString(if (item.isVideo()) R.string.msg_open_video_with else R.string.msg_open_image_with)
         try {
-            startActivity(Intent.createChooser(mediaActions.openWithIntent(item), "Abrir $mediaLabel com"))
+            startActivity(Intent.createChooser(mediaActions.openWithIntent(item), openWithTitle))
         } catch (_: ActivityNotFoundException) {
-            Ui.toast(this, "Nenhum aplicativo compatível foi encontrado.")
+            Ui.toast(this, getString(R.string.msg_no_compatible_app))
         }
     }
 
@@ -951,14 +978,14 @@ class DetailActivity : ComponentActivity() {
         if (!item.isImage()) return
         Ui.showTextInputDialog(
             this,
-            title = "Renomear imagem",
-            hint = "Nome do arquivo",
-            positiveText = "Renomear",
+            title = getString(R.string.msg_rename_image),
+            hint = getString(R.string.msg_file_name),
+            positiveText = getString(R.string.msg_rename),
             initialValue = item.name
         ) { requestedName ->
             val newName = ViewerMenuRules.normalizedRename(requestedName, item.name)
             when {
-                newName == null -> Ui.toast(this, "Digite um nome válido.")
+                newName == null -> Ui.toast(this, getString(R.string.msg_invalid_name))
                 newName == item.name -> Unit
                 else -> renameImage(item, newName, requestPermission = true)
             }
@@ -974,17 +1001,17 @@ class DetailActivity : ComponentActivity() {
                 applyRenamedItem(item, newName)
                 pendingRenameItem = null
                 pendingRenameName = null
-                Ui.toast(this, "Imagem renomeada.")
+                Ui.toast(this, getString(R.string.msg_image_renamed))
             } else if (requestPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 pendingRenameItem = item
                 pendingRenameName = newName
                 MediaActions.requestWrite(this, item.uri, REQ_RENAME_WRITE)
             } else {
-                Ui.toast(this, "Não foi possível renomear a imagem.")
+                Ui.toast(this, getString(R.string.msg_rename_failed))
             }
         } catch (error: SecurityException) {
             if (!requestPermission) {
-                Ui.toast(this, "Não foi possível renomear a imagem.")
+                Ui.toast(this, getString(R.string.msg_rename_failed))
                 return@run
             }
             pendingRenameItem = item
@@ -1007,7 +1034,7 @@ class DetailActivity : ComponentActivity() {
                 )
             }
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> MediaActions.requestWrite(this, uri, REQ_RENAME_WRITE)
-            else -> Ui.toast(this, "Não foi possível solicitar permissão para renomear.")
+            else -> Ui.toast(this, getString(R.string.msg_rename_permission_failed))
         }
     }
 
@@ -1022,7 +1049,7 @@ class DetailActivity : ComponentActivity() {
         val enabled = !playbackController.isLooping()
         prefs.edit().putBoolean("loop_videos", enabled).apply()
         playbackController.setLooping(enabled)
-        Ui.toast(this, if (enabled) "Repetição ativada." else "Repetição desativada.")
+        Ui.toast(this, getString(if (enabled) R.string.msg_loop_on else R.string.msg_loop_off))
     }
 
     private fun showCurrentVideoInformation() {
@@ -1037,7 +1064,7 @@ class DetailActivity : ComponentActivity() {
             )
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                Ui.showMetadataDialog(this, "Informações do vídeo", information)
+                Ui.showMetadataDialog(this, getString(R.string.msg_video_info), information)
             }
         }
     }
@@ -1063,7 +1090,7 @@ class DetailActivity : ComponentActivity() {
         if (isFinishing || isDestroyed) return
         Ui.showMetadataDialog(
             this,
-            "Informações da imagem",
+            getString(R.string.msg_image_info),
             metadataFormatter.imageSections(
                 item.metadataDescription(),
                 metadata,
@@ -1083,14 +1110,14 @@ class DetailActivity : ComponentActivity() {
             val longitude = metadata.longitude
             runOnUiThread {
                 if (latitude == null || longitude == null) {
-                    Ui.toast(this, "A imagem não possui localização GPS.")
+                    Ui.toast(this, getString(R.string.msg_no_gps))
                     return@runOnUiThread
                 }
                 val location = Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude")
                 try {
-                    startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, location), "Exibir localização"))
+                    startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, location), getString(R.string.msg_show_location)))
                 } catch (_: ActivityNotFoundException) {
-                    Ui.toast(this, "Nenhum aplicativo de mapas foi encontrado.")
+                    Ui.toast(this, getString(R.string.msg_no_maps_app))
                 }
             }
         }
@@ -1100,7 +1127,7 @@ class DetailActivity : ComponentActivity() {
         val currentUri = currentItem().uri
         val images = mediaQueue.filter { it.isImage() }
         if (images.size < 2) {
-            Ui.toast(this, "A apresentação precisa de pelo menos duas imagens.")
+            Ui.toast(this, getString(R.string.msg_slideshow_needs_two))
             return
         }
         queueController.retainImages(currentUri)
@@ -1109,7 +1136,7 @@ class DetailActivity : ComponentActivity() {
         scheduleAdjacentPreload()
         scheduleShuffleAdvance()
         if (hudVisible) toggleHud()
-        Ui.toast(this, "Apresentação iniciada.")
+        Ui.toast(this, getString(R.string.msg_slideshow_started))
     }
 
     private fun handleSwipeOrTap(event: MotionEvent): Boolean {
@@ -1147,26 +1174,11 @@ class DetailActivity : ComponentActivity() {
                 holdDownY = event.rawY
                 handler.removeCallbacks(startHoldSpeed)
                 handler.postDelayed(startHoldSpeed, ViewConfiguration.getLongPressTimeout().toLong())
-                if (cinemaGesturesEnabled()) {
-                    cinemaGestureController.start(
-                        event.x,
-                        event.y,
-                        content.width.toFloat(),
-                        content.height.toFloat(),
-                        currentBrightnessFraction(),
-                        currentVolumeFraction()
-                    )
-                }
+                armVerticalAdjust(event)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (cinemaGesturesEnabled()) {
-                    val update = cinemaGestureController.update(event.x, event.y, gestureTouchSlop)
-                    if (update.consumed) {
-                        update.kind?.let { applyCinemaGesture(it, update.fraction) }
-                        return true
-                    }
-                }
+                if (feedVerticalAdjust(event, finishing = false)) return true
                 updateInteractiveSwipe(event)
                 return true
             }
@@ -1177,15 +1189,9 @@ class DetailActivity : ComponentActivity() {
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (cinemaGesturesEnabled()) {
-                    val update = cinemaGestureController.update(event.x, event.y, gestureTouchSlop)
-                    update.kind?.let { applyCinemaGesture(it, update.fraction) }
-                    if (cinemaGestureController.finish()) {
-                        completedViewerTap = false
-                        handler.removeCallbacks(hideCinemaGestureIndicator)
-                        handler.postDelayed(hideCinemaGestureIndicator, CINEMA_INDICATOR_HIDE_MS)
-                        return true
-                    }
+                if (feedVerticalAdjust(event, finishing = true)) {
+                    completedViewerTap = false
+                    return true
                 }
                 updateInteractiveSwipe(event)
                 if (dragPreviewPage != null) {
@@ -1263,7 +1269,7 @@ class DetailActivity : ComponentActivity() {
         cancelPendingSingleTap()
         pendingSingleTap = Runnable {
             pendingSingleTap = null
-            toggleHud()
+            if (!changeMediaBySideTap(x)) toggleHud()
         }.also { handler.postDelayed(it, DOUBLE_TAP_MS) }
     }
 
@@ -1339,10 +1345,49 @@ class DetailActivity : ComponentActivity() {
 
     private fun beginPointerGesture(event: MotionEvent) {
         swipeGestureController.start(event.rawX, event.rawY)
+        closeGestureDownY = event.rawY
+        closeGestureActive = false
+    }
+
+    // "Fechar com gesto para baixo": pulling the media down follows the finger and closes past a threshold.
+    private var closeGestureActive = false
+    private var closeGestureDownY = 0f
+
+    private fun updateCloseGesture(event: MotionEvent) {
+        val page = activePage ?: return
+        val distance = (event.rawY - closeGestureDownY).coerceAtLeast(0f)
+        page.translationY = distance
+        page.alpha = 1f - (distance / content.height.coerceAtLeast(1)).coerceIn(0f, 0.6f)
+    }
+
+    /** Returns true when a pull-down gesture was in progress (closing or snapping back). */
+    private fun finishCloseGesture(): Boolean {
+        if (!closeGestureActive) return false
+        closeGestureActive = false
+        val page = activePage
+        val distance = page?.translationY ?: 0f
+        if (ViewerGestureRules.closesOnRelease(distance, content.height.toFloat(), Ui.dp(this, 120).toFloat())) {
+            Haptics.perform(this, Haptics.Effect.CONFIRM)
+            resetSpeedAndFinish()
+        } else {
+            page?.animate()?.translationY(0f)?.alpha(1f)?.setDuration(160L)?.start()
+        }
+        return true
     }
 
     private fun updateInteractiveSwipe(event: MotionEvent) {
-        if (operations.busy || switchingItem || mediaQueue.size < 2) return
+        if (closeGestureActive) { updateCloseGesture(event); return }
+        if (operations.busy || switchingItem) return
+        if (dragPreviewPage == null && GalleryPreferences.flag(this, GalleryPreferences.SWIPE_DOWN_TO_CLOSE)) {
+            val intent = swipeGestureController.resolveIntent(event.rawX, event.rawY, gestureTouchSlop)
+            if (intent != null && ViewerGestureRules.isPullDown(intent)) {
+                closeGestureActive = true
+                cancelPendingSingleTap()
+                updateCloseGesture(event)
+                return
+            }
+        }
+        if (mediaQueue.size < 2) return
         if (dragPreviewPage == null) {
             val intent = swipeGestureController.resolveIntent(event.rawX, event.rawY, gestureTouchSlop) ?: return
             dragTargetIndex = wrappedIndex(currentIndex + intent.direction)
@@ -1380,6 +1425,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun finishInteractiveSwipe() {
+        if (finishCloseGesture()) return
         if (switchingItem) return
         val offset = swipeOffset()
         val shouldCommit = swipeGestureController.shouldCommit(gestureTouchSlop)
@@ -1454,6 +1500,10 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun cancelInteractiveSwipe(offset: Int = swipeOffset()) {
+        if (closeGestureActive) {
+            closeGestureActive = false
+            activePage?.animate()?.translationY(0f)?.alpha(1f)?.setDuration(160L)?.start()
+        }
         // The queue index has already advanced; cancelling a drag must not undo
         // or replace the completion of a confirmed media change.
         if (switchingItem) return
@@ -1495,6 +1545,7 @@ class DetailActivity : ComponentActivity() {
     private fun applyCurrentUiAfterInteractiveSwipe() {
         val item = currentItem()
         title.text = item.name
+        updateFullscreenDetails(item)
         updateFavoriteButton()
         if (item.isVideo()) {
             content.removeAllViews()
@@ -1609,11 +1660,12 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun createCurrentPage(): FrameLayout {
-        val page = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         val item = currentItem()
+        val page = FrameLayout(this).apply { setBackgroundColor(pageBackground(item)) }
         cinemaController.open(item.isVideo(), item.isVideo() && cinemaPreferences.isEnabled(cinemaAlbumKey(item)),
             item.isVideo() && automaticCinemaLandscape(resources.configuration))
         title.text = item.name
+        updateFullscreenDetails(item)
         updateFavoriteButton()
         if (item.isVideo()) {
             showVideo(item, page)
@@ -1625,7 +1677,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun createSwipePreviewPage(item: MediaItem): FrameLayout {
-        val page = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        val page = FrameLayout(this).apply { setBackgroundColor(pageBackground(item)) }
         if (item.isVideo()) {
             val preview = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.FIT_CENTER
@@ -1889,7 +1941,7 @@ class DetailActivity : ComponentActivity() {
     private fun updateSoundButton() {
         if (!::soundButton.isInitialized) return
         soundButton.setImageResource(if (videoMuted) R.drawable.ic_volume_off else R.drawable.ic_volume_on)
-        soundButton.contentDescription = if (videoMuted) "Ativar som" else "Desativar som"
+        soundButton.contentDescription = getString(if (videoMuted) R.string.msg_unmute else R.string.msg_mute)
         soundButton.alpha = if (videoMuted) 0.62f else 1f
     }
 
@@ -1899,10 +1951,10 @@ class DetailActivity : ComponentActivity() {
         Haptics.perform(this, Haptics.toggle(if (cinemaMode != wasCinema) cinemaMode else !wasCinema))
     }
 
-    private fun viewerRotationPreference(): Int = when (prefs.getString("rotation_criterion", null)) {
-        getString(R.string.settings_value_sensor) -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
-        getString(R.string.settings_value_portrait) -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        getString(R.string.settings_value_landscape) -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+    private fun viewerRotationPreference(): Int = when (ChoicePreferences.code(this, ChoicePreferences.ROTATION)) {
+        "sensor" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        "landscape" -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
 
@@ -2000,8 +2052,79 @@ class DetailActivity : ComponentActivity() {
         cinemaController.followRotation(video, video && automaticCinemaLandscape(newConfig), switchingItem)
     }
 
+    private val rotationGesture = RotationGestureTracker()
+
+    /** "Fundo preto em tela cheia": black behind the media, or the theme background when off. */
+    private fun viewerBackground(): Int =
+        if (GalleryPreferences.flag(this, GalleryPreferences.FULLSCREEN_BLACK_BG)) Color.BLACK else Ui.bg(this)
+
+    /** Videos always play on black, like the cinema mode; photos follow "Fundo preto em tela cheia". */
+    private fun pageBackground(item: MediaItem): Int = if (item.isVideo()) Color.BLACK else viewerBackground()
+
+    private fun updateFullscreenDetails(item: MediaItem) {
+        if (!::fullscreenDetails.isInitialized) return
+        if (!GalleryPreferences.flag(this, GalleryPreferences.SHOW_FULLSCREEN_DETAILS)) {
+            fullscreenDetails.visibility = View.GONE
+            return
+        }
+        val parts = buildList {
+            if (item.dateAdded > 0L) add(DateTimeDisplay.format(this@DetailActivity, item.dateAdded * 1000L))
+            if (item.size > 0L) add(Formatter.formatFileSize(this@DetailActivity, item.size))
+            if (item.isVideo() && item.duration > 0L) add(formatTime(item.duration))
+        }
+        fullscreenDetails.text = parts.joinToString("  ·  ")
+        fullscreenDetails.visibility = if (parts.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    /** "Trocar mídia tocando nas laterais": a tap near the left or right edge goes to the previous or next media. */
+    private fun changeMediaBySideTap(x: Float): Boolean {
+        if (!GalleryPreferences.flag(this, GalleryPreferences.TAP_SIDES_CHANGE_MEDIA) || mediaQueue.size < 2) return false
+        val direction = ViewerGestureRules.sideTapDirection(x, content.width.toFloat())
+        if (direction == 0) return false
+        Haptics.perform(this, Haptics.Effect.TICK)
+        switchItem(direction, true)
+        return true
+    }
+
     private fun cinemaGesturesEnabled(): Boolean =
-        cinemaMode && currentItem().isVideo() && !switchingItem
+        cinemaMode && currentItem().isVideo() && !switchingItem &&
+            GalleryPreferences.flag(this, GalleryPreferences.VIDEO_VERTICAL_GESTURES)
+
+    // Vertical drag that adjusts brightness or volume: in cinema mode (both sides) or, with
+    // "Controle de brilho na vertical", brightness on the left half of any photo or video.
+    private var verticalAdjustArmed = false
+
+    private fun armVerticalAdjust(event: MotionEvent): Boolean {
+        verticalAdjustArmed = !switchingItem && ViewerGestureRules.verticalAdjustAllowed(
+            cinemaGestures = cinemaGesturesEnabled(),
+            brightnessGesture = !cinemaMode && GalleryPreferences.flag(this, GalleryPreferences.VERTICAL_BRIGHTNESS_GESTURE),
+            x = event.x,
+            width = content.width.toFloat()
+        )
+        if (verticalAdjustArmed) {
+            cinemaGestureController.start(
+                event.x, event.y, content.width.toFloat(), content.height.toFloat(),
+                currentBrightnessFraction(), currentVolumeFraction()
+            )
+        }
+        return verticalAdjustArmed
+    }
+
+    /** Feeds the gesture; returns true when it consumed the touch (the finger is adjusting). */
+    private fun feedVerticalAdjust(event: MotionEvent, finishing: Boolean): Boolean {
+        if (!verticalAdjustArmed) return false
+        val update = cinemaGestureController.update(event.x, event.y, gestureTouchSlop)
+        if (!finishing) {
+            if (update.consumed) update.kind?.let { applyCinemaGesture(it, update.fraction) }
+            return update.consumed
+        }
+        update.kind?.let { applyCinemaGesture(it, update.fraction) }
+        verticalAdjustArmed = false
+        if (!cinemaGestureController.finish()) return false
+        handler.removeCallbacks(hideCinemaGestureIndicator)
+        handler.postDelayed(hideCinemaGestureIndicator, CINEMA_INDICATOR_HIDE_MS)
+        return true
+    }
 
     private fun currentBrightnessFraction(): Float {
         val windowBrightness = window.attributes.screenBrightness
@@ -2096,7 +2219,7 @@ class DetailActivity : ComponentActivity() {
     private fun addImagePreviewToPage(item: MediaItem, page: FrameLayout) {
         val preview = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(viewerBackground())
             tag = IMAGE_PREVIEW_TAG
         }
         page.addView(preview, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -2118,7 +2241,12 @@ class DetailActivity : ComponentActivity() {
         val preview = page.children().firstOrNull { it.tag == IMAGE_PREVIEW_TAG }
         val image = AccessibleCoilZoomImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(viewerBackground())
+            // "Zoom aprofundado" off keeps the zoom shallow; "Zoom 1:1 com dois toques duplos" adds the 1:1 step.
+            if (!GalleryPreferences.flag(context, GalleryPreferences.DEEP_IMAGE_ZOOM)) {
+                zoomable.setScalesCalculator(com.github.panpf.zoomimage.zoom.ScalesCalculator.fixed(2f))
+            }
+            zoomable.setThreeStepScale(GalleryPreferences.flag(context, GalleryPreferences.DOUBLE_DOUBLE_TAP_ZOOM))
             scrollBar = null
             alpha = 0f
             accessibilityClickAction = { toggleHud() }
@@ -2152,6 +2280,8 @@ class DetailActivity : ComponentActivity() {
                 MotionEvent.ACTION_DOWN -> {
                     imageGestures.start(event.x, event.y)
                     beginPointerGesture(event)
+                    armVerticalAdjust(event)
+                    rotationGesture.start()
                     false
                 }
                 MotionEvent.ACTION_POINTER_DOWN -> {
@@ -2160,6 +2290,13 @@ class DetailActivity : ComponentActivity() {
                     false
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    if (event.pointerCount == 1 && feedVerticalAdjust(event, finishing = false)) return@setOnTouchListener true
+                    if (event.pointerCount == 2 && GalleryPreferences.flag(this, GalleryPreferences.IMAGE_ROTATION_GESTURES)) {
+                        rotationGesture.update(event)?.let { quarterTurns ->
+                            Haptics.perform(image, Haptics.Effect.TICK)
+                            lifecycleScope.launch { image.zoomable.rotateBy(90 * quarterTurns) }
+                        }
+                    }
                     val wasPaging = imageGestures.paging
                     val route = imageGestures.move(event.x, event.y, event.pointerCount, atBaseScale, gestureTouchSlop)
                     if (route == ImageGestureArbiter.MoveRoute.TEXT) return@setOnTouchListener true
@@ -2168,7 +2305,7 @@ class DetailActivity : ComponentActivity() {
                         false
                     } else {
                         updateInteractiveSwipe(event)
-                        if (dragPreviewPage != null && imageGestures.claimPaging()) {
+                        if ((dragPreviewPage != null || closeGestureActive) && imageGestures.claimPaging()) {
                             val cancelEvent = MotionEvent.obtain(event).apply {
                                 action = MotionEvent.ACTION_CANCEL
                             }
@@ -2179,6 +2316,17 @@ class DetailActivity : ComponentActivity() {
                     }
                 }
                 MotionEvent.ACTION_UP -> {
+                    if (feedVerticalAdjust(event, finishing = true)) {
+                        val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+                        image.onTouchEvent(cancel)
+                        cancel.recycle()
+                        imageGestures.cancel()
+                        return@setOnTouchListener true
+                    }
+                    if (finishCloseGesture()) {
+                        imageGestures.cancel()
+                        return@setOnTouchListener true
+                    }
                     val release = imageGestures.release()
                     val consumed = when (release) {
                         ImageGestureArbiter.Release.TEXT -> {
@@ -2213,8 +2361,8 @@ class DetailActivity : ComponentActivity() {
                 else -> imageGestures.paging
             }
         }
-        image.onViewTapListener = OnViewTapListener { _, _ ->
-            if (!imageGestures.textLongPressed) toggleHud()
+        image.onViewTapListener = OnViewTapListener { _, offset ->
+            if (!imageGestures.textLongPressed && !changeMediaBySideTap(offset.x)) toggleHud()
         }
         image.load(item.uri) {
             ImageRotation.configureRequest(this@DetailActivity, item, this)
@@ -2224,6 +2372,11 @@ class DetailActivity : ComponentActivity() {
             allowHardware(true)
             precision(Precision.EXACT)
             scale(Scale.FIT)
+            // "Maior qualidade possível": decode at the original size (Coil still caps huge bitmaps).
+            if (GalleryPreferences.flag(this@DetailActivity, GalleryPreferences.BEST_IMAGE_QUALITY)) {
+                size(coil3.size.Size.ORIGINAL)
+                memoryCacheKey(viewerNativeKey(item) + ":original")
+            }
             listener(
                 onSuccess = { _, _ ->
                     if (image.tag == item.uri) {
@@ -2238,7 +2391,7 @@ class DetailActivity : ComponentActivity() {
                 },
                 onError = { _, _ ->
                     if (image.tag == item.uri) {
-                        Ui.toast(this@DetailActivity, "Não foi possível abrir a imagem.")
+                        Ui.toast(this@DetailActivity, getString(R.string.msg_open_image_failed))
                     }
                 }
             )
@@ -2364,7 +2517,7 @@ class DetailActivity : ComponentActivity() {
         val item = currentItem()
         val favorite = mediaActions.toggleFavorite(item)
         Haptics.perform(this, Haptics.toggle(favorite))
-        Ui.toast(this, if (favorite) "Adicionado aos favoritos." else "Removido dos favoritos.")
+        Ui.toast(this, getString(if (favorite) R.string.msg_favorite_added else R.string.msg_favorite_removed))
         updateFavoriteButton()
     }
 
@@ -2382,15 +2535,15 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun shareCurrent() {
-        startActivity(Intent.createChooser(mediaActions.shareIntent(currentItem()), "Compartilhar"))
+        startActivity(Intent.createChooser(mediaActions.shareIntent(currentItem()), getString(R.string.action_share)))
     }
 
     private fun confirmHideCurrent() {
         Ui.showConfirmationDialog(
             this,
-            "Ocultar arquivo",
-            "O arquivo será copiado para a área oculta do app e removido da galeria pública.",
-            "Ocultar"
+            getString(R.string.msg_hide_file_title),
+            getString(R.string.msg_hide_file_message),
+            getString(R.string.msg_hide)
         ) { hideCurrent() }
     }
 
@@ -2406,7 +2559,7 @@ class DetailActivity : ComponentActivity() {
         }) { (copy, result) ->
         pendingHiddenCopy = copy
         if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, "Item ocultado.")
+            Ui.toast(this, getString(R.string.msg_item_hidden))
             removeDeletedItem()
         } else if (result == MediaActions.RESULT_FAILED) {
             pendingDeleteUri = null
@@ -2433,10 +2586,10 @@ class DetailActivity : ComponentActivity() {
         ) { targets ->
             if (operations.busy || isFinishing || !anchor.isAttachedToWindow || currentItem().uri != item.uri) return@loadTargets
             if (targets.isEmpty()) {
-                Ui.toast(this, "Nenhum álbum disponível.")
+                Ui.toast(this, getString(R.string.msg_no_album))
                 return@loadTargets
             }
-            Ui.showAlbumTargets(anchor, if (copy) "Copiar para" else "Mover para", targets) { album ->
+            Ui.showAlbumTargets(anchor, getString(if (copy) R.string.msg_copy_to else R.string.msg_move_to), targets) { album ->
                 if (operations.busy) return@showAlbumTargets
                 val folder = album.path.ifBlank { album.name }
                 if (copy) {
@@ -2454,7 +2607,7 @@ class DetailActivity : ComponentActivity() {
         if (operations.busy) return
         operations.run({ mediaActions.copyToFolder(item, folder) }) { result ->
         if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, "Item copiado.")
+            Ui.toast(this, getString(R.string.msg_item_copied))
         } else {
             requestFileManagementAccess()
         }
@@ -2471,7 +2624,8 @@ class DetailActivity : ComponentActivity() {
             result to MediaOperationNavigation.isEmptyMediaFolder(sourceFolder)
         }) { (result, sourceEmpty) ->
         if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, "Item movido.")
+            Ui.toast(this, getString(R.string.msg_item_moved))
+            EmptyFolderCleaner.afterRemoval(this, listOf(item.relativePath))
             completeMovedItem(item, folder, sourceEmpty)
             pendingMoveItem = null
             pendingMoveFolder = null
@@ -2487,7 +2641,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun setCurrentAsWallpaper() {
         if (currentItem().isVideo()) {
-            Ui.toast(this, "Disponível apenas para imagens.")
+            Ui.toast(this, getString(R.string.msg_images_only))
             return
         }
         val item = currentItem()
@@ -2495,16 +2649,16 @@ class DetailActivity : ComponentActivity() {
             try {
                 val bitmap = decodeBitmap(item.uri, 2600)
                 WallpaperManager.getInstance(this).setBitmap(bitmap)
-                runOnUiThread { Ui.toast(this, "Papel de parede atualizado.") }
+                runOnUiThread { Ui.toast(this, getString(R.string.msg_wallpaper_set)) }
             } catch (_: Exception) {
-                runOnUiThread { Ui.toast(this, "Não foi possível definir como papel de parede.") }
+                runOnUiThread { Ui.toast(this, getString(R.string.msg_wallpaper_failed)) }
             }
         }
     }
 
     private fun rotateCurrentImage() {
         if (currentItem().isVideo()) {
-            Ui.toast(this, "Disponível apenas para imagens.")
+            Ui.toast(this, getString(R.string.msg_images_only))
             return
         }
         if (imageRotationRunning || pendingRotateItem != null) return
@@ -2584,7 +2738,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun createPdfFromCurrentImage() {
         if (currentItem().isVideo()) {
-            Ui.toast(this, "Disponível apenas para imagens.")
+            Ui.toast(this, getString(R.string.msg_images_only))
             return
         }
         pendingPdfItem = currentItem()
@@ -2614,9 +2768,9 @@ class DetailActivity : ComponentActivity() {
                     if (output == null) throw IllegalStateException("output")
                     document.writeTo(output)
                 }
-                runOnUiThread { Ui.toast(this, "PDF criado.") }
+                runOnUiThread { Ui.toast(this, getString(R.string.msg_pdf_created)) }
             } catch (_: Exception) {
-                runOnUiThread { Ui.toast(this, "Não foi possível criar o PDF.") }
+                runOnUiThread { Ui.toast(this, getString(R.string.msg_pdf_failed)) }
             } finally {
                 document.close()
             }
@@ -2633,7 +2787,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun openImageEditor(mode: String = ImageEditActivity.MODE_CUSTOM, rotateClockwise: Boolean = false) {
         if (currentItem().isVideo()) {
-            Ui.toast(this, "Disponível apenas para imagens.")
+            Ui.toast(this, getString(R.string.msg_images_only))
             return
         }
         val item = currentItem()
@@ -2671,15 +2825,19 @@ class DetailActivity : ComponentActivity() {
             return
         }
         AlertDialog.Builder(this)
-            .setTitle("Editar mídia oculta")
-            .setMessage("A cópia editada será salva em Galeria Editada e ficará visível fora da pasta oculta. Deseja continuar?")
-            .setNegativeButton("Cancelar", null)
-            .setPositiveButton("Continuar") { _, _ -> open() }
+            .setTitle(getString(R.string.msg_edit_hidden_title))
+            .setMessage(getString(R.string.msg_edit_hidden_message))
+            .setNegativeButton(getString(R.string.action_cancel), null)
+            .setPositiveButton(getString(R.string.msg_continue)) { _, _ -> open() }
             .show()
     }
 
     private fun confirmDeleteCurrent() {
         val permanent = TrashPreferences.deletePermanently(this, sourceAlbumKey)
+        if (!permanent && GalleryPreferences.flag(this, GalleryPreferences.SKIP_DELETE_CONFIRMATION)) {
+            deleteCurrent()
+            return
+        }
         Ui.showConfirmationDialog(
             this,
             if (permanent) getString(R.string.trash_delete_selected_title) else getString(R.string.move_item_to_trash_title),
@@ -2698,6 +2856,7 @@ class DetailActivity : ComponentActivity() {
         operations.run({ mediaActions.delete(item, REQ_DELETE, permanent) }) { result ->
         if (result == MediaActions.RESULT_DONE) {
             Ui.toast(this, getString(if (permanent) R.string.album_item_deleted else R.string.item_moved_to_trash))
+            EmptyFolderCleaner.afterRemoval(this, listOf(item.relativePath))
             removeDeletedItem()
         } else if (result == MediaActions.RESULT_FAILED) {
             pendingDeleteUri = null
@@ -2710,12 +2869,12 @@ class DetailActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
             Ui.showConfirmationDialog(
                 this,
-                "Permitir gerenciamento completo",
-                "Esta mídia não pôde ser alterada pelo acesso padrão do Android. O acesso completo também libera mídias ocultas, pastas arbitrárias e operações em lote.",
-                "Permitir"
+                getString(R.string.msg_full_access_title),
+                getString(R.string.msg_full_access_message),
+                getString(R.string.msg_allow)
             ) { MediaActions.requestAllFilesAccess(this) }
         } else {
-            Ui.toast(this, "Não foi possível concluir a operação.")
+            Ui.toast(this, getString(R.string.msg_operation_failed))
         }
     }
 
@@ -2793,7 +2952,7 @@ class DetailActivity : ComponentActivity() {
                 )
                 removeDeletedItem()
             } else {
-                Ui.toast(this, "Exclusão cancelada.")
+                Ui.toast(this, getString(R.string.msg_delete_cancelled))
             }
         } else if (requestCode == REQ_RESTORE) {
             pendingDeleteUri = null
@@ -2806,12 +2965,12 @@ class DetailActivity : ComponentActivity() {
             pendingDeleteUri = null
             if (deleted) {
                 pendingHiddenCopy = null
-                Ui.toast(this, "Item ocultado.")
+                Ui.toast(this, getString(R.string.msg_item_hidden))
                 removeDeletedItem()
             } else {
                 pendingHiddenCopy?.delete()
                 pendingHiddenCopy = null
-                Ui.toast(this, "Ocultação cancelada.")
+                Ui.toast(this, getString(R.string.msg_hide_cancelled))
             }
         } else if (requestCode == REQ_MOVE_WRITE) {
             val item = pendingMoveItem
@@ -2828,7 +2987,7 @@ class DetailActivity : ComponentActivity() {
             if (resultCode == RESULT_OK && item != null && name != null) {
                 renameImage(item, name, requestPermission = false)
             } else {
-                Ui.toast(this, "Renomeação cancelada.")
+                Ui.toast(this, getString(R.string.msg_rename_cancelled))
             }
             pendingRenameItem = null
             pendingRenameName = null
@@ -2838,7 +2997,7 @@ class DetailActivity : ComponentActivity() {
                 rotateImage(item, requestPermission = false)
             } else {
                 pendingRotateItem = null
-                Ui.toast(this, "Rotação cancelada.")
+                Ui.toast(this, getString(R.string.msg_rotation_cancelled))
             }
         } else if (requestCode == REQ_CREATE_PDF) {
             val item = pendingPdfItem
@@ -2873,6 +3032,12 @@ class DetailActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
         }
+        // "Exibir o notch" off keeps the media out of the camera cutout area.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && !GalleryPreferences.flag(this, GalleryPreferences.SHOW_DISPLAY_CUTOUT)) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
+            }
+        }
         if (prefs.getBoolean("fullscreen_max_brightness", false)) {
             val params = window.attributes
             params.screenBrightness = 1f
@@ -2890,7 +3055,7 @@ class DetailActivity : ComponentActivity() {
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         // Showing the app's playback controls must not reveal system bars in
         // cinema. Edge swipes still reveal them temporarily for system navigation.
-        if (cinema) controller.hide(WindowInsetsCompat.Type.systemBars())
+        if (cinema || GalleryPreferences.flag(this, GalleryPreferences.FULLSCREEN_HIDE_SYSTEM_UI)) controller.hide(WindowInsetsCompat.Type.systemBars())
         else controller.show(WindowInsetsCompat.Type.systemBars())
     }
 
@@ -3213,7 +3378,7 @@ class DetailActivity : ComponentActivity() {
         videoPreviewExecutor.shutdownNow()
         motionPhotoExecutor.shutdownNow()
         queueController.close()
-        mediaActions.close()
+        if (::mediaActions.isInitialized) mediaActions.close()
     }
 
     private fun resetSpeedAndFinish() {

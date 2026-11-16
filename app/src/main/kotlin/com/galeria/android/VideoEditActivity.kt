@@ -21,6 +21,10 @@ import java.util.concurrent.Executors
 
 @OptIn(UnstableApi::class)
 class VideoEditActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private val commands = ExoPlaybackCommands()
@@ -73,7 +77,7 @@ class VideoEditActivity : Activity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 durationMs = duration
                 if (duration <= 0L) {
-                    Ui.toast(this, "Não foi possível obter a duração deste vídeo.")
+                    Ui.toast(this, getString(R.string.msg_video_duration_failed))
                     finish()
                 } else {
                     startSeek.isEnabled = true
@@ -100,14 +104,14 @@ class VideoEditActivity : Activity() {
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
-        header.addView(EditorUi.button(this, R.drawable.ic_back, "Voltar") { finish() }, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)))
+        header.addView(EditorUi.button(this, R.drawable.ic_back, getString(R.string.msg_back)) { finish() }, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)))
         header.addView(TextView(this).apply {
-            text = "Cortar vídeo"
+            text = getString(R.string.msg_trim_video)
             textSize = 18f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
         }, LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f))
-        saveButton = EditorUi.button(this, R.drawable.ic_check, "Salvar cópia") { saveTrimmedVideo() }
+        saveButton = EditorUi.button(this, R.drawable.ic_check, getString(R.string.msg_save_copy)) { saveTrimmedVideo() }
         header.addView(saveButton, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)))
         root.addView(header)
 
@@ -121,7 +125,7 @@ class VideoEditActivity : Activity() {
             setPadding(Ui.dp(this@VideoEditActivity, 20), Ui.dp(this@VideoEditActivity, 14), Ui.dp(this@VideoEditActivity, 20), Ui.dp(this@VideoEditActivity, 14))
         }
         controls.addView(TextView(this).apply {
-            text = "Selecione o início e o fim. O corte preserva as trilhas suportadas e salva uma cópia."
+            text = getString(R.string.msg_trim_hint)
             textSize = 13f
             setTextColor(0xFFCCCCCC.toInt())
         })
@@ -178,8 +182,8 @@ class VideoEditActivity : Activity() {
 
     private fun updateRange() {
         val range = selectedRange()
-        startLabel.text = "Início  ${formatTime(range.first)}"
-        endLabel.text = "Fim  ${formatTime(range.last)}"
+        startLabel.text = getString(R.string.msg_trim_start, formatTime(range.first))
+        endLabel.text = getString(R.string.msg_trim_end, formatTime(range.last))
         timeline.setSelectedRange(range)
     }
 
@@ -210,15 +214,15 @@ class VideoEditActivity : Activity() {
                 if (isDestroyed) return@runOnUiThread
                 saving = false
                 saveButton.isEnabled = true
-                saveButton.contentDescription = "Salvar cópia"
+                saveButton.contentDescription = getString(R.string.msg_save_copy)
                 result.onSuccess {
-                    Ui.toast(this, "Vídeo cortado salvo em Galeria Editada.")
+                    Ui.toast(this, getString(R.string.msg_trimmed_video_saved))
                     finish()
                 }.onFailure {
                     android.app.AlertDialog.Builder(this)
-                        .setTitle("Não foi possível cortar")
-                        .setMessage("${it.message ?: "Formato não suportado neste aparelho."}\n\nO arquivo original não foi alterado.")
-                        .setPositiveButton("OK", null)
+                        .setTitle(getString(R.string.msg_trim_failed))
+                        .setMessage(getString(R.string.msg_trim_failed_message, it.message ?: getString(R.string.msg_trim_unsupported)))
+                        .setPositiveButton(getString(android.R.string.ok), null)
                         .show()
                 }
             }

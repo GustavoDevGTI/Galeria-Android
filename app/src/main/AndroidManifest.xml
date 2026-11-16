@@ -34,6 +34,11 @@
         <activity android:name=".FileDetailActivity" />
         <activity android:name=".HiddenActivity" />
         <activity
+            android:name=".LockActivity"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:noHistory="false" />
+        <activity
             android:name=".DetailActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:resizeableActivity="true"

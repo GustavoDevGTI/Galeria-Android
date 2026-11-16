@@ -47,6 +47,10 @@ import kotlin.math.max
 import kotlin.math.min
 
 class MainActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     private lateinit var adapter: AlbumRecyclerAdapter
     private lateinit var emptyView: TextView
     private lateinit var catalogLoadingView: LoadingIndicatorView
@@ -158,7 +162,7 @@ class MainActivity : ComponentActivity() {
         registerMediaObserver()
         accessCoordinator.start(::scheduleInitialCatalogLoad)
         if (isHiddenPanelHost()) root.post {
-            if (!isFinishing && !isDestroyed) showFolderVisibilityDialog()
+            if (!isFinishing && !isDestroyed) SecurityGate.requireHiddenAccess(this, action = ::showFolderVisibilityDialog)
         }
     }
 
@@ -167,6 +171,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         mainScreenResumed = true
+        if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = GalleryPreferences.flag(this, GalleryPreferences.PULL_TO_REFRESH)
         scheduleRevealExpiry()
         if (firstResume) {
             firstResume = false
@@ -356,7 +361,7 @@ class MainActivity : ComponentActivity() {
                     putExtra("include_hidden_filesystem", shouldIncludeHiddenFilesystem())
                     putStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS, exposedAlbumKeys)
                 }
-                startActivity(intent)
+                SecurityGate.requireFolder(this@MainActivity, album.key, album.name) { startActivity(intent) }
             }
 
             override fun onHideTemporarilyVisibleAlbum(albumKey: String) {
@@ -430,6 +435,7 @@ class MainActivity : ComponentActivity() {
         swipeRefresh = SwipeRefreshLayout(this).apply {
             setColorSchemeColors(Ui.accent(this@MainActivity))
             setProgressBackgroundColorSchemeColor(Ui.surface(this@MainActivity))
+            isEnabled = GalleryPreferences.flag(this@MainActivity, GalleryPreferences.PULL_TO_REFRESH)
             setOnRefreshListener {
                 refreshCatalogWithWorker(shouldIncludeHiddenFilesystem())
             }
@@ -454,7 +460,7 @@ class MainActivity : ComponentActivity() {
                 startActivity(OrganizerActivity.intent(this, adapter.allAlbumsSnapshot().map { it.key },
                     shouldIncludeHiddenFilesystem()))
             },
-            onHidden = ::showFolderVisibilityDialog,
+            onHidden = { SecurityGate.requireHiddenAccess(this, action = ::showFolderVisibilityDialog) },
             onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) })
         root.addView(browseBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
@@ -467,8 +473,9 @@ class MainActivity : ComponentActivity() {
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         addSelectionAction(R.drawable.ic_share, getString(R.string.action_share)) { shareSelectedAlbums() }
         addSelectionAction(R.drawable.ic_pin, getString(R.string.action_pin_album)) { togglePinnedSelectedAlbums() }
-        addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { confirmDeleteSelectedAlbums() }
-        addSelectionAction(R.drawable.ic_arrow_right, getString(R.string.action_move)) { askMoveSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_lock, getString(R.string.security_folder_protect)) { toggleSecureSelectedAlbums() }
+        addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { SecurityGate.requireFileOperation(this) { confirmDeleteSelectedAlbums() } }
+        addSelectionAction(R.drawable.ic_arrow_right, getString(R.string.action_move)) { SecurityGate.requireFileOperation(this) { askMoveSelectedAlbums() } }
         selectionActions.visibility = View.GONE
         root.addView(selectionActions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         setContentView(root)
@@ -493,7 +500,7 @@ class MainActivity : ComponentActivity() {
         val spacing = getString(R.string.main_album_spacing)
         val createFolder = getString(R.string.action_create_folder)
         val refresh = getString(R.string.action_refresh)
-        val showHiddenTrash = prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
+        val showHiddenTrash = GalleryPreferences.hiddenFlag(this, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)
         val trashVisibility = getString(
             if (showHiddenTrash) R.string.trash_hide_hidden else R.string.trash_show_hidden
         )
@@ -507,8 +514,11 @@ class MainActivity : ComponentActivity() {
                 spacing -> showAlbumSpacingDialog()
                 createFolder -> FolderCreationMenu(this) { loadAlbums() }.show()
                 trashVisibility -> {
-                    prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, !showHiddenTrash).apply()
-                    loadAlbums()
+                    val apply = {
+                        prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, !showHiddenTrash).apply()
+                        loadAlbums()
+                    }
+                    if (showHiddenTrash) apply() else SecurityGate.requireHiddenAccess(this, action = apply)
                 }
                 refresh -> loadAlbums()
             }
@@ -580,6 +590,39 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Protects the selected albums with one password, or removes the protection when they are all
+     * protected already (only from albums whose password matches).
+     */
+    private fun toggleSecureSelectedAlbums() {
+        val albums = adapter.selectedAlbums()
+        if (albums.isEmpty()) return
+        val security = SecurityStore(prefs)
+        val name = albums.singleOrNull()?.name ?: resources.getQuantityString(R.plurals.albums_count, albums.size, albums.size)
+        if (albums.all { security.isSecureFolder(it.key) }) {
+            Ui.showPasswordDialog(this, getString(R.string.security_folder_title, name)) { password ->
+                val matching = albums.filter { security.verifyFolderPassword(it.key, password) }
+                if (matching.isEmpty()) return@showPasswordDialog getString(R.string.security_wrong_password)
+                matching.forEach { security.removeFolder(it.key) }
+                Ui.toast(this, getString(R.string.security_folder_unprotected))
+                exitSelectionMode(); loadAlbums()
+                null
+            }
+            return
+        }
+        Ui.showPasswordDialog(
+            this,
+            getString(R.string.security_folder_create_title, name),
+            getString(R.string.security_folder_create_message),
+            confirm = true
+        ) { password ->
+            albums.forEach { security.setFolderPassword(it.key, password); SecuritySession.unlockFolder(it.key) }
+            Ui.toast(this, getString(R.string.security_folder_protected))
+            exitSelectionMode(); loadAlbums()
+            null
+        }
+    }
+
     private fun togglePinnedSelectedAlbums() {
         val albums = adapter.selectedAlbums()
         if (albums.isEmpty()) return
@@ -596,6 +639,10 @@ class MainActivity : ComponentActivity() {
         if (albums.isEmpty()) return
         val visibleCount = albums.sumOf { it.count }
         val permanent = !TrashPreferences.isEnabled(this)
+        if (!permanent && GalleryPreferences.flag(this, GalleryPreferences.SKIP_DELETE_CONFIRMATION)) {
+            deleteSelectedAlbums(albums)
+            return
+        }
         Ui.showConfirmationDialog(
             this,
             getString(R.string.main_delete_albums_title),
@@ -627,6 +674,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 val deleted = completed.size
+                EmptyFolderCleaner.afterRemoval(this, completed.map { it.relativePath })
                 adapter.removeCompletedItems(completed, moved = false)
                 Ui.toast(this, resources.getQuantityString(
                     if (TrashPreferences.isEnabled(this)) R.plurals.items_moved_to_trash else R.plurals.items_deleted,
@@ -678,6 +726,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 adapter.removeCompletedItems(result.completedItems, moved = true)
+                EmptyFolderCleaner.afterRemoval(this, result.completedItems.map { it.relativePath })
                 Ui.toast(this, resources.getQuantityString(R.plurals.items_moved, moved, moved))
                 exitSelectionMode()
                 if (albums.any { it.key in result.emptiedAlbumKeys }) {
@@ -705,6 +754,7 @@ class MainActivity : ComponentActivity() {
         val items = ArrayList<MediaItem>()
         val source = MediaStoreRepository.loadMedia(applicationContext, shouldIncludeHiddenFilesystem())
         val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty() +
+            SecurityStore(prefs).secureFolderKeys() +
             AutomaticHiddenAlbums.keysForMedia(applicationContext, source,
                 HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
         for (item in source) {
@@ -717,6 +767,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadAlbums() {
+        if (::adapter.isInitialized) adapter.secureKeys = SecurityStore(prefs).secureFolderKeys()
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
             emptyView.visibility = View.GONE
@@ -739,7 +790,7 @@ class MainActivity : ComponentActivity() {
                 sortMode = sortMode,
                 sortDescending = sortDesc,
                 temporarilyVisibleKeys = TemporaryAlbumVisibility.activeKeys(),
-                showNaturallyHidden = showHiddenFolders || prefs.getBoolean("always_show_hidden", false)
+                showNaturallyHidden = showHiddenFolders || GalleryPreferences.hiddenFlag(this, "always_show_hidden")
             ),
             onAlbums = { albums, currentQuery ->
                 if (!isFinishing) showAlbumsProgressively(albums, currentQuery)
@@ -828,8 +879,8 @@ class MainActivity : ComponentActivity() {
         showRaw = prefs.getBoolean("filter_raw", true)
         showSvgs = prefs.getBoolean("filter_svgs", true)
         showPortraits = prefs.getBoolean("filter_portraits", false)
-        showHiddenFolders = prefs.getBoolean("show_hidden_folders", false) ||
-            prefs.getBoolean("always_show_hidden", false)
+        showHiddenFolders = GalleryPreferences.hiddenFlag(this, "show_hidden_folders") ||
+            GalleryPreferences.hiddenFlag(this, "always_show_hidden")
         columnCount = prefs.getInt("column_count", 3)
         if (columnCount < 2 || columnCount > 6) {
             columnCount = 3
@@ -1709,7 +1760,7 @@ class MainActivity : ComponentActivity() {
 
     private fun shouldIncludeHiddenFilesystem(): Boolean =
         accessCoordinator.includeHiddenFilesystem(
-            showHiddenFolders || prefs.getBoolean("always_show_hidden", false) ||
+            showHiddenFolders || GalleryPreferences.hiddenFlag(this, "always_show_hidden") ||
                 TemporaryAlbumVisibility.requiresHiddenFilesystem()
         )
 

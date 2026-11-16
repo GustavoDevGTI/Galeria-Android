@@ -52,7 +52,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
     private val carousel = LinearLayout(context)
     private val scroll = ReserveRecyclerView(context)
     private val reserveAdapter = ReserveAdapter()
-    private val reserveEmpty = Ui.label(context, "Arraste uma mídia para cá")
+    private val reserveEmpty = Ui.label(context, context.getString(R.string.msg_drag_media_here))
     private val empty = Ui.label(context, context.getString(R.string.organizer_empty))
     private val undo = LinearLayout(context)
     private var drawerProgress = if (controller.drawerOpen) 1f else 0f
@@ -102,7 +102,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
                         Ui.showPopupOptions(this, names) { name -> available.getOrNull(names.indexOf(name))?.let { controller.place(it, index) } }
                     } else {
                         val send = context.getString(R.string.organizer_send_to, album.name)
-                        val options = if (index == OrganizerController.TRASH_SLOT) listOf(send) else listOf(send, "Remover da roda")
+                        val options = if (index == OrganizerController.TRASH_SLOT) listOf(send) else listOf(send, context.getString(R.string.msg_remove_from_wheel))
                         Ui.showPopupOptions(this, options) {
                             if (it == send) controller.media.queue.firstOrNull()?.let { item -> launch(item, false, index, null) }
                             else controller.removeDestination(index)
@@ -676,7 +676,7 @@ internal class OrganizerBoard(context: Context, private val controller: Organize
         override fun onBindViewHolder(holder: ReserveHolder, position: Int) {
             val item = controller.media.reserved[position]
             holder.image.apply {
-                tag = "organizer_reserved_${item.uri}"; contentDescription = "Mídia reservada ${position + 1}"
+                tag = "organizer_reserved_${item.uri}"; contentDescription = context.getString(R.string.msg_reserved_media, position + 1)
                 load(item.uri) { size(320); crossfade(false); ImageRotation.configureRequest(context, item, this) }
                 isSelected = selectedReserved == item.uri.toString(); alpha = if (isSelected) .7f else 1f
                 installMediaGesture(this, item, true)

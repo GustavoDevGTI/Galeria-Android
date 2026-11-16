@@ -183,7 +183,8 @@ class AlbumCatalogController(context: Context) {
         // Filters may leave fewer than eight shards. Classify the original catalog,
         // never only the folders surviving the current image/video filter.
         val naturallyHiddenKeys = AutomaticHiddenAlbums.keys(appContext, classificationSource, markers)
-        val virtualHiddenKeys = options.hiddenKeys + naturallyHiddenKeys
+        // Secure folders stay in the album grid (with a lock) but never feed Recents or Favorites.
+        val virtualHiddenKeys = options.hiddenKeys + naturallyHiddenKeys + SecurityStore(appContext).secureFolderKeys()
         val physical = prepareAlbums(sourceAlbums, options, naturallyHiddenKeys)
         // Decide from the unfiltered catalog: filtering one image type must not
         // promote the legacy screenshot folder as the phone's active folder.
@@ -203,7 +204,7 @@ class AlbumCatalogController(context: Context) {
             appContext.getString(R.string.album_favorites),
             appContext.getString(R.string.album_trash),
             hiddenTrashKeys,
-            prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
+            GalleryPreferences.hiddenFlag(appContext, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)
         )
         val available = VirtualAlbumRules.availableMedia(physical, media, virtualHiddenKeys)
         val favoriteKeys = favorites.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
@@ -217,7 +218,7 @@ class AlbumCatalogController(context: Context) {
                 }
                 VirtualAlbumRules.TRASH_KEY -> VirtualAlbumRules.visibleTrash(
                     trash, hiddenTrashKeys,
-                    prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
+                    GalleryPreferences.hiddenFlag(appContext, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)
                 )
                 else -> byFolder[album.key].orEmpty()
             }

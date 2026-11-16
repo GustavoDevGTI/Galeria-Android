@@ -25,7 +25,7 @@ internal class ActivityOperationRunner(private val activity: Activity) {
                 busy = false
                 indicator.finish()
                 if (!closed && !activity.isFinishing && !activity.isDestroyed) {
-                    result.fold(complete) { Ui.toast(activity, "Não foi possível concluir a operação.") }
+                    result.fold(complete) { Ui.toast(activity, activity.getString(R.string.msg_operation_failed)) }
                 }
             }
         }

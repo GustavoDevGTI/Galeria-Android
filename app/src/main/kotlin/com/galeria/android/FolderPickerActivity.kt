@@ -18,6 +18,10 @@ import java.io.File
 import java.util.concurrent.Executors
 
 class FolderPickerActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     private lateinit var rootDir: File
     private lateinit var currentDir: File
     private lateinit var adapter: FolderAdapter
@@ -53,13 +57,13 @@ class FolderPickerActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             Ui.applySystemBarPadding(this, 12, 8, 12, 8)
         }
-        val back = Ui.title(this, "Voltar", 16).apply {
+        val back = Ui.title(this, getString(R.string.msg_back), 16).apply {
             gravity = Gravity.CENTER
             setOnClickListener { finish() }
         }
         bar.addView(back, LinearLayout.LayoutParams(Ui.dp(this, 76), Ui.dp(this, 44)))
 
-        val title = Ui.title(this, "Selecionar pasta", 22)
+        val title = Ui.title(this, getString(R.string.msg_select_folder), 22)
         bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(bar)
 
@@ -93,18 +97,18 @@ class FolderPickerActivity : Activity() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             Ui.setPadding(this, 12, 10, 12, 14)
         }
-        val create = Ui.title(this, "Criar pasta", 16).apply {
+        val create = Ui.title(this, getString(R.string.msg_create_folder), 16).apply {
             setTextColor(Ui.accent(this@FolderPickerActivity))
             gravity = Gravity.CENTER
             setOnClickListener { askCreateFolder() }
         }
         actions.addView(create, LinearLayout.LayoutParams(Ui.dp(this, 130), Ui.dp(this, 44)))
 
-        val ok = Ui.title(this, "OK", 16).apply {
+        val ok = Ui.title(this, getString(android.R.string.ok), 16).apply {
             setTextColor(Ui.accent(this@FolderPickerActivity))
             gravity = Gravity.CENTER
             setOnClickListener {
-                Ui.toast(this@FolderPickerActivity, "Pasta selecionada: ${currentDir.name}")
+                Ui.toast(this@FolderPickerActivity, getString(R.string.msg_folder_selected, currentDir.name))
                 finish()
             }
         }
@@ -142,8 +146,8 @@ class FolderPickerActivity : Activity() {
     private fun askCreateFolder() {
         Ui.showTextInputDialog(
             this,
-            "Criar nova pasta",
-            "Nome da pasta",
+            getString(R.string.msg_create_new_folder),
+            getString(R.string.msg_folder_name),
             positiveText = "Criar"
         ) { name ->
             createFolder(name)
@@ -154,15 +158,15 @@ class FolderPickerActivity : Activity() {
         if (operations.busy) return
         val clean = MediaActions.cleanFolderName(name)
         if (clean.isEmpty()) {
-            Ui.toast(this, "Digite um nome válido.")
+            Ui.toast(this, getString(R.string.msg_invalid_name))
             return
         }
         val target = File(currentDir, clean)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
             Ui.showConfirmationDialog(
                 this,
-                "Permitir gerenciamento de arquivos",
-                "Para criar pastas no celular, ative o acesso total a arquivos para a Galeria.",
+                getString(R.string.msg_file_access_title),
+                getString(R.string.msg_file_access_message),
                 "Permitir"
             ) { MediaActions.requestAllFilesAccess(this) }
             return
@@ -171,10 +175,10 @@ class FolderPickerActivity : Activity() {
             if (target.exists()) 0 else if (MediaActions.createFolder(this, target)) 1 else -1
         }) { result ->
             if (result == 1) {
-                Ui.toast(this, "Pasta criada.")
+                Ui.toast(this, getString(R.string.msg_folder_created))
                 currentDir = target
                 loadFolders()
-            } else Ui.toast(this, if (result == 0) "A pasta já existe." else "Não foi possível criar a pasta aqui.")
+            } else Ui.toast(this, getString(if (result == 0) R.string.msg_folder_exists else R.string.msg_folder_create_failed))
         }
     }
 
@@ -230,7 +234,7 @@ class FolderPickerActivity : Activity() {
         private fun labelFor(file: File?): String {
             if (file == null) return ".."
             val count = counts[file.absolutePath] ?: 0
-            return file.name + "\n" + count + if (count == 1) " item" else " itens"
+            return file.name + "\n" + resources.getQuantityString(R.plurals.msg_item_count, count, count)
         }
     }
 }

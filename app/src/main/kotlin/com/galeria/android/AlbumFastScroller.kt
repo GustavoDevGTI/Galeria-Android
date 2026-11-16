@@ -210,6 +210,7 @@ class AlbumFastScroller(
     private fun updateThumb() {
         if (dragging || height <= 0) return
         val layoutManager = recyclerView.layoutManager as? GridLayoutManager ?: return hide()
+        if (layoutManager.orientation == RecyclerView.HORIZONTAL) return hide()
         val total = recyclerView.adapter?.itemCount ?: 0
         val first = layoutManager.findFirstVisibleItemPosition()
         val last = layoutManager.findLastVisibleItemPosition()

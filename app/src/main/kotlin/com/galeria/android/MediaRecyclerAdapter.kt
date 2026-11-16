@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.media.MediaMetadataRetriever
 import android.provider.MediaStore
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.LruCache
@@ -48,10 +49,20 @@ class MediaRecyclerAdapter(
     private val selectedUris = HashSet<String>()
     private var filter = ""
     private var listMode = false
+    private var horizontalGrid = false
     private var selectionMode = false
     private var pagingMode = false
     private var fastScrollPreview = false
     private var gridThumbnailSizePx = 360
+    private var display = ThumbnailDisplay.read(context, MEDIA_CORNER_RADIUS_DP)
+
+    /** Picks up thumbnail options changed in Settings; only redraws when something changed. */
+    fun refreshDisplayPreferences() {
+        val next = ThumbnailDisplay.read(context, MEDIA_CORNER_RADIUS_DP)
+        if (next == display) return
+        display = next
+        if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_THUMBNAIL_SIZE)
+    }
     private var contentGeneration = MediaContentRevision.generation()
     @Volatile private var listVersion = 0
     private var pendingItems: List<MediaItem>? = null
@@ -372,13 +383,29 @@ class MediaRecyclerAdapter(
     private fun currentVisibleItems(): List<MediaItem> =
         if (pagingMode) pagingDiffer.snapshot().items else visibleItems
 
-    override fun getItemViewType(position: Int): Int = if (listMode) 1 else 0
+    override fun getItemViewType(position: Int): Int = currentViewType()
+
+    /** 0 = vertical grid, 1 = list, 2 = horizontal grid ("Rolar miniaturas horizontalmente"). */
+    fun currentViewType(): Int = when {
+        listMode -> 1
+        horizontalGrid -> 2
+        else -> 0
+    }
+
+    // Every row changes its view type at once, so there is nothing narrower to notify.
+    @android.annotation.SuppressLint("NotifyDataSetChanged")
+    fun setHorizontalGrid(enabled: Boolean) {
+        if (horizontalGrid == enabled) return
+        horizontalGrid = enabled
+        if (itemCount > 0) notifyDataSetChanged()
+    }
 
     override fun getItemId(position: Int): Long = itemOrNull(position)?.uri?.toString()?.hashCode()?.toLong()
         ?: RecyclerView.NO_ID
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         val asList = viewType == 1
+        val horizontal = viewType == 2
         val item = LinearLayout(context).apply {
             orientation = if (asList) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             gravity = if (asList) Gravity.CENTER_VERTICAL else Gravity.START
@@ -391,7 +418,7 @@ class MediaRecyclerAdapter(
         val thumb: FrameLayout = if (asList) {
             FrameLayout(context)
         } else {
-            SquareFrameLayout(context)
+            SquareFrameLayout(context).apply { squareByHeight = horizontal }
         }
         thumb.background = Ui.rounded(Color.BLACK, MEDIA_CORNER_RADIUS_DP, context)
         thumb.clipToOutline = true
@@ -460,8 +487,13 @@ class MediaRecyclerAdapter(
 
         val thumbParams = if (asList) {
             LinearLayout.LayoutParams(Ui.dp(context, 82), Ui.dp(context, 82))
+        } else if (horizontal) {
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT)
         } else {
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        if (horizontal) {
+            item.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
         item.addView(thumb, thumbParams)
 
@@ -555,9 +587,11 @@ class MediaRecyclerAdapter(
     }
 
     private fun bindThumbnail(holder: Holder, item: MediaItem) {
+        applyDisplay(holder)
         holder.thumbnailRequest?.cancel()
         holder.thumbnailRequest = null
-        val normalSize = if (listMode) Ui.dp(context, 82) else gridThumbnailSizePx
+        val normalSize = if (listMode) Ui.dp(context, 82)
+            else LoadingPriority.thumbnailSize(gridThumbnailSizePx, display.sizeScale)
         val requestSize = if (fastScrollPreview) minOf(normalSize, FAST_SCROLL_PREVIEW_SIZE_PX) else normalSize
         val uriKey = item.uri.toString()
         if (holder.boundUri != uriKey) {
@@ -600,9 +634,27 @@ class MediaRecyclerAdapter(
                 videoFrameMillis(0L)
                 videoFrameOption(MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
             }
+            if (animates(item)) {
+                memoryCacheKey("$diskKey:$requestSize:animated")
+                decoderFactory(coil3.gif.AnimatedImageDecoder.Factory())
+            }
             allowHardware(true)
             crossfade(180)
         }
+    }
+
+    /** "Animar miniaturas de GIF": only in the grid, not while fast scrolling, and on Android 9 or newer. */
+    private fun animates(item: MediaItem): Boolean =
+        display.animateGif && !listMode && !fastScrollPreview && item.mimeType == "image/gif" &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+
+    /** "Cortar miniaturas em quadrado" and "Estilo da miniatura de arquivos". */
+    private fun applyDisplay(holder: Holder) {
+        val wanted = display.copy(sizeScale = if (listMode) 0f else 1f)
+        if (holder.appliedDisplay == wanted) return
+        holder.appliedDisplay = wanted
+        holder.image.scaleType = if (listMode || display.cropSquare) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
+        (holder.image.parent as? View)?.background = Ui.rounded(Color.BLACK, display.cornerDp, context)
     }
 
     private fun bindVideoDuration(holder: Holder, item: MediaItem) {
@@ -682,6 +734,7 @@ class MediaRecyclerAdapter(
         var boundUri: String? = null
         var thumbnailRequest: VideoThumbnailFrames.Request? = null
         var thumbnailLoad: coil3.request.Disposable? = null
+        internal var appliedDisplay: ThumbnailDisplay? = null
     }
 
     private fun formatDuration(durationMs: Long): String {

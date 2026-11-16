@@ -23,6 +23,10 @@ import java.util.Locale
 
 @OptIn(UnstableApi::class)
 class FileDetailActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     private lateinit var file: File
     private lateinit var mimeType: String
     private var player: ExoPlayer? = null
@@ -44,7 +48,7 @@ class FileDetailActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             Ui.setPadding(this, 10, 8, 10, 8)
         }
-        val back = Ui.title(this, "Voltar", 16).apply {
+        val back = Ui.title(this, getString(R.string.msg_back), 16).apply {
             gravity = Gravity.CENTER
             setOnClickListener { finish() }
         }
@@ -94,13 +98,13 @@ class FileDetailActivity : Activity() {
             gravity = Gravity.CENTER
             Ui.setPadding(this, 10, 10, 10, 12)
         }
-        val restore = Ui.button(this, "Restaurar").apply {
+        val restore = Ui.button(this, getString(R.string.action_restore)).apply {
             setOnClickListener { restoreFile() }
         }
         actions.addView(restore, LinearLayout.LayoutParams(0, Ui.dp(this, 46), 1f))
 
-        val delete = Ui.button(this, "Excluir").apply {
-            setOnClickListener { confirmDelete() }
+        val delete = Ui.button(this, getString(R.string.action_delete)).apply {
+            setOnClickListener { SecurityGate.requireFileOperation(this@FileDetailActivity) { confirmDelete() } }
         }
         val deleteParams = LinearLayout.LayoutParams(0, Ui.dp(this, 46), 1f).apply {
             marginStart = Ui.dp(this@FileDetailActivity, 8)
@@ -123,19 +127,19 @@ class FileDetailActivity : Activity() {
 
     private fun restoreFile() {
         val restored = MediaActions.restoreHiddenFile(this, file, mimeType)
-        Ui.toast(this, if (restored) "Item restaurado." else "Não foi possível restaurar.")
+        Ui.toast(this, getString(if (restored) R.string.msg_item_restored else R.string.msg_restore_failed))
         if (restored) finish()
     }
 
     private fun confirmDelete() {
         Ui.showConfirmationDialog(
             this,
-            "Excluir oculto",
-            "Este arquivo oculto será apagado definitivamente.",
-            "Excluir"
+            getString(R.string.msg_delete_hidden_title),
+            getString(R.string.msg_delete_hidden_message),
+            getString(R.string.action_delete)
         ) {
                 val deleted = file.delete()
-                Ui.toast(this, if (deleted) "Item excluído." else "Não foi possível excluir.")
+                Ui.toast(this, getString(if (deleted) R.string.msg_item_deleted else R.string.msg_delete_failed))
                 if (deleted) finish()
         }
     }

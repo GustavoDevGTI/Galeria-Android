@@ -6,7 +6,8 @@ import androidx.recyclerview.widget.RecyclerView
 
 class GridSpacingItemDecoration(
     private val spacingPx: Int,
-    private val spanCount: Int
+    private val spanCount: Int,
+    private val horizontal: Boolean = false
 ) : RecyclerView.ItemDecoration() {
     override fun getItemOffsets(
         outRect: Rect,
@@ -26,9 +27,13 @@ class GridSpacingItemDecoration(
         }
 
         val column = position % spanCount
-        outRect.left = spacingPx - column * spacingPx / spanCount
-        outRect.right = (column + 1) * spacingPx / spanCount
-        outRect.top = spacingPx
-        outRect.bottom = 0
+        val start = spacingPx - column * spacingPx / spanCount
+        val end = (column + 1) * spacingPx / spanCount
+        if (horizontal) {
+            // Rows instead of columns: the same spacing, turned sideways.
+            outRect.set(spacingPx, start, 0, end)
+        } else {
+            outRect.set(start, spacingPx, end, 0)
+        }
     }
 }

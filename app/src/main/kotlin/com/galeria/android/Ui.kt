@@ -273,7 +273,7 @@ class Ui private constructor() {
                 setStroke(dp(context, 2), if (checked) accent(context) else muted(context))
                 cornerRadius = dp(context, 6).toFloat()
             }
-            view.contentDescription = if (checked) "Desmarcar todos" else "Selecionar todos"
+            view.contentDescription = view.context.getString(if (checked) R.string.msg_deselect_all else R.string.msg_select_all)
         }
 
         const val ACTION_ICON_SIZE_DP = 22
@@ -682,13 +682,95 @@ class Ui private constructor() {
             return dialog
         }
 
+        /**
+         * Asks for a password with masked fields. With [confirm] a second field must match (creating a
+         * password). [onSubmit] returns null to close, or an error message to show and keep the dialog open.
+         */
+        @JvmStatic
+        fun showPasswordDialog(
+            context: Context,
+            title: String,
+            message: String? = null,
+            confirm: Boolean = false,
+            onCancel: (() -> Unit)? = null,
+            onSubmit: (String) -> String?
+        ): AlertDialog {
+            lateinit var dialog: AlertDialog
+            var submitted = false
+            val body = themedDialogBody(context, title, message)
+            fun field(hintRes: Int) = EditText(context).apply {
+                setSingleLine(true)
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                hint = context.getString(hintRes)
+                textSize = 16f
+                setTextColor(menuText(context))
+                setHintTextColor(muted(context))
+                background = rounded(menuElevatedSurface(context), 10, context, menuBorder(context), 1)
+                setPadding(dp(context, 14), dp(context, 10), dp(context, 14), dp(context, 10))
+            }
+            fun params() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 52)).apply {
+                marginStart = dp(context, 14); marginEnd = dp(context, 14); bottomMargin = dp(context, 8)
+            }
+            val first = field(R.string.security_password_hint).also { it.tag = "password_field" }
+            body.addView(first, params())
+            val second = if (confirm) field(R.string.security_password_repeat_hint).also {
+                it.tag = "password_confirm_field"
+                body.addView(it, params())
+            } else null
+            val error = TextView(context).apply {
+                tag = "password_error"
+                textSize = 13f
+                setTextColor(Color.rgb(238, 112, 112))
+                visibility = View.GONE
+                setPadding(dp(context, 18), 0, dp(context, 18), dp(context, 4))
+            }
+            body.addView(error)
+            fun submit() {
+                val password = first.text.toString()
+                val problem = when {
+                    !PasswordHashing.isAcceptable(password) ->
+                        context.getString(R.string.security_password_too_short, PasswordHashing.MIN_LENGTH)
+                    second != null && second.text.toString() != password -> context.getString(R.string.security_password_mismatch)
+                    else -> onSubmit(password)
+                }
+                if (problem == null) {
+                    submitted = true
+                    dialog.dismiss()
+                } else {
+                    Haptics.perform(first, Haptics.Effect.REJECT)
+                    error.text = problem
+                    error.visibility = View.VISIBLE
+                    first.setText("")
+                    second?.setText("")
+                    first.requestFocus()
+                }
+            }
+            (second ?: first).setOnEditorActionListener { _, _, _ -> submit(); true }
+            body.addView(
+                themedActionPair(
+                    context,
+                    context.getString(R.string.action_cancel),
+                    context.getString(R.string.security_unlock),
+                    onFirst = { dialog.dismiss() },
+                    onSecond = { submit() }
+                )
+            )
+            dialog = AlertDialog.Builder(context).setView(body).create()
+            dialog.setOnDismissListener { if (!submitted) onCancel?.invoke() }
+            showCenteredPanel(dialog)
+            dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
+            first.requestFocus()
+            return dialog
+        }
+
         @JvmStatic
         fun showTextInputDialog(
             context: Context,
             title: String,
             hint: String,
             message: String? = null,
-            positiveText: String = "OK",
+            positiveText: String? = null,
             initialValue: String = "",
             onConfirm: (String) -> Unit
         ): AlertDialog {
@@ -727,7 +809,7 @@ class Ui private constructor() {
                 themedActionPair(
                     context,
                     context.getString(R.string.action_cancel),
-                    positiveText,
+                    positiveText ?: context.getString(android.R.string.ok),
                     onFirst = { dialog.dismiss() },
                     onSecond = {
                         onConfirm(input.text.toString())
@@ -747,14 +829,14 @@ class Ui private constructor() {
             context: Context,
             title: String,
             message: String,
-            positiveText: String = "Fechar"
+            positiveText: String? = null
         ): AlertDialog {
             lateinit var dialog: AlertDialog
             val body = themedDialogBody(context, title, message)
             body.addView(
                 LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
-                    addView(themedDialogButton(context, positiveText, true) { dialog.dismiss() }, menuActionParams())
+                    addView(themedDialogButton(context, positiveText ?: context.getString(R.string.action_close), true) { dialog.dismiss() }, menuActionParams())
                 }
             )
             dialog = AlertDialog.Builder(context).setView(body).create()
@@ -825,7 +907,7 @@ class Ui private constructor() {
             title: String,
             message: String,
             positiveText: String,
-            negativeText: String = "Cancelar",
+            negativeText: String? = null,
             onNegative: (() -> Unit)? = null,
             onPositive: () -> Unit
         ): AlertDialog {
@@ -834,7 +916,7 @@ class Ui private constructor() {
             body.addView(
                 themedActionPair(
                     context,
-                    negativeText,
+                    negativeText ?: context.getString(R.string.action_cancel),
                     positiveText,
                     onFirst = {
                         onNegative?.invoke()
@@ -985,7 +1067,7 @@ class Ui private constructor() {
                 gravity = Gravity.CENTER_VERTICAL
                 minimumHeight = dp(context, 60)
                 setPadding(dp(context, 12), dp(context, 6), dp(context, 14), dp(context, 6))
-                contentDescription = "Álbum ${album.name}"
+                contentDescription = context.getString(R.string.msg_album_named, album.name)
             }
             row.addView(ImageView(context).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP

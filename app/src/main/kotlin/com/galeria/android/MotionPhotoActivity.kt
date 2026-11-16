@@ -22,6 +22,10 @@ import java.io.File
 import java.util.concurrent.Executors
 
 class MotionPhotoActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     private val executor = Executors.newSingleThreadExecutor()
     private val commands = ExoPlaybackCommands()
     private lateinit var session: MotionPhotoPlaybackSession<File, ExoPlayer>

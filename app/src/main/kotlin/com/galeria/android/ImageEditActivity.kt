@@ -45,6 +45,10 @@ import kotlin.math.max
 import kotlin.math.min
 
 class ImageEditActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     companion object {
         const val EXTRA_MODE = "image_edit_mode"
         const val EXTRA_ROTATE_CLOCKWISE = "image_edit_rotate_clockwise"
@@ -118,7 +122,7 @@ class ImageEditActivity : ComponentActivity() {
             view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard.bottom))
             insets
         }
-        val back = EditorUi.button(this, R.drawable.ic_back, "Voltar") {
+        val back = EditorUi.button(this, R.drawable.ic_back, getString(R.string.msg_back)) {
             if (ocrSelection != null) ocrSelection?.close() else finish()
         }
         bar.addView(back, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)))
@@ -130,7 +134,7 @@ class ImageEditActivity : ComponentActivity() {
         }
         bar.addView(title, titleParams)
 
-        saveButton = EditorUi.button(this, R.drawable.ic_check, "Salvar cópia") { commitText(); saveEditedImage() }
+        saveButton = EditorUi.button(this, R.drawable.ic_check, getString(R.string.msg_save_copy)) { commitText(); saveEditedImage() }
         bar.addView(saveButton, LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)))
         root.addView(bar)
 
@@ -161,7 +165,7 @@ class ImageEditActivity : ComponentActivity() {
             transformImage { source -> Bitmap.createBitmap(source, 0, 0, source.width, source.height,
                 Matrix().apply { postRotate(90f) }, true) }
         }
-        val resize = EditorUi.button(this, R.drawable.ic_resize, "Redimensionar imagem") { commitText(); showResizeInput() }
+        val resize = EditorUi.button(this, R.drawable.ic_resize, getString(R.string.msg_resize_image)) { commitText(); showResizeInput() }
         textButton = EditorUi.button(this, R.drawable.ic_text, "Texto") {
                 showTextInput()
                 refreshToolButtons()
@@ -171,7 +175,7 @@ class ImageEditActivity : ComponentActivity() {
                 if (editor.tool == EditorTool.BRUSH) brushPreset = (brushPreset + 1) % 6
                 editor.tool = EditorTool.BRUSH
                 editor.brushPreset = brushPreset
-                val description = listOf("Fino", "Médio", "Grosso", "Marcador fino", "Marcador médio", "Marcador grosso")[brushPreset]
+                val description = resources.getStringArray(R.array.editor_brush_labels)[brushPreset]
                 Ui.toast(this, description)
                 refreshToolButtons()
         }
@@ -181,7 +185,7 @@ class ImageEditActivity : ComponentActivity() {
                 filterRow.visibility = if (filterRow.visibility == View.VISIBLE) View.GONE else View.VISIBLE
                 refreshToolButtons()
         }
-        val clear = EditorUi.button(this, R.drawable.ic_undo, "Limpar marcas") { commitText(); editor.clearDrawing() }
+        val clear = EditorUi.button(this, R.drawable.ic_undo, getString(R.string.msg_clear_marks)) { commitText(); editor.clearDrawing() }
         val ocr = EditorUi.button(this, R.drawable.ic_text_recognition, getString(R.string.action_recognize_text)) { recognizeText() }
         val buttons = if (cropOnly) listOf(cropButton, rotate) else listOf(cropButton, rotate, textButton, brushButton, filterButton, ocr, resize, clear)
         buttons.forEach { chip ->
@@ -199,19 +203,19 @@ class ImageEditActivity : ComponentActivity() {
         tools.addView(colorSpectrum, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 56)).apply { bottomMargin = Ui.dp(this@ImageEditActivity, 8) })
         cropTools = LinearLayout(this).apply {
             gravity = Gravity.CENTER
-            addView(EditorUi.button(context, R.drawable.ic_ratio, "Proporção do recorte") { showCropRatios() }, LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48)))
+            addView(EditorUi.button(context, R.drawable.ic_ratio, getString(R.string.msg_crop_ratio)) { showCropRatios() }, LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48)))
             addView(EditorUi.button(context, R.drawable.ic_flip, "Espelhar") {
                 transformImage { source -> Bitmap.createBitmap(source, 0, 0, source.width, source.height,
                     Matrix().apply { setScale(-1f, 1f) }, true) }
             }, LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48)))
-            addView(EditorUi.button(context, R.drawable.ic_reset, "Restaurar recorte") { editor.resetCrop() }, LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48)))
+            addView(EditorUi.button(context, R.drawable.ic_reset, getString(R.string.msg_reset_crop)) { editor.resetCrop() }, LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48)))
         }
         tools.addView(cropTools)
         tools.addView(toolScroll)
         filterRow = LinearLayout(this).apply {
             visibility = View.GONE
             EditorFilter.entries.forEach { filter ->
-                addView(EditorUi.button(this@ImageEditActivity, R.drawable.ic_filter, filter.label) {
+                addView(EditorUi.button(this@ImageEditActivity, R.drawable.ic_filter, getString(filter.label)) {
                         selectedFilter = filter
                         editor.filter = filter
                         refreshToolButtons()
@@ -234,7 +238,7 @@ class ImageEditActivity : ComponentActivity() {
         editor.tool = EditorTool.TEXT
         val input = EditText(this).apply {
             tag = "editor_inline_text"
-            hint = "Texto na imagem"
+            hint = getString(R.string.msg_image_text_hint)
             setTextColor(drawingColor)
             setHintTextColor(0xFFCCCCCC.toInt())
             textSize = 24f
@@ -266,8 +270,8 @@ class ImageEditActivity : ComponentActivity() {
     }
 
     private fun showCropRatios() {
-        val labels = arrayOf("Livre", "Original", "1:1", "4:3", "16:9", "9:16")
-        AlertDialog.Builder(this).setTitle("Proporção do recorte").setItems(labels) { _, index ->
+        val labels = arrayOf(getString(R.string.msg_ratio_free), getString(R.string.msg_ratio_original), "1:1", "4:3", "16:9", "9:16")
+        AlertDialog.Builder(this).setTitle(getString(R.string.msg_crop_ratio)).setItems(labels) { _, index ->
             editor.setCropRatio(when (index) { 1 -> editor.currentSize()?.let { it.first.toFloat() / it.second } ?: 0f; 2 -> 1f; 3 -> 4f / 3f; 4 -> 16f / 9f; 5 -> 9f / 16f; else -> 0f })
         }.show()
     }
@@ -317,17 +321,17 @@ class ImageEditActivity : ComponentActivity() {
             inputType = InputType.TYPE_CLASS_NUMBER
             setText(size.first.toString())
             selectAll()
-            hint = "Largura em pixels"
+            hint = getString(R.string.msg_width_pixels)
         }
         AlertDialog.Builder(this)
-            .setTitle("Redimensionar imagem")
-            .setMessage("Defina a largura. A altura será ajustada proporcionalmente (máximo de 4096 px).")
+            .setTitle(getString(R.string.msg_resize_image))
+            .setMessage(getString(R.string.msg_resize_message))
             .setView(input)
-            .setNegativeButton("Cancelar", null)
+            .setNegativeButton(getString(R.string.action_cancel), null)
             .setPositiveButton("Aplicar") { _, _ ->
                 val width = input.text.toString().toIntOrNull()
                 if (width == null || width !in 1..4096) {
-                    Ui.toast(this, "Escolha uma largura válida de até 4096 px.")
+                    Ui.toast(this, getString(R.string.msg_resize_invalid))
                 } else {
                     transformImage { source ->
                         val height = (source.height.toLong() * width / source.width).coerceAtLeast(1L)
@@ -371,7 +375,7 @@ class ImageEditActivity : ComponentActivity() {
                     refreshToolButtons()
                 }
             } catch (_: Exception) {
-                runOnUiThread { Ui.toast(this, "Não foi possível abrir a imagem.") }
+                runOnUiThread { Ui.toast(this, getString(R.string.msg_open_image_failed)) }
             }
         }
     }
@@ -410,7 +414,7 @@ class ImageEditActivity : ComponentActivity() {
         if (saving) return
         val render = editor.renderSnapshot()
         if (render == null) {
-            Ui.toast(this, "Aguarde a imagem carregar.")
+            Ui.toast(this, getString(R.string.msg_wait_image))
             return
         }
         setProcessing(true)
@@ -422,11 +426,11 @@ class ImageEditActivity : ComponentActivity() {
                 runOnUiThread {
                     if (isDestroyed || isFinishing) return@runOnUiThread
                     setProcessing(false)
-                    Ui.toast(this, if (saved != null) "Imagem editada salva." else "Não foi possível salvar.")
+                    Ui.toast(this, getString(if (saved != null) R.string.msg_edited_image_saved else R.string.msg_save_failed))
                     if (saved != null) finish()
                 }
             } catch (_: Exception) {
-                runOnUiThread { if (!isDestroyed && !isFinishing) { setProcessing(false); Ui.toast(this, "Não foi possível salvar.") } }
+                runOnUiThread { if (!isDestroyed && !isFinishing) { setProcessing(false); Ui.toast(this, getString(R.string.msg_save_failed)) } }
             } finally {
                 edited?.recycle()
             }
@@ -463,7 +467,7 @@ class ImageEditActivity : ComponentActivity() {
                     if (cropping) editor.tool = EditorTool.CROP
                     selectedFilter = EditorFilter.ORIGINAL
                     refreshToolButtons()
-                }.onFailure { Ui.toast(this, "Não foi possível editar a imagem.") }
+                }.onFailure { Ui.toast(this, getString(R.string.msg_edit_image_failed)) }
             }
         }
     }
@@ -925,8 +929,8 @@ class ImageEditActivity : ComponentActivity() {
 
 private enum class EditorTool { NONE, BRUSH, CROP, TEXT }
 
-private enum class EditorFilter(val label: String) {
-    ORIGINAL("Original"), MONO("P&B"), WARM("Quente"), COOL("Frio"), SOFT("Suave");
+private enum class EditorFilter(val label: Int) {
+    ORIGINAL(R.string.msg_filter_original), MONO(R.string.msg_filter_mono), WARM(R.string.msg_filter_warm), COOL(R.string.msg_filter_cool), SOFT(R.string.msg_filter_soft);
 
     val previewColor: Int get() = when (this) {
         ORIGINAL -> Color.WHITE; MONO -> 0xFFAAAAAA.toInt(); WARM -> 0xFFFFC28B.toInt()

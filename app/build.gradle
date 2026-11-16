@@ -22,6 +22,12 @@ gradle.taskGraph.whenReady { graph ->
 }
 
 android {
+    // The language is chosen inside the app, so every translation ships with it.
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
     namespace = "com.galeria.android"
     compileSdk 37
 
@@ -29,8 +35,8 @@ android {
         applicationId = "com.galeria.android"
         minSdk 23
         targetSdk 37
-        versionCode = 9009
-        versionName = "0.9.9"
+        versionCode = 10000
+        versionName = "0.10.0"
         testInstrumentationRunner providers.gradleProperty("ocrReleaseSmoke").orNull == "true"
             ? "com.galeria.android.OcrReleaseSmokeRunner" : "com.galeria.android.GalleryTestRunner"
     }
@@ -119,6 +125,7 @@ dependencies {
     implementation "androidx.media3:media3-ui:1.10.1"
     implementation "io.coil-kt.coil3:coil:3.6.2"
     implementation "io.coil-kt.coil3:coil-video:3.6.2"
+    implementation "io.coil-kt.coil3:coil-gif:3.6.2"
     implementation "io.github.panpf.zoomimage:zoomimage-view-coil3:1.6.0"
     implementation "androidx.room:room-runtime:2.8.5"
     implementation "androidx.room:room-paging:2.8.5"

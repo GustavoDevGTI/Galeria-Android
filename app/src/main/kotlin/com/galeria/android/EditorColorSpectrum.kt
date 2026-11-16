@@ -10,7 +10,7 @@ internal class EditorColorSpectrum(context: Context, private val onColor: (Int) 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var selectedX = 0.5f
     private var selectedY = 0.25f
-    init { contentDescription = "Espectro de cores do pincel e texto"; isFocusable = true }
+    init { contentDescription = context.getString(R.string.msg_color_spectrum); isFocusable = true }
     override fun onDraw(canvas: Canvas) {
         val hues = IntArray(7) { Color.HSVToColor(floatArrayOf(it * 60f, 1f, 1f)) }
         paint.shader = LinearGradient(0f, 0f, width.toFloat(), 0f, hues, null, Shader.TileMode.CLAMP)

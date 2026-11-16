@@ -16,6 +16,10 @@ import androidx.core.view.WindowInsetsCompat
 import java.io.File
 
 class OrganizerActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     internal lateinit var controller: OrganizerController; private set
     private lateinit var content: FrameLayout
     private lateinit var status: TextView
@@ -47,9 +51,9 @@ class OrganizerActivity : ComponentActivity() {
             LinearLayout.LayoutParams(dp(48), dp(52)))
         title = Ui.title(this, getString(R.string.action_organize), 20)
         bar.addView(title, LinearLayout.LayoutParams(0, dp(52), 1f).apply { title.gravity = Gravity.CENTER_VERTICAL })
-        saveButton = Ui.label(this, "Salvar").apply {
+        saveButton = Ui.label(this, getString(R.string.msg_save)).apply {
             tag = "organizer_save"; setTextColor(Ui.text(this@OrganizerActivity)); isClickable = true; isFocusable = true
-            setOnClickListener { board?.dismissPreviewImmediately(); controller.save() }
+            setOnClickListener { board?.dismissPreviewImmediately(); SecurityGate.requireFileOperation(this@OrganizerActivity) { controller.save() } }
         }
         bar.addView(saveButton, LinearLayout.LayoutParams(dp(64), dp(48)))
         bar.addView(icon(R.drawable.ic_more_vertical, getString(R.string.action_more_options)) { anchor ->
@@ -162,6 +166,17 @@ class OrganizerActivity : ComponentActivity() {
             setOnItemClickListener { _, _, position, _ ->
                 if (!controller.loading) {
                     val album = pickerAdapter!!.getItem(position) as AlbumItem
+                    SecurityGate.requireFolder(this@OrganizerActivity, album.key, album.name) { openSource(album) }
+                }
+            }
+        }
+        panel.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
+        content.addView(panel, FrameLayout.LayoutParams(-1, -1).apply {
+            setMargins(dp(12), dp(6), dp(12), dp(12))
+        })
+    }
+
+    private fun openSource(album: AlbumItem) {
                     if (controller.inProgress(album.key)) {
                         Ui.showActionDialog(
                             this@OrganizerActivity,
@@ -174,13 +189,6 @@ class OrganizerActivity : ComponentActivity() {
                     } else {
                         controller.chooseSource(album); startOrganizing()
                     }
-                }
-            }
-        }
-        panel.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
-        content.addView(panel, FrameLayout.LayoutParams(-1, -1).apply {
-            setMargins(dp(12), dp(6), dp(12), dp(12))
-        })
     }
 
     private fun handleBack() {
@@ -197,12 +205,12 @@ class OrganizerActivity : ComponentActivity() {
     override fun onStop() { board?.dismissPreviewImmediately(); super.onStop() }
 
     private fun requestExit(changeSource: Boolean) {
-        if (controller.saving) { Ui.toast(this, "Aguarde o salvamento."); return }
+        if (controller.saving) { Ui.toast(this, getString(R.string.msg_wait_saving)); return }
         if (!controller.hasChanges) { if (changeSource) controller.chooseAgain() else finish(); return }
-        Ui.showActionDialog(this, "Salvar ${controller.unsavedCount} alterações?",
-            listOf("Salvar e sair", "Sair sem salvar", "Continuar")) { index ->
+        Ui.showActionDialog(this, resources.getQuantityString(R.plurals.msg_save_changes, controller.unsavedCount, controller.unsavedCount),
+            listOf(getString(R.string.msg_save_and_exit), getString(R.string.msg_exit_without_saving), getString(R.string.msg_continue))) { index ->
             when (index) {
-                0 -> { changeAfterSave = changeSource; exitAfterSave = true; controller.save() }
+                0 -> SecurityGate.requireFileOperation(this) { changeAfterSave = changeSource; exitAfterSave = true; controller.save() }
                 // Leaving without saving keeps the marks; the album picker offers to continue or restart.
                 1 -> { controller.keepForLater(); if (changeSource) controller.chooseAgain() else finish() }
             }

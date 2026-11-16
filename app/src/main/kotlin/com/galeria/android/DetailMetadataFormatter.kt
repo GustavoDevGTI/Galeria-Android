@@ -17,33 +17,35 @@ internal class DetailMetadataFormatter(
     private val fileSizeFormatter: (Long) -> String,
     private val dateAddedFormatter: (Long) -> String,
     private val durationFormatter: (Long) -> String,
-    private val displayLocale: Locale = Locale.getDefault()
+    private val displayLocale: Locale = Locale.getDefault(),
+    /** Translates a Portuguese label; tests keep the Portuguese text. */
+    private val label: (String) -> String = { it }
 ) {
     fun imageSections(media: DetailMediaMetadata, metadata: DetailImageMetadata, sizeBytes: Long?): List<DetailMetadataSection> = buildList {
-        add(DetailMetadataSection("Arquivo", buildList {
-            add(DetailMetadataField("Nome", media.name))
-            add(DetailMetadataField("Data", date(media)))
-            sizeBytes?.let { add(DetailMetadataField("Tamanho", fileSizeFormatter(it))) }
-            add(DetailMetadataField("Formato", media.mimeType.ifEmpty { UNKNOWN }))
-            if (media.relativePath.isNotBlank()) add(DetailMetadataField("Pasta", media.relativePath.trimEnd('/')))
+        add(DetailMetadataSection(label("Arquivo"), buildList {
+            add(DetailMetadataField(label("Nome"), media.name))
+            add(DetailMetadataField(label("Data"), date(media)))
+            sizeBytes?.let { add(DetailMetadataField(label("Tamanho"), fileSizeFormatter(it))) }
+            add(DetailMetadataField(label("Formato"), media.mimeType.ifEmpty { label(UNKNOWN) }))
+            if (media.relativePath.isNotBlank()) add(DetailMetadataField(label("Pasta"), media.relativePath.trimEnd('/')))
         }))
         val image = buildList {
             if (metadata.width != null && metadata.height != null) {
-                add(DetailMetadataField("Resolução", "${metadata.width} × ${metadata.height}"))
+                add(DetailMetadataField(label("Resolução"), "${metadata.width} × ${metadata.height}"))
             }
             listOfNotNull(metadata.make, metadata.model).joinToString(" ").takeIf { it.isNotBlank() }?.let {
-                add(DetailMetadataField("Câmera", it))
+                add(DetailMetadataField(label("Câmera"), it))
             }
-            metadata.capturedAt?.let { add(DetailMetadataField("Capturada em", it)) }
-            metadata.iso?.let { add(DetailMetadataField("ISO", it)) }
-            metadata.aperture?.let { add(DetailMetadataField("Abertura", "f/$it")) }
-            metadata.exposure?.let { add(DetailMetadataField("Exposição", "${it}s")) }
-            metadata.focalLength?.let { add(DetailMetadataField("Distância focal", "$it mm")) }
+            metadata.capturedAt?.let { add(DetailMetadataField(label("Capturada em"), it)) }
+            metadata.iso?.let { add(DetailMetadataField(label("ISO"), it)) }
+            metadata.aperture?.let { add(DetailMetadataField(label("Abertura"), "f/$it")) }
+            metadata.exposure?.let { add(DetailMetadataField(label("Exposição"), "${it}s")) }
+            metadata.focalLength?.let { add(DetailMetadataField(label("Distância focal"), "$it mm")) }
         }
-        if (image.isNotEmpty()) add(DetailMetadataSection("Imagem e câmera", image))
+        if (image.isNotEmpty()) add(DetailMetadataSection(label("Imagem e câmera"), image))
         if (metadata.hasLocation) {
-            add(DetailMetadataSection("Localização", listOf(DetailMetadataField(
-                "Coordenadas",
+            add(DetailMetadataSection(label("Localização"), listOf(DetailMetadataField(
+                label("Coordenadas"),
                 "${String.format(Locale.US, "%.6f", metadata.latitude)}, " +
                     String.format(Locale.US, "%.6f", metadata.longitude)
             ))))
@@ -51,26 +53,26 @@ internal class DetailMetadataFormatter(
     }
 
     fun videoSections(media: DetailMediaMetadata, metadata: DetailVideoMetadata, sizeBytes: Long?): List<DetailMetadataSection> = buildList {
-        add(DetailMetadataSection("Arquivo", buildList {
-            add(DetailMetadataField("Nome", media.name))
-            add(DetailMetadataField("Data", date(media)))
-            sizeBytes?.takeIf { it > 0L }?.let { add(DetailMetadataField("Tamanho", fileSizeFormatter(it))) }
-            add(DetailMetadataField("Formato", media.mimeType.ifEmpty { metadata.detectedMime ?: UNKNOWN }))
-            if (media.relativePath.isNotBlank()) add(DetailMetadataField("Pasta", media.relativePath.trimEnd('/')))
+        add(DetailMetadataSection(label("Arquivo"), buildList {
+            add(DetailMetadataField(label("Nome"), media.name))
+            add(DetailMetadataField(label("Data"), date(media)))
+            sizeBytes?.takeIf { it > 0L }?.let { add(DetailMetadataField(label("Tamanho"), fileSizeFormatter(it))) }
+            add(DetailMetadataField(label("Formato"), media.mimeType.ifEmpty { metadata.detectedMime ?: label(UNKNOWN) }))
+            if (media.relativePath.isNotBlank()) add(DetailMetadataField(label("Pasta"), media.relativePath.trimEnd('/')))
         }))
         val video = buildList {
-            metadata.durationMs?.takeIf { it > 0L }?.let { add(DetailMetadataField("Duração", durationFormatter(it))) }
+            metadata.durationMs?.takeIf { it > 0L }?.let { add(DetailMetadataField(label("Duração"), durationFormatter(it))) }
             if (metadata.width != null && metadata.height != null && metadata.width > 0 && metadata.height > 0) {
-                add(DetailMetadataField("Resolução", "${metadata.width} × ${metadata.height}"))
+                add(DetailMetadataField(label("Resolução"), "${metadata.width} × ${metadata.height}"))
             }
-            if (metadata.rotationDegrees != 0) add(DetailMetadataField("Rotação", "${metadata.rotationDegrees}°"))
-            metadata.codec?.let { add(DetailMetadataField("Codec", it)) }
-            metadata.bitRate?.takeIf { it > 0L }?.let { add(DetailMetadataField("Taxa de bits", formatBitRate(it))) }
+            if (metadata.rotationDegrees != 0) add(DetailMetadataField(label("Rotação"), "${metadata.rotationDegrees}°"))
+            metadata.codec?.let { add(DetailMetadataField(label("Codec"), it)) }
+            metadata.bitRate?.takeIf { it > 0L }?.let { add(DetailMetadataField(label("Taxa de bits"), formatBitRate(it))) }
             metadata.frameRate?.takeIf { it > 0f }?.let {
-                add(DetailMetadataField("Quadros por segundo", formatFrameRate(it)))
+                add(DetailMetadataField(label("Quadros por segundo"), formatFrameRate(it)))
             }
         }
-        if (video.isNotEmpty()) add(DetailMetadataSection("Vídeo", video))
+        if (video.isNotEmpty()) add(DetailMetadataSection(label("Vídeo"), video))
     }
 
     fun imageInformation(media: DetailMediaMetadata, metadata: DetailImageMetadata, sizeBytes: Long?): String =
@@ -84,7 +86,7 @@ internal class DetailMetadataFormatter(
         .joinToString("\n") { "${it.label}: ${it.value}" }
 
     private fun date(media: DetailMediaMetadata): String =
-        if (media.dateAddedSeconds > 0L) dateAddedFormatter(media.dateAddedSeconds) else "Desconhecida"
+        if (media.dateAddedSeconds > 0L) dateAddedFormatter(media.dateAddedSeconds) else label("Desconhecida")
 
     private fun formatBitRate(bitsPerSecond: Long): String =
         if (bitsPerSecond >= 1_000_000L) {

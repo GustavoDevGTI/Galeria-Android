@@ -38,7 +38,7 @@ internal class OrganizerVideoPreview(context: Context, item: MediaItem) : FrameL
         play.apply {
             tag = "organizer_video_play_pause"; setBackgroundColor(Color.TRANSPARENT)
             setColorFilter(Color.WHITE); setImageResource(R.drawable.ic_pause)
-            contentDescription = "Pausar vídeo"
+            contentDescription = context.getString(R.string.msg_pause_video)
             setOnClickListener {
                 if (player.isPlaying) player.pause() else {
                     if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
@@ -68,10 +68,10 @@ internal class OrganizerVideoPreview(context: Context, item: MediaItem) : FrameL
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 play.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play)
-                play.contentDescription = if (playing) "Pausar vídeo" else "Reproduzir vídeo"
+                play.contentDescription = context.getString(if (playing) R.string.msg_pause_video else R.string.msg_play_video)
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                Ui.toast(context, "Não foi possível reproduzir este vídeo.")
+                Ui.toast(context, context.getString(R.string.msg_play_video_failed))
             }
         })
         player.setMediaItem(PlayerMediaItem.fromUri(item.uri)); player.prepare(); player.play()

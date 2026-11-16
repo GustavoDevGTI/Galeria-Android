@@ -185,7 +185,7 @@ internal class OrganizerController(context: Context,
         }
         slots.clear()
         repeat(8) { index ->
-            slots.add(if (index == TRASH_SLOT) AlbumItem(TRASH_KEY, "Lixeira", 0, null, 0, 0, 0, "")
+            slots.add(if (index == TRASH_SLOT) AlbumItem(TRASH_KEY, app.getString(R.string.msg_trash), 0, null, 0, 0, 0, "")
                 else albums.firstOrNull { it.key == saved.getOrNull(index) && it.key != album.key } ?: emptyAlbum(index))
         }
         stage = 1; notifyChange()
@@ -293,7 +293,8 @@ internal class OrganizerController(context: Context,
                     if (pending == 0) {
                         saving = false
                         rememberProgress()
-                        message = if (hasChanges) "Algumas mídias não foram salvas. Tente novamente ou desfaça as marcações." else "Alterações salvas."
+                        EmptyFolderCleaner.afterRemoval(app, listOf(source?.key))
+                        message = app.getString(if (hasChanges) R.string.msg_organizer_partial_save else R.string.msg_organizer_saved)
                     }
                     saveReserve(); savePlan(); notifyChange()
                 }

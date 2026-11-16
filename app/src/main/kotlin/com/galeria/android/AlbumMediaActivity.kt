@@ -50,6 +50,10 @@ import kotlin.math.max
 import kotlin.math.min
 
 class AlbumMediaActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     private val operations = ActivityOperationRunner(this)
     private lateinit var adapter: MediaRecyclerAdapter
     private lateinit var grid: AccessibleRecyclerView
@@ -139,7 +143,7 @@ class AlbumMediaActivity : ComponentActivity() {
                 grid.postDelayed(this, GRID_POOL_WARMUP_RETRY_MS)
                 return
             }
-            val viewType = if (listMode) 1 else 0
+            val viewType = adapter.currentViewType()
             grid.recycledViewPool.putRecycledView(adapter.createViewHolder(grid, viewType))
             gridPoolWarmupRemaining--
             if (gridPoolWarmupRemaining > 0) grid.postDelayed(this, GRID_POOL_WARMUP_STEP_MS)
@@ -168,6 +172,12 @@ class AlbumMediaActivity : ComponentActivity() {
         catalogController = AlbumMediaCatalogController(applicationContext)
         selectionCoordinator = AlbumSelectionActions(this, prefs)
         albumKey = intent.getStringExtra("album_key")
+        // A secure folder opens only after its password; any other way in (another app, a shortcut) is refused.
+        if (albumKey?.let { SecurityStore(this).isSecureFolder(it) && !SecuritySession.isFolderUnlocked(it) } == true) {
+            Ui.toast(this, getString(R.string.security_folder_locked))
+            finish()
+            return
+        }
         albumName = intent.getStringExtra("album_name")?.takeIf { it.isNotEmpty() }
             ?: getString(R.string.album_default_name)
         readAlbumOptions()
@@ -194,6 +204,11 @@ class AlbumMediaActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         albumScreenResumed = true
+        if (::swipeRefresh.isInitialized && !adapter.isSelectionMode()) swipeRefresh.isEnabled = pullToRefreshEnabled()
+        if (::adapter.isInitialized) {
+            adapter.refreshDisplayPreferences()
+            if (adapter.currentViewType() != (if (listMode) 1 else if (horizontalGridEnabled()) 2 else 0)) applyViewMode()
+        }
         Ui.applySystemBars(this)
         applyBrowseTheme()
         if (firstResume) {
@@ -541,6 +556,7 @@ class AlbumMediaActivity : ComponentActivity() {
         swipeRefresh = SwipeRefreshLayout(this).apply {
             setColorSchemeColors(Ui.accent(this@AlbumMediaActivity))
             setProgressBackgroundColorSchemeColor(Ui.surface(this@AlbumMediaActivity))
+            isEnabled = pullToRefreshEnabled()
             setOnRefreshListener {
                 refreshCatalogWithWorker()
             }
@@ -599,12 +615,12 @@ class AlbumMediaActivity : ComponentActivity() {
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         if (albumKey == VirtualAlbumRules.TRASH_KEY) {
             addSelectionAction(R.drawable.ic_restore, getString(R.string.action_restore)) { restoreSelected() }
-            addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete_permanently)) { confirmDeleteSelected() }
+            addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete_permanently)) { SecurityGate.requireFileOperation(this) { confirmDeleteSelected() } }
         } else {
             addSelectionAction(R.drawable.ic_share, getString(R.string.action_share)) { shareSelected() }
             addSelectionAction(R.drawable.ic_heart, getString(R.string.action_favorite)) { favoriteSelected() }
-            addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { confirmDeleteSelected() }
-            addSelectionAction(R.drawable.ic_arrow_right, getString(R.string.action_move)) { askMoveSelected() }
+            addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { SecurityGate.requireFileOperation(this) { confirmDeleteSelected() } }
+            addSelectionAction(R.drawable.ic_arrow_right, getString(R.string.action_move)) { SecurityGate.requireFileOperation(this) { askMoveSelected() } }
         }
         selectionActions.visibility = View.GONE
         root.addView(selectionActions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -613,7 +629,7 @@ class AlbumMediaActivity : ComponentActivity() {
 
     private fun warmGridPoolGradually() {
         if (!::grid.isInitialized || adapter.getCount() == 0) return
-        val viewType = if (listMode) 1 else 0
+        val viewType = adapter.currentViewType()
         if (warmedGridPoolViewType == viewType) return
         warmedGridPoolViewType = viewType
         val target = if (listMode) 4 else gridColumnCount * 2
@@ -657,7 +673,7 @@ class AlbumMediaActivity : ComponentActivity() {
         val spacing = getString(R.string.album_grid_spacing)
         val cinemaMode = getString(R.string.album_cinema_mode)
         val trashVisibility = getString(
-            if (prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)) R.string.trash_hide_hidden
+            if (GalleryPreferences.hiddenFlag(this, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)) R.string.trash_hide_hidden
             else R.string.trash_show_hidden
         )
         val chooseCover = getString(R.string.album_choose_cover)
@@ -698,9 +714,12 @@ class AlbumMediaActivity : ComponentActivity() {
                     Ui.toast(this, getString(R.string.album_automatic_cover_saved))
                 }
                 trashVisibility -> {
-                    val showHidden = !prefs.getBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false)
-                    prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, showHidden).apply()
-                    loadMedia(true)
+                    val showHidden = !GalleryPreferences.hiddenFlag(this, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)
+                    val apply = {
+                        prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, showHidden).apply()
+                        loadMedia(true)
+                    }
+                    if (showHidden) SecurityGate.requireHiddenAccess(this, action = apply) else apply()
                 }
                 spacing -> showSpacingDialog()
                 cinemaMode -> toggleAlbumCinemaMode()
@@ -843,11 +862,14 @@ class AlbumMediaActivity : ComponentActivity() {
         if (!::grid.isInitialized) return
         val gap = Ui.dp(this, gridSpacingDp)
         spacingDecoration?.let(grid::removeItemDecoration)
-        spacingDecoration = GridSpacingItemDecoration(gap, layoutManager.spanCount).also(grid::addItemDecoration)
+        spacingDecoration = GridSpacingItemDecoration(gap, layoutManager.spanCount, horizontalGridEnabled()).also(grid::addItemDecoration)
         grid.setPadding(0, 0, 0, Ui.dp(this, 16))
         grid.invalidateItemDecorations()
         updateThumbnailRequestSize()
     }
+
+    /** "Atualizar ao puxar a tela". */
+    private fun pullToRefreshEnabled(): Boolean = GalleryPreferences.flag(this, GalleryPreferences.PULL_TO_REFRESH)
 
     private fun enterSelectionMode() {
         adapter.setSelectionMode(true)
@@ -856,7 +878,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun exitSelectionMode() {
         val wasSelecting = adapter.isSelectionMode()
         gridGestureController.endSelection()
-        if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
+        if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = pullToRefreshEnabled()
         adapter.clearSelection()
         updateSelectionUi()
         if (wasSelecting && groupMode == GROUP_NONE) {
@@ -971,6 +993,11 @@ class AlbumMediaActivity : ComponentActivity() {
         val selected = adapter.selectedItems()
         if (selected.isEmpty()) return
         val permanent = TrashPreferences.deletePermanently(this, albumKey)
+        // Skipping the question is only allowed when the media goes to the trash and can come back.
+        if (!permanent && GalleryPreferences.flag(this, GalleryPreferences.SKIP_DELETE_CONFIRMATION)) {
+            deleteSelected(selected, false)
+            return
+        }
         Ui.showConfirmationDialog(
             this,
             getString(if (permanent) R.string.trash_delete_selected_title else R.string.album_delete_selected_title),
@@ -1005,6 +1032,7 @@ class AlbumMediaActivity : ComponentActivity() {
             if (deletePermanently) selectionCoordinator.permanentlyDelete(selected, REQ_DELETE)
             else selectionCoordinator.delete(selected, REQ_DELETE)
         }) { result ->
+        EmptyFolderCleaner.afterRemoval(this, result.completedItems.map { it.relativePath })
         completedRemovalUris.addAll(result.completedItems.map { MediaIdentityRules.canonicalKey(it.uri.toString()) })
         adapter.removeCompletedItems(result.completedItems.map { it.uri.toString() })
         updateEmptyState()
@@ -1101,6 +1129,7 @@ class AlbumMediaActivity : ComponentActivity() {
             return
         }
         operations.run({ selectionCoordinator.move(selected, destination.path.ifBlank { destination.name }) }) { result ->
+        EmptyFolderCleaner.afterRemoval(this, result.completedItems.map { it.relativePath })
         if (albumKey != "all_media") {
             completedRemovalUris.addAll(result.completedItems.map { MediaIdentityRules.canonicalKey(it.uri.toString()) })
             adapter.removeCompletedItems(result.completedItems.map { it.uri.toString() })
@@ -1270,7 +1299,7 @@ class AlbumMediaActivity : ComponentActivity() {
                 if (selectionDragActive) {
                     gridGestureController.endSelection()
                     grid.parent?.requestDisallowInterceptTouchEvent(false)
-                    swipeRefresh.isEnabled = true
+                    swipeRefresh.isEnabled = pullToRefreshEnabled()
                     updateSelectionUi()
                 } else if (dragging) {
                     finishDrag()
@@ -1307,7 +1336,7 @@ class AlbumMediaActivity : ComponentActivity() {
             MotionEvent.ACTION_CANCEL -> {
                 gridGestureController.endPinch()
                 grid.parent?.requestDisallowInterceptTouchEvent(false)
-                if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = true
+                if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = pullToRefreshEnabled()
             }
         }
     }
@@ -1378,7 +1407,10 @@ class AlbumMediaActivity : ComponentActivity() {
         grid.scaleX = 1f
         grid.scaleY = 1f
         layoutManager.spanCount = if (listMode) 1 else gridColumnCount
+        val horizontal = horizontalGridEnabled()
+        layoutManager.orientation = if (horizontal) RecyclerView.HORIZONTAL else RecyclerView.VERTICAL
         adapter.setListMode(listMode)
+        adapter.setHorizontalGrid(horizontal)
         grid.contentDescription = if (listMode) {
             getString(R.string.album_media_list_description)
         } else {
@@ -1470,10 +1502,16 @@ class AlbumMediaActivity : ComponentActivity() {
         } else {
             val spans = max(1, layoutManager.spanCount)
             val totalGaps = Ui.dp(this, gridSpacingDp) * max(0, spans - 1)
-            max(Ui.dp(this, 96), (resources.displayMetrics.widthPixels - totalGaps) / spans)
+            val across = if (horizontalGridEnabled()) {
+                grid.height.takeIf { it > 0 } ?: (resources.displayMetrics.heightPixels * 2 / 3)
+            } else resources.displayMetrics.widthPixels
+            max(Ui.dp(this, 96), (across - totalGaps) / spans)
         }
         adapter.setGridThumbnailSize(size)
     }
+
+    private fun horizontalGridEnabled(): Boolean =
+        !listMode && GalleryPreferences.flag(this, GalleryPreferences.HORIZONTAL_THUMBNAIL_SCROLL)
 
     private fun mediaSpanCount(): Int =
         max(2, resources.displayMetrics.widthPixels / Ui.dp(this, 126))
@@ -1541,7 +1579,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun shouldIncludeHiddenFilesystem(): Boolean =
         StorageAccessRules.includeHiddenFilesystem(
             intent.getBooleanExtra("include_hidden_filesystem", false) ||
-                prefs.getBoolean("always_show_hidden", false),
+                GalleryPreferences.hiddenFlag(this, "always_show_hidden"),
             MediaActions.hasAllFilesAccess(this)
         )
 

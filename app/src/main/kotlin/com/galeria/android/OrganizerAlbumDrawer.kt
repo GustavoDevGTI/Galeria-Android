@@ -43,7 +43,7 @@ internal class OrganizerAlbumDrawer(context: Context, private val controller: Or
                 setPadding(Ui.dp(context, 12), Ui.dp(context, 6), Ui.dp(context, 12), Ui.dp(context, 6))
                 addView(Ui.title(context, "+", 30).apply { gravity = Gravity.CENTER; setTextColor(Ui.menuText(context)) },
                     LayoutParams(Ui.dp(context, 46), Ui.dp(context, 46)))
-                addView(Ui.label(context, "Nova pasta").apply { setTextColor(Ui.menuText(context)) }, LayoutParams(0, -2, 1f))
+                addView(Ui.label(context, context.getString(R.string.msg_new_folder)).apply { setTextColor(Ui.menuText(context)) }, LayoutParams(0, -2, 1f))
                 background = Ui.rounded(menuTones[1], 10, context)
                 tag = "organizer_new_folder"
             } else Ui.albumTargetRow(context, album).apply { tag = "organizer_drawer_${album.key}" }
@@ -101,8 +101,8 @@ internal class OrganizerAlbumDrawer(context: Context, private val controller: Or
         val next = controller.availableAlbums
         if (rows != next) { rows = next; rowsAdapter.notifyDataSetChanged() }
         refreshVisibleStatus()
-        handle.text = if (controller.drawerOpen) "⌄  Álbuns" else "⌃  Álbuns"
-        handle.contentDescription = if (controller.drawerOpen) "Fechar gaveta de álbuns" else "Abrir gaveta de álbuns"
+        handle.text = (if (controller.drawerOpen) "⌄  " else "⌃  ") + context.getString(R.string.msg_albums)
+        handle.contentDescription = context.getString(if (controller.drawerOpen) R.string.msg_close_album_drawer else R.string.msg_open_album_drawer)
     }
 
     fun targetAt(x: Float, y: Float): DropTarget? {

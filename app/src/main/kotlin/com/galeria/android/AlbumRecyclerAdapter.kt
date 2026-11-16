@@ -265,6 +265,14 @@ class AlbumRecyclerAdapter(
         return Holder(item, cover, name, check, pin, temporaryEye)
     }
 
+    /** Albums protected by their own password; their cover is replaced by a lock. */
+    var secureKeys: Set<String> = emptySet()
+        set(value) {
+            if (field == value) return
+            field = value
+            if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_COVER)
+        }
+
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val album = visibleAlbums[position]
         bindSpacing(holder)
@@ -317,6 +325,20 @@ class AlbumRecyclerAdapter(
         holder.thumbnailRequest?.cancel()
         holder.thumbnailRequest = null
         holder.cover.background = Ui.rounded(Color.BLACK, folderRadius(), context)
+        if (album.key in secureKeys) {
+            // The cover would reveal the content: a secure folder shows only a lock until it is opened.
+            holder.thumbnailLoad?.dispose()
+            holder.thumbnailLoad = null
+            holder.boundUri = null
+            holder.cover.scaleType = ImageView.ScaleType.CENTER
+            holder.cover.setImageResource(R.drawable.ic_lock)
+            holder.cover.setColorFilter(Ui.muted(context))
+            holder.cover.contentDescription = context.getString(R.string.security_folder_locked)
+            return
+        }
+        holder.cover.scaleType = ImageView.ScaleType.CENTER_CROP
+        holder.cover.clearColorFilter()
+        holder.cover.contentDescription = null
         val cover = album.cover
         if (cover == null) {
             holder.thumbnailLoad?.dispose()
@@ -377,13 +399,7 @@ class AlbumRecyclerAdapter(
     override fun getItemCount(): Int = visibleAlbums.size
 
     private fun folderRadius(): Int {
-        val style = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
-            .getString("folder_thumb_style", "Cantos arredondados")
-        return when (style) {
-            "Quadrado" -> 0
-            "Circular" -> 40
-            else -> 8
-        }
+        return ThumbnailStyle.folderCornerDp(ChoicePreferences.code(context, ChoicePreferences.FOLDER_THUMBNAIL))
     }
 
     private fun notifySelectionRange() {

@@ -25,6 +25,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 
 class SettingsActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     private lateinit var prefs: SharedPreferences
     private lateinit var content: LinearLayout
     private lateinit var root: LinearLayout
@@ -109,10 +113,7 @@ class SettingsActivity : Activity() {
 
         addSection(getString(R.string.settings_section_general))
         addOption(getString(R.string.settings_language), languageLabel()) { chooseLanguage() }
-        val dateTimeValues = resources.getStringArray(R.array.settings_date_time_values)
-        addOption(getString(R.string.settings_date_time_format), normalizeDisplayValue(prefs.getString("date_time_format", dateTimeValues[0]).orEmpty())) {
-            chooseValue(getString(R.string.settings_date_time_format), "date_time_format", dateTimeValues)
-        }
+        addChoice(getString(R.string.settings_date_time_format), ChoicePreferences.DATE_TIME, R.array.settings_date_time_values)
         addSwitch(
             getString(R.string.settings_use_trash),
             getString(R.string.settings_use_trash_hint),
@@ -121,10 +122,7 @@ class SettingsActivity : Activity() {
             null
         )
         val advancedStart = content.childCount
-        val loadingPriorityValues = resources.getStringArray(R.array.settings_loading_priority_values)
-        addOption(getString(R.string.settings_loading_priority), prefs.getString("loading_priority", loadingPriorityValues[0]).orEmpty()) {
-            chooseValue(getString(R.string.settings_loading_priority), "loading_priority", loadingPriorityValues)
-        }
+        addChoice(getString(R.string.settings_loading_priority), ChoicePreferences.LOADING_PRIORITY, R.array.settings_loading_priority_values)
         addOption(getString(R.string.settings_manage_included_folders), getString(R.string.settings_open_folder_picker)) {
             if (MediaActions.hasAllFilesAccess(this)) {
                 startActivity(Intent(this, FolderPickerActivity::class.java))
@@ -143,7 +141,9 @@ class SettingsActivity : Activity() {
             "always_show_hidden",
             false,
             null
-        )
+        ) { wantOn, commit, revert ->
+            if (wantOn) SecurityGate.requireHiddenAccess(this, onCancel = revert, action = commit) else commit()
+        }
         addSwitch(getString(R.string.settings_search_all_files), getString(R.string.settings_search_all_files_hint), "search_all_files", false, null)
 
         addSection(getString(R.string.settings_section_photos))
@@ -153,61 +153,66 @@ class SettingsActivity : Activity() {
         addSwitch(getString(R.string.settings_autoplay_videos), getString(R.string.settings_autoplay_videos_hint), "autoplay_videos", true, null)
         addSwitch(getString(R.string.settings_remember_video_position), getString(R.string.settings_remember_video_position_hint), "remember_video_position", true, null)
         addSwitch(getString(R.string.settings_loop_videos), getString(R.string.settings_loop_videos_hint), "loop_videos", false, null)
-        addSwitch(getString(R.string.settings_video_separate_screen), getString(R.string.settings_video_separate_screen_hint), "video_separate_screen", false, null)
-        addSwitch(getString(R.string.settings_video_vertical_gestures), getString(R.string.settings_viewer_saved_preference_hint), "video_vertical_gestures", true, null)
+        addSwitch(getString(R.string.settings_video_separate_screen), getString(R.string.settings_video_separate_screen_hint), "video_separate_screen", GalleryPreferences.defaultOf("video_separate_screen"), null)
+        addSwitch(getString(R.string.settings_video_vertical_gestures), getString(R.string.settings_video_vertical_gestures_hint), "video_vertical_gestures", GalleryPreferences.defaultOf("video_vertical_gestures"), null)
 
         addSection(getString(R.string.settings_section_thumbnails))
-        addSwitch(getString(R.string.settings_crop_square_thumbnails), getString(R.string.settings_crop_square_thumbnails_hint), "crop_square_thumbnails", true, null)
-        addSwitch(getString(R.string.settings_animate_gif_thumbnails), getString(R.string.settings_animate_gif_thumbnails_hint), "animate_gif_thumbnails", true, null)
-        val fileThumbnailValues = resources.getStringArray(R.array.settings_file_thumbnail_values)
-        addOption(getString(R.string.settings_file_thumbnail_style), normalizeDisplayValue(prefs.getString("file_thumb_style", fileThumbnailValues[0]).orEmpty())) {
-            chooseValue(getString(R.string.settings_file_thumbnail_style), "file_thumb_style", fileThumbnailValues)
-        }
-        val folderThumbnailValues = resources.getStringArray(R.array.settings_folder_thumbnail_values)
-        addOption(getString(R.string.settings_folder_thumbnail_style), prefs.getString("folder_thumb_style", folderThumbnailValues[1]).orEmpty()) {
-            chooseValue(getString(R.string.settings_folder_thumbnail_style), "folder_thumb_style", folderThumbnailValues)
-        }
+        addSwitch(getString(R.string.settings_crop_square_thumbnails), getString(R.string.settings_crop_square_thumbnails_hint), "crop_square_thumbnails", GalleryPreferences.defaultOf("crop_square_thumbnails"), null)
+        addSwitch(getString(R.string.settings_animate_gif_thumbnails), getString(R.string.settings_animate_gif_thumbnails_hint), "animate_gif_thumbnails", GalleryPreferences.defaultOf("animate_gif_thumbnails"), null)
+        addChoice(getString(R.string.settings_file_thumbnail_style), ChoicePreferences.FILE_THUMBNAIL, R.array.settings_file_thumbnail_values)
+        addChoice(getString(R.string.settings_folder_thumbnail_style), ChoicePreferences.FOLDER_THUMBNAIL, R.array.settings_folder_thumbnail_values)
         cacheSubtitle = addOption(getString(R.string.settings_clear_cache), "…") { clearCache() }
         measureCache()
 
         addSection(getString(R.string.settings_section_scrolling))
-        addSwitch(getString(R.string.settings_horizontal_thumbnail_scroll), getString(R.string.settings_horizontal_thumbnail_scroll_hint), "horizontal_thumbnail_scroll", false, null)
-        addSwitch(getString(R.string.settings_pull_to_refresh), getString(R.string.settings_pull_to_refresh_hint), "pull_to_refresh", true, null)
+        addSwitch(getString(R.string.settings_horizontal_thumbnail_scroll), getString(R.string.settings_horizontal_thumbnail_scroll_hint), "horizontal_thumbnail_scroll", GalleryPreferences.defaultOf("horizontal_thumbnail_scroll"), null)
+        addSwitch(getString(R.string.settings_pull_to_refresh), getString(R.string.settings_pull_to_refresh_hint), "pull_to_refresh", GalleryPreferences.defaultOf("pull_to_refresh"), null)
 
         addSection(getString(R.string.settings_section_fullscreen_media))
-        addSwitch(getString(R.string.settings_fullscreen_max_brightness), getString(R.string.settings_viewer_saved_preference_hint), "fullscreen_max_brightness", false, null)
-        addSwitch(getString(R.string.settings_fullscreen_black_bg), getString(R.string.settings_fullscreen_black_bg_hint), "fullscreen_black_bg", true, null)
-        addSwitch(getString(R.string.settings_fullscreen_hide_system_ui), getString(R.string.settings_fullscreen_hide_system_ui_hint), "fullscreen_hide_system_ui", false, null)
-        addSwitch(getString(R.string.settings_tap_sides_change_media), getString(R.string.settings_tap_sides_change_media_hint), "tap_sides_change_media", false, null)
-        addSwitch(getString(R.string.settings_vertical_brightness_gesture), getString(R.string.settings_vertical_brightness_gesture_hint), "vertical_brightness_gesture", false, null)
-        addSwitch(getString(R.string.settings_swipe_down_to_close), getString(R.string.settings_swipe_down_to_close_hint), "swipe_down_to_close", true, null)
-        addSwitch(getString(R.string.settings_show_display_cutout), getString(R.string.settings_show_display_cutout_hint), "show_display_cutout", true, null)
-        val rotationValues = resources.getStringArray(R.array.settings_rotation_values)
-        addOption(getString(R.string.settings_rotation), normalizeDisplayValue(prefs.getString("rotation_criterion", rotationValues[0]).orEmpty())) {
-            chooseValue(getString(R.string.settings_rotation), "rotation_criterion", rotationValues)
-        }
+        addSwitch(getString(R.string.settings_fullscreen_max_brightness), getString(R.string.settings_fullscreen_max_brightness_hint), "fullscreen_max_brightness", false, null)
+        addSwitch(getString(R.string.settings_fullscreen_black_bg), getString(R.string.settings_fullscreen_black_bg_hint), "fullscreen_black_bg", GalleryPreferences.defaultOf("fullscreen_black_bg"), null)
+        addSwitch(getString(R.string.settings_fullscreen_hide_system_ui), getString(R.string.settings_fullscreen_hide_system_ui_hint), "fullscreen_hide_system_ui", GalleryPreferences.defaultOf("fullscreen_hide_system_ui"), null)
+        addSwitch(getString(R.string.settings_tap_sides_change_media), getString(R.string.settings_tap_sides_change_media_hint), "tap_sides_change_media", GalleryPreferences.defaultOf("tap_sides_change_media"), null)
+        addSwitch(getString(R.string.settings_vertical_brightness_gesture), getString(R.string.settings_vertical_brightness_gesture_hint), "vertical_brightness_gesture", GalleryPreferences.defaultOf("vertical_brightness_gesture"), null)
+        addSwitch(getString(R.string.settings_swipe_down_to_close), getString(R.string.settings_swipe_down_to_close_hint), "swipe_down_to_close", GalleryPreferences.defaultOf("swipe_down_to_close"), null)
+        addSwitch(getString(R.string.settings_show_display_cutout), getString(R.string.settings_show_display_cutout_hint), "show_display_cutout", GalleryPreferences.defaultOf("show_display_cutout"), null)
+        addChoice(getString(R.string.settings_rotation), ChoicePreferences.ROTATION, R.array.settings_rotation_values)
 
         addSection(getString(R.string.settings_section_deep_image_zoom))
-        addSwitch(getString(R.string.settings_deep_image_zoom), getString(R.string.settings_deep_image_zoom_hint), "deep_image_zoom", true, null)
-        addSwitch(getString(R.string.settings_image_rotation_gestures), getString(R.string.settings_image_rotation_gestures_hint), "image_rotation_gestures", true, null)
-        addSwitch(getString(R.string.settings_best_image_quality), getString(R.string.settings_best_image_quality_hint), "best_image_quality", false, null)
-        addSwitch(getString(R.string.settings_double_double_tap_zoom), getString(R.string.settings_double_double_tap_zoom_hint), "double_double_tap_zoom", false, null)
+        addSwitch(getString(R.string.settings_deep_image_zoom), getString(R.string.settings_deep_image_zoom_hint), "deep_image_zoom", GalleryPreferences.defaultOf("deep_image_zoom"), null)
+        addSwitch(getString(R.string.settings_image_rotation_gestures), getString(R.string.settings_image_rotation_gestures_hint), "image_rotation_gestures", GalleryPreferences.defaultOf("image_rotation_gestures"), null)
+        addSwitch(getString(R.string.settings_best_image_quality), getString(R.string.settings_best_image_quality_hint), "best_image_quality", GalleryPreferences.defaultOf("best_image_quality"), null)
+        addSwitch(getString(R.string.settings_double_double_tap_zoom), getString(R.string.settings_double_double_tap_zoom_hint), "double_double_tap_zoom", GalleryPreferences.defaultOf("double_double_tap_zoom"), null)
 
         addSection(getString(R.string.settings_section_additional_details))
-        addSwitch(getString(R.string.settings_show_fullscreen_details), getString(R.string.settings_show_fullscreen_details_hint), "show_fullscreen_details", false, null)
+        addSwitch(getString(R.string.settings_show_fullscreen_details), getString(R.string.settings_show_fullscreen_details_hint), "show_fullscreen_details", GalleryPreferences.defaultOf("show_fullscreen_details"), null)
 
         addSection(getString(R.string.settings_section_security))
-        addSwitch(getString(R.string.settings_lock_entire_app), getString(R.string.settings_lock_entire_app_hint), "lock_entire_app", false, null)
-        addSwitch(getString(R.string.settings_lock_hidden_items), getString(R.string.settings_lock_hidden_items_hint), "lock_hidden_items", false, null)
-        addSwitch(getString(R.string.settings_lock_file_operations), getString(R.string.settings_lock_file_operations_hint), "lock_file_operations", false, null)
+        val security = SecurityStore(prefs)
+        addOption(
+            getString(R.string.security_app_password),
+            getString(if (security.hasAppPassword) R.string.security_app_password_set else R.string.security_app_password_none)
+        ) { manageAppPassword() }
+        addSwitch(getString(R.string.settings_lock_entire_app), getString(R.string.settings_lock_entire_app_hint),
+            GalleryPreferences.LOCK_ENTIRE_APP, false, { SecuritySession.appUnlocked = true }, ::guardProtection)
+        addSwitch(getString(R.string.settings_lock_hidden_items), getString(R.string.settings_lock_hidden_items_hint),
+            GalleryPreferences.LOCK_HIDDEN_ITEMS, false, null, ::guardProtection)
+        addSwitch(getString(R.string.settings_lock_file_operations), getString(R.string.settings_lock_file_operations_hint),
+            GalleryPreferences.LOCK_FILE_OPERATIONS, false, null, ::guardProtection)
+        val secureCount = security.secureFolderKeys().size
+        addOption(
+            getString(R.string.security_secure_folders),
+            if (secureCount == 0) getString(R.string.security_secure_folders_none)
+            else resources.getQuantityString(R.plurals.security_secure_folders_count, secureCount, secureCount)
+        ) { manageSecureFolders() }
 
         addSection(getString(R.string.settings_section_file_operations))
-        addSwitch(getString(R.string.settings_delete_empty_folders), getString(R.string.settings_delete_empty_folders_hint), "delete_empty_folders", false, null)
-        addSwitch(getString(R.string.settings_keep_modified_date), getString(R.string.settings_keep_modified_date_hint), "keep_modified_date", true, null)
-        addSwitch(getString(R.string.settings_skip_delete_confirmation), getString(R.string.settings_skip_delete_confirmation_hint), "skip_delete_confirmation", false, null)
+        addSwitch(getString(R.string.settings_delete_empty_folders), getString(R.string.settings_delete_empty_folders_hint), "delete_empty_folders", GalleryPreferences.defaultOf("delete_empty_folders"), null)
+        addSwitch(getString(R.string.settings_keep_modified_date), getString(R.string.settings_keep_modified_date_hint), "keep_modified_date", GalleryPreferences.defaultOf("keep_modified_date"), null)
+        addSwitch(getString(R.string.settings_skip_delete_confirmation), getString(R.string.settings_skip_delete_confirmation_hint), "skip_delete_confirmation", GalleryPreferences.defaultOf("skip_delete_confirmation"), null)
 
         addSection(getString(R.string.settings_section_bottom_bar))
-        addSwitch(getString(R.string.settings_show_bottom_actions), getString(R.string.settings_show_bottom_actions_hint), "show_bottom_actions", true, null)
+        addSwitch(getString(R.string.settings_show_bottom_actions), getString(R.string.settings_show_bottom_actions_hint), "show_bottom_actions", GalleryPreferences.defaultOf("show_bottom_actions"), null)
         addOption(getString(R.string.settings_manage_visible_buttons), getString(R.string.settings_manage_visible_buttons_hint), null)
 
         addSection(getString(R.string.settings_section_migrating))
@@ -317,12 +322,17 @@ class SettingsActivity : Activity() {
         return subtitleView
     }
 
+    /**
+     * [beforeChange] lets a protected switch ask for a password first: it receives the wanted state and
+     * calls commit() to keep it or revert() to put the switch back without saving.
+     */
     private fun addSwitch(
         title: String,
         subtitle: String,
         key: String,
         defaultValue: Boolean,
-        afterChange: Runnable?
+        afterChange: Runnable?,
+        beforeChange: ((wantOn: Boolean, commit: () -> Unit, revert: () -> Unit) -> Unit)? = null
     ) {
         val row = rowBase()
         val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -346,12 +356,23 @@ class SettingsActivity : Activity() {
                 states,
                 intArrayOf(Ui.highlightSurface(this@SettingsActivity), Ui.elevatedSurface(this@SettingsActivity))
             )
-            setOnCheckedChangeListener(CompoundButton.OnCheckedChangeListener { _, isChecked ->
-                prefs.edit().putBoolean(key, isChecked).apply()
-                Haptics.perform(this, Haptics.toggle(isChecked))
-                afterChange?.run()
-            })
         }
+        lateinit var listener: CompoundButton.OnCheckedChangeListener
+        listener = CompoundButton.OnCheckedChangeListener { _, isChecked ->
+            val commit = {
+                prefs.edit().putBoolean(key, isChecked).apply()
+                Haptics.perform(toggle, Haptics.toggle(isChecked))
+                afterChange?.run()
+                Unit
+            }
+            val revert = {
+                toggle.setOnCheckedChangeListener(null)
+                toggle.isChecked = !isChecked
+                toggle.setOnCheckedChangeListener(listener)
+            }
+            if (beforeChange == null) commit() else beforeChange(isChecked, commit, revert)
+        }
+        toggle.setOnCheckedChangeListener(listener)
         row.addView(toggle)
         content.addView(row)
     }
@@ -531,6 +552,68 @@ class SettingsActivity : Activity() {
         dialogRef[0]?.let { dialog -> Ui.showCenteredPanel(dialog) }
     }
 
+    /** Turning a protection on needs an app password (created on the spot); turning it off needs that password. */
+    private fun guardProtection(wantOn: Boolean, commit: () -> Unit, revert: () -> Unit) {
+        val security = SecurityStore(prefs)
+        when {
+            wantOn && !security.hasAppPassword -> createAppPassword(onCancel = revert) { commit(); fillContent() }
+            wantOn -> commit()
+            else -> SecurityGate.askAppPassword(this, getString(R.string.security_current_password), onCancel = revert) { commit() }
+        }
+    }
+
+    private fun createAppPassword(onCancel: (() -> Unit)? = null, onCreated: () -> Unit) {
+        Ui.showPasswordDialog(this, getString(R.string.security_create_password), confirm = true, onCancel = onCancel) { password ->
+            SecurityStore(prefs).setAppPassword(password)
+            SecuritySession.appUnlocked = true
+            Ui.toast(this, getString(R.string.security_password_saved))
+            onCreated()
+            null
+        }
+    }
+
+    private fun manageAppPassword() {
+        val security = SecurityStore(prefs)
+        if (!security.hasAppPassword) { createAppPassword { fillContent() }; return }
+        Ui.showActionDialog(
+            this,
+            getString(R.string.security_app_password),
+            listOf(getString(R.string.security_change_password), getString(R.string.security_remove_password))
+        ) { choice ->
+            SecurityGate.askAppPassword(this, getString(R.string.security_current_password)) {
+                if (choice == 0) {
+                    Ui.showPasswordDialog(this, getString(R.string.security_new_password), confirm = true) { password ->
+                        security.setAppPassword(password)
+                        Ui.toast(this, getString(R.string.security_password_saved))
+                        null
+                    }
+                } else {
+                    security.clearAppPassword()
+                    Ui.toast(this, getString(R.string.security_password_removed))
+                    fillContent()
+                }
+            }
+        }
+    }
+
+    /** Lists the secure folders; picking one removes its password after confirming that password. */
+    private fun manageSecureFolders() {
+        val security = SecurityStore(prefs)
+        val keys = security.secureFolderKeys().sorted()
+        if (keys.isEmpty()) { Ui.toast(this, getString(R.string.security_secure_folders_none)); return }
+        val names = keys.map { it.trimEnd('/').substringAfterLast('/').ifBlank { it } }
+        Ui.showActionDialog(this, getString(R.string.security_folder_unprotect), names) { index ->
+            val key = keys[index]
+            Ui.showPasswordDialog(this, getString(R.string.security_folder_title, names[index])) { password ->
+                if (!security.verifyFolderPassword(key, password)) return@showPasswordDialog getString(R.string.security_wrong_password)
+                security.removeFolder(key)
+                Ui.toast(this, getString(R.string.security_folder_unprotected))
+                fillContent()
+                null
+            }
+        }
+    }
+
     private fun rowBase(): LinearLayout =
         LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -552,32 +635,24 @@ class SettingsActivity : Activity() {
             else -> getString(R.string.settings_language_portuguese)
         }
 
-    private fun normalizeDisplayValue(value: String): String =
-        when (value) {
-            "Padrao do sistema" -> getString(R.string.settings_value_system_default)
-            "Padrao" -> getString(R.string.settings_value_default)
-            "Portugues" -> getString(R.string.settings_language_portuguese)
-            "Espanol" -> getString(R.string.settings_language_spanish)
-            else -> value
-        }
-
     private fun chooseLanguage() {
         val labels = resources.getStringArray(R.array.settings_language_values)
         val values = arrayOf("pt", "en", "es")
         val current = prefs.getString("language", "pt")
         val checked = values.indexOf(current).takeIf { it >= 0 } ?: 0
         Ui.showChoiceDialog(this, getString(R.string.settings_language), labels, checked) { which ->
-            prefs.edit().putString("language", values[which]).apply()
-            fillContent()
+            AppLanguage.change(this, values[which])
         }
     }
 
-    private fun chooseValue(title: String, key: String, values: Array<String>) {
-        val current = prefs.getString(key, values[0])
-        val checked = values.indexOf(current).takeIf { it >= 0 } ?: 0
-        Ui.showChoiceDialog(this, title, values, checked) { which ->
-            prefs.edit().putString(key, values[which]).apply()
-            fillContent()
+    /** A list setting stored as a fixed code; the label shown follows the app language. */
+    private fun addChoice(title: String, spec: ChoiceSpec, labelsRes: Int) {
+        val labels = resources.getStringArray(labelsRes)
+        addOption(title, labels[ChoicePreferences.index(this, spec)]) {
+            Ui.showChoiceDialog(this, title, labels, ChoicePreferences.index(this, spec)) { which ->
+                ChoicePreferences.set(this, spec, which)
+                fillContent()
+            }
         }
     }
 
