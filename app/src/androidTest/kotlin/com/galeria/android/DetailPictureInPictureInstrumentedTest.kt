@@ -97,7 +97,7 @@ class DetailPictureInPictureInstrumentedTest {
             file.outputStream().use(input::copyTo)
         }
         try {
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", Uri.fromFile(file).toString())
                 putExtra("mime", "video/mp4")
                 putExtra("name", file.name)

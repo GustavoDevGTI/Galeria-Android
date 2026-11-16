@@ -120,3 +120,26 @@ class SettingsOptionRulesTest {
         assertFalse(GalleryPreferences.defaultOf(GalleryPreferences.DELETE_EMPTY_FOLDERS))
     }
 }
+
+class ReviewFixRulesTest {
+    @Test
+    fun sharingStopsAtTheAndroidLimit() {
+        assertEquals(10, ShareLimit.limited(List(10) { it }).size)
+        assertEquals(ShareLimit.MAX_ITEMS, ShareLimit.limited(List(5_000) { it }).size)
+        assertEquals("keeps the selection order", 0, ShareLimit.limited(List(5_000) { it }).first())
+    }
+
+    @Test
+    fun onlyTheGallerysOwnTokenIsTrusted() {
+        assertTrue(ViewerLaunch.isTrusted("abc123", "abc123"))
+        assertFalse(ViewerLaunch.isTrusted(null, "abc123"))
+        assertFalse(ViewerLaunch.isTrusted("abc124", "abc123"))
+        assertFalse(ViewerLaunch.isTrusted("", ""))
+    }
+
+    @Test
+    fun externalLaunchesLoseEveryInternalOption() {
+        listOf("uri", "album_key", "include_hidden_filesystem", "shuffle_mode", "path", AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)
+            .forEach { assertTrue(it, it in ViewerLaunch.internalExtras) }
+    }
+}

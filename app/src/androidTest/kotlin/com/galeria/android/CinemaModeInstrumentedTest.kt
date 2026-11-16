@@ -444,7 +444,7 @@ class CinemaModeInstrumentedTest {
     }
 
     private fun videoIntent(context: Context, uri: android.net.Uri, albumKey: String) =
-        Intent(context, DetailActivity::class.java).apply {
+        ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
             putExtra("uri", uri.toString())
             putExtra("name", "cinema.mp4")
             putExtra("mime", "video/mp4")

@@ -10,9 +10,6 @@
     <string name="organizer_in_progress_plain">Organizando</string>
     <string name="organizer_continue">Continuar organización</string>
     <string name="organizer_restart">Empezar de cero</string>
-    <string name="organizer_destinations">Elige de 1 a 8 destinos · %1$d/8</string>
-    <string name="organizer_destination_help">Selecciona de 1 a 8 álbumes en el orden deseado y toca Empezar a organizar. Podrás cambiar las posiciones después.</string>
-    <string name="organizer_start">Empezar a organizar</string>
     <string name="organizer_preview">Ampliar contenido</string>
     <string name="organizer_close_preview">Cerrar vista previa</string>
     <plurals name="organizer_sent">
@@ -22,10 +19,7 @@
     </plurals>
     <string name="organizer_reserve">Reservar · %1$d</string>
     <string name="organizer_empty">Álbum organizado. Aún puedes distribuir los elementos de la reserva.</string>
-    <string name="organizer_move_failed">No se pudo mover. El elemento volvió a la cola.</string>
-    <string name="organizer_undo_failed">No se pudo deshacer. El elemento sigue en el destino; inténtalo de nuevo.</string>
     <string name="organizer_access">Permite administrar archivos para mover el contenido de forma continua.</string>
-    <string name="organizer_insufficient">Elige al menos 1 álbum distinto del origen. Usa Crear carpeta para añadir destinos.</string>
     <string name="organizer_loading">Preparando el contenido…</string>
     <plurals name="organizer_remaining">
         <item quantity="one">%1$d elemento</item>
@@ -611,7 +605,11 @@
     <string name="msg_pause_video">Pausar vídeo</string>
     <string name="msg_play_video">Reproducir vídeo</string>
     <string name="msg_play_video_failed">No se pudo reproducir este vídeo.</string>
-    <string name="msg_organizer_partial_save">Algunos elementos no se guardaron. Inténtalo de nuevo o deshaz las marcas.</string>
+    <plurals name="msg_organizer_not_saved">
+        <item quantity="one">%d elemento no se guardó. Inténtalo de nuevo o deshaz la marca.</item>
+        <item quantity="many">%d elementos no se guardaron. Inténtalo de nuevo o deshaz las marcas.</item>
+        <item quantity="other">%d elementos no se guardaron. Inténtalo de nuevo o deshaz las marcas.</item>
+    </plurals>
     <string name="msg_organizer_saved">Cambios guardados.</string>
     <string name="msg_trash">Papelera</string>
     <string name="msg_deselect_all">Desmarcar todos</string>
@@ -642,4 +640,5 @@
     <string name="meta_video">Vídeo</string>
     <string name="meta_unknown_date">Desconocida</string>
     <string name="meta_unknown">Desconocido</string>
+    <string name="msg_share_limited">Compartiendo los primeros %1$d de %2$d elementos. Android no acepta más a la vez.</string>
 </resources>

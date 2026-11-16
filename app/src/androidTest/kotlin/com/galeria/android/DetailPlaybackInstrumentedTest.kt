@@ -51,7 +51,7 @@ class DetailPlaybackInstrumentedTest {
     fun muteAndSpeedSurviveActivityRecreation() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val uri = insertEmptyVideo(context)
-        val intent = Intent(context, DetailActivity::class.java).apply {
+        val intent = ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
             putExtra("uri", uri.toString())
             putExtra("name", "estado-video.mp4")
             putExtra("mime", "video/mp4")
@@ -84,7 +84,7 @@ class DetailPlaybackInstrumentedTest {
         val file = File(context.cacheDir, "speed-${System.nanoTime()}.mp4")
         instrumentation.context.assets.open("playback-sample.mp4").use { input -> file.outputStream().use(input::copyTo) }
         try {
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", Uri.fromFile(file).toString())
                 putExtra("mime", "video/mp4")
                 putExtra("name", file.name)

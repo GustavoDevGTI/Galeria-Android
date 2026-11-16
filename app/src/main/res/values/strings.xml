@@ -9,9 +9,6 @@
     <string name="organizer_in_progress_plain">Em organização</string>
     <string name="organizer_continue">Continuar organização</string>
     <string name="organizer_restart">Reiniciar do zero</string>
-    <string name="organizer_destinations">Escolha de 1 a 8 destinos · %1$d/8</string>
-    <string name="organizer_destination_help">Selecione de 1 a 8 álbuns na ordem desejada e toque em Começar a organizar. Você poderá trocar as posições depois.</string>
-    <string name="organizer_start">Começar a organizar</string>
     <string name="organizer_preview">Ampliar mídia</string>
     <string name="organizer_close_preview">Fechar prévia</string>
     <plurals name="organizer_sent">
@@ -20,10 +17,7 @@
     </plurals>
     <string name="organizer_reserve">Reservar · %1$d</string>
     <string name="organizer_empty">Álbum organizado. Você ainda pode distribuir as mídias da reserva.</string>
-    <string name="organizer_move_failed">Não foi possível mover. A mídia voltou para a fila.</string>
-    <string name="organizer_undo_failed">Não foi possível desfazer. A mídia continua no destino; tente novamente.</string>
     <string name="organizer_access">Permita gerenciar arquivos para mover as mídias continuamente.</string>
-    <string name="organizer_insufficient">Escolha pelo menos 1 álbum diferente da origem. Use Criar pasta para adicionar destinos.</string>
     <string name="organizer_loading">Preparando as mídias…</string>
     <plurals name="organizer_remaining">
         <item quantity="one">%1$d mídia</item>
@@ -683,7 +677,10 @@
     <string name="msg_pause_video">Pausar vídeo</string>
     <string name="msg_play_video">Reproduzir vídeo</string>
     <string name="msg_play_video_failed">Não foi possível reproduzir este vídeo.</string>
-    <string name="msg_organizer_partial_save">Algumas mídias não foram salvas. Tente novamente ou desfaça as marcações.</string>
+    <plurals name="msg_organizer_not_saved">
+        <item quantity="one">%d mídia não foi salva. Tente novamente ou desfaça a marcação.</item>
+        <item quantity="other">%d mídias não foram salvas. Tente novamente ou desfaça as marcações.</item>
+    </plurals>
     <string name="msg_organizer_saved">Alterações salvas.</string>
     <string name="msg_trash">Lixeira</string>
     <string name="msg_deselect_all">Desmarcar todos</string>
@@ -715,4 +712,5 @@
     <string name="meta_video">Vídeo</string>
     <string name="meta_unknown_date">Desconhecida</string>
     <string name="meta_unknown">Desconhecido</string>
+    <string name="msg_share_limited">Compartilhando as %1$d primeiras de %2$d mídias. O Android não aceita mais de uma vez.</string>
 </resources>

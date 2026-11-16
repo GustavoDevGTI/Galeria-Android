@@ -16,6 +16,9 @@ internal class GalleryBrowseBar @JvmOverloads constructor(
 ) : LinearLayout(context) {
     private val dock = Ui.selectionActionDock(context)
 
+    /** Space for the navigation bar under the buttons. */
+    fun setBottomInset(bottomInset: Int) = setPadding(paddingLeft, paddingTop, paddingRight, bottomInset)
+
     init {
         tag = "gallery_browse_bar"
         orientation = VERTICAL

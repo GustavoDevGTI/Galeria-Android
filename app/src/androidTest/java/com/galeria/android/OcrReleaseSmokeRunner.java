@@ -87,7 +87,8 @@ public final class OcrReleaseSmokeRunner extends Instrumentation {
             Intent intent = new Intent().setClassName(context.getPackageName(), context.getPackageName() + ".DetailActivity")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra("uri", android.net.Uri.fromFile(photo).toString())
-                .putExtra("mime", "image/png").putExtra("name", photo.getName());
+                .putExtra("mime", "image/png").putExtra("name", photo.getName())
+                .putExtra("viewer_launch_token", viewerLaunchToken(context));
             activity = startActivitySync(intent);
             Activity host = activity;
             await("A foto não foi exibida", () -> {
@@ -189,6 +190,17 @@ public final class OcrReleaseSmokeRunner extends Instrumentation {
             check(SystemClock.uptimeMillis() < deadline, message);
             SystemClock.sleep(100L);
         }
+    }
+
+    /** The gallery trusts its own viewer launches by a token in its private preferences (ViewerLaunch). */
+    private static String viewerLaunchToken(Context context) {
+        android.content.SharedPreferences prefs = context.getSharedPreferences("gallery_albums", Context.MODE_PRIVATE);
+        String token = prefs.getString("viewer_launch_token", null);
+        if (token == null) {
+            token = java.util.UUID.randomUUID().toString().replace("-", "");
+            prefs.edit().putString("viewer_launch_token", token).commit();
+        }
+        return token;
     }
 
     private static void check(boolean valid, String message) {

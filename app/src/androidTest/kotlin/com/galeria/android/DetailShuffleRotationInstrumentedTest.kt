@@ -45,7 +45,7 @@ class DetailShuffleRotationInstrumentedTest {
         MediaStoreRepository.invalidateCache()
 
         try {
-            val intent = Intent(context, DetailActivity::class.java).apply {
+            val intent = ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", firstUri.toString())
                 putExtra("name", firstName)
                 putExtra("mime", "image/png")

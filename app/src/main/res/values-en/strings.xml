@@ -9,9 +9,6 @@
     <string name="organizer_in_progress_plain">Organizing</string>
     <string name="organizer_continue">Continue organizing</string>
     <string name="organizer_restart">Start over</string>
-    <string name="organizer_destinations">Choose 1 to 8 destinations · %1$d/8</string>
-    <string name="organizer_destination_help">Select 1 to 8 albums in the order you want and tap Start organizing. You can swap positions later.</string>
-    <string name="organizer_start">Start organizing</string>
     <string name="organizer_preview">Enlarge media</string>
     <string name="organizer_close_preview">Close preview</string>
     <plurals name="organizer_sent">
@@ -20,10 +17,7 @@
     </plurals>
     <string name="organizer_reserve">Reserve · %1$d</string>
     <string name="organizer_empty">Album organized. You can still sort the media in the reserve.</string>
-    <string name="organizer_move_failed">Could not move. The media went back to the queue.</string>
-    <string name="organizer_undo_failed">Could not undo. The media is still in the destination; try again.</string>
     <string name="organizer_access">Allow file management to move media continuously.</string>
-    <string name="organizer_insufficient">Choose at least 1 album other than the source. Use Create folder to add destinations.</string>
     <string name="organizer_loading">Preparing media…</string>
     <plurals name="organizer_remaining">
         <item quantity="one">%1$d item</item>
@@ -595,7 +589,10 @@
     <string name="msg_pause_video">Pause video</string>
     <string name="msg_play_video">Play video</string>
     <string name="msg_play_video_failed">Could not play this video.</string>
-    <string name="msg_organizer_partial_save">Some media were not saved. Try again or undo the marks.</string>
+    <plurals name="msg_organizer_not_saved">
+        <item quantity="one">%d item was not saved. Try again or undo the mark.</item>
+        <item quantity="other">%d items were not saved. Try again or undo the marks.</item>
+    </plurals>
     <string name="msg_organizer_saved">Changes saved.</string>
     <string name="msg_trash">Trash</string>
     <string name="msg_deselect_all">Deselect all</string>
@@ -626,4 +623,5 @@
     <string name="meta_video">Video</string>
     <string name="meta_unknown_date">Unknown</string>
     <string name="meta_unknown">Unknown</string>
+    <string name="msg_share_limited">Sharing the first %1$d of %2$d media. Android does not accept more at once.</string>
 </resources>

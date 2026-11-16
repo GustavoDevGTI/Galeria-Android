@@ -682,6 +682,10 @@ class ImageEditActivity : ComponentActivity() {
             invalidate()
         }
 
+        // Reused on every frame while the crop is dragged.
+        private val cropBounds = RectF()
+        private val cropShade = Paint().apply { color = 0x99000000.toInt() }
+
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             val current = bitmap ?: return
@@ -699,9 +703,9 @@ class ImageEditActivity : ComponentActivity() {
             for (label in labels) drawLabel(canvas, label)
             canvas.restore()
             if (cropRect != null && tool == EditorTool.CROP) {
-                val bounds = RectF(requireNotNull(cropRect))
+                val bounds = cropBounds.apply { set(requireNotNull(cropRect)) }
                 bitmapToView.mapRect(bounds)
-                val shade = Paint().apply { color = 0x99000000.toInt() }
+                val shade = cropShade
                 canvas.drawRect(imageRect.left, imageRect.top, imageRect.right, bounds.top, shade)
                 canvas.drawRect(imageRect.left, bounds.bottom, imageRect.right, imageRect.bottom, shade)
                 canvas.drawRect(imageRect.left, bounds.top, bounds.left, bounds.bottom, shade)
@@ -718,9 +722,13 @@ class ImageEditActivity : ComponentActivity() {
                 canvas.drawRect(bounds, cropPaint)
                 cropPaint.strokeWidth = Ui.dp(context, 3).toFloat()
                 val length = Ui.dp(context, 18).toFloat().coerceAtMost(bounds.width() / 4)
-                for (x in listOf(bounds.left, bounds.right)) for (y in listOf(bounds.top, bounds.bottom)) {
-                    canvas.drawLine(x, y, x + if (x == bounds.left) length else -length, y, cropPaint)
-                    canvas.drawLine(x, y, x, y + if (y == bounds.top) length else -length, cropPaint)
+                for (corner in 0 until 4) {
+                    val left = corner % 2 == 0
+                    val top = corner < 2
+                    val x = if (left) bounds.left else bounds.right
+                    val y = if (top) bounds.top else bounds.bottom
+                    canvas.drawLine(x, y, x + if (left) length else -length, y, cropPaint)
+                    canvas.drawLine(x, y, x, y + if (top) length else -length, cropPaint)
                 }
             }
         }

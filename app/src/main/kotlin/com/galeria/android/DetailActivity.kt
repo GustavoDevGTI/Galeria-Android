@@ -320,6 +320,8 @@ class DetailActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Before reading any option: launches from other apps keep only the file they sent.
+        ViewerLaunch.sanitize(this, intent)
         super.onCreate(savedInstanceState)
         timelineExpanded = savedInstanceState?.getBoolean("timeline_expanded") ?: false
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -452,8 +454,8 @@ class DetailActivity : ComponentActivity() {
 
     private fun buildLayout() {
         applyWindowSettings()
-        val navSideInset = navigationBarSideInset()
-        val navBottomInset = navigationBarBottomInset()
+        val navSideInset = systemBars.side
+        val navBottomInset = systemBars.bottom
         val root = FrameLayout(this).apply {
             setBackgroundColor(viewerBackground())
         }
@@ -463,7 +465,7 @@ class DetailActivity : ComponentActivity() {
             setBackgroundColor(0x66000000)
             setPadding(
                 Ui.dp(this@DetailActivity, 8),
-                statusBarHeight() + Ui.dp(this@DetailActivity, 6),
+                systemBars.top + Ui.dp(this@DetailActivity, 6),
                 navSideInset + Ui.dp(this@DetailActivity, 10),
                 Ui.dp(this@DetailActivity, 6)
             )
@@ -604,6 +606,7 @@ class DetailActivity : ComponentActivity() {
                 navBottomInset + Ui.dp(this@DetailActivity, 8)
             )
         }
+        systemBars.onChange { if (::topBar.isInitialized) applyBarInsets() }
         videoControls = LinearLayout(this).apply {
             tag = "video_playback_controls"
             gravity = Gravity.CENTER
@@ -2039,14 +2042,7 @@ class DetailActivity : ComponentActivity() {
         cinemaGestureIndicator.visibility = View.GONE
         if (!switchingItem) cancelInteractiveSwipe()
         speedPopup?.dismiss()
-        topBar.setPadding(
-            Ui.dp(this, 8), statusBarHeight() + Ui.dp(this, 6),
-            navigationBarSideInset() + Ui.dp(this, 10), Ui.dp(this, 6)
-        )
-        bottomBar.setPadding(
-            Ui.dp(this, 14), Ui.dp(this, 4),
-            navigationBarSideInset() + Ui.dp(this, 14), navigationBarBottomInset() + Ui.dp(this, 8)
-        )
+        applyBarInsets()
         cinemaController.settle()
         val video = mediaQueue.getOrNull(currentIndex)?.isVideo() == true
         cinemaController.followRotation(video, video && automaticCinemaLandscape(newConfig), switchingItem)
@@ -3220,6 +3216,8 @@ class DetailActivity : ComponentActivity() {
         return android.app.PictureInPictureParams.Builder()
             .setAspectRatio(android.util.Rational(width, height))
             .setActions(actions)
+            // Where the video is on screen: Android animates from it instead of showing the app icon.
+            .apply { videoSourceRect()?.let { setSourceRectHint(it) } }
             .build()
     }
 
@@ -3253,6 +3251,15 @@ class DetailActivity : ComponentActivity() {
         return DetailPictureInPictureRules.orientedSize(
             size.width, size.height, size.pixelWidthHeightRatio, size.unappliedRotationDegrees
         )
+    }
+
+    /** The video frame in window coordinates, or null when it is not on screen. */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun videoSourceRect(): android.graphics.Rect? {
+        val frame = activePage?.findViewWithTag<PlayerView>("detail_video_player")
+            ?.findViewById<AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame) ?: return null
+        val rect = android.graphics.Rect()
+        return rect.takeIf { frame.getGlobalVisibleRect(it) && !it.isEmpty }
     }
 
     private var pictureInPictureReceiver: android.content.BroadcastReceiver? = null
@@ -3388,26 +3395,19 @@ class DetailActivity : ComponentActivity() {
         Ui.applyCloseTransition(this)
     }
 
-    private fun statusBarHeight(): Int {
-        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
-        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 24)
+    private val systemBars by lazy { SystemBarInsets(this) }
+
+    /** Keeps the top and bottom bars clear of the status and navigation bars. */
+    private fun applyBarInsets() {
+        topBar.setPadding(
+            Ui.dp(this, 8), systemBars.top + Ui.dp(this, 6),
+            systemBars.side + Ui.dp(this, 10), Ui.dp(this, 6)
+        )
+        bottomBar.setPadding(
+            Ui.dp(this, 14), Ui.dp(this, 4),
+            systemBars.side + Ui.dp(this, 14), systemBars.bottom + Ui.dp(this, 8)
+        )
     }
-
-    private fun navigationBarHeight(): Int {
-        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
-        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 24)
-    }
-
-    private fun navigationBarWidth(): Int {
-        val resourceId = resources.getIdentifier("navigation_bar_width", "dimen", "android")
-        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else navigationBarHeight()
-    }
-
-    private fun navigationBarSideInset(): Int =
-        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) navigationBarWidth() else 0
-
-    private fun navigationBarBottomInset(): Int =
-        if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) 0 else navigationBarHeight()
 
     companion object {
         private const val ACTION_PICTURE_IN_PICTURE_TOGGLE = "com.galeria.android.PICTURE_IN_PICTURE_TOGGLE"

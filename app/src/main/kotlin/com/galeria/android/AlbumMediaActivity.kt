@@ -286,6 +286,8 @@ class AlbumMediaActivity : ComponentActivity() {
         mediaRefreshHandler.postDelayed(mediaRefreshRunnable, delay)
     }
 
+    private val systemBars by lazy { SystemBarInsets(this) }
+
     private fun buildLayout() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -295,7 +297,7 @@ class AlbumMediaActivity : ComponentActivity() {
         val bar = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             tag = TAG_ALBUM_TOOLBAR
-            setPadding(Ui.dp(this@AlbumMediaActivity, 8), statusBarHeight() + Ui.dp(this@AlbumMediaActivity, 6), Ui.dp(this@AlbumMediaActivity, 8), Ui.dp(this@AlbumMediaActivity, 6))
+            setPadding(Ui.dp(this@AlbumMediaActivity, 8), systemBars.top + Ui.dp(this@AlbumMediaActivity, 6), Ui.dp(this@AlbumMediaActivity, 8), Ui.dp(this@AlbumMediaActivity, 6))
         }
         val back = ImageButton(this).apply {
             setImageResource(R.drawable.ic_back)
@@ -590,7 +592,7 @@ class AlbumMediaActivity : ComponentActivity() {
         content.addView(catalogLoadingView, FrameLayout.LayoutParams(Ui.dp(this, 32), Ui.dp(this, 32), Gravity.CENTER))
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        browseBar = GalleryBrowseBar(this, navigationBarHeight(),
+        browseBar = GalleryBrowseBar(this, systemBars.bottom,
             onSort = ::showMediaSortDialog,
             onOrganize = {
                 startActivity(OrganizerActivity.intent(this,
@@ -609,7 +611,12 @@ class AlbumMediaActivity : ComponentActivity() {
         selectionActions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.surface(this@AlbumMediaActivity))
-            setPadding(0, Ui.dp(this@AlbumMediaActivity, 1), 0, navigationBarHeight())
+            setPadding(0, Ui.dp(this@AlbumMediaActivity, 1), 0, systemBars.bottom)
+        }
+        systemBars.onChange {
+            bar.setPadding(Ui.dp(this, 8), systemBars.top + Ui.dp(this, 6), Ui.dp(this, 8), Ui.dp(this, 6))
+            browseBar.setBottomInset(systemBars.bottom)
+            selectionActions.setPadding(0, Ui.dp(this, 1), 0, systemBars.bottom)
         }
         selectionActionDock = Ui.selectionActionDock(this)
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -979,6 +986,7 @@ class AlbumMediaActivity : ComponentActivity() {
         val selected = adapter.selectedItems()
         val share = selectionCoordinator.shareIntent(selected) ?: return
         startActivity(Intent.createChooser(share, getString(R.string.action_share)))
+        ShareLimit.warnIfLimited(this, selected.size)
     }
 
     private fun favoriteSelected() {
@@ -1590,7 +1598,7 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun openDetail(item: MediaItem, position: Int, shuffleMode: Boolean) {
         if (operations.busy) return
         savedFirstVisible = layoutManager.findFirstVisibleItemPosition()
-        val intent = Intent(this, DetailActivity::class.java).apply {
+        val intent = ViewerLaunch.internal(this, Intent(this, DetailActivity::class.java)).apply {
             putExtra("uri", item.uri.toString())
             putExtra("name", item.name)
             putExtra("mime", item.mimeType)
@@ -1646,15 +1654,6 @@ class AlbumMediaActivity : ComponentActivity() {
         }
     }
 
-    private fun statusBarHeight(): Int {
-        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
-        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 24)
-    }
-
-    private fun navigationBarHeight(): Int {
-        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
-        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 10)
-    }
 
     companion object {
         private const val TAG_ALBUM_TOOLBAR = "album_toolbar"

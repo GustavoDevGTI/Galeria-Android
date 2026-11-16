@@ -244,6 +244,8 @@ class MainActivity : ComponentActivity() {
         mediaLoader.shutdownNow()
     }
 
+    private val systemBars by lazy { SystemBarInsets(this) }
+
     private fun buildLayout() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -257,7 +259,7 @@ class MainActivity : ComponentActivity() {
             Ui.setPadding(this, 8, 1, 5, 1)
         }
         val topParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 44)).apply {
-            setMargins(Ui.dp(this@MainActivity, 24), statusBarHeight() + Ui.dp(this@MainActivity, 14), Ui.dp(this@MainActivity, 24), Ui.dp(this@MainActivity, 14))
+            setMargins(Ui.dp(this@MainActivity, 24), systemBars.top + Ui.dp(this@MainActivity, 14), Ui.dp(this@MainActivity, 24), Ui.dp(this@MainActivity, 14))
         }
         root.addView(top, topParams)
 
@@ -454,7 +456,7 @@ class MainActivity : ComponentActivity() {
         content.addView(catalogLoadingView, FrameLayout.LayoutParams(Ui.dp(this, 32), Ui.dp(this, 32), Gravity.CENTER))
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        browseBar = GalleryBrowseBar(this, navigationBarHeight(),
+        browseBar = GalleryBrowseBar(this, systemBars.bottom,
             onSort = ::showSortDialog,
             onOrganize = {
                 startActivity(OrganizerActivity.intent(this, adapter.allAlbumsSnapshot().map { it.key },
@@ -467,7 +469,15 @@ class MainActivity : ComponentActivity() {
         selectionActions = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.surface(this@MainActivity))
-            setPadding(0, Ui.dp(this@MainActivity, 1), 0, navigationBarHeight())
+            setPadding(0, Ui.dp(this@MainActivity, 1), 0, systemBars.bottom)
+        }
+        systemBars.onChange {
+            (top.layoutParams as? ViewGroup.MarginLayoutParams)?.let { params ->
+                params.topMargin = systemBars.top + Ui.dp(this, 14)
+                top.layoutParams = params
+            }
+            browseBar.setBottomInset(systemBars.bottom)
+            selectionActions.setPadding(0, Ui.dp(this, 1), 0, systemBars.bottom)
         }
         selectionActionDock = Ui.selectionActionDock(this)
         selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -580,12 +590,8 @@ class MainActivity : ComponentActivity() {
                     Ui.toast(this, getString(R.string.main_no_media_to_share))
                     return@runOnUiThread
                 }
-                val share = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-                    type = "*/*"
-                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(Intent.createChooser(share, getString(R.string.action_share)))
+                startActivity(Intent.createChooser(ShareLimit.intent(uris), getString(R.string.action_share)))
+                ShareLimit.warnIfLimited(this, uris.size)
             }
         }
     }
@@ -1748,15 +1754,6 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun statusBarHeight(): Int {
-        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
-        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 24)
-    }
-
-    private fun navigationBarHeight(): Int {
-        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
-        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else Ui.dp(this, 18)
-    }
 
     private fun shouldIncludeHiddenFilesystem(): Boolean =
         accessCoordinator.includeHiddenFilesystem(

@@ -42,7 +42,7 @@ class DetailHudInstrumentedTest {
         val uri = insertImage(context, name)
 
         try {
-            val intent = Intent(context, DetailActivity::class.java).apply {
+            val intent = ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", uri.toString())
                 putExtra("name", name)
                 putExtra("mime", "image/png")

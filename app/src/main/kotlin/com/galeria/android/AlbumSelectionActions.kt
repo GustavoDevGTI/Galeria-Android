@@ -23,11 +23,7 @@ class AlbumSelectionActions(
 
     fun shareIntent(selected: List<MediaItem>): Intent? {
         if (selected.isEmpty()) return null
-        return Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-            type = "*/*"
-            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(selected.map { it.uri }))
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
+        return ShareLimit.intent(selected.map { it.uri })
     }
 
     fun addToFavorites(selected: List<MediaItem>): Int {

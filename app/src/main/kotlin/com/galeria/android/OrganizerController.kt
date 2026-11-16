@@ -273,6 +273,7 @@ internal class OrganizerController(context: Context,
         val actions = history.filter { it.album != null }
         val permanently = !TrashPreferences.isEnabled(app)
         saving = true; pending = actions.size; notifyChange()
+        var failed = 0
         worker.execute {
             actions.forEach { action ->
                 val album = requireNotNull(action.album)
@@ -282,6 +283,7 @@ internal class OrganizerController(context: Context,
                 }.getOrDefault(false)
                 main.post {
                     pending--
+                    if (!success) failed++
                     if (success) {
                         history.remove(action)
                         // A reservation preceding this action cannot restore a committed file.
@@ -294,7 +296,8 @@ internal class OrganizerController(context: Context,
                         saving = false
                         rememberProgress()
                         EmptyFolderCleaner.afterRemoval(app, listOf(source?.key))
-                        message = app.getString(if (hasChanges) R.string.msg_organizer_partial_save else R.string.msg_organizer_saved)
+                        message = if (failed > 0) app.resources.getQuantityString(R.plurals.msg_organizer_not_saved, failed, failed)
+                            else app.getString(R.string.msg_organizer_saved)
                     }
                     saveReserve(); savePlan(); notifyChange()
                 }
