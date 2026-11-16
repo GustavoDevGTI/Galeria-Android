@@ -374,7 +374,7 @@ class VideoTimelineInstrumentedTest {
         } finally { source.close(); file.delete() }
     }
 
-    private fun intent(file: File) = Intent(context, DetailActivity::class.java).apply {
+    private fun intent(file: File) = ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
         putExtra("uri", Uri.fromFile(file).toString())
         putExtra("mime", "video/mp4")
         putExtra("name", file.name)

@@ -74,7 +74,7 @@ class ImageTextRecognitionInstrumentedTest {
         }
         val original = photo.readBytes()
         try {
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", Uri.fromFile(photo).toString())
                 putExtra("mime", "image/jpeg")
                 putExtra("name", photo.name)
@@ -141,7 +141,7 @@ class ImageTextRecognitionInstrumentedTest {
         photo.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
         try {
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", Uri.fromFile(photo).toString()); putExtra("mime", "image/png"); putExtra("name", photo.name)
             }).use { scenario ->
                 waitForUi {
@@ -216,7 +216,7 @@ class ImageTextRecognitionInstrumentedTest {
         photo.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) }
         bitmap.recycle()
         try {
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", Uri.fromFile(photo).toString()); putExtra("mime", "image/jpeg"); putExtra("name", photo.name)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }).use { scenario ->
@@ -248,7 +248,7 @@ class ImageTextRecognitionInstrumentedTest {
             val blank = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
             photo.outputStream().use { blank.compress(Bitmap.CompressFormat.JPEG, 95, it) }
             blank.recycle()
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", Uri.fromFile(photo).toString()); putExtra("mime", "image/jpeg"); putExtra("name", photo.name)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }).use { scenario ->

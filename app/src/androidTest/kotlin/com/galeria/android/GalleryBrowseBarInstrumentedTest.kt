@@ -253,7 +253,7 @@ class GalleryBrowseBarInstrumentedTest {
         try {
             var photoInset = 0f
             for ((file, mime) in listOf(photo to "image/png", video to "video/mp4")) {
-                ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+                ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                     putExtra("uri", Uri.fromFile(file).toString()); putExtra("name", file.name); putExtra("mime", mime)
                 }).use { scenario ->
                     if (mime == "video/mp4") waitUntil {

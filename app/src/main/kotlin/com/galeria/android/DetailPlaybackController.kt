@@ -203,7 +203,7 @@ internal class DetailPlaybackController(
     fun saveCurrentPosition() {
         val key = currentVideoKey ?: return
         if (!rememberPositionForCurrent) return
-        if (!prefs.getBoolean("remember_video_position", true)) {
+        if (!prefs.getBoolean(GalleryPreferences.REMEMBER_VIDEO_POSITION, true)) {
             clearCurrentPosition()
             return
         }
@@ -273,7 +273,7 @@ internal class DetailPlaybackController(
             return
         }
         if (!rememberPositionForCurrent) return
-        if (!prefs.getBoolean("remember_video_position", true)) {
+        if (!prefs.getBoolean(GalleryPreferences.REMEMBER_VIDEO_POSITION, true)) {
             clearCurrentPosition()
             return
         }

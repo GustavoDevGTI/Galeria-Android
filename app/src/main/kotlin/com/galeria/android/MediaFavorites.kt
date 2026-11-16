@@ -8,7 +8,7 @@ internal object MediaFavorites {
     private fun timestampKey(uri: String) = "favorite_added_at_${MediaIdentityRules.canonicalKey(uri)}"
 
     fun toggle(prefs: SharedPreferences, uri: String, nowSeconds: Long = System.currentTimeMillis() / 1000L): Boolean {
-        val favorites = prefs.getStringSet("favorites", emptySet()).orEmpty().toMutableSet()
+        val favorites = prefs.getStringSet(GalleryPreferences.FAVORITES, emptySet()).orEmpty().toMutableSet()
         val aliases = favorites.filter { MediaIdentityRules.sameUri(it, uri) }
         val added = aliases.isEmpty()
         val editor = prefs.edit()
@@ -19,12 +19,12 @@ internal object MediaFavorites {
             favorites.removeAll(aliases.toSet())
             editor.remove(timestampKey(uri))
         }
-        editor.putStringSet("favorites", favorites).apply()
+        editor.putStringSet(GalleryPreferences.FAVORITES, favorites).apply()
         return added
     }
 
     fun add(prefs: SharedPreferences, uris: List<String>, nowSeconds: Long = System.currentTimeMillis() / 1000L) {
-        val favorites = prefs.getStringSet("favorites", emptySet()).orEmpty().toMutableSet()
+        val favorites = prefs.getStringSet(GalleryPreferences.FAVORITES, emptySet()).orEmpty().toMutableSet()
         val known = favorites.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
         val editor = prefs.edit()
         for (uri in uris) {
@@ -33,7 +33,7 @@ internal object MediaFavorites {
                 editor.putLong(timestampKey(uri), nowSeconds)
             }
         }
-        editor.putStringSet("favorites", favorites).apply()
+        editor.putStringSet(GalleryPreferences.FAVORITES, favorites).apply()
     }
 
     fun latestAddition(prefs: SharedPreferences, visibleFavoriteUris: List<String>): Long =

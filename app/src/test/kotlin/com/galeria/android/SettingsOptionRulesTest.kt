@@ -105,11 +105,25 @@ class SettingsOptionRulesTest {
     }
 
     @Test
-    fun unknownLanguageFallsBackToPortuguese() {
-        assertEquals(AppLanguage.PORTUGUESE, AppLanguage.normalized(null))
-        assertEquals(AppLanguage.PORTUGUESE, AppLanguage.normalized("fr"))
-        assertEquals(AppLanguage.ENGLISH, AppLanguage.normalized("en"))
-        assertEquals("es", AppLanguage.locale(AppLanguage.SPANISH).language)
+    fun everyTextExistsInEveryLanguage() {
+        // The app follows the phone language, so English (the fallback), Portuguese and Spanish must match.
+        val res = java.io.File("src/main/res")
+        fun keys(folder: String): Set<String> {
+            val text = java.io.File(res, "$folder/strings.xml").readText()
+            return Regex("<(string|plurals|string-array) name=\"([^\"]+)\"").findAll(text).map { it.groupValues[2] }.toSet()
+        }
+        val fallback = keys("values")
+        // Lists made only of @string references are written once and follow the language of each item.
+        val shared = Regex("<string-array name=\"([^\"]+)\">(.*?)</string-array>", RegexOption.DOT_MATCHES_ALL)
+            .findAll(java.io.File(res, "values/strings.xml").readText())
+            .filter { match -> Regex("<item>(.*?)</item>").findAll(match.groupValues[2]).all { it.groupValues[1].startsWith("@string/") } }
+            .map { it.groupValues[1] }.toSet()
+        for (folder in listOf("values-pt", "values-es")) {
+            val translated = keys(folder)
+            assertEquals("$folder sem tradução", emptySet<String>(), fallback - translated - shared)
+            assertEquals("$folder com sobras", emptySet<String>(), translated - fallback)
+        }
+        assertFalse(fallback.any { it.startsWith("settings_language") })
     }
 
     @Test
@@ -141,5 +155,18 @@ class ReviewFixRulesTest {
     fun externalLaunchesLoseEveryInternalOption() {
         listOf("uri", "album_key", "include_hidden_filesystem", "shuffle_mode", "path", AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)
             .forEach { assertTrue(it, it in ViewerLaunch.internalExtras) }
+    }
+}
+
+class FolderMatchRulesTest {
+    @Test
+    fun aFolderNeverMatchesALongerNameOrASubfolder() {
+        assertTrue(AlbumRules.sameFolder("DCIM/Cam/", "DCIM/Cam/"))
+        assertTrue(AlbumRules.sameFolder("DCIM/Cam", "/DCIM/Cam/"))
+        assertTrue(AlbumRules.sameFolder("dcim/cam/", "DCIM/Cam/"))
+        assertFalse(AlbumRules.sameFolder("DCIM/Camera/", "DCIM/Cam/"))
+        assertFalse(AlbumRules.sameFolder("DCIM/Cam/2026/", "DCIM/Cam/"))
+        assertFalse(AlbumRules.sameFolder(null, "DCIM/Cam/"))
+        assertFalse(AlbumRules.sameFolder("DCIM/Cam/", ""))
     }
 }

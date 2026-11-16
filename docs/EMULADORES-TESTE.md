@@ -34,3 +34,7 @@ Verificações: hashes SHA-256 dos discos userdata e sdcard iguais antes/depois 
 O processo do emulador acumula memória quando fica aberto por muitas horas; reiniciar só o Android (`adb reboot`) não a devolve. Antes de uma bateria `-Delivery`, prefira encerrar a instância (`adb -s emulator-5554 emu kill`) e abri-la de novo por `scripts/start-test-emulator.ps1`. Neste PC de 16 GB, não rode a bateria junto com o emulador do outro projeto.
 
 Não troque a tela nativa do AVD para 720x1600 no `config.ini`: o recorte de câmera do perfil Pixel 6 mantém o tamanho antigo, a barra de status fica mais alta que a calculada pelo app e os testes de menu falham. A tela continua em 1080x2400 com a redução `wm size 720x1600` e `wm density 280` já gravada no aparelho.
+
+## Idioma da Galeria no emulador — 16/11/2026
+
+A Galeria segue o idioma principal do celular: português, inglês ou espanhol. Quando o celular usa outro idioma, ela aparece em inglês. O sistema do AVD continua em inglês, e o `run-android-tests.ps1` coloca só a Galeria em português do Brasil (`cmd locale set-app-locales com.galeria.android --locales pt-BR`) antes dos testes de interface, porque eles conferem os textos em português.

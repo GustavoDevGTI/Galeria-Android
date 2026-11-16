@@ -15,10 +15,6 @@ import androidx.activity.OnBackPressedCallback
 
 /** Full-screen lock shown before any other screen when the whole app is protected by password. */
 class LockActivity : ComponentActivity() {
-    override fun attachBaseContext(newBase: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(newBase))
-    }
-
     private lateinit var password: EditText
     private lateinit var error: TextView
 

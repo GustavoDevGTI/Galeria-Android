@@ -16,10 +16,6 @@ import androidx.core.view.WindowInsetsCompat
 import java.io.File
 
 class OrganizerActivity : ComponentActivity() {
-    override fun attachBaseContext(newBase: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(newBase))
-    }
-
     internal lateinit var controller: OrganizerController; private set
     private lateinit var content: FrameLayout
     private lateinit var status: TextView

@@ -192,7 +192,7 @@ class AlbumCatalogController(context: Context) {
             prepareAlbums(classificationSource, options, naturallyHiddenKeys))
         val prefs = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val favorites = prefs
-            .getStringSet("favorites", emptySet()).orEmpty()
+            .getStringSet(GalleryPreferences.FAVORITES, emptySet()).orEmpty()
         val trash = MediaStoreRepository.loadTrashedMedia(appContext)
         val hiddenTrashKeys = virtualHiddenKeys + AutomaticHiddenAlbums.keysForMedia(appContext, trash, markers)
         val collections = VirtualAlbumRules.addCollections(
@@ -233,16 +233,16 @@ class AlbumCatalogController(context: Context) {
                 prefs.getString(AlbumCoverRules.preferenceKey(key), null),
                 AlbumMediaPreparationOptions(
                     MediaFilterOptions(
-                        prefs.getBoolean(AlbumCoverRules.optionKey(key, "filter_images"), true),
-                        prefs.getBoolean(AlbumCoverRules.optionKey(key, "filter_videos"), true),
-                        prefs.getBoolean(AlbumCoverRules.optionKey(key, "filter_gifs"), true),
-                        prefs.getBoolean(AlbumCoverRules.optionKey(key, "filter_raw"), true),
-                        prefs.getBoolean(AlbumCoverRules.optionKey(key, "filter_svg"), true)
+                        prefs.getBoolean(AlbumCoverRules.optionKey(key, GalleryPreferences.FILTER_IMAGES), true),
+                        prefs.getBoolean(AlbumCoverRules.optionKey(key, GalleryPreferences.FILTER_VIDEOS), true),
+                        prefs.getBoolean(AlbumCoverRules.optionKey(key, GalleryPreferences.FILTER_GIFS), true),
+                        prefs.getBoolean(AlbumCoverRules.optionKey(key, GalleryPreferences.FILTER_RAW), true),
+                        prefs.getBoolean(AlbumCoverRules.optionKey(key, GalleryPreferences.ALBUM_FILTER_SVG), true)
                     ),
                     prefs.getString(AlbumCoverRules.optionKey(key, "group_mode"), AlbumMediaRules.GROUP_NONE)
                         ?: AlbumMediaRules.GROUP_NONE,
-                    prefs.getString(AlbumCoverRules.optionKey(key, "sort_mode"), defaultSort) ?: defaultSort,
-                    prefs.getBoolean(AlbumCoverRules.optionKey(key, "sort_desc"), true)
+                    prefs.getString(AlbumCoverRules.optionKey(key, GalleryPreferences.SORT_MODE), defaultSort) ?: defaultSort,
+                    prefs.getBoolean(AlbumCoverRules.optionKey(key, GalleryPreferences.SORT_DESC), true)
                 ),
                 order
             ) ?: album.cover
@@ -266,7 +266,8 @@ class AlbumCatalogController(context: Context) {
             options.showNaturallyHidden,
             options.searchAllFiles,
             options.temporarilyVisibleKeys,
-            naturallyHiddenKeys
+            naturallyHiddenKeys,
+            appContext.getString(R.string.album_all_files)
         )
     }
 

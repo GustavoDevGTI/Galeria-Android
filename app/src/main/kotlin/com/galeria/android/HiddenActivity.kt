@@ -13,10 +13,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 
 class HiddenActivity : Activity() {
-    override fun attachBaseContext(newBase: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(newBase))
-    }
-
     private lateinit var adapter: HiddenFileAdapter
     private lateinit var emptyView: TextView
 
@@ -46,7 +42,7 @@ class HiddenActivity : Activity() {
         }
         bar.addView(back, LinearLayout.LayoutParams(Ui.dp(this, 76), Ui.dp(this, 44)))
 
-        val title = Ui.title(this, "Ocultos", 22)
+        val title = Ui.title(this, getString(R.string.browse_hidden), 22)
         bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(bar)
 

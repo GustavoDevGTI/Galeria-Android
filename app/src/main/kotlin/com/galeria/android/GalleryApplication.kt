@@ -11,10 +11,6 @@ import coil3.video.VideoFrameDecoder
 import okio.Path.Companion.toPath
 
 class GalleryApplication : Application(), SingletonImageLoader.Factory, Configuration.Provider {
-    override fun attachBaseContext(base: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(base))
-    }
-
     override fun onCreate() {
         super.onCreate()
         registerActivityLifecycleCallbacks(SecurityLifecycle())

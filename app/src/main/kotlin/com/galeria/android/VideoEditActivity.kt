@@ -21,10 +21,6 @@ import java.util.concurrent.Executors
 
 @OptIn(UnstableApi::class)
 class VideoEditActivity : Activity() {
-    override fun attachBaseContext(newBase: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(newBase))
-    }
-
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private val commands = ExoPlaybackCommands()
@@ -166,7 +162,7 @@ class VideoEditActivity : Activity() {
         }
         startSeek.setOnSeekBarChangeListener(listener)
         endSeek.setOnSeekBarChangeListener(listener)
-        previewButton = EditorUi.button(this, R.drawable.ic_play, "Prévia") { previewSelection() }
+        previewButton = EditorUi.button(this, R.drawable.ic_play, getString(R.string.video_edit_preview)) { previewSelection() }
         controls.addView(previewButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 44)))
         root.addView(controls)
         setContentView(root)
@@ -204,7 +200,7 @@ class VideoEditActivity : Activity() {
         if (saving) return
         saving = true
         saveButton.isEnabled = false
-        saveButton.contentDescription = "Salvando…"
+        saveButton.contentDescription = getString(R.string.video_edit_saving)
         commands.channel?.pause()
         val range = selectedRange()
         val name = intent.getStringExtra("name").orEmpty()

@@ -46,7 +46,7 @@ class VideoMenuInstrumentedTest {
         val uri = insertEmptyVideo(context)
 
         try {
-            val intent = Intent(context, DetailActivity::class.java).apply {
+            val intent = ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", uri.toString())
                 putExtra("name", "menu-video.mp4")
                 putExtra("mime", "video/mp4")

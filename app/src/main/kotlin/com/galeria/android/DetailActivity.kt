@@ -88,45 +88,41 @@ import kotlin.math.roundToInt
 
 @OptIn(UnstableApi::class)
 class DetailActivity : ComponentActivity() {
-    override fun attachBaseContext(newBase: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(newBase))
-    }
-
-    private val operations = ActivityOperationRunner(this)
-    private val executor = Executors.newSingleThreadExecutor()
+    internal val operations = ActivityOperationRunner(this)
+    internal val executor = Executors.newSingleThreadExecutor()
     private val videoPreviewExecutor = Executors.newSingleThreadExecutor()
     private val motionPhotoExecutor = Executors.newSingleThreadExecutor()
     private val imagePreloadScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO.limitedParallelism(MAX_CONCURRENT_IMAGE_PRELOADS)
     )
-    private val imagePreloadJobs = LinkedHashMap<String, Job>()
-    private lateinit var queueController: DetailMediaQueueController
-    private lateinit var mediaActions: DetailMediaActions
-    private lateinit var metadataRepository: DetailMetadataRepository
-    private lateinit var metadataFormatter: DetailMetadataFormatter
-    private lateinit var playbackController: DetailPlaybackController
+    internal val imagePreloadJobs = LinkedHashMap<String, Job>()
+    internal lateinit var queueController: DetailMediaQueueController
+    internal lateinit var mediaActions: DetailMediaActions
+    internal lateinit var metadataRepository: DetailMetadataRepository
+    internal lateinit var metadataFormatter: DetailMetadataFormatter
+    internal lateinit var playbackController: DetailPlaybackController
     private lateinit var cinemaPreferences: CinemaModePreferences
     private lateinit var videoTrackController: VideoTrackController
-    private val mediaQueue: List<MediaItem> get() = queueController.items
-    private var currentIndex: Int
+    internal val mediaQueue: List<MediaItem> get() = queueController.items
+    internal var currentIndex: Int
         get() = queueController.currentIndex
         set(value) = queueController.setCurrentIndex(value)
     private var shuffleMode: Boolean
         get() = queueController.shuffleMode
         set(value) { queueController.shuffleMode = value }
-    private var presentationMode: Boolean
+    internal var presentationMode: Boolean
         get() = queueController.presentationMode
         set(value) { queueController.presentationMode = value }
     private var shuffleSeed: Long
         get() = queueController.shuffleSeed
         set(value) { queueController.shuffleSeed = value }
-    private val handler = Handler(Looper.getMainLooper())
-    private lateinit var prefs: SharedPreferences
+    internal val handler = Handler(Looper.getMainLooper())
+    internal lateinit var prefs: SharedPreferences
     private lateinit var content: FrameLayout
-    private var activePage: FrameLayout? = null
-    private lateinit var topBar: LinearLayout
-    private lateinit var bottomBar: LinearLayout
-    private lateinit var title: TextView
+    internal var activePage: FrameLayout? = null
+    internal lateinit var topBar: LinearLayout
+    internal lateinit var bottomBar: LinearLayout
+    internal lateinit var title: TextView
     private lateinit var fullscreenDetails: TextView
     private lateinit var currentTime: TextView
     private lateinit var durationTime: TextView
@@ -156,10 +152,10 @@ class DetailActivity : ComponentActivity() {
         )
     }
     private lateinit var actionsBar: LinearLayout
-    private lateinit var cinemaGestureIndicator: LinearLayout
+    internal lateinit var cinemaGestureIndicator: LinearLayout
     private lateinit var cinemaGestureLabel: TextView
     private lateinit var cinemaGestureProgress: ProgressBar
-    private lateinit var cinemaModeIndicator: TextView
+    internal lateinit var cinemaModeIndicator: TextView
     private lateinit var videoControls: LinearLayout
     private lateinit var timelineRow: LinearLayout
     private lateinit var videoTimeline: VideoTimelineView
@@ -222,21 +218,21 @@ class DetailActivity : ComponentActivity() {
             }
         )
     }
-    private var speedPopup: PopupWindow? = null
-    private var pendingDeleteUri: Uri? = null
-    private var pendingDeletePermanent = false
-    private var pendingHiddenCopy: File? = null
-    private var pendingMoveItem: MediaItem? = null
-    private var pendingMoveFolder: String? = null
-    private var pendingMoveDestinationKey: String? = null
-    private var pendingMoveDestinationName: String? = null
-    private val removedUris = arrayListOf<String>()
-    private val movedUris = arrayListOf<String>()
-    private var pendingRotateItem: MediaItem? = null
-    private var imageRotationRunning = false
-    private var pendingPdfItem: MediaItem? = null
-    private var pendingRenameItem: MediaItem? = null
-    private var pendingRenameName: String? = null
+    internal var speedPopup: PopupWindow? = null
+    internal var pendingDeleteUri: Uri? = null
+    internal var pendingDeletePermanent = false
+    internal var pendingHiddenCopy: File? = null
+    internal var pendingMoveItem: MediaItem? = null
+    internal var pendingMoveFolder: String? = null
+    internal var pendingMoveDestinationKey: String? = null
+    internal var pendingMoveDestinationName: String? = null
+    internal val removedUris = arrayListOf<String>()
+    internal val movedUris = arrayListOf<String>()
+    internal var pendingRotateItem: MediaItem? = null
+    internal var imageRotationRunning = false
+    internal var pendingPdfItem: MediaItem? = null
+    internal var pendingRenameItem: MediaItem? = null
+    internal var pendingRenameName: String? = null
     internal val mediaTransitionController = MediaTransitionController(object : MediaTransitionController.Scheduler {
         override fun schedule(completion: Runnable, delayMs: Long) { handler.postDelayed(completion, delayMs) }
         override fun cancel(completion: Runnable) { handler.removeCallbacks(completion) }
@@ -245,8 +241,8 @@ class DetailActivity : ComponentActivity() {
     private val swipeGestureController = ViewerSwipeGestureController()
     private val playbackSpeed: Float get() = playbackController.playbackSpeed
     private val videoMuted: Boolean get() = playbackController.muted
-    private var hudVisible = true
-    private var restoredShuffleDelayMs: Long? = null
+    internal var hudVisible = true
+    internal var restoredShuffleDelayMs: Long? = null
     private var shuffleAdvanceDeadlineMs = 0L
     private var dragPreviewPage: FrameLayout? = null
     private val dragHorizontal: Boolean get() = swipeGestureController.axis == SwipeAxis.HORIZONTAL
@@ -257,7 +253,7 @@ class DetailActivity : ComponentActivity() {
     private var lastTapY = 0f
     private var pendingSingleTap: Runnable? = null
     private var completedViewerTap = false
-    private var sourceAlbumKey: String? = null
+    internal var sourceAlbumKey: String? = null
     private val cinemaMode: Boolean get() = cinemaController.enabled
     internal val cinemaController by lazy {
         ViewerCinemaController(
@@ -301,7 +297,7 @@ class DetailActivity : ComponentActivity() {
             .start()
     }
     private var zoomed = false
-    private val imageMetadataCache = HashMap<String, DetailImageMetadata>()
+    internal val imageMetadataCache = HashMap<String, DetailImageMetadata>()
     private val gestureTouchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop.toFloat() }
     @Volatile private var preloadGeneration = 0
 
@@ -338,7 +334,7 @@ class DetailActivity : ComponentActivity() {
         val normalOrientation = viewerRotationPreference()
         if (normalOrientation != ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) requestedOrientation = normalOrientation
         cinemaPreferences = CinemaModePreferences(prefs)
-        videoTrackController = VideoTrackController(cinemaPreferences)
+        videoTrackController = VideoTrackController(cinemaPreferences, labels = TrackLabels.from(this))
         sourceAlbumKey = intent.getStringExtra("album_key")
         if (sourceAlbumKey?.let { SecurityStore(this).isSecureFolder(it) && !SecuritySession.isFolderUnlocked(it) } == true) {
             Ui.toast(this, getString(R.string.security_folder_locked))
@@ -435,7 +431,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun prepareInitialMedia(currentUri: Uri, name: String?, mime: String?, path: String?) {
-        queueController.setInitial(MediaItem(0, currentUri, name, mime, 0, 0, path, path ?: sourceAlbumKey, "Mídia"))
+        queueController.setInitial(MediaItem(0, currentUri, name, mime, 0, 0, path, path ?: sourceAlbumKey, getString(R.string.media_generic)))
     }
 
     private fun loadAlbumQueueAsync(currentUri: Uri) {
@@ -876,7 +872,7 @@ class DetailActivity : ComponentActivity() {
             ViewerStateRules.shouldLoopVideo(
                 shuffleMode,
                 presentationMode,
-                prefs.getBoolean("loop_videos", false)
+                prefs.getBoolean(GalleryPreferences.LOOP_VIDEOS, false)
             )
         Ui.showPopupOptions(
             anchor,
@@ -887,7 +883,8 @@ class DetailActivity : ComponentActivity() {
                 hasLocation = imageMetadata?.hasLocation == true,
                 cinemaMode = cinemaMode
             ),
-            widthDp = 216
+            widthDp = 216,
+            label = { ViewerMenuLabels.translate(this, it) }
         ) { selected ->
             when (selected) {
                 ViewerMenuRules.RENAME -> SecurityGate.requireFileOperation(this) { askRenameCurrentImage() }
@@ -915,16 +912,6 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun openCurrentWithAnotherApp() {
-        val item = currentItem()
-        val openWithTitle = getString(if (item.isVideo()) R.string.msg_open_video_with else R.string.msg_open_image_with)
-        try {
-            startActivity(Intent.createChooser(mediaActions.openWithIntent(item), openWithTitle))
-        } catch (_: ActivityNotFoundException) {
-            Ui.toast(this, getString(R.string.msg_no_compatible_app))
-        }
-    }
-
     private fun recognizeCurrentImageText(item: MediaItem, point: android.graphics.PointF? = null) {
         if (!item.isImage()) return
         if (point == null && closeOcrSelection()) return
@@ -938,7 +925,7 @@ class DetailActivity : ComponentActivity() {
         if (::textRecognitionButton.isInitialized) textRecognitionButton.isEnabled = true
     }
 
-    private fun closeOcrSelection(): Boolean {
+    internal fun closeOcrSelection(): Boolean {
         val selection = ocrSelection ?: return false
         selection.close()
         ocrSelection = null
@@ -976,170 +963,12 @@ class DetailActivity : ComponentActivity() {
         textRecognitionController.detect(item?.takeIf { it.isImage() }?.let(::textSource))
     }
 
-    private fun askRenameCurrentImage() {
-        val item = currentItem()
-        if (!item.isImage()) return
-        Ui.showTextInputDialog(
-            this,
-            title = getString(R.string.msg_rename_image),
-            hint = getString(R.string.msg_file_name),
-            positiveText = getString(R.string.msg_rename),
-            initialValue = item.name
-        ) { requestedName ->
-            val newName = ViewerMenuRules.normalizedRename(requestedName, item.name)
-            when {
-                newName == null -> Ui.toast(this, getString(R.string.msg_invalid_name))
-                newName == item.name -> Unit
-                else -> renameImage(item, newName, requestPermission = true)
-            }
-        }
-    }
-
-    private fun renameImage(item: MediaItem, newName: String, requestPermission: Boolean) {
-        if (operations.busy) return
-        operations.run({ runCatching { mediaActions.rename(item, newName) } }) { outcome ->
-        try {
-            val updated = outcome.getOrThrow()
-            if (updated) {
-                applyRenamedItem(item, newName)
-                pendingRenameItem = null
-                pendingRenameName = null
-                Ui.toast(this, getString(R.string.msg_image_renamed))
-            } else if (requestPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                pendingRenameItem = item
-                pendingRenameName = newName
-                MediaActions.requestWrite(this, item.uri, REQ_RENAME_WRITE)
-            } else {
-                Ui.toast(this, getString(R.string.msg_rename_failed))
-            }
-        } catch (error: SecurityException) {
-            if (!requestPermission) {
-                Ui.toast(this, getString(R.string.msg_rename_failed))
-                return@run
-            }
-            pendingRenameItem = item
-            pendingRenameName = newName
-            requestRenamePermission(item.uri, error)
-        }
-        }
-    }
-
-    private fun requestRenamePermission(uri: Uri, error: SecurityException) {
-        when {
-            Build.VERSION.SDK_INT == Build.VERSION_CODES.Q && error is RecoverableSecurityException -> {
-                startIntentSenderForResult(
-                    error.userAction.actionIntent.intentSender,
-                    REQ_RENAME_WRITE,
-                    null,
-                    0,
-                    0,
-                    0
-                )
-            }
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> MediaActions.requestWrite(this, uri, REQ_RENAME_WRITE)
-            else -> Ui.toast(this, getString(R.string.msg_rename_permission_failed))
-        }
-    }
-
-    private fun applyRenamedItem(item: MediaItem, newName: String) {
-        val currentRenamed = queueController.replace(item, mediaActions.renamedItem(item, newName))
-        if (currentRenamed) title.text = newName
-        MediaStoreRepository.invalidateCache()
-    }
-
     private fun toggleVideoLoop() {
         if (shuffleMode || !currentItem().isVideo()) return
         val enabled = !playbackController.isLooping()
-        prefs.edit().putBoolean("loop_videos", enabled).apply()
+        prefs.edit().putBoolean(GalleryPreferences.LOOP_VIDEOS, enabled).apply()
         playbackController.setLooping(enabled)
         Ui.toast(this, getString(if (enabled) R.string.msg_loop_on else R.string.msg_loop_off))
-    }
-
-    private fun showCurrentVideoInformation() {
-        val item = currentItem()
-        val playerDuration = playbackController.durationMs()
-        executor.execute {
-            val metadata = metadataRepository.readVideo(item.uri, playerDuration)
-            val information = metadataFormatter.videoSections(
-                item.metadataDescription(),
-                metadata,
-                metadataRepository.resolveMediaSize(item.uri, item.size)
-            )
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                Ui.showMetadataDialog(this, getString(R.string.msg_video_info), information)
-            }
-        }
-    }
-
-    private fun showCurrentImageInformation() {
-        val item = currentItem()
-        val key = item.uri.toString()
-        imageMetadataCache[key]?.let { metadata ->
-            showImageInformationDialog(item, metadata)
-            return
-        }
-        executor.execute {
-            val metadata = metadataRepository.readImage(item.uri).also {
-                imageMetadataCache[key] = it
-            }
-            runOnUiThread {
-                showImageInformationDialog(item, metadata)
-            }
-        }
-    }
-
-    private fun showImageInformationDialog(item: MediaItem, metadata: DetailImageMetadata) {
-        if (isFinishing || isDestroyed) return
-        Ui.showMetadataDialog(
-            this,
-            getString(R.string.msg_image_info),
-            metadataFormatter.imageSections(
-                item.metadataDescription(),
-                metadata,
-                metadataRepository.resolveMediaSize(item.uri, item.size)
-            )
-        )
-    }
-
-    private fun openCurrentImageOnMap() {
-        val item = currentItem()
-        executor.execute {
-            val key = item.uri.toString()
-            val metadata = imageMetadataCache[key] ?: metadataRepository.readImage(item.uri).also {
-                imageMetadataCache[key] = it
-            }
-            val latitude = metadata.latitude
-            val longitude = metadata.longitude
-            runOnUiThread {
-                if (latitude == null || longitude == null) {
-                    Ui.toast(this, getString(R.string.msg_no_gps))
-                    return@runOnUiThread
-                }
-                val location = Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude")
-                try {
-                    startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, location), getString(R.string.msg_show_location)))
-                } catch (_: ActivityNotFoundException) {
-                    Ui.toast(this, getString(R.string.msg_no_maps_app))
-                }
-            }
-        }
-    }
-
-    private fun startImagePresentation() {
-        val currentUri = currentItem().uri
-        val images = mediaQueue.filter { it.isImage() }
-        if (images.size < 2) {
-            Ui.toast(this, getString(R.string.msg_slideshow_needs_two))
-            return
-        }
-        queueController.retainImages(currentUri)
-        presentationMode = true
-        restoredShuffleDelayMs = null
-        scheduleAdjacentPreload()
-        scheduleShuffleAdvance()
-        if (hudVisible) toggleHud()
-        Ui.toast(this, getString(R.string.msg_slideshow_started))
     }
 
     private fun handleSwipeOrTap(event: MotionEvent): Boolean {
@@ -1341,7 +1170,7 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun cancelPendingSingleTap() {
+    internal fun cancelPendingSingleTap() {
         pendingSingleTap?.let { handler.removeCallbacks(it) }
         pendingSingleTap = null
     }
@@ -1570,7 +1399,7 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun toggleHud() {
+    internal fun toggleHud() {
         if (!::topBar.isInitialized || !::bottomBar.isInitialized) return
         hudVisible = !hudVisible
         val show = hudVisible
@@ -1595,7 +1424,7 @@ class DetailActivity : ComponentActivity() {
             .start()
     }
 
-    private fun switchItem(direction: Int, horizontal: Boolean) {
+    internal fun switchItem(direction: Int, horizontal: Boolean) {
         if (operations.busy || switchingItem || mediaQueue.size < 2) return
         cancelInteractiveSwipe()
         if (!mediaTransitionController.begin()) return
@@ -1647,7 +1476,7 @@ class DetailActivity : ComponentActivity() {
             .start()
     }
 
-    private fun loadCurrentItem() {
+    internal fun loadCurrentItem() {
         finishMediaTransition(updateUi = false)
         resetInteractiveSwipeState()
         cancelPendingSingleTap()
@@ -1744,10 +1573,10 @@ class DetailActivity : ComponentActivity() {
             loop = ViewerStateRules.shouldLoopVideo(
                 shuffleMode,
                 presentationMode,
-                prefs.getBoolean("loop_videos", false)
+                prefs.getBoolean(GalleryPreferences.LOOP_VIDEOS, false)
             ),
             defaultPlayWhenReady = shuffleMode || presentationMode ||
-                prefs.getBoolean("autoplay_videos", true),
+                prefs.getBoolean(GalleryPreferences.AUTOPLAY_VIDEOS, true),
             rememberPosition = !shuffleMode && !presentationMode,
             listener = object : DetailPlaybackController.Listener {
                 override fun onPlaybackChanged() {
@@ -1801,7 +1630,7 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
-    private fun scheduleAdjacentPreload() {
+    internal fun scheduleAdjacentPreload() {
         if (mediaQueue.size < 2) return
         val generation = ++preloadGeneration
         val centerIndex = currentIndex
@@ -1898,7 +1727,7 @@ class DetailActivity : ComponentActivity() {
             null
         }
 
-    private fun scheduleShuffleAdvance() {
+    internal fun scheduleShuffleAdvance() {
         handler.removeCallbacks(autoAdvanceRunnable)
         shuffleAdvanceDeadlineMs = 0L
         if ((!shuffleMode && !presentationMode) || switchingItem || mediaQueue.size < 2) return
@@ -2049,6 +1878,22 @@ class DetailActivity : ComponentActivity() {
     }
 
     private val rotationGesture = RotationGestureTracker()
+
+    // Results from the write permission and the PDF file picker (Activity Result API).
+    internal val renameWriteLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()) {
+        onRenameWriteResult(it.resultCode == RESULT_OK)
+    }
+    internal val rotateWriteLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()) {
+        onRotateWriteResult(it.resultCode == RESULT_OK)
+    }
+    internal val createPdfLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        val item = pendingPdfItem
+        pendingPdfItem = null
+        if (uri != null && item != null) writePdf(uri, item)
+    }
+
+    internal fun launchSender(launcher: androidx.activity.result.ActivityResultLauncher<androidx.activity.result.IntentSenderRequest>, sender: android.content.IntentSender) =
+        launcher.launch(androidx.activity.result.IntentSenderRequest.Builder(sender).build())
 
     /** "Fundo preto em tela cheia": black behind the media, or the theme background when off. */
     private fun viewerBackground(): Int =
@@ -2418,7 +2263,7 @@ class DetailActivity : ComponentActivity() {
         updatePlayPauseButton()
     }
 
-    private fun updatePlayPauseButton() {
+    internal fun updatePlayPauseButton() {
         if (::playPauseButton.isInitialized) {
             playPauseButton.setImageResource(
                 if (playbackController.isPlaying()) R.drawable.ic_pause else R.drawable.ic_play
@@ -2452,7 +2297,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     @Throws(Exception::class)
-    private fun decodeBitmap(uri: Uri, maxSide: Int): Bitmap {
+    internal fun decodeBitmap(uri: Uri, maxSide: Int): Bitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         contentResolver.openInputStream(uri).use { input ->
             BitmapFactory.decodeStream(input, null, bounds)
@@ -2530,409 +2375,6 @@ class DetailActivity : ComponentActivity() {
         )
     }
 
-    private fun shareCurrent() {
-        startActivity(Intent.createChooser(mediaActions.shareIntent(currentItem()), getString(R.string.action_share)))
-    }
-
-    private fun confirmHideCurrent() {
-        Ui.showConfirmationDialog(
-            this,
-            getString(R.string.msg_hide_file_title),
-            getString(R.string.msg_hide_file_message),
-            getString(R.string.msg_hide)
-        ) { hideCurrent() }
-    }
-
-    private fun hideCurrent() {
-        if (operations.busy) return
-        val item = currentItem()
-        pendingDeleteUri = item.uri
-        operations.run({
-            val copy = mediaActions.copyToHidden(item)
-            val result = if (copy == null) MediaActions.RESULT_FAILED else mediaActions.delete(item, REQ_HIDE_DELETE)
-            if (result == MediaActions.RESULT_FAILED) copy?.delete()
-            copy to result
-        }) { (copy, result) ->
-        pendingHiddenCopy = copy
-        if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, getString(R.string.msg_item_hidden))
-            removeDeletedItem()
-        } else if (result == MediaActions.RESULT_FAILED) {
-            pendingDeleteUri = null
-            pendingHiddenCopy = null
-            requestFileManagementAccess()
-        }
-        }
-    }
-
-    private fun askFolderForCopyOrMove(copy: Boolean, anchor: View) {
-        if (operations.busy) return
-        val item = currentItem()
-        val exposedKeys = intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)?.toList()
-        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
-        val includeHidden = exposedKeys != null && StorageAccessRules.includeHiddenFilesystem(
-            intent.getBooleanExtra("include_hidden_filesystem", false),
-            MediaActions.hasAllFilesAccess(this)
-        )
-        mediaActions.loadTargets(
-            exposedKeys,
-            hiddenKeys,
-            setOfNotNull(item.albumKey, intent.getStringExtra("album_key")),
-            includeHidden
-        ) { targets ->
-            if (operations.busy || isFinishing || !anchor.isAttachedToWindow || currentItem().uri != item.uri) return@loadTargets
-            if (targets.isEmpty()) {
-                Ui.toast(this, getString(R.string.msg_no_album))
-                return@loadTargets
-            }
-            Ui.showAlbumTargets(anchor, getString(if (copy) R.string.msg_copy_to else R.string.msg_move_to), targets) { album ->
-                if (operations.busy) return@showAlbumTargets
-                val folder = album.path.ifBlank { album.name }
-                if (copy) {
-                    copyCurrentToFolder(item, folder)
-                } else {
-                    pendingMoveDestinationKey = album.key
-                    pendingMoveDestinationName = album.name
-                    moveCurrentToFolder(item, folder)
-                }
-            }
-        }
-    }
-
-    private fun copyCurrentToFolder(item: MediaItem, folder: String) {
-        if (operations.busy) return
-        operations.run({ mediaActions.copyToFolder(item, folder) }) { result ->
-        if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, getString(R.string.msg_item_copied))
-        } else {
-            requestFileManagementAccess()
-        }
-        }
-    }
-
-    private fun moveCurrentToFolder(item: MediaItem, folder: String) {
-        if (operations.busy) return
-        pendingMoveItem = item
-        pendingMoveFolder = folder
-        operations.run({
-            val sourceFolder = MediaActions.fileFromMediaStore(this, item.uri)?.parentFile
-            val result = mediaActions.moveToFolder(item, folder)
-            result to MediaOperationNavigation.isEmptyMediaFolder(sourceFolder)
-        }) { (result, sourceEmpty) ->
-        if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, getString(R.string.msg_item_moved))
-            EmptyFolderCleaner.afterRemoval(this, listOf(item.relativePath))
-            completeMovedItem(item, folder, sourceEmpty)
-            pendingMoveItem = null
-            pendingMoveFolder = null
-        } else if (result == MediaActions.RESULT_NEEDS_PERMISSION && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            MediaActions.requestWrite(this, item.uri, REQ_MOVE_WRITE)
-        } else {
-            pendingMoveItem = null
-            pendingMoveFolder = null
-            requestFileManagementAccess()
-        }
-        }
-    }
-
-    private fun setCurrentAsWallpaper() {
-        if (currentItem().isVideo()) {
-            Ui.toast(this, getString(R.string.msg_images_only))
-            return
-        }
-        val item = currentItem()
-        executor.execute {
-            try {
-                val bitmap = decodeBitmap(item.uri, 2600)
-                WallpaperManager.getInstance(this).setBitmap(bitmap)
-                runOnUiThread { Ui.toast(this, getString(R.string.msg_wallpaper_set)) }
-            } catch (_: Exception) {
-                runOnUiThread { Ui.toast(this, getString(R.string.msg_wallpaper_failed)) }
-            }
-        }
-    }
-
-    private fun rotateCurrentImage() {
-        if (currentItem().isVideo()) {
-            Ui.toast(this, getString(R.string.msg_images_only))
-            return
-        }
-        if (imageRotationRunning || pendingRotateItem != null) return
-        if (!ImageRotation.supportsInPlace(currentItem())) {
-            Ui.toast(this, getString(R.string.image_rotate_copy_required))
-            openImageEditor(rotateClockwise = true)
-            return
-        }
-        pendingRotateItem = currentItem()
-        rotateImage(pendingRotateItem!!)
-    }
-
-    private fun rotateImage(item: MediaItem, requestPermission: Boolean = true) {
-        imageRotationRunning = true
-        executor.execute {
-            try {
-                ImageRotation.clockwise(applicationContext, item)
-                MediaContentRevision.changed(applicationContext, item.uri)
-                MediaStoreRepository.invalidateCache()
-                GalleryCatalogStore.markCatalogDirty(applicationContext)
-                // Refresh provider metadata/thumbnails when a real file path is available.
-                runCatching {
-                    MediaActions.fileFromMediaStore(this, item.uri)?.let { file ->
-                        android.media.MediaScannerConnection.scanFile(applicationContext,
-                            arrayOf(file.absolutePath), arrayOf(item.mimeType)) { _, _ ->
-                            MediaStoreRepository.invalidateCache()
-                            GalleryCatalogStore.markCatalogDirty(applicationContext)
-                        }
-                    }
-                }
-                runOnUiThread {
-                    imageRotationRunning = false
-                    pendingRotateItem = null
-                    imageMetadataCache.remove(item.uri.toString())
-                    imagePreloadJobs.values.forEach { it.cancel() }
-                    imagePreloadJobs.clear()
-                    if (!isFinishing && !isDestroyed) {
-                        Ui.toast(this, getString(R.string.image_rotate_done))
-                        if (currentItem().uri == item.uri) loadCurrentItem()
-                        scheduleAdjacentPreload()
-                    }
-                }
-            } catch (error: SecurityException) {
-                android.util.Log.w("ImageRotation", "Rotação requer permissão de gravação", error)
-                runOnUiThread {
-                    imageRotationRunning = false
-                    if (!requestPermission || !requestRotationPermission(item, error)) {
-                        pendingRotateItem = null
-                        Haptics.perform(this, Haptics.Effect.REJECT)
-                        Ui.toast(this, getString(R.string.image_rotate_permission_error))
-                    }
-                }
-            } catch (error: Exception) {
-                android.util.Log.e("ImageRotation", "Falha ao girar imagem", error)
-                runOnUiThread {
-                    imageRotationRunning = false
-                    pendingRotateItem = null
-                    Haptics.perform(this, Haptics.Effect.REJECT)
-                    Ui.toast(this, getString(R.string.image_rotate_error))
-                }
-            }
-        }
-    }
-
-    private fun requestRotationPermission(item: MediaItem, error: SecurityException): Boolean {
-        if (isFinishing || isDestroyed) return false
-        return try {
-            val sender = if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q && error is RecoverableSecurityException) {
-                error.userAction.actionIntent.intentSender
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && item.uri.scheme == "content" && item.uri.authority == MediaStore.AUTHORITY) {
-                MediaStore.createWriteRequest(contentResolver, listOf(item.uri)).intentSender
-            } else return false
-            startIntentSenderForResult(sender, REQ_ROTATE_WRITE, null, 0, 0, 0)
-            true
-        } catch (_: Exception) { false }
-    }
-
-    private fun createPdfFromCurrentImage() {
-        if (currentItem().isVideo()) {
-            Ui.toast(this, getString(R.string.msg_images_only))
-            return
-        }
-        pendingPdfItem = currentItem()
-        var name = pendingPdfItem?.name.orEmpty()
-        val dot = name.lastIndexOf('.')
-        if (dot > 0) name = name.substring(0, dot)
-        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "application/pdf"
-            putExtra(Intent.EXTRA_TITLE, "$name.pdf")
-        }
-        startActivityForResult(intent, REQ_CREATE_PDF)
-    }
-
-    private fun writePdf(outputUri: Uri, item: MediaItem) {
-        executor.execute {
-            val document = PdfDocument()
-            try {
-                val bitmap = decodeBitmap(item.uri, 2400)
-                val pageInfo = PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, 1).create()
-                val page = document.startPage(pageInfo)
-                val canvas: Canvas = page.canvas
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-                canvas.drawBitmap(bitmap, 0f, 0f, paint)
-                document.finishPage(page)
-                contentResolver.openOutputStream(outputUri).use { output ->
-                    if (output == null) throw IllegalStateException("output")
-                    document.writeTo(output)
-                }
-                runOnUiThread { Ui.toast(this, getString(R.string.msg_pdf_created)) }
-            } catch (_: Exception) {
-                runOnUiThread { Ui.toast(this, getString(R.string.msg_pdf_failed)) }
-            } finally {
-                document.close()
-            }
-        }
-    }
-
-    private fun showImageEditMenu() {
-        EditorUi.editMenu(this, listOf(
-            { openImageEditor(ImageEditActivity.MODE_CROP) },
-            { rotateCurrentImage() },
-            { openImageEditor() }
-        ))
-    }
-
-    private fun openImageEditor(mode: String = ImageEditActivity.MODE_CUSTOM, rotateClockwise: Boolean = false) {
-        if (currentItem().isVideo()) {
-            Ui.toast(this, getString(R.string.msg_images_only))
-            return
-        }
-        val item = currentItem()
-        confirmPublicEditedCopy(item) {
-            startActivity(Intent(this, ImageEditActivity::class.java).apply {
-                putExtra(ImageEditActivity.EXTRA_ROTATE_CLOCKWISE, rotateClockwise)
-                putExtra("uri", item.uri.toString())
-                putExtra("name", item.name)
-                putExtra("mime", item.mimeType)
-                putExtra(ImageEditActivity.EXTRA_MODE, mode)
-            })
-        }
-    }
-
-    private fun openCurrentEditor() {
-        if (!currentItem().isVideo()) {
-            openImageEditor()
-            return
-        }
-        val item = currentItem()
-        confirmPublicEditedCopy(item) {
-            startActivity(Intent(this, VideoEditActivity::class.java).apply {
-                putExtra("uri", item.uri.toString())
-                putExtra("name", item.name)
-            })
-        }
-    }
-
-    private fun confirmPublicEditedCopy(item: MediaItem, open: () -> Unit) {
-        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
-        val markedHidden = HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())
-            .containsNomedia(item.relativePath)
-        if (!markedHidden && !VirtualAlbumRules.isHiddenMedia(item, hiddenKeys)) {
-            open()
-            return
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.msg_edit_hidden_title))
-            .setMessage(getString(R.string.msg_edit_hidden_message))
-            .setNegativeButton(getString(R.string.action_cancel), null)
-            .setPositiveButton(getString(R.string.msg_continue)) { _, _ -> open() }
-            .show()
-    }
-
-    private fun confirmDeleteCurrent() {
-        val permanent = TrashPreferences.deletePermanently(this, sourceAlbumKey)
-        if (!permanent && GalleryPreferences.flag(this, GalleryPreferences.SKIP_DELETE_CONFIRMATION)) {
-            deleteCurrent()
-            return
-        }
-        Ui.showConfirmationDialog(
-            this,
-            if (permanent) getString(R.string.trash_delete_selected_title) else getString(R.string.move_item_to_trash_title),
-            if (permanent) getString(R.string.trash_delete_item_message)
-                else getString(R.string.move_item_to_trash_message),
-            getString(if (permanent) R.string.action_delete_permanently else R.string.action_move_to_trash)
-        ) { deleteCurrent() }
-    }
-
-    private fun deleteCurrent() {
-        if (operations.busy) return
-        val item = currentItem()
-        pendingDeleteUri = item.uri
-        val permanent = TrashPreferences.deletePermanently(this, sourceAlbumKey)
-        pendingDeletePermanent = permanent
-        operations.run({ mediaActions.delete(item, REQ_DELETE, permanent) }) { result ->
-        if (result == MediaActions.RESULT_DONE) {
-            Ui.toast(this, getString(if (permanent) R.string.album_item_deleted else R.string.item_moved_to_trash))
-            EmptyFolderCleaner.afterRemoval(this, listOf(item.relativePath))
-            removeDeletedItem()
-        } else if (result == MediaActions.RESULT_FAILED) {
-            pendingDeleteUri = null
-            requestFileManagementAccess()
-        }
-        }
-    }
-
-    private fun requestFileManagementAccess() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
-            Ui.showConfirmationDialog(
-                this,
-                getString(R.string.msg_full_access_title),
-                getString(R.string.msg_full_access_message),
-                getString(R.string.msg_allow)
-            ) { MediaActions.requestAllFilesAccess(this) }
-        } else {
-            Ui.toast(this, getString(R.string.msg_operation_failed))
-        }
-    }
-
-    private fun updateOperationResult(destinationKey: String? = null, destinationName: String? = null) {
-        setResult(RESULT_OK, Intent().apply {
-            putStringArrayListExtra(MediaOperationNavigation.EXTRA_REMOVED_URIS, ArrayList(removedUris))
-            putStringArrayListExtra(MediaOperationNavigation.EXTRA_MOVED_URIS, ArrayList(movedUris))
-            if (destinationKey != null) {
-                putExtra(MediaOperationNavigation.EXTRA_DESTINATION_KEY, destinationKey)
-                putExtra(MediaOperationNavigation.EXTRA_DESTINATION_NAME, destinationName)
-            }
-        })
-    }
-
-    private fun completeMovedItem(item: MediaItem, folder: String, sourceEmpty: Boolean) {
-        movedUris.add(item.uri.toString())
-        val sourceKey = intent.getStringExtra("album_key")
-        if (!sourceKey.isNullOrEmpty() && !VirtualAlbumRules.remainsAfterMove(sourceKey) &&
-            sourceEmpty) {
-            val key = pendingMoveDestinationKey ?: MediaActions.destinationRelativePath(folder, item.isVideo())
-            val name = pendingMoveDestinationName ?: key.trimEnd('/').substringAfterLast('/')
-            updateOperationResult(key, name)
-            if (callingActivity == null) {
-                startActivity(MediaOperationNavigation.destinationIntent(this, intent, key, name))
-            }
-            finish()
-        } else {
-            updateOperationResult()
-            removeDeletedItem(moved = true)
-        }
-    }
-
-    private fun restoreCurrent() {
-        if (operations.busy) return
-        val item = currentItem()
-        pendingDeleteUri = item.uri
-        operations.run({ MediaActions.requestRestore(this, item.uri, REQ_RESTORE) }) { result ->
-        when (result) {
-            MediaActions.RESULT_DONE -> {
-                Ui.toast(this, getString(R.string.item_restored))
-                removeDeletedItem()
-            }
-            MediaActions.RESULT_FAILED -> pendingDeleteUri = null
-        }
-        }
-    }
-
-    private fun removeDeletedItem(moved: Boolean = false) {
-        MediaStoreRepository.invalidateCache()
-        GalleryCatalogStore.markCatalogDirty(applicationContext)
-        if (!moved) {
-            removedUris.add(currentItem().uri.toString())
-            updateOperationResult()
-        }
-        pendingDeleteUri = null
-        if (!queueController.removeCurrent()) {
-            finish()
-            return
-        }
-        loadCurrentItem()
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_DELETE) {
@@ -2977,41 +2419,16 @@ class DetailActivity : ComponentActivity() {
             }
             pendingMoveItem = null
             pendingMoveFolder = null
-        } else if (requestCode == REQ_RENAME_WRITE) {
-            val item = pendingRenameItem
-            val name = pendingRenameName
-            if (resultCode == RESULT_OK && item != null && name != null) {
-                renameImage(item, name, requestPermission = false)
-            } else {
-                Ui.toast(this, getString(R.string.msg_rename_cancelled))
-            }
-            pendingRenameItem = null
-            pendingRenameName = null
-        } else if (requestCode == REQ_ROTATE_WRITE) {
-            val item = pendingRotateItem
-            if (resultCode == RESULT_OK && item != null) {
-                rotateImage(item, requestPermission = false)
-            } else {
-                pendingRotateItem = null
-                Ui.toast(this, getString(R.string.msg_rotation_cancelled))
-            }
-        } else if (requestCode == REQ_CREATE_PDF) {
-            val item = pendingPdfItem
-            val uri = data?.data
-            if (resultCode == RESULT_OK && uri != null && item != null) {
-                writePdf(uri, item)
-            }
-            pendingPdfItem = null
         }
     }
 
-    private fun currentItem(): MediaItem = queueController.current()
+    internal fun currentItem(): MediaItem = queueController.current()
 
     private fun cinemaAlbumKey(item: MediaItem): String =
         if (sourceAlbumKey?.let(VirtualAlbumRules::isVirtual) == true) item.albumKey
         else sourceAlbumKey ?: item.albumKey
 
-    private fun MediaItem.metadataDescription(): DetailMediaMetadata = DetailMediaMetadata(
+    internal fun MediaItem.metadataDescription(): DetailMediaMetadata = DetailMediaMetadata(
         name = name,
         mimeType = mimeType,
         relativePath = relativePath,
@@ -3034,7 +2451,7 @@ class DetailActivity : ComponentActivity() {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
             }
         }
-        if (prefs.getBoolean("fullscreen_max_brightness", false)) {
+        if (prefs.getBoolean(GalleryPreferences.FULLSCREEN_MAX_BRIGHTNESS, false)) {
             val params = window.attributes
             params.screenBrightness = 1f
             window.attributes = params
@@ -3143,195 +2560,14 @@ class DetailActivity : ComponentActivity() {
         if (isInPictureInPictureModeCompat()) playbackController.pauseForLifecycle()
     }
 
-    private fun isInPictureInPictureModeCompat(): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode
-
-    // "Playing" here means the user asked the video to play: a short looping video passes through
-    // brief ended/buffering moments where isPlaying is false, and back must still go to the thumbnail.
-    private fun videoActiveForPictureInPicture(): Boolean {
-        val player = playbackController.player() ?: return false
-        return player.playWhenReady && player.playbackState != androidx.media3.common.Player.STATE_ENDED
-    }
-
-    private fun pictureInPictureSupported(): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
-
-    private fun enterPictureInPictureIfPlaying(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
-        val allowed = DetailPictureInPictureRules.shouldEnter(
-            supported = pictureInPictureSupported(),
-            isVideo = mediaQueue.getOrNull(currentIndex)?.isVideo() == true,
-            playing = videoActiveForPictureInPicture(),
-            alreadyInPictureInPicture = isInPictureInPictureModeCompat(),
-            finishing = isFinishing
-        )
-        if (!allowed) return false
-        closeOcrSelection()
-        speedPopup?.dismiss()
-        cancelPendingSingleTap()
-        // Hide the bars before shrinking so they never appear inside the thumbnail or its animation.
-        pictureInPictureShownPlaying = true
-        Haptics.perform(this, Haptics.Effect.THRESHOLD)
-        hideViewerChromeForPictureInPicture()
-        val entered = try {
-            enterPictureInPictureMode(pictureInPictureParams())
-        } catch (_: IllegalStateException) {
-            false
-        } catch (_: IllegalArgumentException) {
-            false
-        }
-        if (entered) registerPictureInPictureControls() else restoreViewerChromeAfterPictureInPicture()
-        return entered
-    }
-
-    @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
-    private fun pictureInPictureParams(): android.app.PictureInPictureParams {
-        val (shownWidth, shownHeight) = videoDisplaySize()
-        val (width, height) = DetailPictureInPictureRules.aspectRatio(shownWidth, shownHeight)
-        pictureInPictureShownRatio = width to height
-        val playing = videoActiveForPictureInPicture()
-        val label = getString(if (playing) R.string.video_pause else R.string.video_play)
-        fun action(requestCode: Int, command: Int, icon: Int, text: String) = android.app.RemoteAction(
-            android.graphics.drawable.Icon.createWithResource(this, icon),
-            text,
-            text,
-            android.app.PendingIntent.getBroadcast(
-                this,
-                requestCode,
-                Intent(ACTION_PICTURE_IN_PICTURE_TOGGLE).setPackage(packageName)
-                    .putExtra(EXTRA_PICTURE_IN_PICTURE_COMMAND, command),
-                android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-            )
-        )
-        val toggle = action(0, PIP_COMMAND_TOGGLE, if (playing) R.drawable.ic_pause else R.drawable.ic_play, label)
-        // Android lays the buttons out in a row: previous, play/pause in the center, next.
-        val actions = if (mediaQueue.size > 1) {
-            listOf(
-                action(1, PIP_COMMAND_PREVIOUS, R.drawable.ic_skip_previous, getString(R.string.viewer_previous_media)),
-                toggle,
-                action(2, PIP_COMMAND_NEXT, R.drawable.ic_skip_next, getString(R.string.viewer_next_media))
-            )
-        } else listOf(toggle)
-        return android.app.PictureInPictureParams.Builder()
-            .setAspectRatio(android.util.Rational(width, height))
-            .setActions(actions)
-            // Where the video is on screen: Android animates from it instead of showing the app icon.
-            .apply { videoSourceRect()?.let { setSourceRectHint(it) } }
-            .build()
-    }
-
     // Last play state sent to the thumbnail. Re-sending the same buttons on every player
     // callback makes Android rebuild them constantly and the user's tap gets lost.
-    private var pictureInPictureShownPlaying: Boolean? = null
+    internal var pictureInPictureShownPlaying: Boolean? = null
 
-    private fun updatePictureInPictureActions() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || !isInPictureInPictureModeCompat()) return
-        val playing = videoActiveForPictureInPicture()
-        val (shownWidth, shownHeight) = videoDisplaySize()
-        val ratio = DetailPictureInPictureRules.aspectRatio(shownWidth, shownHeight)
-        if (pictureInPictureShownPlaying == playing && pictureInPictureShownRatio == ratio) return
-        pictureInPictureShownPlaying = playing
-        runCatching { setPictureInPictureParams(pictureInPictureParams()) }
-    }
+    internal var pictureInPictureShownRatio: Pair<Int, Int>? = null
 
-    private var pictureInPictureShownRatio: Pair<Int, Int>? = null
-
-    /**
-     * Shape of the video exactly as the viewer shows it, so a vertical video gets a vertical thumbnail.
-     * The player frame already applies rotation and pixel shape; the decoder size is the fallback.
-     */
-    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-    private fun videoDisplaySize(): Pair<Int, Int> {
-        val frame = activePage?.findViewWithTag<PlayerView>("detail_video_player")
-            ?.findViewById<AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame)
-        if (frame != null && frame.width > 0 && frame.height > 0) return frame.width to frame.height
-        val size = playbackController.player()?.videoSize ?: return 0 to 0
-        @Suppress("DEPRECATION")
-        return DetailPictureInPictureRules.orientedSize(
-            size.width, size.height, size.pixelWidthHeightRatio, size.unappliedRotationDegrees
-        )
-    }
-
-    /** The video frame in window coordinates, or null when it is not on screen. */
-    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-    private fun videoSourceRect(): android.graphics.Rect? {
-        val frame = activePage?.findViewWithTag<PlayerView>("detail_video_player")
-            ?.findViewById<AspectRatioFrameLayout>(androidx.media3.ui.R.id.exo_content_frame) ?: return null
-        val rect = android.graphics.Rect()
-        return rect.takeIf { frame.getGlobalVisibleRect(it) && !it.isEmpty }
-    }
-
-    private var pictureInPictureReceiver: android.content.BroadcastReceiver? = null
-    private val viewsHiddenForPictureInPicture = mutableListOf<Pair<View, Int>>()
-
-    private fun registerPictureInPictureControls() {
-        if (pictureInPictureReceiver != null) return
-        val receiver = object : android.content.BroadcastReceiver() {
-            override fun onReceive(context: android.content.Context, intent: Intent) {
-                if (intent.action != ACTION_PICTURE_IN_PICTURE_TOGGLE) return
-                when (intent.getIntExtra(EXTRA_PICTURE_IN_PICTURE_COMMAND, PIP_COMMAND_TOGGLE)) {
-                    PIP_COMMAND_PREVIOUS -> switchFromPictureInPicture(-1)
-                    PIP_COMMAND_NEXT -> switchFromPictureInPicture(1)
-                    else -> {
-                        playbackController.setPlaying(!videoActiveForPictureInPicture())
-                        updatePlayPauseButton()
-                        updatePictureInPictureActions()
-                    }
-                }
-            }
-        }
-        androidx.core.content.ContextCompat.registerReceiver(
-            this,
-            receiver,
-            android.content.IntentFilter(ACTION_PICTURE_IN_PICTURE_TOGGLE),
-            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-        pictureInPictureReceiver = receiver
-    }
-
-    private fun switchFromPictureInPicture(direction: Int) {
-        switchItem(direction, true)
-        // The new media has its own shape and play state: resend the thumbnail buttons once it settles.
-        handler.postDelayed({
-            pictureInPictureShownPlaying = null
-            updatePictureInPictureActions()
-        }, PIP_SWITCH_REFRESH_MS)
-    }
-
-    private fun unregisterPictureInPictureControls() {
-        pictureInPictureReceiver?.let { runCatching { unregisterReceiver(it) } }
-        pictureInPictureReceiver = null
-    }
-
-    private fun hideViewerChromeForPictureInPicture() {
-        // Already hidden right before entering: keep the visibility saved at that moment.
-        if (viewsHiddenForPictureInPicture.isNotEmpty()) return
-        val chrome = listOfNotNull(
-            topBar.takeIf { ::topBar.isInitialized },
-            bottomBar.takeIf { ::bottomBar.isInitialized },
-            cinemaGestureIndicator.takeIf { ::cinemaGestureIndicator.isInitialized },
-            cinemaModeIndicator.takeIf { ::cinemaModeIndicator.isInitialized }
-        )
-        for (view in chrome) {
-            viewsHiddenForPictureInPicture += view to view.visibility
-            view.visibility = View.GONE
-        }
-    }
-
-    private fun restoreViewerChromeAfterPictureInPicture() {
-        cancelPendingSingleTap()
-        // Back from the thumbnail the controls are always shown, so a tap delivered while
-        // expanding cannot leave the viewer without its bars.
-        hudVisible = true
-        for ((view, visibility) in viewsHiddenForPictureInPicture) {
-            view.animate().cancel()
-            view.alpha = 1f
-            view.visibility = if (view === topBar || view === bottomBar) View.VISIBLE else visibility
-        }
-        viewsHiddenForPictureInPicture.clear()
-        updatePlayPauseButton()
-    }
+    internal var pictureInPictureReceiver: android.content.BroadcastReceiver? = null
+    internal val viewsHiddenForPictureInPicture = mutableListOf<Pair<View, Int>>()
 
     override fun onPause() {
         endHoldSpeed()
@@ -3398,6 +2634,14 @@ class DetailActivity : ComponentActivity() {
     private val systemBars by lazy { SystemBarInsets(this) }
 
     /** Keeps the top and bottom bars clear of the status and navigation bars. */
+    /** Bars and indicators hidden while the viewer is a floating thumbnail (only those already built). */
+    internal fun pictureInPictureChrome(): List<View> = listOfNotNull(
+        if (::topBar.isInitialized) topBar else null,
+        if (::bottomBar.isInitialized) bottomBar else null,
+        if (::cinemaGestureIndicator.isInitialized) cinemaGestureIndicator else null,
+        if (::cinemaModeIndicator.isInitialized) cinemaModeIndicator else null
+    )
+
     private fun applyBarInsets() {
         topBar.setPadding(
             Ui.dp(this, 8), systemBars.top + Ui.dp(this, 6),
@@ -3410,19 +2654,16 @@ class DetailActivity : ComponentActivity() {
     }
 
     companion object {
-        private const val ACTION_PICTURE_IN_PICTURE_TOGGLE = "com.galeria.android.PICTURE_IN_PICTURE_TOGGLE"
-        private const val EXTRA_PICTURE_IN_PICTURE_COMMAND = "command"
-        private const val PIP_COMMAND_TOGGLE = 0
-        private const val PIP_COMMAND_PREVIOUS = 1
-        private const val PIP_COMMAND_NEXT = 2
-        private const val PIP_SWITCH_REFRESH_MS = 700L
-        private const val REQ_DELETE = 31
-        private const val REQ_RESTORE = 36
-        private const val REQ_HIDE_DELETE = 32
-        private const val REQ_MOVE_WRITE = 33
-        private const val REQ_ROTATE_WRITE = 34
-        private const val REQ_CREATE_PDF = 35
-        private const val REQ_RENAME_WRITE = 36
+        internal const val ACTION_PICTURE_IN_PICTURE_TOGGLE = "com.galeria.android.PICTURE_IN_PICTURE_TOGGLE"
+        internal const val EXTRA_PICTURE_IN_PICTURE_COMMAND = "command"
+        internal const val PIP_COMMAND_TOGGLE = 0
+        internal const val PIP_COMMAND_PREVIOUS = 1
+        internal const val PIP_COMMAND_NEXT = 2
+        internal const val PIP_SWITCH_REFRESH_MS = 700L
+        internal const val REQ_DELETE = 31
+        internal const val REQ_RESTORE = 36
+        internal const val REQ_HIDE_DELETE = 32
+        internal const val REQ_MOVE_WRITE = 33
         private const val SHUFFLE_PHOTO_DELAY_MS = 4200L
         private const val DOUBLE_TAP_MS = 260L
         private const val PRELOAD_AROUND_RADIUS = 5

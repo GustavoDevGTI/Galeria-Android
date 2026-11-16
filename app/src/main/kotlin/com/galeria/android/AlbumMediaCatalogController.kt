@@ -51,7 +51,7 @@ class AlbumMediaCatalogController(context: Context) {
         pagingJob?.cancel()
         if (AlbumMediaRules.shouldUsePaging(options.albumKey, options.groupMode, options.selectionMode)) {
             val userHiddenKeys = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
-                .getStringSet("hidden_folder_keys", emptySet()).orEmpty().toSet() +
+                .getStringSet(GalleryPreferences.HIDDEN_FOLDER_KEYS, emptySet()).orEmpty().toSet() +
                 // Secure folders never leak into Recents or other views that gather every folder.
                 SecurityStore(appContext).secureFolderKeys()
             val aggregateAlbum = options.albumKey == null || options.albumKey == "all_media" ||

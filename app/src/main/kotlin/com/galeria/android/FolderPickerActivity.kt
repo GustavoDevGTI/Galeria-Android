@@ -18,10 +18,6 @@ import java.io.File
 import java.util.concurrent.Executors
 
 class FolderPickerActivity : Activity() {
-    override fun attachBaseContext(newBase: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(newBase))
-    }
-
     private lateinit var rootDir: File
     private lateinit var currentDir: File
     private lateinit var adapter: FolderAdapter
@@ -148,7 +144,7 @@ class FolderPickerActivity : Activity() {
             this,
             getString(R.string.msg_create_new_folder),
             getString(R.string.msg_folder_name),
-            positiveText = "Criar"
+            positiveText = getString(R.string.folder_create)
         ) { name ->
             createFolder(name)
         }
@@ -167,7 +163,7 @@ class FolderPickerActivity : Activity() {
                 this,
                 getString(R.string.msg_file_access_title),
                 getString(R.string.msg_file_access_message),
-                "Permitir"
+                getString(R.string.action_allow)
             ) { MediaActions.requestAllFilesAccess(this) }
             return
         }

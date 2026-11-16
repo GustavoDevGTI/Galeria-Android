@@ -59,7 +59,7 @@ class VideoEditInstrumentedTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val source = insertSample(context)
         try {
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", source.toString())
                 putExtra("name", "sample.mp4")
                 putExtra("mime", "video/mp4")

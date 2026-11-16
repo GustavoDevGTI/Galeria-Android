@@ -55,7 +55,7 @@ class ImageMenuInstrumentedTest {
         assertTrue(albumItems.any { it.name == secondName })
 
         try {
-            val intent = Intent(context, DetailActivity::class.java).apply {
+            val intent = ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", firstUri.toString())
                 putExtra("name", "menu-first-$suffix.png")
                 putExtra("mime", "image/png")

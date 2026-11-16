@@ -25,10 +25,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 
 class SettingsActivity : Activity() {
-    override fun attachBaseContext(newBase: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(newBase))
-    }
-
     private lateinit var prefs: SharedPreferences
     private lateinit var content: LinearLayout
     private lateinit var root: LinearLayout
@@ -112,7 +108,6 @@ class SettingsActivity : Activity() {
         addColorChoice()
 
         addSection(getString(R.string.settings_section_general))
-        addOption(getString(R.string.settings_language), languageLabel()) { chooseLanguage() }
         addChoice(getString(R.string.settings_date_time_format), ChoicePreferences.DATE_TIME, R.array.settings_date_time_values)
         addSwitch(
             getString(R.string.settings_use_trash),
@@ -144,48 +139,48 @@ class SettingsActivity : Activity() {
         ) { wantOn, commit, revert ->
             if (wantOn) SecurityGate.requireHiddenAccess(this, onCancel = revert, action = commit) else commit()
         }
-        addSwitch(getString(R.string.settings_search_all_files), getString(R.string.settings_search_all_files_hint), "search_all_files", false, null)
+        addSwitch(getString(R.string.settings_search_all_files), getString(R.string.settings_search_all_files_hint), GalleryPreferences.SEARCH_ALL_FILES, false, null)
 
         addSection(getString(R.string.settings_section_photos))
         addOption(getString(R.string.settings_photo_filter), getString(R.string.settings_photo_filter_hint), null)
 
         addSection(getString(R.string.settings_section_videos))
-        addSwitch(getString(R.string.settings_autoplay_videos), getString(R.string.settings_autoplay_videos_hint), "autoplay_videos", true, null)
-        addSwitch(getString(R.string.settings_remember_video_position), getString(R.string.settings_remember_video_position_hint), "remember_video_position", true, null)
-        addSwitch(getString(R.string.settings_loop_videos), getString(R.string.settings_loop_videos_hint), "loop_videos", false, null)
-        addSwitch(getString(R.string.settings_video_separate_screen), getString(R.string.settings_video_separate_screen_hint), "video_separate_screen", GalleryPreferences.defaultOf("video_separate_screen"), null)
-        addSwitch(getString(R.string.settings_video_vertical_gestures), getString(R.string.settings_video_vertical_gestures_hint), "video_vertical_gestures", GalleryPreferences.defaultOf("video_vertical_gestures"), null)
+        addSwitch(getString(R.string.settings_autoplay_videos), getString(R.string.settings_autoplay_videos_hint), GalleryPreferences.AUTOPLAY_VIDEOS, true, null)
+        addSwitch(getString(R.string.settings_remember_video_position), getString(R.string.settings_remember_video_position_hint), GalleryPreferences.REMEMBER_VIDEO_POSITION, true, null)
+        addSwitch(getString(R.string.settings_loop_videos), getString(R.string.settings_loop_videos_hint), GalleryPreferences.LOOP_VIDEOS, false, null)
+        addSwitch(getString(R.string.settings_video_separate_screen), getString(R.string.settings_video_separate_screen_hint), GalleryPreferences.VIDEO_SEPARATE_SCREEN, GalleryPreferences.defaultOf(GalleryPreferences.VIDEO_SEPARATE_SCREEN), null)
+        addSwitch(getString(R.string.settings_video_vertical_gestures), getString(R.string.settings_video_vertical_gestures_hint), GalleryPreferences.VIDEO_VERTICAL_GESTURES, GalleryPreferences.defaultOf(GalleryPreferences.VIDEO_VERTICAL_GESTURES), null)
 
         addSection(getString(R.string.settings_section_thumbnails))
-        addSwitch(getString(R.string.settings_crop_square_thumbnails), getString(R.string.settings_crop_square_thumbnails_hint), "crop_square_thumbnails", GalleryPreferences.defaultOf("crop_square_thumbnails"), null)
-        addSwitch(getString(R.string.settings_animate_gif_thumbnails), getString(R.string.settings_animate_gif_thumbnails_hint), "animate_gif_thumbnails", GalleryPreferences.defaultOf("animate_gif_thumbnails"), null)
+        addSwitch(getString(R.string.settings_crop_square_thumbnails), getString(R.string.settings_crop_square_thumbnails_hint), GalleryPreferences.CROP_SQUARE_THUMBNAILS, GalleryPreferences.defaultOf(GalleryPreferences.CROP_SQUARE_THUMBNAILS), null)
+        addSwitch(getString(R.string.settings_animate_gif_thumbnails), getString(R.string.settings_animate_gif_thumbnails_hint), GalleryPreferences.ANIMATE_GIF_THUMBNAILS, GalleryPreferences.defaultOf(GalleryPreferences.ANIMATE_GIF_THUMBNAILS), null)
         addChoice(getString(R.string.settings_file_thumbnail_style), ChoicePreferences.FILE_THUMBNAIL, R.array.settings_file_thumbnail_values)
         addChoice(getString(R.string.settings_folder_thumbnail_style), ChoicePreferences.FOLDER_THUMBNAIL, R.array.settings_folder_thumbnail_values)
         cacheSubtitle = addOption(getString(R.string.settings_clear_cache), "…") { clearCache() }
         measureCache()
 
         addSection(getString(R.string.settings_section_scrolling))
-        addSwitch(getString(R.string.settings_horizontal_thumbnail_scroll), getString(R.string.settings_horizontal_thumbnail_scroll_hint), "horizontal_thumbnail_scroll", GalleryPreferences.defaultOf("horizontal_thumbnail_scroll"), null)
-        addSwitch(getString(R.string.settings_pull_to_refresh), getString(R.string.settings_pull_to_refresh_hint), "pull_to_refresh", GalleryPreferences.defaultOf("pull_to_refresh"), null)
+        addSwitch(getString(R.string.settings_horizontal_thumbnail_scroll), getString(R.string.settings_horizontal_thumbnail_scroll_hint), GalleryPreferences.HORIZONTAL_THUMBNAIL_SCROLL, GalleryPreferences.defaultOf(GalleryPreferences.HORIZONTAL_THUMBNAIL_SCROLL), null)
+        addSwitch(getString(R.string.settings_pull_to_refresh), getString(R.string.settings_pull_to_refresh_hint), GalleryPreferences.PULL_TO_REFRESH, GalleryPreferences.defaultOf(GalleryPreferences.PULL_TO_REFRESH), null)
 
         addSection(getString(R.string.settings_section_fullscreen_media))
-        addSwitch(getString(R.string.settings_fullscreen_max_brightness), getString(R.string.settings_fullscreen_max_brightness_hint), "fullscreen_max_brightness", false, null)
-        addSwitch(getString(R.string.settings_fullscreen_black_bg), getString(R.string.settings_fullscreen_black_bg_hint), "fullscreen_black_bg", GalleryPreferences.defaultOf("fullscreen_black_bg"), null)
-        addSwitch(getString(R.string.settings_fullscreen_hide_system_ui), getString(R.string.settings_fullscreen_hide_system_ui_hint), "fullscreen_hide_system_ui", GalleryPreferences.defaultOf("fullscreen_hide_system_ui"), null)
-        addSwitch(getString(R.string.settings_tap_sides_change_media), getString(R.string.settings_tap_sides_change_media_hint), "tap_sides_change_media", GalleryPreferences.defaultOf("tap_sides_change_media"), null)
-        addSwitch(getString(R.string.settings_vertical_brightness_gesture), getString(R.string.settings_vertical_brightness_gesture_hint), "vertical_brightness_gesture", GalleryPreferences.defaultOf("vertical_brightness_gesture"), null)
-        addSwitch(getString(R.string.settings_swipe_down_to_close), getString(R.string.settings_swipe_down_to_close_hint), "swipe_down_to_close", GalleryPreferences.defaultOf("swipe_down_to_close"), null)
-        addSwitch(getString(R.string.settings_show_display_cutout), getString(R.string.settings_show_display_cutout_hint), "show_display_cutout", GalleryPreferences.defaultOf("show_display_cutout"), null)
+        addSwitch(getString(R.string.settings_fullscreen_max_brightness), getString(R.string.settings_fullscreen_max_brightness_hint), GalleryPreferences.FULLSCREEN_MAX_BRIGHTNESS, false, null)
+        addSwitch(getString(R.string.settings_fullscreen_black_bg), getString(R.string.settings_fullscreen_black_bg_hint), GalleryPreferences.FULLSCREEN_BLACK_BG, GalleryPreferences.defaultOf(GalleryPreferences.FULLSCREEN_BLACK_BG), null)
+        addSwitch(getString(R.string.settings_fullscreen_hide_system_ui), getString(R.string.settings_fullscreen_hide_system_ui_hint), GalleryPreferences.FULLSCREEN_HIDE_SYSTEM_UI, GalleryPreferences.defaultOf(GalleryPreferences.FULLSCREEN_HIDE_SYSTEM_UI), null)
+        addSwitch(getString(R.string.settings_tap_sides_change_media), getString(R.string.settings_tap_sides_change_media_hint), GalleryPreferences.TAP_SIDES_CHANGE_MEDIA, GalleryPreferences.defaultOf(GalleryPreferences.TAP_SIDES_CHANGE_MEDIA), null)
+        addSwitch(getString(R.string.settings_vertical_brightness_gesture), getString(R.string.settings_vertical_brightness_gesture_hint), GalleryPreferences.VERTICAL_BRIGHTNESS_GESTURE, GalleryPreferences.defaultOf(GalleryPreferences.VERTICAL_BRIGHTNESS_GESTURE), null)
+        addSwitch(getString(R.string.settings_swipe_down_to_close), getString(R.string.settings_swipe_down_to_close_hint), GalleryPreferences.SWIPE_DOWN_TO_CLOSE, GalleryPreferences.defaultOf(GalleryPreferences.SWIPE_DOWN_TO_CLOSE), null)
+        addSwitch(getString(R.string.settings_show_display_cutout), getString(R.string.settings_show_display_cutout_hint), GalleryPreferences.SHOW_DISPLAY_CUTOUT, GalleryPreferences.defaultOf(GalleryPreferences.SHOW_DISPLAY_CUTOUT), null)
         addChoice(getString(R.string.settings_rotation), ChoicePreferences.ROTATION, R.array.settings_rotation_values)
 
         addSection(getString(R.string.settings_section_deep_image_zoom))
-        addSwitch(getString(R.string.settings_deep_image_zoom), getString(R.string.settings_deep_image_zoom_hint), "deep_image_zoom", GalleryPreferences.defaultOf("deep_image_zoom"), null)
-        addSwitch(getString(R.string.settings_image_rotation_gestures), getString(R.string.settings_image_rotation_gestures_hint), "image_rotation_gestures", GalleryPreferences.defaultOf("image_rotation_gestures"), null)
-        addSwitch(getString(R.string.settings_best_image_quality), getString(R.string.settings_best_image_quality_hint), "best_image_quality", GalleryPreferences.defaultOf("best_image_quality"), null)
-        addSwitch(getString(R.string.settings_double_double_tap_zoom), getString(R.string.settings_double_double_tap_zoom_hint), "double_double_tap_zoom", GalleryPreferences.defaultOf("double_double_tap_zoom"), null)
+        addSwitch(getString(R.string.settings_deep_image_zoom), getString(R.string.settings_deep_image_zoom_hint), GalleryPreferences.DEEP_IMAGE_ZOOM, GalleryPreferences.defaultOf(GalleryPreferences.DEEP_IMAGE_ZOOM), null)
+        addSwitch(getString(R.string.settings_image_rotation_gestures), getString(R.string.settings_image_rotation_gestures_hint), GalleryPreferences.IMAGE_ROTATION_GESTURES, GalleryPreferences.defaultOf(GalleryPreferences.IMAGE_ROTATION_GESTURES), null)
+        addSwitch(getString(R.string.settings_best_image_quality), getString(R.string.settings_best_image_quality_hint), GalleryPreferences.BEST_IMAGE_QUALITY, GalleryPreferences.defaultOf(GalleryPreferences.BEST_IMAGE_QUALITY), null)
+        addSwitch(getString(R.string.settings_double_double_tap_zoom), getString(R.string.settings_double_double_tap_zoom_hint), GalleryPreferences.DOUBLE_DOUBLE_TAP_ZOOM, GalleryPreferences.defaultOf(GalleryPreferences.DOUBLE_DOUBLE_TAP_ZOOM), null)
 
         addSection(getString(R.string.settings_section_additional_details))
-        addSwitch(getString(R.string.settings_show_fullscreen_details), getString(R.string.settings_show_fullscreen_details_hint), "show_fullscreen_details", GalleryPreferences.defaultOf("show_fullscreen_details"), null)
+        addSwitch(getString(R.string.settings_show_fullscreen_details), getString(R.string.settings_show_fullscreen_details_hint), GalleryPreferences.SHOW_FULLSCREEN_DETAILS, GalleryPreferences.defaultOf(GalleryPreferences.SHOW_FULLSCREEN_DETAILS), null)
 
         addSection(getString(R.string.settings_section_security))
         val security = SecurityStore(prefs)
@@ -207,12 +202,12 @@ class SettingsActivity : Activity() {
         ) { manageSecureFolders() }
 
         addSection(getString(R.string.settings_section_file_operations))
-        addSwitch(getString(R.string.settings_delete_empty_folders), getString(R.string.settings_delete_empty_folders_hint), "delete_empty_folders", GalleryPreferences.defaultOf("delete_empty_folders"), null)
-        addSwitch(getString(R.string.settings_keep_modified_date), getString(R.string.settings_keep_modified_date_hint), "keep_modified_date", GalleryPreferences.defaultOf("keep_modified_date"), null)
-        addSwitch(getString(R.string.settings_skip_delete_confirmation), getString(R.string.settings_skip_delete_confirmation_hint), "skip_delete_confirmation", GalleryPreferences.defaultOf("skip_delete_confirmation"), null)
+        addSwitch(getString(R.string.settings_delete_empty_folders), getString(R.string.settings_delete_empty_folders_hint), GalleryPreferences.DELETE_EMPTY_FOLDERS, GalleryPreferences.defaultOf(GalleryPreferences.DELETE_EMPTY_FOLDERS), null)
+        addSwitch(getString(R.string.settings_keep_modified_date), getString(R.string.settings_keep_modified_date_hint), GalleryPreferences.KEEP_MODIFIED_DATE, GalleryPreferences.defaultOf(GalleryPreferences.KEEP_MODIFIED_DATE), null)
+        addSwitch(getString(R.string.settings_skip_delete_confirmation), getString(R.string.settings_skip_delete_confirmation_hint), GalleryPreferences.SKIP_DELETE_CONFIRMATION, GalleryPreferences.defaultOf(GalleryPreferences.SKIP_DELETE_CONFIRMATION), null)
 
         addSection(getString(R.string.settings_section_bottom_bar))
-        addSwitch(getString(R.string.settings_show_bottom_actions), getString(R.string.settings_show_bottom_actions_hint), "show_bottom_actions", GalleryPreferences.defaultOf("show_bottom_actions"), null)
+        addSwitch(getString(R.string.settings_show_bottom_actions), getString(R.string.settings_show_bottom_actions_hint), GalleryPreferences.SHOW_BOTTOM_ACTIONS, GalleryPreferences.defaultOf(GalleryPreferences.SHOW_BOTTOM_ACTIONS), null)
         addOption(getString(R.string.settings_manage_visible_buttons), getString(R.string.settings_manage_visible_buttons_hint), null)
 
         addSection(getString(R.string.settings_section_migrating))
@@ -628,24 +623,7 @@ class SettingsActivity : Activity() {
             }
         }
 
-    private fun languageLabel(): String =
-        when (prefs.getString("language", "pt")) {
-            "en" -> getString(R.string.settings_language_english)
-            "es" -> getString(R.string.settings_language_spanish)
-            else -> getString(R.string.settings_language_portuguese)
-        }
-
-    private fun chooseLanguage() {
-        val labels = resources.getStringArray(R.array.settings_language_values)
-        val values = arrayOf("pt", "en", "es")
-        val current = prefs.getString("language", "pt")
-        val checked = values.indexOf(current).takeIf { it >= 0 } ?: 0
-        Ui.showChoiceDialog(this, getString(R.string.settings_language), labels, checked) { which ->
-            AppLanguage.change(this, values[which])
-        }
-    }
-
-    /** A list setting stored as a fixed code; the label shown follows the app language. */
+    /** A list setting stored as a fixed code; the label shown follows the phone language. */
     private fun addChoice(title: String, spec: ChoiceSpec, labelsRes: Int) {
         val labels = resources.getStringArray(labelsRes)
         addOption(title, labels[ChoicePreferences.index(this, spec)]) {

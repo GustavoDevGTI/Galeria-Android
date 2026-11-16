@@ -161,7 +161,7 @@ object MediaStoreRepository {
         // A physical album must not wait for a device-wide dirty catalog or scan.
         if (isPhysicalAlbum(albumKey)) return queryAlbumMedia(context, albumKey!!, includeHiddenFilesystem)
         val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
-        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty() +
+        val hiddenKeys = prefs.getStringSet(GalleryPreferences.HIDDEN_FOLDER_KEYS, emptySet()).orEmpty() +
             SecurityStore(prefs).secureFolderKeys()
         if (albumKey == VirtualAlbumRules.TRASH_KEY) {
             val trash = loadTrashedMedia(context)
@@ -382,8 +382,9 @@ object MediaStoreRepository {
                 selection.append(" AND ${MediaStore.MediaColumns.RELATIVE_PATH} = ?")
                 args.add(albumKey)
             } else {
+                // LIKE only narrows the search; each row is checked for the exact folder below.
                 selection.append(" AND (${MediaStore.MediaColumns.DATA} LIKE ? OR ${MediaStore.MediaColumns.BUCKET_ID} = ?)")
-                args.add("%${albumKey.trimEnd('/')}%")
+                args.add("%/${albumKey.trim('/')}/%")
                 args.add(albumKey)
             }
         }
@@ -433,6 +434,9 @@ object MediaStoreRepository {
                         pathFromData(if (dataIndex >= 0) cursor.getString(dataIndex) else null)
                     }
                     val bucketId = cursor.getString(bucketIdIndex)
+                    // Android 9 and older: "Cam" must not pull media from "Camera" or from subfolders.
+                    if (pathIndex < 0 && !albumKey.isNullOrEmpty() &&
+                        !AlbumRules.sameFolder(relativePath, albumKey) && bucketId != albumKey) continue
                     val bucketName = cursor.getString(bucketNameIndex)
                     val albumKey = if (relativePath.isNullOrEmpty()) bucketId else relativePath
                     val albumName = cleanAlbumName(relativePath, bucketName)
@@ -461,7 +465,7 @@ object MediaStoreRepository {
 
     private fun favoriteUris(context: Context): Set<String> =
         context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
-            .getStringSet("favorites", emptySet()).orEmpty()
+            .getStringSet(GalleryPreferences.FAVORITES, emptySet()).orEmpty()
 
     private fun loadFromHiddenFilesystem(context: Context, output: MutableList<MediaItem>, allFilesAccess: Boolean) {
         if (!allFilesAccess) {

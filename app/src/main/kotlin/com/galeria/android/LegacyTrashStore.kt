@@ -73,7 +73,7 @@ object LegacyTrashStore {
                     file.length(),
                     relativeFolder,
                     relativeFolder,
-                    originalFolder?.name ?: "Lixeira"
+                    originalFolder?.name ?: context.getString(R.string.album_trash)
                 )
             )
         }

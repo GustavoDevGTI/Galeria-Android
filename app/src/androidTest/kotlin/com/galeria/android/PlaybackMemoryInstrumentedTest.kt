@@ -122,7 +122,7 @@ class PlaybackMemoryInstrumentedTest {
     }
 
     private fun launchVideo(context: Context, uri: android.net.Uri): ActivityScenario<DetailActivity> =
-        ActivityScenario.launch(Intent(context, DetailActivity::class.java).apply {
+        ActivityScenario.launch(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
             putExtra("uri", uri.toString())
             putExtra("name", "playback-memory.mp4")
             putExtra("mime", "video/mp4")

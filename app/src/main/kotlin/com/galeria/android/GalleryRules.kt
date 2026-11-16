@@ -161,6 +161,12 @@ object MediaIdentityRules {
 }
 
 object AlbumRules {
+    /** Same folder, ignoring the slashes around it and letter case ("DCIM/Cam" is not "DCIM/Camera"). */
+    fun sameFolder(relativePath: String?, albumKey: String?): Boolean {
+        if (relativePath.isNullOrBlank() || albumKey.isNullOrBlank()) return false
+        return relativePath.trim('/').equals(albumKey.trim('/'), ignoreCase = true)
+    }
+
     const val SORT_NAME = "name"
     const val SORT_PATH = "path"
     const val SORT_SIZE = "size"
@@ -349,7 +355,8 @@ object AlbumCatalogRules {
         includeHidden: Boolean,
         searchAllFiles: Boolean,
         temporarilyVisibleKeys: Set<String> = emptySet(),
-        naturallyHiddenKeys: Set<String> = emptySet()
+        naturallyHiddenKeys: Set<String> = emptySet(),
+        allFilesName: String = "Todos os arquivos"
     ): List<AlbumItem> {
         val visible = source.filter { album ->
             (album.key in temporarilyVisibleKeys || album.key !in hiddenKeys) &&
@@ -369,7 +376,7 @@ object AlbumCatalogRules {
         return listOf(
             AlbumItem(
                 "all_media",
-                "Todos os arquivos",
+                allFilesName,
                 publicAlbums.sumOf { it.count },
                 latestAlbum?.cover,
                 latest,

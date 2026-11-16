@@ -44,9 +44,37 @@ internal object GalleryPreferences {
     const val FILE_THUMB_STYLE = "file_thumb_style"
 
     // General
-    const val LANGUAGE = "language"
     const val DATE_TIME_FORMAT = "date_time_format"
     const val LOADING_PRIORITY = "loading_priority"
+    const val FOLDER_THUMB_STYLE = "folder_thumb_style"
+    const val ROTATION_CRITERION = "rotation_criterion"
+
+    // Videos
+    const val AUTOPLAY_VIDEOS = "autoplay_videos"
+    const val REMEMBER_VIDEO_POSITION = "remember_video_position"
+    const val LOOP_VIDEOS = "loop_videos"
+    const val FULLSCREEN_MAX_BRIGHTNESS = "fullscreen_max_brightness"
+
+    // Library: hidden folders, favorites and how lists are shown
+    const val HIDDEN_FOLDER_KEYS = "hidden_folder_keys"
+    const val SHOW_HIDDEN_FOLDERS = "show_hidden_folders"
+    const val SEARCH_ALL_FILES = "search_all_files"
+    const val FAVORITES = "favorites"
+    const val ORGANIZER_CREATED_FOLDERS = "organizer_created_folders"
+    const val COLUMN_COUNT = "column_count"
+    const val ALBUM_SPACING_DP = "album_spacing_dp"
+
+    // Sorting and filters (global on the main screen, or per album through AlbumCoverRules.optionKey)
+    const val SORT_MODE = "sort_mode"
+    const val SORT_DESC = "sort_desc"
+    const val FILTER_IMAGES = "filter_images"
+    const val FILTER_VIDEOS = "filter_videos"
+    const val FILTER_GIFS = "filter_gifs"
+    const val FILTER_RAW = "filter_raw"
+    /** Main screen SVG filter; albums use [ALBUM_FILTER_SVG]. Two names kept for saved values. */
+    const val FILTER_SVGS = "filter_svgs"
+    const val ALBUM_FILTER_SVG = "filter_svg"
+    const val FILTER_PORTRAITS = "filter_portraits"
 
     /** Defaults match the switches in Settings, so reading a value never disagrees with what the user sees. */
     private val booleanDefaults = mapOf(

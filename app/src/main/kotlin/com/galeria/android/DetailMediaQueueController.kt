@@ -116,15 +116,15 @@ class DetailMediaQueueController(context: Context) {
             items,
             AlbumMediaPreparationOptions(
                 MediaFilterOptions(
-                    prefs.getBoolean(key("filter_images"), true),
-                    prefs.getBoolean(key("filter_videos"), true),
-                    prefs.getBoolean(key("filter_gifs"), true),
-                    prefs.getBoolean(key("filter_raw"), true),
-                    prefs.getBoolean(key("filter_svg"), true)
+                    prefs.getBoolean(key(GalleryPreferences.FILTER_IMAGES), true),
+                    prefs.getBoolean(key(GalleryPreferences.FILTER_VIDEOS), true),
+                    prefs.getBoolean(key(GalleryPreferences.FILTER_GIFS), true),
+                    prefs.getBoolean(key(GalleryPreferences.FILTER_RAW), true),
+                    prefs.getBoolean(key(GalleryPreferences.ALBUM_FILTER_SVG), true)
                 ),
                 prefs.getString(key("group_mode"), AlbumMediaRules.GROUP_NONE) ?: AlbumMediaRules.GROUP_NONE,
-                prefs.getString(key("sort_mode"), defaultSort) ?: defaultSort,
-                prefs.getBoolean(key("sort_desc"), true)
+                prefs.getString(key(GalleryPreferences.SORT_MODE), defaultSort) ?: defaultSort,
+                prefs.getBoolean(key(GalleryPreferences.SORT_DESC), true)
             ),
             GalleryCatalogStore.migrateLegacyOrder(appContext, albumKey)
         )

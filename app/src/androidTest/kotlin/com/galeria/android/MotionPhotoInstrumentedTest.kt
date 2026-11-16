@@ -76,7 +76,7 @@ class MotionPhotoInstrumentedTest {
         assertTrue(extracted.length() > 100L)
         assertEquals(sizeBefore, photo.length())
 
-        ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+        ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
             putExtra("uri", Uri.fromFile(photo).toString())
             putExtra("name", photo.name)
             putExtra("mime", "image/jpeg")

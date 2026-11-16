@@ -54,12 +54,12 @@ internal class OrganizerController(context: Context,
                 val markers = AutomaticHiddenAlbums.keys(app, available,
                     HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
                 val visible = AlbumTargetRules.orderedTargets(available, exposed,
-                    prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty() + markers,
+                    prefs.getStringSet(GalleryPreferences.HIDDEN_FOLDER_KEYS, emptySet()).orEmpty() + markers,
                     emptySet(), AlbumRules.SORT_NAME, false)
                     .filter { MediaStoreRepository.isPhysicalAlbum(it.key) }
                 val root = Environment.getExternalStorageDirectory().canonicalFile
-                val hidden = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
-                val remembered = prefs.getStringSet("organizer_created_folders", emptySet()).orEmpty()
+                val hidden = prefs.getStringSet(GalleryPreferences.HIDDEN_FOLDER_KEYS, emptySet()).orEmpty()
+                val remembered = prefs.getStringSet(GalleryPreferences.ORGANIZER_CREATED_FOLDERS, emptySet()).orEmpty()
                     .filter { key -> key !in hidden && (key in exposed.orEmpty() || (!AlbumRules.isHidden(key, key) && !HiddenDirectoryMarkers(root).containsNomedia(key))) }
                     .mapNotNull { key ->
                         val folder = File(root, key).canonicalFile
@@ -82,8 +82,8 @@ internal class OrganizerController(context: Context,
 
     fun addFolder(album: AlbumItem) {
         if (albums.none { it.key == album.key }) albums = albums + album
-        prefs.edit { putStringSet("organizer_created_folders",
-            prefs.getStringSet("organizer_created_folders", emptySet()).orEmpty() + album.key) }
+        prefs.edit { putStringSet(GalleryPreferences.ORGANIZER_CREATED_FOLDERS,
+            prefs.getStringSet(GalleryPreferences.ORGANIZER_CREATED_FOLDERS, emptySet()).orEmpty() + album.key) }
         notifyChange()
     }
 

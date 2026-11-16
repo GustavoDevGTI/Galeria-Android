@@ -40,7 +40,7 @@ internal object VideoTrimExporter {
         val resolver = context.contentResolver
         require(name.endsWith(".mp4", ignoreCase = true) || name.endsWith(".m4v", ignoreCase = true) ||
             resolver.getType(source)?.equals("video/mp4", ignoreCase = true) == true) {
-            "Para não perder trilhas, o corte está disponível apenas para arquivos MP4."
+            context.getString(R.string.trim_error_mp4_only)
         }
         val probe = MediaExtractor()
         val extractor = MediaExtractor()
@@ -54,19 +54,19 @@ internal object VideoTrimExporter {
             probe.setDataSource(context, source, null)
             val formats = (0 until probe.trackCount).map(probe::getTrackFormat)
             val videoTrack = formats.indexOfFirst { it.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true }
-            require(videoTrack >= 0) { "Este arquivo não contém vídeo editável." }
+            require(videoTrack >= 0) { context.getString(R.string.trim_error_no_video) }
             require(formats.all {
                 val mime = it.getString(MediaFormat.KEY_MIME).orEmpty()
                 mime.startsWith("video/") || mime.startsWith("audio/")
-            }) { "Este vídeo contém legendas ou trilhas que não podem ser preservadas no corte." }
+            }) { context.getString(R.string.trim_error_tracks) }
             require(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O || formats.size <= 2) {
-                "Este Android não permite preservar todas as trilhas deste vídeo."
+                context.getString(R.string.trim_error_android)
             }
             probe.selectTrack(videoTrack)
             probe.seekTo(startMs * 1000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             val actualStartUs = probe.sampleTime.coerceAtLeast(0L)
             val endUs = endMs * 1000L
-            require(endUs > actualStartUs) { "Escolha um intervalo maior para cortar." }
+            require(endUs > actualStartUs) { context.getString(R.string.trim_error_short_range) }
 
             val outputName = VideoTrimRules.outputName(name, System.currentTimeMillis())
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -75,13 +75,13 @@ internal object VideoTrimExporter {
                     put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
                     put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/Galeria Editada/")
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
-                }) ?: throw IllegalStateException("Não foi possível criar o vídeo editado.")
+                }) ?: throw IllegalStateException(context.getString(R.string.trim_error_create))
                 outputDescriptor = resolver.openFileDescriptor(outputUri, "rw")
-                    ?: throw IllegalStateException("Não foi possível abrir o destino do vídeo.")
+                    ?: throw IllegalStateException(context.getString(R.string.trim_error_destination))
                 muxer = MediaMuxer(outputDescriptor.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             } else {
                 val folder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Galeria Editada")
-                if (!folder.exists() && !folder.mkdirs()) throw IllegalStateException("Sem acesso para salvar o vídeo editado.")
+                if (!folder.exists() && !folder.mkdirs()) throw IllegalStateException(context.getString(R.string.trim_error_no_access))
                 outputFile = File(folder, outputName)
                 muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             }
@@ -118,10 +118,10 @@ internal object VideoTrimExporter {
                     buffer.clear()
                     val size = extractor.readSampleData(buffer, 0)
                     if (size < 0) break
-                    if (size == buffer.capacity()) throw IllegalStateException("Amostra maior que o limite suportado.")
+                    if (size == buffer.capacity()) throw IllegalStateException(context.getString(R.string.trim_error_sample_too_big))
                     val sampleFlags = extractor.sampleFlags
                     require(sampleFlags and MediaExtractor.SAMPLE_FLAG_ENCRYPTED == 0) {
-                        "Não é possível cortar vídeo com amostras protegidas."
+                        context.getString(R.string.trim_error_protected)
                     }
                     var codecFlags = 0
                     if (sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) {
@@ -136,7 +136,7 @@ internal object VideoTrimExporter {
                 }
                 if (!extractor.advance()) break
             }
-            require(wroteVideo) { "Nenhum quadro de vídeo foi encontrado no intervalo." }
+            require(wroteVideo) { context.getString(R.string.trim_error_no_frames) }
             muxer.stop()
             muxerStarted = false
             muxer.release()

@@ -38,7 +38,7 @@ class DetailMediaActions(
     }
 
     fun isFavorite(item: MediaItem): Boolean =
-        prefs.getStringSet("favorites", emptySet()).orEmpty().any { MediaIdentityRules.sameUri(it, item.uri.toString()) }
+        prefs.getStringSet(GalleryPreferences.FAVORITES, emptySet()).orEmpty().any { MediaIdentityRules.sameUri(it, item.uri.toString()) }
 
     @Throws(SecurityException::class)
     fun rename(item: MediaItem, newName: String): Boolean =
@@ -93,8 +93,8 @@ class DetailMediaActions(
                     exposedKeys,
                     hiddenKeys + markerKeys,
                     excludedKeys,
-                    prefs.getString("sort_mode", AlbumRules.SORT_MODIFIED) ?: AlbumRules.SORT_MODIFIED,
-                    prefs.getBoolean("sort_desc", true)
+                    prefs.getString(GalleryPreferences.SORT_MODE, AlbumRules.SORT_MODIFIED) ?: AlbumRules.SORT_MODIFIED,
+                    prefs.getBoolean(GalleryPreferences.SORT_DESC, true)
                 )
             }
             activity.runOnUiThread {

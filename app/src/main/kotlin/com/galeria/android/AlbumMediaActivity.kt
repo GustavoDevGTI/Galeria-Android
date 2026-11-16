@@ -50,27 +50,23 @@ import kotlin.math.max
 import kotlin.math.min
 
 class AlbumMediaActivity : ComponentActivity() {
-    override fun attachBaseContext(newBase: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(newBase))
-    }
-
-    private val operations = ActivityOperationRunner(this)
-    private lateinit var adapter: MediaRecyclerAdapter
+    internal val operations = ActivityOperationRunner(this)
+    internal lateinit var adapter: MediaRecyclerAdapter
     private lateinit var grid: AccessibleRecyclerView
     private lateinit var fastScroller: AlbumFastScroller
-    private lateinit var swipeRefresh: SwipeRefreshLayout
+    internal lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var layoutManager: GridLayoutManager
-    private lateinit var searchInput: EditText
+    internal lateinit var searchInput: EditText
     private lateinit var searchBox: LinearLayout
     private lateinit var selectAllChip: TextView
-    private lateinit var moreButton: ImageButton
+    internal lateinit var moreButton: ImageButton
     private lateinit var emptyView: TextView
     private lateinit var catalogLoadingView: LoadingIndicatorView
-    private var albumKey: String? = null
+    internal var albumKey: String? = null
     private var albumName: String = ""
-    private lateinit var prefs: SharedPreferences
-    private lateinit var cinemaPreferences: CinemaModePreferences
-    private var gridSpacingDp = 3
+    internal lateinit var prefs: SharedPreferences
+    internal lateinit var cinemaPreferences: CinemaModePreferences
+    internal var gridSpacingDp = 3
     private var gridColumnCount = 0
     private val gridGestureController = AlbumGridGestureController()
     private var gridTouchDownX = 0f
@@ -91,18 +87,18 @@ class AlbumMediaActivity : ComponentActivity() {
     private lateinit var selectAllText: TextView
     private var spacingDecoration: RecyclerView.ItemDecoration? = null
     private var dragMoved = false
-    private var showImages = true
-    private var showVideos = true
-    private var showGifs = true
-    private var showRaw = true
-    private var showSvgs = true
-    private var listMode = false
-    private var groupMode = GROUP_NONE
-    private var mediaSortMode = MediaSortRules.SORT_CUSTOM
-    private var mediaSortDescending = true
-    private var choosingAlbumCover = false
-    private lateinit var catalogController: AlbumMediaCatalogController
-    private lateinit var selectionCoordinator: AlbumSelectionActions
+    internal var showImages = true
+    internal var showVideos = true
+    internal var showGifs = true
+    internal var showRaw = true
+    internal var showSvgs = true
+    internal var listMode = false
+    internal var groupMode = GROUP_NONE
+    internal var mediaSortMode = MediaSortRules.SORT_CUSTOM
+    internal var mediaSortDescending = true
+    internal var choosingAlbumCover = false
+    internal lateinit var catalogController: AlbumMediaCatalogController
+    internal lateinit var selectionCoordinator: AlbumSelectionActions
     private var pendingPagedScrollPosition = -1
     private var gridScrollState = RecyclerView.SCROLL_STATE_IDLE
     private var pendingPagingData: PagingData<MediaItem>? = null
@@ -112,15 +108,15 @@ class AlbumMediaActivity : ComponentActivity() {
     private var gridPoolWarmupRemaining = 0
     private var warmedGridPoolViewType = -1
     private var firstResume = true
-    private val completedRemovalUris = hashSetOf<String>()
-    private var pendingDeletePermanent = false
+    internal val completedRemovalUris = hashSetOf<String>()
+    internal var pendingDeletePermanent = false
     private var folderObserver: android.os.FileObserver? = null
     private val createdAtElapsedRealtime = SystemClock.elapsedRealtime()
     private val searchHandler = Handler(Looper.getMainLooper())
     private val searchReload = Runnable {
         if (!isFinishing) loadMedia(false)
     }
-    private val mediaRefreshHandler = Handler(Looper.getMainLooper())
+    internal val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val mediaRefreshRunnable = Runnable {
         mediaRefreshScheduled = false
         if (!isFinishing && !isDestroyed) {
@@ -671,83 +667,12 @@ class AlbumMediaActivity : ComponentActivity() {
         adapter.notifyItemRangeChanged(0, adapter.itemCount)
     }
 
-    private fun showFolderMenu(anchor: View) {
-        val filter = getString(R.string.action_filter_media)
-        val viewMode = getString(R.string.album_view_mode)
-        val group = getString(R.string.album_group_by)
-        val createFolder = getString(R.string.action_create_folder)
-        val random = getString(R.string.album_random)
-        val spacing = getString(R.string.album_grid_spacing)
-        val cinemaMode = getString(R.string.album_cinema_mode)
-        val trashVisibility = getString(
-            if (GalleryPreferences.hiddenFlag(this, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)) R.string.trash_hide_hidden
-            else R.string.trash_show_hidden
-        )
-        val chooseCover = getString(R.string.album_choose_cover)
-        val automaticCover = getString(R.string.album_automatic_cover)
-        val hasManualCover = prefs.contains(AlbumCoverRules.preferenceKey(albumKey ?: "all_media"))
-        val options = buildList {
-            add(filter)
-            addAll(listOf(group, viewMode))
-            if (albumKey != VirtualAlbumRules.TRASH_KEY) addAll(listOf(createFolder, random))
-            if (albumKey != VirtualAlbumRules.TRASH_KEY) add(chooseCover)
-            if (albumKey != VirtualAlbumRules.TRASH_KEY && hasManualCover) add(automaticCover)
-            if (albumKey == VirtualAlbumRules.TRASH_KEY) add(trashVisibility)
-            add(spacing)
-            if (CinemaModeRules.supportsAlbum(albumKey)) add(cinemaMode)
-        }
-        Ui.showPopupOptions(
-            anchor,
-            options,
-            selectedItems = if (cinemaPreferences.isEnabled(albumKey)) setOf(cinemaMode) else emptySet()
-        ) { selected ->
-            when (selected) {
-                filter -> showMediaFilterDialog()
-                viewMode -> showViewModeDialog()
-                group -> showGroupDialog()
-                createFolder -> showCreateFolderDialog()
-                random -> startRandomPlayback()
-                chooseCover -> {
-                    choosingAlbumCover = true
-                    searchInput.setText("")
-                    searchInput.clearFocus()
-                    hideKeyboard()
-                    searchInput.isEnabled = false
-                    updateSearchPresentation()
-                    Ui.toast(this, getString(R.string.album_choose_cover_hint))
-                }
-                automaticCover -> {
-                    prefs.edit().remove(AlbumCoverRules.preferenceKey(albumKey ?: "all_media")).apply()
-                    Ui.toast(this, getString(R.string.album_automatic_cover_saved))
-                }
-                trashVisibility -> {
-                    val showHidden = !GalleryPreferences.hiddenFlag(this, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)
-                    val apply = {
-                        prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, showHidden).apply()
-                        loadMedia(true)
-                    }
-                    if (showHidden) SecurityGate.requireHiddenAccess(this, action = apply) else apply()
-                }
-                spacing -> showSpacingDialog()
-                cinemaMode -> toggleAlbumCinemaMode()
-            }
-        }
-    }
-
-    private fun toggleAlbumCinemaMode() {
-        val enabled = cinemaPreferences.toggle(albumKey)
-        Ui.toast(
-            this,
-            getString(if (enabled) R.string.album_cinema_mode_enabled else R.string.album_cinema_mode_disabled)
-        )
-    }
-
     private fun readAlbumOptions() {
-        showImages = prefs.getBoolean(optionKey("filter_images"), true)
-        showVideos = prefs.getBoolean(optionKey("filter_videos"), true)
-        showGifs = prefs.getBoolean(optionKey("filter_gifs"), true)
-        showRaw = prefs.getBoolean(optionKey("filter_raw"), true)
-        showSvgs = prefs.getBoolean(optionKey("filter_svg"), true)
+        showImages = prefs.getBoolean(optionKey(GalleryPreferences.FILTER_IMAGES), true)
+        showVideos = prefs.getBoolean(optionKey(GalleryPreferences.FILTER_VIDEOS), true)
+        showGifs = prefs.getBoolean(optionKey(GalleryPreferences.FILTER_GIFS), true)
+        showRaw = prefs.getBoolean(optionKey(GalleryPreferences.FILTER_RAW), true)
+        showSvgs = prefs.getBoolean(optionKey(GalleryPreferences.ALBUM_FILTER_SVG), true)
         listMode = prefs.getBoolean(optionKey("list_mode"), false)
         gridColumnCount = GridColumnRules.normalized(
             prefs.getInt(PREF_GRID_COLUMNS, 0),
@@ -756,116 +681,11 @@ class AlbumMediaActivity : ComponentActivity() {
         groupMode = prefs.getString(optionKey("group_mode"), GROUP_NONE) ?: GROUP_NONE
         val chronological = albumKey == VirtualAlbumRules.RECENT_KEY || albumKey == VirtualAlbumRules.TRASH_KEY
         val defaultSort = if (chronological) MediaSortRules.SORT_DATE else MediaSortRules.SORT_CUSTOM
-        mediaSortMode = prefs.getString(optionKey("sort_mode"), defaultSort) ?: defaultSort
-        mediaSortDescending = prefs.getBoolean(optionKey("sort_desc"), true)
+        mediaSortMode = prefs.getString(optionKey(GalleryPreferences.SORT_MODE), defaultSort) ?: defaultSort
+        mediaSortDescending = prefs.getBoolean(optionKey(GalleryPreferences.SORT_DESC), true)
     }
 
-    private fun showMediaFilterDialog() {
-        val labels = resources.getStringArray(R.array.album_media_filter_labels)
-        val checked = booleanArrayOf(showImages, showVideos, showGifs, showRaw, showSvgs)
-        Ui.showMultiChoiceDialog(this, getString(R.string.action_filter_media), labels, checked) { selected ->
-            showImages = selected[0]
-            showVideos = selected[1]
-            showGifs = selected[2]
-            showRaw = selected[3]
-            showSvgs = selected[4]
-            prefs.edit()
-                .putBoolean(optionKey("filter_images"), showImages)
-                .putBoolean(optionKey("filter_videos"), showVideos)
-                .putBoolean(optionKey("filter_gifs"), showGifs)
-                .putBoolean(optionKey("filter_raw"), showRaw)
-                .putBoolean(optionKey("filter_svg"), showSvgs)
-                .apply()
-            loadMedia(true)
-        }
-    }
-
-    private fun showGroupDialog() {
-        val labels = resources.getStringArray(R.array.album_group_labels)
-        val values = arrayOf(GROUP_NONE, GROUP_TYPE, GROUP_EXTENSION, GROUP_DAY, GROUP_MONTH)
-        var choice = values.indexOf(groupMode).takeIf { it >= 0 } ?: 0
-        Ui.showChoiceDialog(this, getString(R.string.album_group_by), labels, choice) { which ->
-            choice = which
-            groupMode = values[choice]
-            prefs.edit().putString(optionKey("group_mode"), groupMode).apply()
-            loadMedia(true)
-        }
-    }
-
-    private fun showViewModeDialog() {
-        val labels = resources.getStringArray(R.array.album_view_mode_labels)
-        var choice = if (listMode) 1 else 0
-        Ui.showChoiceDialog(this, getString(R.string.album_view_mode), labels, choice) { which ->
-            choice = which
-            listMode = choice == 1
-            prefs.edit().putBoolean(optionKey("list_mode"), listMode).apply()
-            applyViewMode()
-        }
-    }
-
-    private fun showCreateFolderDialog() {
-        Ui.showTextInputDialog(
-            this,
-            getString(R.string.action_create_folder),
-            getString(R.string.field_title),
-            message = folderDisplayPath()
-        ) { name ->
-            createFolder(name)
-        }
-    }
-
-    private fun showSpacingDialog() {
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = Ui.rounded(Ui.menuSurface(this@AlbumMediaActivity), 16, this@AlbumMediaActivity, Ui.menuBorder(this@AlbumMediaActivity), 1)
-            clipToOutline = true
-            setPadding(
-                Ui.dp(this@AlbumMediaActivity, 24),
-                Ui.dp(this@AlbumMediaActivity, 20),
-                Ui.dp(this@AlbumMediaActivity, 24),
-                Ui.dp(this@AlbumMediaActivity, 12)
-            )
-        }
-        panel.addView(
-            TextView(this).apply {
-                setText(R.string.album_grid_spacing)
-                textSize = 18f
-                setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-                setTextColor(Ui.menuText(this@AlbumMediaActivity))
-            },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        )
-        val hint = TextView(this).apply {
-            setText(R.string.album_grid_spacing_hint)
-            textSize = 13f
-            setTextColor(Ui.menuText(this@AlbumMediaActivity))
-            alpha = 0.78f
-            gravity = Gravity.START
-            setPadding(0, Ui.dp(this@AlbumMediaActivity, 6), 0, Ui.dp(this@AlbumMediaActivity, 12))
-        }
-        panel.addView(hint, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        val seekBar = SeekBar(this).apply {
-            max = MAX_GRID_SPACING_DP
-            progress = MAX_GRID_SPACING_DP - gridSpacingDp
-            progressTintList = android.content.res.ColorStateList.valueOf(Ui.accent(this@AlbumMediaActivity))
-            thumbTintList = android.content.res.ColorStateList.valueOf(Ui.accent(this@AlbumMediaActivity))
-            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Ui.muted(this@AlbumMediaActivity))
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
-                    gridSpacingDp = MAX_GRID_SPACING_DP - progress
-                    applyGridSpacing()
-                    prefs.edit().putInt(spacingKey(), gridSpacingDp).apply()
-                }
-                override fun onStartTrackingTouch(bar: SeekBar?) = Unit
-                override fun onStopTrackingTouch(bar: SeekBar?) = Unit
-            })
-        }
-        panel.addView(seekBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48)))
-        val dialog = AlertDialog.Builder(this).setView(panel).create()
-        Ui.showSidePanel(dialog)
-    }
-
-    private fun applyGridSpacing() {
+    internal fun applyGridSpacing() {
         if (!::grid.isInitialized) return
         val gap = Ui.dp(this, gridSpacingDp)
         spacingDecoration?.let(grid::removeItemDecoration)
@@ -882,7 +702,7 @@ class AlbumMediaActivity : ComponentActivity() {
         adapter.setSelectionMode(true)
     }
 
-    private fun exitSelectionMode() {
+    internal fun exitSelectionMode() {
         val wasSelecting = adapter.isSelectionMode()
         gridGestureController.endSelection()
         if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = pullToRefreshEnabled()
@@ -942,7 +762,7 @@ class AlbumMediaActivity : ComponentActivity() {
         finish()
     }
 
-    private fun updateSearchPresentation() {
+    internal fun updateSearchPresentation() {
         if (!::searchInput.isInitialized || !::searchBox.isInitialized) return
         val selecting = ::adapter.isInitialized && adapter.isSelectionMode() && adapter.selectedCount() > 0
         val searching = !selecting && (searchInput.hasFocus() || searchInput.text.isNotEmpty())
@@ -968,7 +788,7 @@ class AlbumMediaActivity : ComponentActivity() {
         searchInput.setCompoundDrawablesRelativeWithIntrinsicBounds(searchIcon, null, null, null)
     }
 
-    private fun hideKeyboard() {
+    internal fun hideKeyboard() {
         val inputManager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         inputManager.hideSoftInputFromWindow(searchInput.windowToken, 0)
     }
@@ -982,186 +802,7 @@ class AlbumMediaActivity : ComponentActivity() {
         }
     }
 
-    private fun shareSelected() {
-        val selected = adapter.selectedItems()
-        val share = selectionCoordinator.shareIntent(selected) ?: return
-        startActivity(Intent.createChooser(share, getString(R.string.action_share)))
-        ShareLimit.warnIfLimited(this, selected.size)
-    }
-
-    private fun favoriteSelected() {
-        val selected = adapter.selectedItems()
-        val added = selectionCoordinator.addToFavorites(selected)
-        if (added == 0) return
-        Ui.toast(this, resources.getQuantityString(R.plurals.items_added_to_favorites, added, added))
-        exitSelectionMode()
-    }
-
-    private fun confirmDeleteSelected() {
-        val selected = adapter.selectedItems()
-        if (selected.isEmpty()) return
-        val permanent = TrashPreferences.deletePermanently(this, albumKey)
-        // Skipping the question is only allowed when the media goes to the trash and can come back.
-        if (!permanent && GalleryPreferences.flag(this, GalleryPreferences.SKIP_DELETE_CONFIRMATION)) {
-            deleteSelected(selected, false)
-            return
-        }
-        Ui.showConfirmationDialog(
-            this,
-            getString(if (permanent) R.string.trash_delete_selected_title else R.string.album_delete_selected_title),
-            if (permanent) {
-                getString(
-                    R.string.trash_delete_selected_message,
-                    resources.getQuantityString(R.plurals.files_count, selected.size, selected.size)
-                )
-            } else {
-                getString(
-                    R.string.album_delete_selected_message,
-                    resources.getQuantityString(R.plurals.files_count, selected.size, selected.size)
-                )
-            },
-            getString(if (permanent) R.string.action_delete_permanently else R.string.action_move_to_trash)
-        ) { deleteSelected(selected, permanent) }
-    }
-
-    private fun deleteSelected(selected: List<MediaItem>, permanent: Boolean = false) {
-        if (operations.busy) return
-        if (AlbumMediaRules.requiresFileManagement(
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
-                MediaActions.hasAllFilesAccess(this)
-            )
-        ) {
-            requestFileManagementAccess()
-            return
-        }
-        pendingDeletePermanent = permanent || !TrashPreferences.isEnabled(this)
-        val deletePermanently = pendingDeletePermanent
-        operations.run({
-            if (deletePermanently) selectionCoordinator.permanentlyDelete(selected, REQ_DELETE)
-            else selectionCoordinator.delete(selected, REQ_DELETE)
-        }) { result ->
-        EmptyFolderCleaner.afterRemoval(this, result.completedItems.map { it.relativePath })
-        completedRemovalUris.addAll(result.completedItems.map { MediaIdentityRules.canonicalKey(it.uri.toString()) })
-        adapter.removeCompletedItems(result.completedItems.map { it.uri.toString() })
-        updateEmptyState()
-        Ui.toast(
-            this,
-            resources.getQuantityString(
-                if (pendingDeletePermanent) R.plurals.items_deleted else R.plurals.items_moved_to_trash,
-                result.completed,
-                result.completed
-            )
-        )
-        exitSelectionMode()
-        if (result.completed > 0) finishIfAlbumEmpty()
-        }
-    }
-
-    private fun restoreSelected() {
-        if (operations.busy) return
-        val selected = adapter.selectedItems()
-        if (selected.isEmpty()) return
-        operations.run({ selectionCoordinator.restore(selected, REQ_RESTORE) }) { result ->
-        completedRemovalUris.addAll(result.completedItems.map { MediaIdentityRules.canonicalKey(it.uri.toString()) })
-        adapter.removeCompletedItems(result.completedItems.map { it.uri.toString() })
-        updateEmptyState()
-        Ui.toast(this, resources.getQuantityString(R.plurals.items_restored, result.completed, result.completed))
-        exitSelectionMode()
-        }
-    }
-
-    private fun askMoveSelected() {
-        val selected = adapter.selectedItems()
-        if (selected.isEmpty()) return
-        val exposedKeys = intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)?.toList()
-        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty()
-        selectionCoordinator.loadMoveTargets(
-            exposedKeys,
-            hiddenKeys,
-            albumKey,
-            exposedKeys != null && shouldIncludeHiddenFilesystem()
-        ) { targets ->
-            if (isFinishing || !moreButton.isAttachedToWindow) return@loadMoveTargets
-            if (targets.isEmpty()) {
-                Ui.toast(this, getString(R.string.main_no_move_target))
-                return@loadMoveTargets
-            }
-            Ui.showAlbumTargets(moreButton, getString(R.string.action_move_to), targets) { album ->
-                moveSelected(selected, album)
-            }
-        }
-    }
-
-    private fun showMediaSortDialog() {
-        val labels = resources.getStringArray(R.array.album_sort_labels)
-        val values = arrayOf(
-            MediaSortRules.SORT_CUSTOM,
-            MediaSortRules.SORT_DATE,
-            MediaSortRules.SORT_NAME,
-            MediaSortRules.SORT_SIZE,
-            MediaSortRules.SORT_DURATION,
-            MediaSortRules.SORT_TYPE
-        )
-        val selected = values.indexOf(mediaSortMode).takeIf { it >= 0 } ?: 0
-        Ui.showSortChoiceDialog(
-            this,
-            getString(R.string.action_sort_by),
-            labels,
-            values,
-            selected,
-            mediaSortDescending,
-            message = getString(R.string.album_sort_group_hint)
-        ) { which, descending ->
-            mediaSortMode = values[which]
-            mediaSortDescending = descending
-            saveMediaSortOptions()
-            loadMedia(true)
-        }
-    }
-
-    private fun saveMediaSortOptions() {
-        prefs.edit()
-            .putString(optionKey("sort_mode"), mediaSortMode)
-            .putBoolean(optionKey("sort_desc"), mediaSortDescending)
-            .apply()
-    }
-
-    private fun moveSelected(selected: List<MediaItem>, destination: AlbumItem) {
-        if (operations.busy) return
-        if (AlbumMediaRules.requiresFileManagement(
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R,
-                MediaActions.hasAllFilesAccess(this)
-            )
-        ) {
-            requestFileManagementAccess()
-            return
-        }
-        operations.run({ selectionCoordinator.move(selected, destination.path.ifBlank { destination.name }) }) { result ->
-        EmptyFolderCleaner.afterRemoval(this, result.completedItems.map { it.relativePath })
-        if (albumKey != "all_media") {
-            completedRemovalUris.addAll(result.completedItems.map { MediaIdentityRules.canonicalKey(it.uri.toString()) })
-            adapter.removeCompletedItems(result.completedItems.map { it.uri.toString() })
-            updateEmptyState()
-        }
-        Ui.toast(
-            this,
-            resources.getQuantityString(R.plurals.items_moved, result.completed, result.completed)
-        )
-        if (albumKey in result.emptiedAlbumKeys && result.completed > 0) {
-            openMoveDestination(destination.key, destination.name)
-        } else {
-            exitSelectionMode()
-            loadMedia(true)
-        }
-        }
-    }
-
-    private fun openMoveDestination(key: String, name: String) {
-        startActivity(MediaOperationNavigation.destinationIntent(this, intent, key, name))
-        finish()
-    }
-
-    private fun loadMedia(preserveScroll: Boolean) {
+    internal fun loadMedia(preserveScroll: Boolean) {
         val targetPosition = AlbumMediaRules.scrollTarget(
             preserveScroll,
             layoutManager.findFirstVisibleItemPosition(),
@@ -1258,7 +899,7 @@ class AlbumMediaActivity : ComponentActivity() {
         super.onSaveInstanceState(outState)
     }
 
-    private fun spacingKey(): String = "grid_spacing_global"
+    internal fun spacingKey(): String = "grid_spacing_global"
 
     private fun gridGestureRoute(event: MotionEvent): AlbumGridGestureController.Route =
         gridGestureController.route(
@@ -1370,13 +1011,13 @@ class AlbumMediaActivity : ComponentActivity() {
             .start()
     }
 
-    private fun updateEmptyState() {
+    internal fun updateEmptyState() {
         catalogLoadingView.visibility = View.GONE
         emptyView.setText(R.string.album_empty)
         emptyView.visibility = if (adapter.getCount() == 0) View.VISIBLE else View.GONE
     }
 
-    private fun finishIfAlbumEmpty() {
+    internal fun finishIfAlbumEmpty() {
         val key = albumKey ?: return
         fun returnToAlbums() {
             if (isFinishing || isDestroyed) return
@@ -1398,7 +1039,7 @@ class AlbumMediaActivity : ComponentActivity() {
         }
     }
 
-    private fun startRandomPlayback() {
+    internal fun startRandomPlayback() {
         if (adapter.getCount() == 0) {
             Ui.toast(this, getString(R.string.album_no_media_to_play))
             return
@@ -1407,7 +1048,7 @@ class AlbumMediaActivity : ComponentActivity() {
         openDetail(adapter.getItem(position), position, true)
     }
 
-    private fun applyViewMode() {
+    internal fun applyViewMode() {
         if (!::grid.isInitialized || !::adapter.isInitialized) return
         gridDensityAnimationGeneration++
         grid.animate().cancel()
@@ -1524,9 +1165,9 @@ class AlbumMediaActivity : ComponentActivity() {
     private fun mediaSpanCount(): Int =
         max(2, resources.displayMetrics.widthPixels / Ui.dp(this, 126))
 
-    private fun optionKey(suffix: String): String = AlbumCoverRules.optionKey(albumKey, suffix)
+    internal fun optionKey(suffix: String): String = AlbumCoverRules.optionKey(albumKey, suffix)
 
-    private fun folderDisplayPath(): String {
+    internal fun folderDisplayPath(): String {
         val path = currentRelativeFolder()
         return if (path.isEmpty()) {
             getString(R.string.album_internal_storage)
@@ -1546,7 +1187,7 @@ class AlbumMediaActivity : ComponentActivity() {
         return ""
     }
 
-    private fun createFolder(rawName: String) {
+    internal fun createFolder(rawName: String) {
         val cleanName = MediaActions.cleanFolderName(rawName)
         if (cleanName.isEmpty()) {
             Ui.toast(this, getString(R.string.album_enter_folder_name))
@@ -1575,7 +1216,7 @@ class AlbumMediaActivity : ComponentActivity() {
         }
     }
 
-    private fun requestFileManagementAccess() {
+    internal fun requestFileManagementAccess() {
         Ui.showConfirmationDialog(
             this,
             getString(R.string.access_full_management_title),
@@ -1584,7 +1225,7 @@ class AlbumMediaActivity : ComponentActivity() {
         ) { MediaActions.requestAllFilesAccess(this) }
     }
 
-    private fun shouldIncludeHiddenFilesystem(): Boolean =
+    internal fun shouldIncludeHiddenFilesystem(): Boolean =
         StorageAccessRules.includeHiddenFilesystem(
             intent.getBooleanExtra("include_hidden_filesystem", false) ||
                 GalleryPreferences.hiddenFlag(this, "always_show_hidden"),
@@ -1611,7 +1252,7 @@ class AlbumMediaActivity : ComponentActivity() {
                 .getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS)
                 ?.let { putStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS, it) }
         }
-        startActivityForResult(intent, REQ_DETAIL)
+        detailLauncher.launch(intent)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -1637,31 +1278,34 @@ class AlbumMediaActivity : ComponentActivity() {
                 Ui.toast(this, getString(R.string.item_restored))
             }
             loadMedia(true)
-        } else if (requestCode == REQ_DETAIL && resultCode == RESULT_OK && data != null) {
-            val removed = data.getStringArrayListExtra(MediaOperationNavigation.EXTRA_REMOVED_URIS).orEmpty()
-            val moved = data.getStringArrayListExtra(MediaOperationNavigation.EXTRA_MOVED_URIS).orEmpty()
-            val movedOutsideCollection = if (VirtualAlbumRules.remainsAfterMove(albumKey)) emptyList() else moved
-            completedRemovalUris.addAll((removed + movedOutsideCollection).map(MediaIdentityRules::canonicalKey))
-            adapter.removeCompletedItems(removed + movedOutsideCollection)
-            updateEmptyState()
-            val destinationKey = data.getStringExtra(MediaOperationNavigation.EXTRA_DESTINATION_KEY)
-            if (destinationKey != null) {
-                openMoveDestination(destinationKey, data.getStringExtra(MediaOperationNavigation.EXTRA_DESTINATION_NAME) ?: destinationKey)
-            } else {
-                loadMedia(true)
-                if (removed.isNotEmpty()) finishIfAlbumEmpty()
-            }
         }
     }
 
+    // What the viewer removed or moved, so the grid updates without reloading everything.
+    private val detailLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        if (result.resultCode != RESULT_OK || data == null) return@registerForActivityResult
+        val removed = data.getStringArrayListExtra(MediaOperationNavigation.EXTRA_REMOVED_URIS).orEmpty()
+        val moved = data.getStringArrayListExtra(MediaOperationNavigation.EXTRA_MOVED_URIS).orEmpty()
+        val movedOutsideCollection = if (VirtualAlbumRules.remainsAfterMove(albumKey)) emptyList() else moved
+        completedRemovalUris.addAll((removed + movedOutsideCollection).map(MediaIdentityRules::canonicalKey))
+        adapter.removeCompletedItems(removed + movedOutsideCollection)
+        updateEmptyState()
+        val destinationKey = data.getStringExtra(MediaOperationNavigation.EXTRA_DESTINATION_KEY)
+        if (destinationKey != null) {
+            openMoveDestination(destinationKey, data.getStringExtra(MediaOperationNavigation.EXTRA_DESTINATION_NAME) ?: destinationKey)
+        } else {
+            loadMedia(true)
+            if (removed.isNotEmpty()) finishIfAlbumEmpty()
+        }
+    }
 
     companion object {
         private const val TAG_ALBUM_TOOLBAR = "album_toolbar"
         private const val TAG_ALBUM_SEARCH_TITLE = "album_search_title"
-        private const val REQ_DELETE = 11
-        private const val REQ_RESTORE = 15
-        private const val REQ_DETAIL = 12
-        private const val MAX_GRID_SPACING_DP = 8
+        internal const val REQ_DELETE = 11
+        internal const val REQ_RESTORE = 15
+        internal const val MAX_GRID_SPACING_DP = 8
         private const val PREF_GRID_COLUMNS = "media_grid_columns"
         private const val INITIAL_MEDIA_DELAY_MS = 60L
         private const val GRID_POOL_WARMUP_STEP_MS = 24L
@@ -1672,10 +1316,10 @@ class AlbumMediaActivity : ComponentActivity() {
         private const val FAST_SCROLL_PREVIEW_DURATION_MS = 650L
         private const val MEDIA_OBSERVER_GRACE_MS = 3_000L
         private const val MEDIA_REFRESH_DEBOUNCE_MS = 5_000L
-        private const val GROUP_NONE = "none"
-        private const val GROUP_TYPE = "type"
-        private const val GROUP_EXTENSION = "extension"
-        private const val GROUP_DAY = "day"
-        private const val GROUP_MONTH = "month"
+        internal const val GROUP_NONE = "none"
+        internal const val GROUP_TYPE = "type"
+        internal const val GROUP_EXTENSION = "extension"
+        internal const val GROUP_DAY = "day"
+        internal const val GROUP_MONTH = "month"
     }
 }

@@ -45,10 +45,6 @@ import kotlin.math.max
 import kotlin.math.min
 
 class ImageEditActivity : ComponentActivity() {
-    override fun attachBaseContext(newBase: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(newBase))
-    }
-
     companion object {
         const val EXTRA_MODE = "image_edit_mode"
         const val EXTRA_ROTATE_CLOCKWISE = "image_edit_rotate_clockwise"
@@ -155,22 +151,22 @@ class ImageEditActivity : ComponentActivity() {
         }
         toolsPanel = tools
         val toolRow = LinearLayout(this)
-        cropButton = EditorUi.button(this, R.drawable.ic_crop, "Cortar") {
+        cropButton = EditorUi.button(this, R.drawable.ic_crop, getString(R.string.image_edit_crop)) {
                 commitText()
                 editor.tool = if (editor.tool == EditorTool.CROP) EditorTool.NONE else EditorTool.CROP
                 refreshToolButtons()
         }
-        val rotate = EditorUi.button(this, R.drawable.ic_rotate, "Girar") {
+        val rotate = EditorUi.button(this, R.drawable.ic_rotate, getString(R.string.image_edit_rotate)) {
             commitText()
             transformImage { source -> Bitmap.createBitmap(source, 0, 0, source.width, source.height,
                 Matrix().apply { postRotate(90f) }, true) }
         }
         val resize = EditorUi.button(this, R.drawable.ic_resize, getString(R.string.msg_resize_image)) { commitText(); showResizeInput() }
-        textButton = EditorUi.button(this, R.drawable.ic_text, "Texto") {
+        textButton = EditorUi.button(this, R.drawable.ic_text, getString(R.string.image_edit_text)) {
                 showTextInput()
                 refreshToolButtons()
         }
-        brushButton = EditorUi.button(this, R.drawable.ic_brush, "Pincel") {
+        brushButton = EditorUi.button(this, R.drawable.ic_brush, getString(R.string.image_edit_brush)) {
                 commitText()
                 if (editor.tool == EditorTool.BRUSH) brushPreset = (brushPreset + 1) % 6
                 editor.tool = EditorTool.BRUSH
@@ -179,7 +175,7 @@ class ImageEditActivity : ComponentActivity() {
                 Ui.toast(this, description)
                 refreshToolButtons()
         }
-        filterButton = EditorUi.button(this, R.drawable.ic_filter, "Filtros") {
+        filterButton = EditorUi.button(this, R.drawable.ic_filter, getString(R.string.image_edit_filters)) {
                 commitText()
                 editor.tool = EditorTool.NONE
                 filterRow.visibility = if (filterRow.visibility == View.VISIBLE) View.GONE else View.VISIBLE
@@ -204,7 +200,7 @@ class ImageEditActivity : ComponentActivity() {
         cropTools = LinearLayout(this).apply {
             gravity = Gravity.CENTER
             addView(EditorUi.button(context, R.drawable.ic_ratio, getString(R.string.msg_crop_ratio)) { showCropRatios() }, LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48)))
-            addView(EditorUi.button(context, R.drawable.ic_flip, "Espelhar") {
+            addView(EditorUi.button(context, R.drawable.ic_flip, context.getString(R.string.image_edit_flip)) {
                 transformImage { source -> Bitmap.createBitmap(source, 0, 0, source.width, source.height,
                     Matrix().apply { setScale(-1f, 1f) }, true) }
             }, LinearLayout.LayoutParams(Ui.dp(context, 48), Ui.dp(context, 48)))
@@ -328,7 +324,7 @@ class ImageEditActivity : ComponentActivity() {
             .setMessage(getString(R.string.msg_resize_message))
             .setView(input)
             .setNegativeButton(getString(R.string.action_cancel), null)
-            .setPositiveButton("Aplicar") { _, _ ->
+            .setPositiveButton(getString(R.string.settings_theme_apply)) { _, _ ->
                 val width = input.text.toString().toIntOrNull()
                 if (width == null || width !in 1..4096) {
                     Ui.toast(this, getString(R.string.msg_resize_invalid))
@@ -371,7 +367,7 @@ class ImageEditActivity : ComponentActivity() {
                             Matrix().apply { postRotate(90f) }, true) }
                     }
                     if (cropOnly) editor.tool = EditorTool.CROP
-                    editor.contentDescription = if (cropOnly) getString(R.string.image_edit_crop_ready) else "Imagem pronta para edição"
+                    editor.contentDescription = if (cropOnly) getString(R.string.image_edit_crop_ready) else getString(R.string.image_edit_ready)
                     refreshToolButtons()
                 }
             } catch (_: Exception) {

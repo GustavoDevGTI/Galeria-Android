@@ -23,10 +23,6 @@ import java.util.Locale
 
 @OptIn(UnstableApi::class)
 class FileDetailActivity : Activity() {
-    override fun attachBaseContext(newBase: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(newBase))
-    }
-
     private lateinit var file: File
     private lateinit var mimeType: String
     private var player: ExoPlayer? = null
@@ -70,7 +66,7 @@ class FileDetailActivity : Activity() {
                 playerView.player = this
                 prepare()
                 playWhenReady = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
-                    .getBoolean("autoplay_videos", true)
+                    .getBoolean(GalleryPreferences.AUTOPLAY_VIDEOS, true)
             }
             content.addView(
                 playerView,

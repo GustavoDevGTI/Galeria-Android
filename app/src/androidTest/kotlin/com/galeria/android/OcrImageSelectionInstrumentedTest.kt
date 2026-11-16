@@ -44,7 +44,7 @@ class OcrImageSelectionInstrumentedTest {
         photo.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
         val original = photo.readBytes()
         try {
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", android.net.Uri.fromFile(photo).toString())
                 putExtra("mime", "image/png"); putExtra("name", photo.name)
             }).use { scenario ->

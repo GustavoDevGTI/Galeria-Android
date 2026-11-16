@@ -46,7 +46,7 @@ class PlaybackResumeInstrumentedTest {
                 requireNotNull(resolver.openOutputStream(uri)).use { input.copyTo(it) }
             }
             resolver.update(uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
-            val intent = Intent(context, DetailActivity::class.java).apply {
+            val intent = ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", uri.toString())
                 putExtra("name", "playback-resume.mp4")
                 putExtra("mime", "video/mp4")

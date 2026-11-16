@@ -56,6 +56,13 @@ if (!$SkipInstall) {
     }
 }
 
+# The gallery follows the phone language. Test emulators keep the system in English, so only the
+# gallery is set to Brazilian Portuguese, the language of the phone it is built for and of the tests.
+if ((& adb -s $Device shell getprop ro.kernel.qemu).Trim() -eq '1') {
+    & adb -s $Device shell cmd locale set-app-locales com.galeria.android --locales pt-BR
+    if ($LASTEXITCODE -ne 0) { throw 'Não foi possível colocar a Galeria em português no emulador.' }
+}
+
 $failed = 0
 for ($run = 1; $run -le $Repeat; $run++) {
     # Resolve the user explicitly instead of passing Android's -2/current-user

@@ -47,63 +47,61 @@ import kotlin.math.max
 import kotlin.math.min
 
 class MainActivity : ComponentActivity() {
-    override fun attachBaseContext(newBase: android.content.Context) {
-        super.attachBaseContext(AppLanguage.wrap(newBase))
-    }
-
-    private lateinit var adapter: AlbumRecyclerAdapter
+    internal lateinit var adapter: AlbumRecyclerAdapter
     private lateinit var emptyView: TextView
     private lateinit var catalogLoadingView: LoadingIndicatorView
-    private lateinit var searchInput: EditText
+    internal lateinit var searchInput: EditText
     private lateinit var grid: AccessibleRecyclerView
-    private lateinit var swipeRefresh: SwipeRefreshLayout
+    internal lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var layoutManager: GridLayoutManager
     private lateinit var root: LinearLayout
     private lateinit var top: LinearLayout
     private lateinit var searchIconButton: ImageButton
     private lateinit var selectAllChip: TextView
-    private lateinit var moreButton: ImageButton
+    internal lateinit var moreButton: ImageButton
     private lateinit var selectionBar: LinearLayout
     private lateinit var selectionActions: LinearLayout
     private lateinit var selectionActionDock: LinearLayout
     private lateinit var browseBar: GalleryBrowseBar
     private lateinit var selectAllText: TextView
-    private lateinit var prefs: SharedPreferences
+    internal lateinit var prefs: SharedPreferences
     private lateinit var scaleDetector: ScaleGestureDetector
-    private lateinit var accessCoordinator: MainMediaAccessCoordinator
-    private lateinit var catalogController: AlbumCatalogController
-    private var sortMode = SORT_MODIFIED
-    private var sortDesc = true
-    private var showImages = true
-    private var showVideos = true
-    private var showGifs = true
-    private var showRaw = true
-    private var showSvgs = true
-    private var showPortraits = false
-    private var showHiddenFolders = false
-    private var automaticallyHiddenKeys: Set<String> = emptySet()
+    internal lateinit var accessCoordinator: MainMediaAccessCoordinator
+    internal lateinit var catalogController: AlbumCatalogController
+    internal var sortMode = SORT_MODIFIED
+    internal var sortDesc = true
+    internal var showImages = true
+    internal var showVideos = true
+    internal var showGifs = true
+    internal var showRaw = true
+    internal var showSvgs = true
+    internal var showPortraits = false
+    internal var showHiddenFolders = false
+    internal var automaticallyHiddenKeys: Set<String> = emptySet()
     private var columnCount = 3
-    private var albumSpacingDp = 8
+    // Read by the folder layout dialog; the setter stays setColumnCount(), which also relays out the grid.
+    internal val currentColumnCount: Int get() = columnCount
+    internal var albumSpacingDp = 8
     private var lastColumnGestureMs = 0L
     private var gridTouchDownX = 0f
     private var gridTouchDownY = 0f
     private var gridTouchClickCandidate = false
     private val gridTouchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop.toFloat() }
-    private val mediaLoader = Executors.newSingleThreadExecutor()
+    internal val mediaLoader = Executors.newSingleThreadExecutor()
     private var firstResume = true
-    private var mainScreenResumed = false
+    internal var mainScreenResumed = false
     private var mediaObserverRefreshPending = false
     private var mediaObserverRefreshScheduled = false
     private var deferredCatalogRefreshPending = false
     private var pendingAlbumSubmission: PendingAlbumSubmission? = null
     private var forceAlbumCoverRefreshOnNextSubmit = false
-    private var visibilityDialogAdapter: BaseAdapter? = null
-    private var refreshVisibilityDialogCounts: (() -> Unit)? = null
-    private var mergeVisibleAlbumsIntoDialog: ((List<AlbumItem>) -> Unit)? = null
+    internal var visibilityDialogAdapter: BaseAdapter? = null
+    internal var refreshVisibilityDialogCounts: (() -> Unit)? = null
+    internal var mergeVisibleAlbumsIntoDialog: ((List<AlbumItem>) -> Unit)? = null
     private val revealedFolderObservers = HashMap<String, android.os.FileObserver>()
-    private val visibilityFolderObservers = HashMap<String, android.os.FileObserver>()
-    private val visibilityCountRefreshRunnable = Runnable { refreshVisibilityDialogCounts?.invoke() }
-    private val mediaRefreshHandler = Handler(Looper.getMainLooper())
+    internal val visibilityFolderObservers = HashMap<String, android.os.FileObserver>()
+    internal val visibilityCountRefreshRunnable = Runnable { refreshVisibilityDialogCounts?.invoke() }
+    internal val mediaRefreshHandler = Handler(Looper.getMainLooper())
     private val revealExpiryRunnable = Runnable {
         visibilityDialogAdapter?.notifyDataSetChanged()
         if (mainScreenResumed && accessCoordinator.hasMediaLibraryAccess()) loadAlbums()
@@ -166,7 +164,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun isHiddenPanelHost() = intent.getBooleanExtra(EXTRA_HIDDEN_PANEL, false)
+    internal fun isHiddenPanelHost() = intent.getBooleanExtra(EXTRA_HIDDEN_PANEL, false)
 
     override fun onResume() {
         super.onResume()
@@ -245,6 +243,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private val systemBars by lazy { SystemBarInsets(this) }
+
+    /** Shows the pull-to-refresh spinner once the list exists. */
+    internal fun showRefreshing() {
+        if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = true
+    }
 
     private fun buildLayout() {
         root = LinearLayout(this).apply {
@@ -539,7 +542,7 @@ class MainActivity : ComponentActivity() {
         adapter.setSelectionMode(true)
     }
 
-    private fun exitSelectionMode() {
+    internal fun exitSelectionMode() {
         adapter.clearSelection()
         updateSelectionUi()
     }
@@ -577,178 +580,7 @@ class MainActivity : ComponentActivity() {
         updateSelectionUi()
     }
 
-    private fun shareSelectedAlbums() {
-        val albums = adapter.selectedAlbums()
-        if (albums.isEmpty()) return
-        mediaLoader.execute {
-            val uris = ArrayList<Uri>()
-            for (item in mediaForAlbums(albums)) {
-                uris.add(item.uri)
-            }
-            runOnUiThread {
-                if (uris.isEmpty()) {
-                    Ui.toast(this, getString(R.string.main_no_media_to_share))
-                    return@runOnUiThread
-                }
-                startActivity(Intent.createChooser(ShareLimit.intent(uris), getString(R.string.action_share)))
-                ShareLimit.warnIfLimited(this, uris.size)
-            }
-        }
-    }
-
-    /**
-     * Protects the selected albums with one password, or removes the protection when they are all
-     * protected already (only from albums whose password matches).
-     */
-    private fun toggleSecureSelectedAlbums() {
-        val albums = adapter.selectedAlbums()
-        if (albums.isEmpty()) return
-        val security = SecurityStore(prefs)
-        val name = albums.singleOrNull()?.name ?: resources.getQuantityString(R.plurals.albums_count, albums.size, albums.size)
-        if (albums.all { security.isSecureFolder(it.key) }) {
-            Ui.showPasswordDialog(this, getString(R.string.security_folder_title, name)) { password ->
-                val matching = albums.filter { security.verifyFolderPassword(it.key, password) }
-                if (matching.isEmpty()) return@showPasswordDialog getString(R.string.security_wrong_password)
-                matching.forEach { security.removeFolder(it.key) }
-                Ui.toast(this, getString(R.string.security_folder_unprotected))
-                exitSelectionMode(); loadAlbums()
-                null
-            }
-            return
-        }
-        Ui.showPasswordDialog(
-            this,
-            getString(R.string.security_folder_create_title, name),
-            getString(R.string.security_folder_create_message),
-            confirm = true
-        ) { password ->
-            albums.forEach { security.setFolderPassword(it.key, password); SecuritySession.unlockFolder(it.key) }
-            Ui.toast(this, getString(R.string.security_folder_protected))
-            exitSelectionMode(); loadAlbums()
-            null
-        }
-    }
-
-    private fun togglePinnedSelectedAlbums() {
-        val albums = adapter.selectedAlbums()
-        if (albums.isEmpty()) return
-        val pinned = HashSet(prefs.getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty())
-        val unpin = albums.all { it.key in pinned }
-        if (unpin) pinned.removeAll(albums.map { it.key }) else pinned.addAll(albums.map { it.key })
-        prefs.edit().putStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, pinned).apply()
-        exitSelectionMode()
-        loadAlbums()
-    }
-
-    private fun confirmDeleteSelectedAlbums() {
-        val albums = adapter.selectedAlbums()
-        if (albums.isEmpty()) return
-        val visibleCount = albums.sumOf { it.count }
-        val permanent = !TrashPreferences.isEnabled(this)
-        if (!permanent && GalleryPreferences.flag(this, GalleryPreferences.SKIP_DELETE_CONFIRMATION)) {
-            deleteSelectedAlbums(albums)
-            return
-        }
-        Ui.showConfirmationDialog(
-            this,
-            getString(R.string.main_delete_albums_title),
-            getString(
-                if (permanent) R.string.main_delete_albums_permanently_message else R.string.main_delete_albums_message,
-                resources.getQuantityString(R.plurals.albums_count, albums.size, albums.size),
-                resources.getQuantityString(
-                    R.plurals.approximately_items_removed,
-                    visibleCount,
-                    visibleCount
-                )
-            ),
-            getString(if (permanent) R.string.action_delete_permanently else R.string.action_move_to_trash)
-        ) { deleteSelectedAlbums(albums) }
-    }
-
-    private fun deleteSelectedAlbums(albums: List<AlbumItem>) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
-            accessCoordinator.ensureFullAccess(true)
-            return
-        }
-        mediaLoader.execute {
-            val completed = arrayListOf<MediaItem>()
-            for (item in mediaForAlbums(albums)) {
-                if (MediaActions.requestDelete(this, item.uri, REQ_BATCH_DELETE) == MediaActions.RESULT_DONE) {
-                    completed.add(item)
-                }
-            }
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                val deleted = completed.size
-                EmptyFolderCleaner.afterRemoval(this, completed.map { it.relativePath })
-                adapter.removeCompletedItems(completed, moved = false)
-                Ui.toast(this, resources.getQuantityString(
-                    if (TrashPreferences.isEnabled(this)) R.plurals.items_moved_to_trash else R.plurals.items_deleted,
-                    deleted, deleted))
-                exitSelectionMode()
-                loadAlbums()
-            }
-        }
-    }
-
-    private fun askMoveSelectedAlbums() {
-        val albums = adapter.selectedAlbums()
-        if (albums.isEmpty()) return
-        val excludedKeys = albums.mapTo(HashSet()) { it.key }
-        val exposedAlbums = adapter.allAlbumsSnapshot()
-        mediaLoader.execute {
-            val targets = AlbumTargetRules.exposedTargets(
-                exposedAlbums,
-                exposedAlbums.mapTo(HashSet()) { it.key },
-                emptySet(),
-                excludedKeys
-            )
-            runOnUiThread {
-                if (isFinishing || !moreButton.isAttachedToWindow) return@runOnUiThread
-                if (targets.isEmpty()) {
-                    Ui.toast(this, getString(R.string.main_no_move_target))
-                    return@runOnUiThread
-                }
-                Ui.showAlbumTargets(moreButton, getString(R.string.action_move_to), targets) { album ->
-                    moveSelectedAlbums(albums, album)
-                }
-            }
-        }
-    }
-
-    private fun moveSelectedAlbums(albums: List<AlbumItem>, destination: AlbumItem) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
-            accessCoordinator.ensureFullAccess(true)
-            return
-        }
-        mediaLoader.execute {
-            val actions = AlbumSelectionActions(this, prefs)
-            val result = try {
-                actions.move(mediaForAlbums(albums), destination.path.ifBlank { destination.name })
-            } finally {
-                actions.close()
-            }
-            val moved = result.completed
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                adapter.removeCompletedItems(result.completedItems, moved = true)
-                EmptyFolderCleaner.afterRemoval(this, result.completedItems.map { it.relativePath })
-                Ui.toast(this, resources.getQuantityString(R.plurals.items_moved, moved, moved))
-                exitSelectionMode()
-                if (albums.any { it.key in result.emptiedAlbumKeys }) {
-                    startActivity(MediaOperationNavigation.destinationIntent(this, intent, destination.key, destination.name))
-                }
-                if (moved > 0) {
-                    if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = true
-                    loadAlbums()
-                } else {
-                    loadAlbums()
-                }
-            }
-        }
-    }
-
-    private fun mediaForAlbums(albums: List<AlbumItem>): List<MediaItem> {
+    internal fun mediaForAlbums(albums: List<AlbumItem>): List<MediaItem> {
         val keys = HashSet<String>()
         var allMedia = false
         for (album in albums) {
@@ -759,7 +591,7 @@ class MainActivity : ComponentActivity() {
         }
         val items = ArrayList<MediaItem>()
         val source = MediaStoreRepository.loadMedia(applicationContext, shouldIncludeHiddenFilesystem())
-        val hiddenKeys = prefs.getStringSet("hidden_folder_keys", emptySet()).orEmpty() +
+        val hiddenKeys = prefs.getStringSet(GalleryPreferences.HIDDEN_FOLDER_KEYS, emptySet()).orEmpty() +
             SecurityStore(prefs).secureFolderKeys() +
             AutomaticHiddenAlbums.keysForMedia(applicationContext, source,
                 HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
@@ -772,7 +604,7 @@ class MainActivity : ComponentActivity() {
         return items
     }
 
-    private fun loadAlbums() {
+    internal fun loadAlbums() {
         if (::adapter.isInitialized) adapter.secureKeys = SecurityStore(prefs).secureFolderKeys()
         val query = if (::searchInput.isInitialized) searchInput.text.toString() else ""
         if (::adapter.isInitialized && adapter.getCount() == 0 && ::emptyView.isInitialized) {
@@ -782,8 +614,8 @@ class MainActivity : ComponentActivity() {
         catalogController.load(
             AlbumCatalogOptions(
                 includeHidden = shouldIncludeHiddenFilesystem(),
-                searchAllFiles = prefs.getBoolean("search_all_files", false),
-                hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet()),
+                searchAllFiles = prefs.getBoolean(GalleryPreferences.SEARCH_ALL_FILES, false),
+                hiddenKeys = HashSet(prefs.getStringSet(GalleryPreferences.HIDDEN_FOLDER_KEYS, HashSet()) ?: HashSet()),
                 query = query,
                 filterOptions = MediaFilterOptions(
                     showImages,
@@ -865,7 +697,7 @@ class MainActivity : ComponentActivity() {
         if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
     }
 
-    private fun rememberVisibleFolderKeys(albums: Collection<AlbumItem>) {
+    internal fun rememberVisibleFolderKeys(albums: Collection<AlbumItem>) {
         val previous = prefs.getStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet()) ?: HashSet()
         val temporaryKeys = TemporaryAlbumVisibility.activeKeys()
         val updated = HiddenAlbumDialogRules.rememberVisible(
@@ -877,21 +709,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadSettings() {
-        sortMode = prefs.getString("sort_mode", SORT_MODIFIED) ?: SORT_MODIFIED
-        sortDesc = prefs.getBoolean("sort_desc", true)
-        showImages = prefs.getBoolean("filter_images", true)
-        showVideos = prefs.getBoolean("filter_videos", true)
-        showGifs = prefs.getBoolean("filter_gifs", true)
-        showRaw = prefs.getBoolean("filter_raw", true)
-        showSvgs = prefs.getBoolean("filter_svgs", true)
-        showPortraits = prefs.getBoolean("filter_portraits", false)
-        showHiddenFolders = GalleryPreferences.hiddenFlag(this, "show_hidden_folders") ||
+        sortMode = prefs.getString(GalleryPreferences.SORT_MODE, SORT_MODIFIED) ?: SORT_MODIFIED
+        sortDesc = prefs.getBoolean(GalleryPreferences.SORT_DESC, true)
+        showImages = prefs.getBoolean(GalleryPreferences.FILTER_IMAGES, true)
+        showVideos = prefs.getBoolean(GalleryPreferences.FILTER_VIDEOS, true)
+        showGifs = prefs.getBoolean(GalleryPreferences.FILTER_GIFS, true)
+        showRaw = prefs.getBoolean(GalleryPreferences.FILTER_RAW, true)
+        showSvgs = prefs.getBoolean(GalleryPreferences.FILTER_SVGS, true)
+        showPortraits = prefs.getBoolean(GalleryPreferences.FILTER_PORTRAITS, false)
+        showHiddenFolders = GalleryPreferences.hiddenFlag(this, GalleryPreferences.SHOW_HIDDEN_FOLDERS) ||
             GalleryPreferences.hiddenFlag(this, "always_show_hidden")
-        columnCount = prefs.getInt("column_count", 3)
+        columnCount = prefs.getInt(GalleryPreferences.COLUMN_COUNT, 3)
         if (columnCount < 2 || columnCount > 6) {
             columnCount = 3
         }
-        albumSpacingDp = prefs.getInt("album_spacing_dp", 8).coerceIn(0, 16)
+        albumSpacingDp = prefs.getInt(GalleryPreferences.ALBUM_SPACING_DP, 8).coerceIn(0, 16)
         if (::adapter.isInitialized) {
             adapter.setSpacing(albumSpacingDp)
             adapter.setCoverSize(albumCoverSizePx())
@@ -931,743 +763,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun showSortDialog() {
-        val labels = resources.getStringArray(R.array.main_sort_labels)
-        val modes = arrayOf(SORT_NAME, SORT_PATH, SORT_SIZE, SORT_MODIFIED, SORT_CREATED, SORT_RANDOM)
-        val checked = modes.indexOf(sortMode).takeIf { it >= 0 } ?: 3
-
-        Ui.showSortChoiceDialog(
-            this,
-            getString(R.string.action_sort_by),
-            labels,
-            modes,
-            checked,
-            sortDesc
-        ) { which, descending ->
-            sortMode = modes[which]
-            sortDesc = descending
-            saveSorting()
-            loadAlbums()
-        }
-    }
-
-    private fun saveSorting() {
-        prefs.edit()
-            .putString("sort_mode", sortMode)
-            .putBoolean("sort_desc", sortDesc)
-            .apply()
-    }
-
-    private fun showMediaFilterDialog() {
-        val labels = resources.getStringArray(R.array.main_media_filter_labels)
-        val checked = booleanArrayOf(showImages, showVideos, showGifs, showRaw, showSvgs, showPortraits)
-        Ui.showMultiChoiceDialog(this, getString(R.string.action_filter_media), labels, checked) { selected ->
-            showImages = selected[0]
-            showVideos = selected[1]
-            showGifs = selected[2]
-            showRaw = selected[3]
-            showSvgs = selected[4]
-            showPortraits = selected[5]
-            prefs.edit()
-                .putBoolean("filter_images", showImages)
-                .putBoolean("filter_videos", showVideos)
-                .putBoolean("filter_gifs", showGifs)
-                .putBoolean("filter_raw", showRaw)
-                .putBoolean("filter_svgs", showSvgs)
-                .putBoolean("filter_portraits", showPortraits)
-                .apply()
-            loadAlbums()
-        }
-    }
-
-    private fun showAlbumSpacingDialog() {
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = Ui.rounded(Ui.menuSurface(this@MainActivity), 16, this@MainActivity, Ui.menuBorder(this@MainActivity), 1)
-            clipToOutline = true
-            Ui.setPadding(this, 24, 20, 24, 12)
-        }
-        panel.addView(TextView(this).apply {
-            setText(R.string.main_album_spacing)
-            textSize = 18f
-            setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-            setTextColor(Ui.menuText(this@MainActivity))
-        })
-        panel.addView(TextView(this).apply {
-            setText(R.string.main_album_spacing_hint)
-            textSize = 13f
-            setTextColor(Ui.menuText(this@MainActivity))
-            alpha = 0.78f
-            Ui.setPadding(this, 0, 6, 0, 12)
-        })
-        panel.addView(SeekBar(this).apply {
-            tag = "album_spacing_slider"
-            contentDescription = getString(R.string.main_album_spacing)
-            max = 16
-            progress = max - albumSpacingDp
-            progressTintList = android.content.res.ColorStateList.valueOf(Ui.accent(this@MainActivity))
-            thumbTintList = progressTintList
-            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Ui.muted(this@MainActivity))
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
-                    albumSpacingDp = 16 - progress
-                    adapter.setSpacing(albumSpacingDp)
-                    prefs.edit().putInt("album_spacing_dp", albumSpacingDp).apply()
-                }
-                override fun onStartTrackingTouch(bar: SeekBar?) = Unit
-                override fun onStopTrackingTouch(bar: SeekBar?) {
-                    adapter.setCoverSize(albumCoverSizePx())
-                }
-            })
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 48)))
-        val dialog = AlertDialog.Builder(this).setView(panel).create()
-        dialog.setOnDismissListener { adapter.setCoverSize(albumCoverSizePx()) }
-        Ui.showSidePanel(dialog)
-    }
-
-    private fun showFolderOrganizationDialog() {
-        val labels = resources.getStringArray(R.array.folder_column_labels)
-        val checked = max(0, min(4, columnCount - 2))
-        Ui.showChoiceDialog(
-            this,
-            getString(R.string.main_folder_organization),
-            labels,
-            checked,
-            message = getString(R.string.main_folder_organization_hint)
-        ) { which ->
-            setColumnCount(which + 2)
-        }
-    }
-
-    private fun showFolderVisibilityDialog() {
-        val currentAlbums = adapter.visibleAlbumsSnapshot().filter { it.key != "all_media" }
-        rememberVisibleFolderKeys(currentAlbums)
-        // Open before any database/filesystem recount. The updater belongs to this
-        // dialog and ignores deliveries after dismissal or replacement.
-        val updateRemembered = showFolderVisibilityDialog(currentAlbums)
-        val previouslyVisibleKeys = HashSet(
-            prefs.getStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet()) ?: HashSet()
-        )
-        val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
-        mediaLoader.execute {
-            val visibleCatalog = GalleryCatalogStore.readAlbums(applicationContext, false)
-            val automaticKeys = AutomaticHiddenAlbums.keys(applicationContext, visibleCatalog,
-                HiddenDirectoryMarkers(Environment.getExternalStorageDirectory()))
-            val migratedVisibleKeys = visibleCatalog
-                .filter { hiddenKeys.contains(it.key) && it.key !in automaticKeys &&
-                    !AlbumRules.isHidden(it.path, it.key) }
-                .map { it.key }
-            val knownKeys = HashSet(previouslyVisibleKeys).apply { addAll(migratedVisibleKeys) }
-            if (knownKeys != previouslyVisibleKeys) {
-                prefs.edit().putStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, knownKeys).apply()
-            }
-            val allowedKeys = HiddenAlbumDialogRules.keysForInitialDialog(
-                currentAlbums.map { it.key },
-                knownKeys
-            )
-            val rememberedByKey = LinkedHashMap<String, AlbumItem>()
-            for (album in GalleryCatalogStore.readAlbums(applicationContext, true)) {
-                if (allowedKeys.contains(album.key)) rememberedByKey[album.key] = album
-            }
-            // Prefer refreshed metadata over snapshots retained by the screen.
-            for (album in currentAlbums) {
-                if (allowedKeys.contains(album.key) && !rememberedByKey.containsKey(album.key)) {
-                    rememberedByKey[album.key] = album
-                }
-            }
-            for (album in visibleCatalog) {
-                if (allowedKeys.contains(album.key)) rememberedByKey[album.key] = album
-            }
-            val rememberedAlbums = HiddenAlbumClassification.classify(applicationContext, rememberedByKey.values.toList())
-            runOnUiThread {
-                if (isFinishing) return@runOnUiThread
-                val albumsByKey = LinkedHashMap<String, AlbumItem>()
-                for (album in rememberedAlbums) albumsByKey[album.key] = album
-                val albums = albumsByKey.values.toMutableList()
-                sortAlbums(albums)
-                updateRemembered(albums)
-            }
-        }
-    }
-
-    private fun showFolderVisibilityDialog(albums: List<AlbumItem>): (List<AlbumItem>) -> Unit {
-        automaticallyHiddenKeys = albums.filter { it.naturallyHidden }.mapTo(HashSet()) { it.key }
-        val hiddenKeys = HashSet(prefs.getStringSet("hidden_folder_keys", HashSet()) ?: HashSet())
-        val pinnedKeys = HashSet(prefs.getStringSet(PREF_PINNED_HIDDEN_FOLDER_KEYS, HashSet()) ?: HashSet())
-        val everVisibleKeys = HashSet(
-            prefs.getStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet()) ?: HashSet()
-        )
-        val temporaryKeys = TemporaryAlbumVisibility.activeKeys()
-        everVisibleKeys.addAll(albums.map { it.key }.filterNot {
-            VirtualAlbumRules.isVirtual(it) || it in temporaryKeys
-        })
-        val mutableAlbums = albums.filterNot { VirtualAlbumRules.isVirtual(it.key) }.toMutableList()
-        val checkedKeys = HashSet<String>()
-        lateinit var dialog: AlertDialog
-        val dialogBg = Ui.menuSurface(this)
-        val dialogRow = Ui.menuOptionSurface(this)
-        val dialogElevated = Ui.menuElevatedSurface(this)
-        val dialogHighlight = Ui.menuHighlightSurface(this)
-        val dialogText = Ui.menuText(this)
-        val dialogMuted = Ui.blend(dialogText, dialogBg, 0.34f)
-        for (album in mutableAlbums) {
-            if (!hiddenKeys.contains(album.key) && (showHiddenFolders || !isHiddenAlbum(album))) {
-                checkedKeys.add(album.key)
-            }
-        }
-
-        fun sortVisibilityAlbums() {
-            sortAlbums(mutableAlbums)
-            mutableAlbums.sortWith { first, second ->
-                val firstPinned = pinnedKeys.contains(first.key)
-                val secondPinned = pinnedKeys.contains(second.key)
-                when {
-                    firstPinned && !secondPinned -> -1
-                    !firstPinned && secondPinned -> 1
-                    else -> 0
-                }
-            }
-        }
-
-        fun savePinnedFolders() {
-            prefs.edit()
-                .putStringSet(PREF_PINNED_HIDDEN_FOLDER_KEYS, HashSet(pinnedKeys))
-                .apply()
-        }
-
-        sortVisibilityAlbums()
-        lateinit var listAdapter: BaseAdapter
-        val listView = ListView(this).apply {
-            choiceMode = ListView.CHOICE_MODE_NONE
-            divider = null
-            cacheColorHint = Color.TRANSPARENT
-            setBackgroundColor(dialogBg)
-        }
-        listAdapter = object : BaseAdapter() {
-            override fun getCount(): Int = mutableAlbums.size
-            override fun getItem(position: Int): AlbumItem = mutableAlbums[position]
-            override fun getItemId(position: Int): Long = position.toLong()
-
-            override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
-                val row = (convertView as? LinearLayout) ?: LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    minimumHeight = Ui.dp(this@MainActivity, 58)
-                    setPadding(
-                        Ui.dp(this@MainActivity, 18),
-                        Ui.dp(this@MainActivity, 8),
-                        Ui.dp(this@MainActivity, 12),
-                        Ui.dp(this@MainActivity, 8)
-                    )
-                    addView(
-                        TextView(this@MainActivity).apply {
-                            tag = "label"
-                            textSize = 16f
-                            setTextColor(dialogText)
-                            gravity = Gravity.CENTER_VERTICAL
-                        },
-                        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    )
-                    addView(
-                        ImageButton(this@MainActivity).apply {
-                            tag = "pin"
-                            setImageResource(R.drawable.ic_pin)
-                            setBackgroundColor(Color.TRANSPARENT)
-                            scaleType = ImageView.ScaleType.CENTER
-                            contentDescription = getString(R.string.main_pin_hidden)
-                            setPadding(
-                                Ui.dp(this@MainActivity, 8),
-                                Ui.dp(this@MainActivity, 8),
-                                Ui.dp(this@MainActivity, 8),
-                                Ui.dp(this@MainActivity, 8)
-                            )
-                        },
-                        LinearLayout.LayoutParams(Ui.dp(this@MainActivity, 44), Ui.dp(this@MainActivity, 44))
-                    )
-                    addView(
-                        ImageButton(this@MainActivity).apply {
-                            tag = "eye"
-                            setImageResource(R.drawable.ic_eye_off)
-                            setBackgroundColor(Color.TRANSPARENT)
-                            scaleType = ImageView.ScaleType.CENTER
-                            contentDescription = getString(R.string.main_reveal_hidden_temporarily)
-                            setPadding(
-                                Ui.dp(this@MainActivity, 8),
-                                Ui.dp(this@MainActivity, 8),
-                                Ui.dp(this@MainActivity, 8),
-                                Ui.dp(this@MainActivity, 8)
-                            )
-                        },
-                        LinearLayout.LayoutParams(Ui.dp(this@MainActivity, 44), Ui.dp(this@MainActivity, 44))
-                    )
-                    addView(
-                        CheckBox(this@MainActivity).apply {
-                            tag = "check"
-                            buttonTintList = android.content.res.ColorStateList.valueOf(dialogText)
-                            isClickable = false
-                            isFocusable = false
-                            gravity = Gravity.CENTER
-                        },
-                        LinearLayout.LayoutParams(Ui.dp(this@MainActivity, 44), Ui.dp(this@MainActivity, 44))
-                    )
-                }
-                val album = getItem(position)
-                val label = row.findViewWithTag<TextView>("label")
-                val pin = row.findViewWithTag<ImageButton>("pin")
-                val eye = row.findViewWithTag<ImageButton>("eye")
-                val check = row.findViewWithTag<CheckBox>("check")
-                val pinned = pinnedKeys.contains(album.key)
-                label.text = SpannableString(getString(R.string.main_album_count_label, album.name, album.count)).apply {
-                    setSpan(RelativeSizeSpan(0.78f), album.name.length.coerceAtMost(length), length,
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                }
-                label.setTextColor(dialogText)
-                pin.setImageResource(if (pinned) R.drawable.ic_pin_filled else R.drawable.ic_pin)
-                pin.setColorFilter(if (pinned) dialogText else dialogMuted)
-                pin.alpha = if (pinned) 1f else 0.48f
-                pin.contentDescription = getString(
-                    if (pinned) R.string.main_unpin_hidden else R.string.main_pin_hidden
-                )
-                pin.setOnClickListener {
-                    if (pinnedKeys.contains(album.key)) {
-                        pinnedKeys.remove(album.key)
-                    } else {
-                        pinnedKeys.add(album.key)
-                    }
-                    val nowPinned = pinnedKeys.contains(album.key)
-                    pin.setImageResource(if (nowPinned) R.drawable.ic_pin_filled else R.drawable.ic_pin)
-                    pin.setColorFilter(if (nowPinned) dialogText else dialogMuted)
-                    pin.alpha = if (nowPinned) 1f else 0.48f
-                    animateHiddenControl(pin)
-                    savePinnedFolders()
-                    sortVisibilityAlbums()
-                    pin.postDelayed({
-                        notifyDataSetChanged()
-                        if (nowPinned) listView.smoothScrollToPosition(0)
-                    }, 190L)
-                }
-                val temporarilyRevealed = album.key in TemporaryAlbumVisibility.activeKeys()
-                eye.visibility = if (album.key !in checkedKeys &&
-                    (album.key in hiddenKeys || isHiddenAlbum(album))) View.VISIBLE else View.INVISIBLE
-                eye.setImageResource(if (temporarilyRevealed) R.drawable.ic_eye else R.drawable.ic_eye_off)
-                eye.setColorFilter(if (temporarilyRevealed) dialogText else dialogMuted)
-                eye.alpha = if (temporarilyRevealed) 1f else 0.65f
-                eye.contentDescription = getString(
-                    if (temporarilyRevealed) R.string.main_hide_revealed_album
-                    else R.string.main_reveal_hidden_temporarily
-                )
-                eye.setOnClickListener {
-                    val requiresFilesystem = album.requiresFilesystem || AlbumRules.isHidden(album.path, album.key)
-                    if (requiresFilesystem && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                        !MediaActions.hasAllFilesAccess(this@MainActivity)) {
-                        Ui.toast(this@MainActivity, getString(R.string.access_hidden_folders_required))
-                        accessCoordinator.ensureFullAccess(true)
-                        return@setOnClickListener
-                    }
-                    val revealed = TemporaryAlbumVisibility.toggle(album.key, requiresFilesystem)
-                    eye.setImageResource(if (revealed) R.drawable.ic_eye else R.drawable.ic_eye_off)
-                    eye.setColorFilter(if (revealed) dialogText else dialogMuted)
-                    eye.alpha = if (revealed) 1f else 0.65f
-                    animateHiddenControl(eye)
-                    scheduleRevealExpiry()
-                    mediaRefreshHandler.postDelayed({
-                        if (dialog.isShowing) dialog.dismiss()
-                        if (!isFinishing) loadAlbums()
-                    }, 190L)
-                }
-                check.isChecked = checkedKeys.contains(album.key)
-                val rowTone = if (pinned || temporarilyRevealed) dialogElevated else dialogRow
-                row.setBackgroundColor(rowTone)
-                row.setOnClickListener {
-                    if (checkedKeys.contains(album.key)) {
-                        checkedKeys.remove(album.key)
-                    } else {
-                        checkedKeys.add(album.key)
-                    }
-                    check.isChecked = checkedKeys.contains(album.key)
-                    animateHiddenControl(check)
-                    notifyDataSetChanged()
-                }
-                return row
-            }
-        }
-        listView.adapter = listAdapter
-        visibilityDialogAdapter = listAdapter
-        val dialogListHeight = min(
-            Ui.dp(this, 248),
-            (resources.displayMetrics.heightPixels * 0.29f).toInt()
-        )
-        val refresher = SwipeRefreshLayout(this).apply {
-            setColorSchemeColors(dialogText)
-            setProgressBackgroundColorSchemeColor(dialogBg)
-            addView(listView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dialogListHeight))
-        }
-
-        var showHiddenCheck: CheckBox? = null
-        var showHiddenLabel: TextView? = null
-        var loadHiddenButton: TextView? = null
-        var loadHiddenIndicator: LoadingIndicatorView? = null
-        var hiddenScanLoading = false
-        fun setHiddenScanLoading(loading: Boolean) {
-            hiddenScanLoading = loading
-            refresher.isRefreshing = false
-            loadHiddenButton?.apply {
-                isEnabled = !loading
-                visibility = if (loading) View.INVISIBLE else View.VISIBLE
-            }
-            loadHiddenIndicator?.visibility = if (loading) View.VISIBLE else View.GONE
-        }
-
-        fun hiddenAlbumsInDialog(): List<AlbumItem> =
-            mutableAlbums.filter { isHiddenAlbum(it) || hiddenKeys.contains(it.key) }
-
-        fun allAlbumsChecked(): Boolean =
-            mutableAlbums.isNotEmpty() && mutableAlbums.all { checkedKeys.contains(it.key) }
-
-        fun hiddenAlbumsChecked(): Boolean {
-            val hiddenAlbums = hiddenAlbumsInDialog()
-            return hiddenAlbums.isNotEmpty() && hiddenAlbums.all { checkedKeys.contains(it.key) }
-        }
-
-        fun updateShowHiddenControl() {
-            val allChecked = allAlbumsChecked()
-            showHiddenCheck?.isChecked = allChecked
-            showHiddenLabel?.setText(
-                if (allChecked || hiddenAlbumsChecked()) R.string.main_unselect_hidden else R.string.main_show_hidden
-            )
-        }
-
-        fun renderAlbums() {
-            updateShowHiddenControl()
-            listAdapter.notifyDataSetChanged()
-            observeVisibilityDialogFolders(mutableAlbums)
-        }
-
-        fun requestHiddenScanAccess() {
-            setHiddenScanLoading(false)
-            Ui.toast(this, getString(R.string.access_hidden_folders_required))
-            accessCoordinator.ensureFullAccess(true)
-        }
-
-        fun refreshHiddenAlbums() {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
-                requestHiddenScanAccess()
-                return
-            }
-            catalogController.refreshCatalog(
-                owner = this,
-                includeHidden = true,
-                force = true,
-                onSuccess = {
-                    mediaLoader.execute {
-                        val refreshed = HiddenAlbumClassification.classify(applicationContext, MediaStoreRepository.buildAlbums(
-                            GalleryCatalogStore.readMedia(applicationContext, true)
-                        )).toMutableList()
-                        sortAlbums(refreshed)
-                        runOnUiThread {
-                            if (isFinishing) return@runOnUiThread
-                            val previousVisible = HashSet(checkedKeys)
-                            mutableAlbums.clear()
-                            mutableAlbums.addAll(refreshed)
-                            automaticallyHiddenKeys = refreshed.filter { it.naturallyHidden }.mapTo(HashSet()) { it.key }
-                            sortVisibilityAlbums()
-                            checkedKeys.clear()
-                            for (album in mutableAlbums) {
-                                if (previousVisible.contains(album.key) || (!hiddenKeys.contains(album.key) && !isHiddenAlbum(album))) {
-                                    checkedKeys.add(album.key)
-                                }
-                            }
-                            renderAlbums()
-                            setHiddenScanLoading(false)
-                        }
-                    }
-                },
-                onFailure = {
-                    setHiddenScanLoading(false)
-                    Ui.toast(this, getString(R.string.main_hidden_refresh_failed))
-                }
-            )
-        }
-
-        refresher.setOnRefreshListener {
-            refresher.isRefreshing = false
-            Ui.toast(this, getString(R.string.main_hidden_refresh_instruction))
-        }
-        renderAlbums()
-
-        var countsRefreshPending = false
-        var countsRefreshAgain = false
-        val refreshCounts: () -> Unit = {
-            if (countsRefreshPending) {
-                countsRefreshAgain = true
-            } else {
-                countsRefreshPending = true
-                val snapshot = mutableAlbums.toList()
-                mediaLoader.execute {
-                    val updated = AlbumCountRefresh.refresh(applicationContext, snapshot)
-                    runOnUiThread {
-                        countsRefreshPending = false
-                        if (!isFinishing && !isDestroyed && visibilityDialogAdapter === listAdapter) {
-                            val countedKeys = snapshot.mapTo(HashSet()) { it.key }
-                            val countsByKey = updated.associateBy { it.key }
-                            val reconciled = mutableAlbums.mapNotNull { album ->
-                                if (album.key in countedKeys) countsByKey[album.key] else album
-                            }
-                            mutableAlbums.clear()
-                            mutableAlbums.addAll(reconciled)
-                            sortVisibilityAlbums()
-                            renderAlbums()
-                            if (countsRefreshAgain) {
-                                countsRefreshAgain = false
-                                refreshVisibilityDialogCounts?.invoke()
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        refreshVisibilityDialogCounts = refreshCounts
-
-        fun loadHiddenAlbums() {
-            if (hiddenScanLoading) return
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !MediaActions.hasAllFilesAccess(this)) {
-                requestHiddenScanAccess()
-                return
-            }
-            setHiddenScanLoading(true)
-            refreshHiddenAlbums()
-        }
-
-        fun toggleShowHiddenSelection() {
-            if (allAlbumsChecked() || hiddenAlbumsChecked()) {
-                for (album in hiddenAlbumsInDialog()) {
-                    checkedKeys.remove(album.key)
-                }
-            } else {
-                for (album in mutableAlbums) {
-                    checkedKeys.add(album.key)
-                }
-            }
-            renderAlbums()
-        }
-
-        fun applyFolderVisibility() {
-            val nextHidden = HashSet(hiddenKeys)
-            for (album in mutableAlbums) {
-                if (checkedKeys.contains(album.key)) {
-                    nextHidden.remove(album.key)
-                    TemporaryAlbumVisibility.hide(album.key)
-                } else {
-                    nextHidden.add(album.key)
-                }
-            }
-            showHiddenFolders = mutableAlbums.any { checkedKeys.contains(it.key) && isHiddenAlbum(it) }
-            everVisibleKeys.addAll(checkedKeys.filterNot(VirtualAlbumRules::isVirtual))
-            prefs.edit()
-                .putStringSet("hidden_folder_keys", nextHidden)
-                .putStringSet(PREF_EVER_VISIBLE_FOLDER_KEYS, HashSet(everVisibleKeys))
-                .putBoolean("show_hidden_folders", showHiddenFolders)
-                .apply()
-            loadAlbums()
-            scheduleRevealExpiry()
-            dialog.dismiss()
-        }
-
-        fun dialogButton(text: String, onClick: () -> Unit): TextView =
-            TextView(this).apply {
-                this.text = text
-                textSize = 14f
-                setTextColor(dialogText)
-                gravity = Gravity.CENTER_VERTICAL or Gravity.START
-                minimumHeight = Ui.dp(this@MainActivity, 50)
-                isClickable = true
-                isFocusable = true
-                background = android.graphics.drawable.RippleDrawable(
-                    android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x18000000),
-                    Ui.rounded(dialogElevated, 10, this@MainActivity, Ui.menuBorder(this@MainActivity), 1),
-                    Ui.rounded(Color.WHITE, 10, this@MainActivity)
-                )
-                setPadding(
-                    Ui.dp(this@MainActivity, 14),
-                    Ui.dp(this@MainActivity, 8),
-                    Ui.dp(this@MainActivity, 14),
-                    Ui.dp(this@MainActivity, 8)
-                )
-                setOnClickListener {
-                    Haptics.perform(this, Haptics.Effect.TAP)
-                    onClick()
-                }
-            }
-
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(
-                Ui.dp(this@MainActivity, 22),
-                Ui.dp(this@MainActivity, 16),
-                Ui.dp(this@MainActivity, 22),
-                Ui.dp(this@MainActivity, 52)
-            )
-            addView(
-                TextView(this@MainActivity).apply {
-                    setText(R.string.main_folder_visibility)
-                    textSize = 18f
-                    setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-                    setTextColor(dialogText)
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            )
-            addView(
-                TextView(this@MainActivity).apply {
-                    setText(R.string.main_hidden_dialog_help)
-                    textSize = 14f
-                    setTextColor(dialogText)
-                    alpha = 0.78f
-                    setPadding(0, Ui.dp(this@MainActivity, 5), 0, Ui.dp(this@MainActivity, 6))
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            )
-            addView(
-                LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    addView(
-                        LinearLayout(this@MainActivity).apply {
-                            orientation = LinearLayout.HORIZONTAL
-                            gravity = Gravity.CENTER_VERTICAL
-                            isClickable = true
-                            setOnClickListener { toggleShowHiddenSelection() }
-                            val checkbox = CheckBox(this@MainActivity).apply {
-                                buttonTintList = android.content.res.ColorStateList.valueOf(dialogText)
-                                isClickable = false
-                                isFocusable = false
-                            }
-                            showHiddenCheck = checkbox
-                            val label = TextView(this@MainActivity).apply {
-                                setText(R.string.main_show_hidden)
-                                textSize = 15f
-                                setTextColor(dialogText)
-                                setPadding(Ui.dp(this@MainActivity, 8), 0, 0, 0)
-                            }
-                            showHiddenLabel = label
-                            addView(checkbox)
-                            addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                        },
-                        LinearLayout.LayoutParams(0, Ui.dp(this@MainActivity, 48), 1f)
-                    )
-                    addView(
-                        FrameLayout(this@MainActivity).apply {
-                          addView(dialogButton(getString(R.string.main_load_hidden)) { loadHiddenAlbums() }.apply {
-                            loadHiddenButton = this
-                            textSize = 14f
-                            setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-                            gravity = Gravity.CENTER_VERTICAL or Gravity.END
-                            background = android.graphics.drawable.RippleDrawable(
-                                android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x18000000),
-                                null,
-                                Ui.rounded(Color.WHITE, 10, this@MainActivity)
-                            )
-                            setPadding(
-                                Ui.dp(this@MainActivity, 8),
-                                Ui.dp(this@MainActivity, 8),
-                                Ui.dp(this@MainActivity, 8),
-                                Ui.dp(this@MainActivity, 8)
-                            )
-                          }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-                          addView(LoadingIndicatorView(this@MainActivity, dialogText).apply {
-                              loadHiddenIndicator = this
-                              visibility = View.GONE
-                          }, FrameLayout.LayoutParams(Ui.dp(this@MainActivity, 32), Ui.dp(this@MainActivity, 32), Gravity.CENTER))
-                        },
-                        LinearLayout.LayoutParams(0, Ui.dp(this@MainActivity, 48), 1f)
-                    )
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            )
-            addView(refresher, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        }
-        val buttonBar = ClickFeedbackActionLayout(this).apply {
-            tag = "hidden_dialog_confirm"
-            gravity = Gravity.CENTER
-            isClickable = true
-            isFocusable = true
-            contentDescription = getString(R.string.action_ok)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            background = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x18000000),
-                Ui.rounded(dialogHighlight, 0, this@MainActivity),
-                Color.WHITE.toDrawable()
-            )
-            setOnClickListener {
-                isEnabled = false
-                // Let the shared, momentary click pulse finish before closing.
-                postDelayed({ if (dialog.isShowing && !isFinishing) applyFolderVisibility() }, 180L)
-            }
-            addView(
-                TextView(this@MainActivity).apply {
-                    setText(R.string.action_ok)
-                    textSize = 14f
-                    setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-                    setTextColor(dialogText)
-                    gravity = Gravity.CENTER
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            )
-        }
-        val panel = FrameLayout(this).apply {
-            background = Ui.rounded(dialogBg, 16, this@MainActivity, Ui.menuBorder(this@MainActivity), 1)
-            clipToOutline = true
-            addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            addView(
-                buttonBar,
-                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this@MainActivity, 48), Gravity.BOTTOM)
-            )
-        }
-
-        dialog = AlertDialog.Builder(this)
-            .setView(panel)
-            .create()
-        dialog.setOnDismissListener {
-            visibilityDialogAdapter = null
-            refreshVisibilityDialogCounts = null
-            mergeVisibleAlbumsIntoDialog = null
-            visibilityFolderObservers.values.forEach { it.stopWatching() }
-            visibilityFolderObservers.clear()
-            if (isHiddenPanelHost() && !isChangingConfigurations && !isFinishing) finish()
-            mediaRefreshHandler.removeCallbacks(visibilityCountRefreshRunnable)
-        }
-        Ui.showCenteredPanel(dialog, fullHeight = true)
-        // Counts are reconciled asynchronously; checkbox/pin/reveal choices are
-        // never overwritten by a late metadata delivery.
-        refreshCounts()
-        val update: (List<AlbumItem>) -> Unit = { remembered ->
-            if (dialog.isShowing && visibilityDialogAdapter === listAdapter) {
-                val existing = mutableAlbums.associateBy { it.key }
-                for (album in remembered) {
-                    if (VirtualAlbumRules.isVirtual(album.key)) continue
-                    val index = mutableAlbums.indexOfFirst { it.key == album.key }
-                    if (index >= 0) mutableAlbums[index] = album
-                    else if (album.key !in existing) {
-                        mutableAlbums.add(album)
-                        if (!hiddenKeys.contains(album.key) && (showHiddenFolders || !isHiddenAlbum(album))) {
-                            checkedKeys.add(album.key)
-                        }
-                    }
-                }
-                sortVisibilityAlbums()
-                renderAlbums()
-                refreshCounts()
-            }
-        }
-        mergeVisibleAlbumsIntoDialog = update
-        return update
-    }
-
-    private fun setColumnCount(nextCount: Int) {
+    internal fun setColumnCount(nextCount: Int) {
         val bounded = max(2, min(6, nextCount))
         if (bounded == columnCount) return
         columnCount = bounded
-        prefs.edit().putInt("column_count", columnCount).apply()
+        prefs.edit().putInt(GalleryPreferences.COLUMN_COUNT, columnCount).apply()
         if (::grid.isInitialized) {
             grid.animate()
                 .alpha(0.82f)
@@ -1683,17 +783,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun albumCoverSizePx(): Int {
+    internal fun albumCoverSizePx(): Int {
         val horizontalPadding = Ui.dp(this, 12)
         val itemPadding = Ui.dp(this, albumSpacingDp) * 2 * columnCount
         return max(Ui.dp(this, 96), (resources.displayMetrics.widthPixels - horizontalPadding - itemPadding) / columnCount)
     }
 
-    private fun sortAlbums(albums: MutableList<AlbumItem>) {
+    internal fun sortAlbums(albums: MutableList<AlbumItem>) {
         AlbumRules.sort(albums, sortMode, sortDesc)
     }
 
-    private fun isHiddenAlbum(album: AlbumItem): Boolean =
+    internal fun isHiddenAlbum(album: AlbumItem): Boolean =
         album.naturallyHidden || AlbumRules.isHidden(album.path, album.key) || album.key in automaticallyHiddenKeys
 
     private fun matchesMediaFilter(item: MediaItem): Boolean = MediaFilterRules.matches(
@@ -1754,14 +854,13 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-
-    private fun shouldIncludeHiddenFilesystem(): Boolean =
+    internal fun shouldIncludeHiddenFilesystem(): Boolean =
         accessCoordinator.includeHiddenFilesystem(
             showHiddenFolders || GalleryPreferences.hiddenFlag(this, "always_show_hidden") ||
                 TemporaryAlbumVisibility.requiresHiddenFilesystem()
         )
 
-    private fun scheduleRevealExpiry() {
+    internal fun scheduleRevealExpiry() {
         mediaRefreshHandler.removeCallbacks(revealExpiryRunnable)
         if (!mainScreenResumed) return
         TemporaryAlbumVisibility.nextExpiryDelay()?.let {
@@ -1791,59 +890,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Only watch known hidden folders while their dialog is open. MediaStore
-     * does not report direct writes/moves under .nomedia. Never scan the device. */
-    private fun observeVisibilityDialogFolders(albums: List<AlbumItem>) {
-        if (isFinishing || isDestroyed || visibilityDialogAdapter == null) return
-        val wanted = if (MediaActions.hasAllFilesAccess(this)) albums.asSequence()
-            .filter { it.requiresFilesystem || AlbumRules.isHidden(it.path, it.key) }
-            .map { it.key }.filter(MediaStoreRepository::isPhysicalAlbum).toSet() else emptySet()
-        visibilityFolderObservers.keys.filterNot { it in wanted }.forEach {
-            visibilityFolderObservers.remove(it)?.stopWatching()
-        }
-        val root = Environment.getExternalStorageDirectory()
-        for (key in wanted) {
-            if (key in visibilityFolderObservers) continue
-            val directory = java.io.File(root, key)
-            if (!runCatching { directory.canonicalPath.startsWith(root.canonicalPath + java.io.File.separator) }
-                    .getOrDefault(false)) continue
-            val observer = object : android.os.FileObserver(directory.absolutePath,
-                CREATE or DELETE or MOVED_FROM or MOVED_TO or CLOSE_WRITE or DELETE_SELF or MOVE_SELF) {
-                override fun onEvent(event: Int, path: String?) {
-                    mediaRefreshHandler.post {
-                        if (isFinishing || isDestroyed || !mainScreenResumed || visibilityDialogAdapter == null) return@post
-                        mediaRefreshHandler.removeCallbacks(visibilityCountRefreshRunnable)
-                        mediaRefreshHandler.postDelayed(visibilityCountRefreshRunnable, 180L)
-                    }
-                }
-            }
-            observer.startWatching()
-            visibilityFolderObservers[key] = observer
-        }
-    }
-
-    private fun animateHiddenControl(view: View) {
-        view.animate().cancel()
-        view.scaleX = 0.76f
-        view.scaleY = 0.76f
-        view.animate().scaleX(1f).scaleY(1f).setDuration(190)
-            .setInterpolator(OvershootInterpolator(1.5f)).start()
-    }
-
     companion object {
         const val EXTRA_HIDDEN_PANEL = "gallery_hidden_panel"
-        private const val REQ_BATCH_DELETE = 10
+        internal const val REQ_BATCH_DELETE = 10
         private const val PREFS = "gallery_albums"
-        private const val PREF_PINNED_HIDDEN_FOLDER_KEYS = "pinned_hidden_folder_keys"
-        private const val PREF_EVER_VISIBLE_FOLDER_KEYS = "ever_visible_folder_keys"
+        internal const val PREF_PINNED_HIDDEN_FOLDER_KEYS = "pinned_hidden_folder_keys"
+        internal const val PREF_EVER_VISIBLE_FOLDER_KEYS = "ever_visible_folder_keys"
         private const val DEFERRED_REFRESH_DELAY_MS = 900L
         private const val INITIAL_CATALOG_DELAY_MS = 90L
-        private const val SORT_NAME = AlbumRules.SORT_NAME
-        private const val SORT_PATH = AlbumRules.SORT_PATH
-        private const val SORT_SIZE = AlbumRules.SORT_SIZE
-        private const val SORT_MODIFIED = AlbumRules.SORT_MODIFIED
-        private const val SORT_CREATED = AlbumRules.SORT_CREATED
-        private const val SORT_RANDOM = AlbumRules.SORT_RANDOM
+        internal const val SORT_NAME = AlbumRules.SORT_NAME
+        internal const val SORT_PATH = AlbumRules.SORT_PATH
+        internal const val SORT_SIZE = AlbumRules.SORT_SIZE
+        internal const val SORT_MODIFIED = AlbumRules.SORT_MODIFIED
+        internal const val SORT_CREATED = AlbumRules.SORT_CREATED
+        internal const val SORT_RANDOM = AlbumRules.SORT_RANDOM
     }
 
     private data class PendingAlbumSubmission(

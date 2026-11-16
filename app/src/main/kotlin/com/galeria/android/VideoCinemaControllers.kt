@@ -90,7 +90,8 @@ internal class VideoTrackChoice internal constructor(
 @OptIn(UnstableApi::class)
 internal class VideoTrackController(
     private val preferences: CinemaModePreferences,
-    private val displayLocale: Locale = Locale.getDefault()
+    private val displayLocale: Locale = Locale.getDefault(),
+    private val labels: TrackLabels = TrackLabels()
 ) {
     private var player: ExoPlayer? = null
     private var albumKey: String? = null
@@ -242,13 +243,13 @@ internal class VideoTrackController(
             ?.replaceFirstChar { if (it.isLowerCase()) it.titlecase(displayLocale) else it.toString() }
         val details = if (trackType == C.TRACK_TYPE_AUDIO && format.channelCount > 0) {
             when (format.channelCount) {
-                1 -> "Mono"
-                2 -> "Estéreo"
-                else -> "${format.channelCount} canais"
+                1 -> labels.mono
+                2 -> labels.stereo
+                else -> labels.channels(format.channelCount)
             }
         } else null
         return listOfNotNull(explicit, language, details).distinct().joinToString(" · ")
-            .ifBlank { if (trackType == C.TRACK_TYPE_AUDIO) "Áudio" else "Legenda" }
+            .ifBlank { if (trackType == C.TRACK_TYPE_AUDIO) labels.audio else labels.subtitle }
     }
 
     private fun preferenceToken(format: Format): String {
@@ -256,5 +257,24 @@ internal class VideoTrackController(
         if (!language.isNullOrBlank() && language != "und") return "language:$language"
         val label = format.label?.trim()?.lowercase(Locale.ROOT)
         return if (label.isNullOrBlank()) "id:${format.id.orEmpty()}" else "label:$label"
+    }
+}
+
+/** Words used to describe audio and subtitle tracks; Portuguese unless built from the phone language. */
+internal class TrackLabels(
+    val mono: String = "Mono",
+    val stereo: String = "Estéreo",
+    val channels: (Int) -> String = { "$it canais" },
+    val audio: String = "Áudio",
+    val subtitle: String = "Legenda"
+) {
+    companion object {
+        fun from(context: android.content.Context) = TrackLabels(
+            context.getString(R.string.track_mono),
+            context.getString(R.string.track_stereo),
+            { context.getString(R.string.track_channels, it) },
+            context.getString(R.string.track_audio),
+            context.getString(R.string.viewer_subtitles)
+        )
     }
 }

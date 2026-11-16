@@ -71,7 +71,7 @@ class VideoViewerRegressionTest {
                 worker.execute { entered.countDown(); releaseWorker.await() }
                 try {
                     assertTrue(entered.await(15, java.util.concurrent.TimeUnit.SECONDS))
-                    ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+                    ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                         putExtra("uri", uri.toString()); putExtra("mime", "image/png")
                         putExtra("name", "ocr-held-${index + 1}.png")
                         putExtra("path", folder); putExtra("album_key", folder)
@@ -182,7 +182,7 @@ class VideoViewerRegressionTest {
                 .apply { isAccessible = true }.get(null) as java.util.concurrent.ExecutorService
             worker.execute { started.countDown(); releaseWorker.await(60, java.util.concurrent.TimeUnit.SECONDS) }
             assertTrue("A fila de OCR não ficou pronta", started.await(15, java.util.concurrent.TimeUnit.SECONDS))
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", created[0].toString())
                 putExtra("name", "ocr-ownership-1.png")
                 putExtra("mime", "image/png")
@@ -237,7 +237,7 @@ class VideoViewerRegressionTest {
             GalleryCatalogStore.saveCustomOrder(context, folder, created.map { uri ->
                 catalog.first { MediaIdentityRules.sameUri(it.uri.toString(), uri.toString()) }
             })
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", created[0].toString())
                 putExtra("name", "gesture-1.png")
                 putExtra("mime", "image/png")
@@ -326,7 +326,7 @@ class VideoViewerRegressionTest {
         val second = insert(folder, "second.mp4")
         try {
             MediaStoreRepository.refreshMedia(context, force = true)
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", first.toString()); putExtra("mime", "video/mp4"); putExtra("name", "first.mp4")
                 putExtra("album_key", folder); putExtra("path", folder)
             }).use { scenario ->
@@ -383,7 +383,7 @@ class VideoViewerRegressionTest {
             GalleryCatalogStore.saveCustomOrder(context, folder, created.map { uri ->
                 catalog.first { MediaIdentityRules.sameUri(it.uri.toString(), uri.toString()) }
             })
-            val intent = Intent(context, DetailActivity::class.java).apply {
+            val intent = ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", created.first().toString())
                 putExtra("mime", "image/png")
                 putExtra("name", "photo-a.png")
@@ -439,7 +439,7 @@ class VideoViewerRegressionTest {
             GalleryCatalogStore.saveCustomOrder(context, folder, created.map { uri ->
                 catalog.first { MediaIdentityRules.sameUri(it.uri.toString(), uri.toString()) }
             })
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", created[0].toString())
                 putExtra("mime", "image/png")
                 putExtra("name", "photo-a.png")
@@ -497,7 +497,7 @@ class VideoViewerRegressionTest {
             GalleryCatalogStore.saveCustomOrder(context, folder, created.map { uri ->
                 catalog.first { MediaIdentityRules.sameUri(it.uri.toString(), uri.toString()) }
             })
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", created[0].toString())
                 putExtra("mime", "image/png")
                 putExtra("name", "photo-a.png")
@@ -534,8 +534,7 @@ class VideoViewerRegressionTest {
                 awaitViewerReady(scenario, created[0])
                 scenario.onActivity { activity ->
                     // Automatic/shuffle changes share the same completion and resource ownership.
-                    activity.javaClass.getDeclaredMethod("switchItem", Int::class.javaPrimitiveType,
-                        Boolean::class.javaPrimitiveType).apply { isAccessible = true }.invoke(activity, 1, false)
+                    activity.switchItem(1, false)
                     val incoming = activity.javaClass.getDeclaredField("activePage")
                         .apply { isAccessible = true }.get(activity) as View
                     incoming.animate().cancel()
@@ -646,7 +645,7 @@ class VideoViewerRegressionTest {
         context.contentResolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
         return uri
     }
-    private fun current(activity: DetailActivity) = activity.javaClass.getDeclaredMethod("currentItem").apply { isAccessible = true }.invoke(activity) as MediaItem
+    private fun current(activity: DetailActivity) = activity.currentItem()
     private fun await(description: () -> String = { "Condição do visualizador não atingida" }, condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 15000
         while (System.currentTimeMillis() < deadline) { if (condition()) return; Thread.sleep(100) }

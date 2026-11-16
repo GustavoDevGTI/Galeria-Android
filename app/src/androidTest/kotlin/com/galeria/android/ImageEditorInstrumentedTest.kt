@@ -157,7 +157,7 @@ class ImageEditorInstrumentedTest {
         val name = "edit-menu-${System.nanoTime()}.png"
         val source = insertImage(context, name)
         try {
-            ActivityScenario.launch<DetailActivity>(Intent(context, DetailActivity::class.java).apply {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
                 putExtra("uri", source.toString())
                 putExtra("name", name)
                 putExtra("mime", "image/png")

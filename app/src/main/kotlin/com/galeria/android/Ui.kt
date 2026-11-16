@@ -989,6 +989,7 @@ class Ui private constructor() {
             items: List<String>,
             widthDp: Int = 248,
             selectedItems: Set<String> = emptySet(),
+            label: (String) -> String = { it },
             onSelect: (String) -> Unit
         ): PopupWindow {
             val context = anchor.context
@@ -1006,7 +1007,7 @@ class Ui private constructor() {
             items.forEachIndexed { index, item ->
                 val isSelected = selectedItems.contains(item)
                 val row = TextView(context).apply {
-                    text = item
+                    text = label(item)
                     setTextColor(menuText(context))
                     textSize = 15f
                     gravity = Gravity.CENTER_VERTICAL or Gravity.START

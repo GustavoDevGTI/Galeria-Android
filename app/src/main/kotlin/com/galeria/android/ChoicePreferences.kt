@@ -42,13 +42,13 @@ internal object ChoicePreferences {
         listOf(setOf("Padrão", "Padrao"), setOf("Quadrado"), setOf("Cantos arredondados"))
     )
     val FOLDER_THUMBNAIL = ChoiceSpec(
-        "folder_thumb_style",
+        GalleryPreferences.FOLDER_THUMB_STYLE,
         listOf(ThumbnailStyle.SQUARE, ThumbnailStyle.ROUNDED, ThumbnailStyle.CIRCULAR),
         listOf(setOf("Quadrado"), setOf("Cantos arredondados"), setOf("Circular")),
         defaultIndex = 1
     )
     val ROTATION = ChoiceSpec(
-        "rotation_criterion",
+        GalleryPreferences.ROTATION_CRITERION,
         listOf("system", "portrait", "landscape", "sensor"),
         listOf(setOf("Padrão do sistema", "Padrao do sistema"), setOf("Retrato"), setOf("Paisagem"), setOf("Sensor"))
     )

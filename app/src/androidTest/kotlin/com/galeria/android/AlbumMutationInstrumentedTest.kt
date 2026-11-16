@@ -677,8 +677,24 @@ class AlbumMutationInstrumentedTest {
     }
     private fun adapter(activity: Activity) = activity.javaClass.getDeclaredField("adapter").apply { isAccessible = true }
         .get(activity) as MediaRecyclerAdapter
-    private fun invoke(activity: Activity, name: String, types: Array<Class<*>>, vararg args: Any): Any? =
-        activity.javaClass.getDeclaredMethod(name, *types).apply { isAccessible = true }.invoke(activity, *args)
+    private fun invoke(activity: Activity, name: String, types: Array<Class<*>>, vararg args: Any): Any? {
+        val own = activity.javaClass.declaredMethods.firstOrNull {
+            // Internal members get a "$app" suffix in the bytecode.
+            (it.name == name || it.name == "$name\$app") && it.parameterTypes.contentEquals(types)
+        }
+        if (own != null) return own.apply { isAccessible = true }.invoke(activity, *args)
+        // Screen actions moved to extension functions are compiled as static methods of their file.
+        val withReceiver = arrayOf<Class<*>>(activity.javaClass) + types
+        val moved = extensionFiles.mapNotNull { runCatching { Class.forName("com.galeria.android.$it") }.getOrNull() }
+            .flatMap { it.declaredMethods.asList() }
+            .first { it.name == name && it.parameterTypes.contentEquals(withReceiver) }
+        return moved.apply { isAccessible = true }.invoke(null, activity, *args)
+    }
+
+    private val extensionFiles = listOf(
+        "AlbumMediaSelectionActionsKt", "AlbumMediaDialogsKt", "MainFolderDialogsKt", "MainAlbumSelectionActionsKt",
+        "DetailFileActionsKt", "DetailMediaInfoKt", "DetailPictureInPictureKt"
+    )
     private fun waitForCount(scenario: ActivityScenario<AlbumMediaActivity>, count: Int) = waitUntil {
         var matches = false
         scenario.onActivity { matches = adapter(it).getCount() == count }
