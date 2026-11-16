@@ -1,4 +1,4 @@
-# Galeria Android 0.10.0
+# Galeria Android 0.9.10
 
 Todas as opções das Configurações passam a funcionar. As que antes só guardavam a escolha agora mudam o aplicativo.
 
@@ -15,18 +15,18 @@ Ainda sem função: gerenciar pastas ignoradas, filtro de fotos, botões visíve
 
 ## APK
 
-- Arquivo Galeria-Android-versao-0.10.0.apk
+- Arquivo Galeria-Android-versao-0.9.10.apk
 - Pacote com.galeria.android
-- Versão 0.10.0, código 10000
-- Tamanho 45359514 bytes
-- SHA-256 do arquivo 26fd35320d80ab8f7ae4cb1c3057d1132db61daa91f331953a3de3b6abe7a1ba
+- Versão 0.9.10, código 9010
+- Tamanho 45359518 bytes
+- SHA-256 do arquivo 4b17a158ffb1c00545eede5879cc925f6d9cbf7dd40272aee92cdfae0cfc417f
 - SHA-256 do certificado 1795e4918be4f3d0f9d7da2d16fd961658a27ce731f0343b9b357501fb6b63ce
 
 A assinatura é a mesma da versão anterior e permite atualização sobre a instalação existente.
 
 ## Validação
 
-**Nenhum teste em emulador foi executado nesta versão**, por decisão do responsável pelo projeto; a conferência é feita em aparelho real. Não há recibo de entrega para a 0.10.0 e a regressão completa (`-Delivery`) não rodou.
+**Nenhum teste em emulador foi executado nesta versão**, por decisão do responsável pelo projeto; a conferência é feita em aparelho real. Não há recibo de entrega para a 0.9.10 e a regressão completa (`-Delivery`) não rodou.
 
 O que rodou:
 
