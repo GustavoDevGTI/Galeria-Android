@@ -77,18 +77,14 @@ class ScrollDateRulesTest {
     }
 
     @Test
-    fun balloonFollowsTheSortOrder() {
-        fun balloon(sort: String) = ScrollDateRules.balloon("praia.jpg", "image/jpeg", 2_500_000L, 0L, 10L, sort,
-            Locale.ROOT) { "data" }
-        assertEquals("data", balloon(MediaSortRules.SORT_DATE))
-        assertEquals("data", balloon(MediaSortRules.SORT_CUSTOM))
-        assertEquals("P", balloon(MediaSortRules.SORT_NAME))
-        assertEquals("2.4 MB", balloon(MediaSortRules.SORT_SIZE).orEmpty().replace(',', '.'))
-        assertEquals("JPG", balloon(MediaSortRules.SORT_TYPE))
-        assertNull(balloon(MediaSortRules.SORT_DURATION))
-        assertEquals("1:05", ScrollDateRules.durationLabel(65_000L))
+    fun datesOnlyShowWhileTheAlbumRunsInDateOrder() {
+        // Balloon, top year and marks: by date, or the custom order before anything was placed by hand.
         assertTrue(ScrollDateRules.followsDate(MediaSortRules.SORT_DATE))
+        assertTrue(ScrollDateRules.followsDate(MediaSortRules.SORT_CUSTOM, manualOrder = false))
+        assertFalse(ScrollDateRules.followsDate(MediaSortRules.SORT_CUSTOM, manualOrder = true))
+        assertTrue(ScrollDateRules.followsDate(MediaSortRules.SORT_DATE, manualOrder = true))
         assertFalse(ScrollDateRules.followsDate(MediaSortRules.SORT_NAME))
+        assertFalse(ScrollDateRules.followsDate(MediaSortRules.SORT_SIZE))
     }
 
     @Test
@@ -103,15 +99,18 @@ class ScrollDateRulesTest {
 
 class AlbumSidebarRulesTest {
     @Test
-    fun onlyAClearSwipeToTheRightAwayFromTheEdgeOpensTheSidebar() {
-        assertFalse("A borda esquerda é do gesto de voltar", AlbumSidebarRules.startsAwayFromEdge(20f, 32f))
-        assertTrue(AlbumSidebarRules.startsAwayFromEdge(80f, 32f))
-        assertTrue(AlbumSidebarRules.opens(dx = 120f, dy = 20f, distancePx = 56f))
-        assertFalse("Curto demais", AlbumSidebarRules.opens(dx = 40f, dy = 0f, distancePx = 56f))
-        assertFalse("Diagonal demais", AlbumSidebarRules.opens(dx = 80f, dy = 70f, distancePx = 56f))
-        assertFalse("Para a esquerda", AlbumSidebarRules.opens(dx = -120f, dy = 0f, distancePx = 56f))
+    fun aSwipeToTheRightDragsTheSidebarAndReleaseDecidesIfItStays() {
+        assertTrue(AlbumSidebarRules.startsDrag(dx = 30f, dy = 5f, slopPx = 8f))
+        assertFalse("Ainda dentro da folga do toque", AlbumSidebarRules.startsDrag(dx = 10f, dy = 0f, slopPx = 8f))
+        assertFalse("Diagonal demais", AlbumSidebarRules.startsDrag(dx = 30f, dy = 28f, slopPx = 8f))
+        assertFalse("Para a esquerda", AlbumSidebarRules.startsDrag(dx = -30f, dy = 0f, slopPx = 8f))
         assertTrue("Movimento vertical é rolagem", AlbumSidebarRules.isScroll(dx = 5f, dy = 40f, slopPx = 8f))
         assertFalse(AlbumSidebarRules.isScroll(dx = 60f, dy = 20f, slopPx = 8f))
+        val fling = 1000f
+        assertTrue("Passou de um terço", AlbumSidebarRules.settlesOpen(0.4f, 0f, fling))
+        assertFalse("Pouco aberto e parado", AlbumSidebarRules.settlesOpen(0.2f, 0f, fling))
+        assertTrue("Arrasto rápido para a direita", AlbumSidebarRules.settlesOpen(0.1f, 1500f, fling))
+        assertFalse("Arrasto rápido de volta", AlbumSidebarRules.settlesOpen(0.6f, -1500f, fling))
     }
 }
 
@@ -125,5 +124,19 @@ class DestinationPathRulesTest {
         assertEquals("Pictures/Viagem/", MediaActions.destinationRelativePath("Pictures/Viagem", false, root))
         assertEquals("Uma pasta só com o mesmo começo de nome não é a raiz",
             "storage/emulated/01/Pictures/", MediaActions.destinationRelativePath("/storage/emulated/01/Pictures", false, root))
+    }
+}
+
+class StoragePathRulesTest {
+    private val primary = "/storage/emulated/0"
+
+    @Test
+    fun onlyFoldersOnTheSdCardNeedTheFullPath() {
+        assertEquals("DCIM/Viagem/", StoragePathRules.volumeRelative("/storage/1A2B-3C4D/DCIM/Viagem", primary))
+        assertEquals("Nova/", StoragePathRules.volumeRelative("/storage/1A2B-3C4D/Nova/", primary))
+        assertNull(StoragePathRules.volumeRelative("/storage/emulated/0/Pictures/Viagem", primary))
+        assertNull(StoragePathRules.volumeRelative("Pictures/Viagem", primary))
+        assertNull(StoragePathRules.volumeRelative("/storage/1A2B-3C4D", primary))
+        assertNull(StoragePathRules.volumeRelative("/storage/self/primary/DCIM", primary))
     }
 }

@@ -42,11 +42,18 @@ internal object SecurityGate {
         Ui.showPasswordDialog(
             context,
             context.getString(R.string.security_folder_title, albumName),
-            context.getString(R.string.security_folder_message)
+            context.getString(R.string.security_folder_message),
+            extraText = context.getString(R.string.security_forgot_password),
+            onExtra = { FolderRecovery.recover(context, albumKey, albumName, action) }
         ) { password ->
             if (store.verifyFolderPassword(albumKey, password)) {
                 SecuritySession.unlockFolder(albumKey)
                 action()
+                // Folders protected before the secret question existed get one on their next opening.
+                if (!store.hasRecovery(albumKey)) {
+                    FolderRecovery.askToCreate(context, listOf(albumKey),
+                        context.getString(R.string.security_recovery_add_title, albumName))
+                }
                 null
             } else context.getString(R.string.security_wrong_password)
         }

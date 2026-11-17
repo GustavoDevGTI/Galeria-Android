@@ -39,6 +39,10 @@ class AlbumMediaCatalogController(context: Context) {
     private var pagingJob: Job? = null
     @Volatile private var closed = false
 
+    /** Whether the album shown last has media placed by hand; without it, the custom order is the date order. */
+    var hasManualOrder = false
+        private set
+
     fun load(
         scope: CoroutineScope,
         options: AlbumMediaCatalogOptions,
@@ -50,6 +54,7 @@ class AlbumMediaCatalogController(context: Context) {
         val request = ++generation
         pagingJob?.cancel()
         if (AlbumMediaRules.shouldUsePaging(options.albumKey, options.groupMode, options.selectionMode)) {
+            hasManualOrder = false
             val userHiddenKeys = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
                 .getStringSet(GalleryPreferences.HIDDEN_FOLDER_KEYS, emptySet()).orEmpty().toSet() +
                 // Secure folders never leak into Recents or other views that gather every folder.
@@ -160,7 +165,10 @@ class AlbumMediaCatalogController(context: Context) {
                     customOrder
                 )
                 mainHandler.post {
-                    if (!closed && request == generation) onItems(items)
+                    if (!closed && request == generation) {
+                        hasManualOrder = customOrder.isNotEmpty()
+                        onItems(items)
+                    }
                 }
             } catch (error: Exception) {
                 android.util.Log.e("AlbumMediaCatalog", "Falha ao carregar mídias", error)
@@ -190,6 +198,7 @@ class AlbumMediaCatalogController(context: Context) {
     }
 
     fun saveCustomOrder(albumKey: String?, order: List<MediaItem>, onSaved: () -> Unit) {
+        hasManualOrder = order.isNotEmpty()
         executor.execute {
             GalleryCatalogStore.saveCustomOrder(appContext, albumKey ?: "all", order)
             mainHandler.post {

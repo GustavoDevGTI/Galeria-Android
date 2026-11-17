@@ -693,6 +693,8 @@ class Ui private constructor() {
             message: String? = null,
             confirm: Boolean = false,
             onCancel: (() -> Unit)? = null,
+            extraText: String? = null,
+            onExtra: (() -> Unit)? = null,
             onSubmit: (String) -> String?
         ): AlertDialog {
             lateinit var dialog: AlertDialog
@@ -746,6 +748,24 @@ class Ui private constructor() {
                 }
             }
             (second ?: first).setOnEditorActionListener { _, _, _ -> submit(); true }
+            // A secondary link under the field, such as "Esqueci a senha".
+            if (extraText != null && onExtra != null) {
+                body.addView(TextView(context).apply {
+                    tag = "password_extra"
+                    text = extraText
+                    textSize = 14f
+                    setTextColor(accent(context))
+                    isClickable = true
+                    isFocusable = true
+                    background = flatRowBackground(context, false)
+                    setPadding(dp(context, 18), dp(context, 8), dp(context, 18), dp(context, 8))
+                    setOnClickListener {
+                        submitted = true
+                        dialog.dismiss()
+                        onExtra()
+                    }
+                })
+            }
             body.addView(
                 themedActionPair(
                     context,

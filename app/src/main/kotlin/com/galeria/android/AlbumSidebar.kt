@@ -10,6 +10,7 @@ import android.graphics.drawable.RippleDrawable
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.VelocityTracker
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -30,11 +31,12 @@ internal object AlbumSidebarSource {
 
 /** When a swipe inside the album grid opens the album sidebar. */
 internal object AlbumSidebarRules {
-    /** Far enough from the left edge, which belongs to the system back gesture. */
-    fun startsAwayFromEdge(x: Float, edgePx: Float): Boolean = x > edgePx
+    /** A move to the right, mostly horizontal, past the touch slop: the panel starts following the finger. */
+    fun startsDrag(dx: Float, dy: Float, slopPx: Float): Boolean = dx > slopPx * 1.5f && dx > abs(dy) * 1.4f
 
-    /** A clear move to the right: long enough and mostly horizontal. */
-    fun opens(dx: Float, dy: Float, distancePx: Float): Boolean = dx > distancePx && dx > abs(dy) * 1.6f
+    /** On release the panel stays open past a third of the way, or after a quick swipe to the right. */
+    fun settlesOpen(progress: Float, velocityX: Float, flingPx: Float): Boolean =
+        velocityX > flingPx || (progress >= 0.35f && velocityX > -flingPx)
 
     /** A vertical move first means the user is scrolling the grid. */
     fun isScroll(dx: Float, dy: Float, slopPx: Float): Boolean = abs(dy) > slopPx * 2 && abs(dy) > abs(dx)
@@ -61,8 +63,48 @@ internal class AlbumSidebar(
 
     val isShowing: Boolean get() = overlay != null
 
+    /** How open the panel is, from 0 (hidden) to 1 (fully open). */
+    private var progress = 0f
+    private var sheetWidth = 0
+
     fun show(albums: List<AlbumItem>) {
-        if (overlay != null || albums.isEmpty()) return
+        if (!attach(albums)) return
+        Haptics.perform(activity, Haptics.Effect.TICK)
+        animate(0f, 1f, sheetWidth) {}
+    }
+
+    /** A swipe started: the panel appears at the edge and then follows the finger. */
+    fun beginDrag(albums: List<AlbumItem>): Boolean {
+        if (!attach(albums)) return false
+        Haptics.perform(activity, Haptics.Effect.TICK)
+        return true
+    }
+
+    /** The finger is [distance] pixels to the right of where the drag took over. */
+    fun dragTo(distance: Float) {
+        if (overlay == null || sheetWidth <= 0) return
+        setProgress((distance / sheetWidth).coerceIn(0f, 1f))
+    }
+
+    /** Released: opens past a third of the way or with a quick swipe to the right, otherwise slides back. */
+    fun endDrag(velocityX: Float) {
+        if (overlay == null) return
+        if (AlbumSidebarRules.settlesOpen(progress, velocityX, dp(FLING_DP_PER_SECOND).toFloat())) {
+            animate(progress, 1f, sheetWidth) {}
+        } else {
+            dismiss()
+        }
+    }
+
+    private fun setProgress(value: Float) {
+        progress = value
+        val sheet = panel ?: return
+        sheet.translationX = -sheetWidth * (1f - value)
+        (sheet.parent as? ViewGroup)?.getChildAt(0)?.alpha = value
+    }
+
+    private fun attach(albums: List<AlbumItem>): Boolean {
+        if (overlay != null || albums.isEmpty()) return false
         val root = activity.findViewById<ViewGroup>(android.R.id.content)
         val insets = ViewCompat.getRootWindowInsets(root)?.getInsets(WindowInsetsCompat.Type.systemBars())
         val metrics = activity.resources.displayMetrics
@@ -114,17 +156,18 @@ internal class AlbumSidebar(
         root.addView(frame, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         overlay = frame
         panel = sheet
+        sheetWidth = width
+        progress = 0f
         backCallback.isEnabled = true
-        Haptics.perform(activity, Haptics.Effect.TICK)
-        animate(0f, 1f, width) {}
+        return true
     }
 
     fun dismiss(then: () -> Unit = {}) {
         val frame = overlay ?: return then()
-        val width = panel?.width?.takeIf { it > 0 } ?: dp(320)
+        val width = sheetWidth.takeIf { it > 0 } ?: dp(320)
         backCallback.isEnabled = false
         overlay = null
-        animate(1f, 0f, width) {
+        animate(progress, 0f, width) {
             (frame.parent as? ViewGroup)?.removeView(frame)
             panel = null
             then()
@@ -139,9 +182,10 @@ internal class AlbumSidebar(
         ValueAnimator.ofFloat(from, to).apply {
             duration = ANIMATION_MS
             addUpdateListener {
-                val progress = it.animatedValue as Float
-                sheet.translationX = -width * (1f - progress)
-                scrim?.alpha = progress
+                val value = it.animatedValue as Float
+                progress = value
+                sheet.translationX = -width * (1f - value)
+                scrim?.alpha = value
             }
             addListener(object : android.animation.AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: android.animation.Animator) = end()
@@ -217,12 +261,16 @@ internal class AlbumSidebar(
     private companion object {
         const val ANIMATION_MS = 180L
         const val SIDE_RADIUS_DP = 18
+        const val FLING_DP_PER_SECOND = 600
     }
 }
 
 /** Opens the album sidebar from the album screen and switches albums from it. */
+private fun AlbumMediaActivity.sidebar(): AlbumSidebar =
+    albumSidebar ?: AlbumSidebar(this, albumKey) { album -> openAlbumFromSidebar(album) }.also { albumSidebar = it }
+
 internal fun AlbumMediaActivity.openAlbumSidebar() {
-    val sidebar = albumSidebar ?: AlbumSidebar(this, albumKey) { album -> openAlbumFromSidebar(album) }.also { albumSidebar = it }
+    val sidebar = sidebar()
     if (sidebar.isShowing) return
     val shared = AlbumSidebarSource.albums
     if (shared.isNotEmpty()) {
@@ -255,37 +303,100 @@ internal fun AlbumMediaActivity.openAlbumFromSidebar(album: AlbumItem) {
     }
 }
 
-/** Watches the album grid for a clear swipe to the right that opens the sidebar. */
+/**
+ * Watches the album grid for a swipe to the right. Like the Samsung gallery, it works over the
+ * thumbnails (away from the system edge), and the panel follows the finger until it is released.
+ */
 internal fun AlbumMediaActivity.installAlbumSidebarGesture() {
-    val edge = Ui.dp(this, 32).toFloat()
-    val distance = Ui.dp(this, 56).toFloat()
+    // The left edge is the system back gesture. A band in the middle of the grid is kept for the app
+    // (Android allows up to 200dp per edge), so a swipe that starts at the edge there opens the sidebar.
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        grid.addOnLayoutChangeListener { view, _, top, _, bottom, _, _, _, _ ->
+            val band = Ui.dp(this, EDGE_BAND_HEIGHT_DP)
+            val middle = (bottom - top) / 2
+            view.systemGestureExclusionRects = listOf(android.graphics.Rect(0, (middle - band / 2).coerceAtLeast(0),
+                Ui.dp(this, EDGE_BAND_WIDTH_DP), (middle + band / 2).coerceAtMost(bottom - top)))
+        }
+    }
     val slop = ViewConfiguration.get(this).scaledTouchSlop.toFloat()
     var tracking = false
+    var dragging = false
     var startX = 0f
     var startY = 0f
-    grid.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+    var dragOriginX = 0f
+    var velocity: VelocityTracker? = null
+    fun finish(event: MotionEvent?) {
+        val tracker = velocity
+        val speed = if (tracker != null && event != null) {
+            tracker.addMovement(event)
+            tracker.computeCurrentVelocity(1000)
+            tracker.xVelocity
+        } else 0f
+        tracker?.recycle()
+        velocity = null
+        tracking = false
+        if (dragging) {
+            dragging = false
+            albumSidebar?.endDrag(speed)
+        }
+    }
+    grid.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
         override fun onInterceptTouchEvent(recyclerView: RecyclerView, event: MotionEvent): Boolean {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = event.x
                     startY = event.y
                     tracking = !adapter.isSelectionMode() && layoutManager.orientation == RecyclerView.VERTICAL &&
-                        AlbumSidebarRules.startsAwayFromEdge(event.x, edge) && albumSidebar?.isShowing != true
+                        albumSidebar?.isShowing != true
+                    velocity?.recycle()
+                    velocity = if (tracking) VelocityTracker.obtain().also { it.addMovement(event) } else null
                 }
-                MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> tracking = false
+                MotionEvent.ACTION_POINTER_DOWN -> finish(null)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> finish(null)
                 MotionEvent.ACTION_MOVE -> if (tracking) {
+                    velocity?.addMovement(event)
                     val dx = event.x - startX
                     val dy = event.y - startY
                     if (adapter.isSelectionMode() || AlbumSidebarRules.isScroll(dx, dy, slop)) {
-                        tracking = false
-                    } else if (AlbumSidebarRules.opens(dx, dy, distance)) {
-                        tracking = false
-                        openAlbumSidebar()
+                        finish(null)
+                    } else if (AlbumSidebarRules.startsDrag(dx, dy, slop)) {
+                        if (sidebar().beginDrag(AlbumSidebarSource.albums)) {
+                            // From here the grid stops scrolling and the panel follows the finger. The pull to
+                            // refresh around the grid must not take the gesture over when the finger drifts down.
+                            dragging = true
+                            dragOriginX = event.x
+                            recyclerView.parent?.requestDisallowInterceptTouchEvent(true)
+                        } else {
+                            // The list still has to load (the main screen was closed): open it when ready.
+                            finish(null)
+                            openAlbumSidebar()
+                        }
                         return true
                     }
                 }
             }
             return false
         }
+
+        override fun onTouchEvent(recyclerView: RecyclerView, event: MotionEvent) {
+            if (!dragging) return
+            when (event.actionMasked) {
+                MotionEvent.ACTION_MOVE -> {
+                    velocity?.addMovement(event)
+                    albumSidebar?.dragTo(event.x - dragOriginX + slop * 1.5f)
+                }
+                MotionEvent.ACTION_UP -> {
+                    // Decide with where the finger left the screen: moves can arrive late in one batch.
+                    albumSidebar?.dragTo(event.x - dragOriginX + slop * 1.5f)
+                    finish(event)
+                }
+                MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> finish(null)
+            }
+        }
+
+        override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) = Unit
     })
 }
+
+private const val EDGE_BAND_HEIGHT_DP = 200
+private const val EDGE_BAND_WIDTH_DP = 40

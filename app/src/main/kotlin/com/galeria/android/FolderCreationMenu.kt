@@ -32,7 +32,7 @@ import java.util.concurrent.Executors
  */
 class FolderCreationMenu(
     private val activity: Activity,
-    private val internalOnly: Boolean = false,
+    private val forMove: Boolean = false,
     private val onFolderCreated: (File) -> Unit = {}
 ) {
     private var creating = false
@@ -40,7 +40,7 @@ class FolderCreationMenu(
 
     fun show() {
         folderWorker.execute {
-            val locations = storageLocations().let { all -> if (internalOnly) all.filterNot { it.removable } else all }
+            val locations = storageLocations()
             activity.runOnUiThread {
                 if (!activity.isFinishing && !activity.isDestroyed && locations.isNotEmpty()) showWindow(locations)
             }
@@ -51,7 +51,7 @@ class FolderCreationMenu(
         lateinit var dialog: AlertDialog
         var location = locations.first()
         // From "Mover" it starts in Pictures, the usual home for new albums.
-        var currentDirectory = if (internalOnly) {
+        var currentDirectory = if (forMove) {
             File(location.root, Environment.DIRECTORY_PICTURES).takeIf { it.isDirectory } ?: location.root
         } else location.root
         var requestVersion = 0
@@ -62,7 +62,7 @@ class FolderCreationMenu(
         // Storage, side by side; the SD card stays visible but disabled when none is mounted.
         val storageRow = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(14), 0, dp(14), dp(10))
+            setPadding(dp(14), 0, dp(14), dp(6))
         }
         val chips = ArrayList<Pair<StorageLocation?, TextView>>()
         lateinit var refresh: () -> Unit
@@ -104,12 +104,12 @@ class FolderCreationMenu(
                 }
             }
             chips.add(chipLocation to chip)
-            storageRow.addView(chip, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+            storageRow.addView(chip, LinearLayout.LayoutParams(0, dp(36), 1f).apply {
                 if (storageRow.childCount > 0) marginStart = dp(8)
             })
         }
         locations.forEach { addChip(it, it.label) }
-        if (!internalOnly && locations.none { it.removable }) addChip(null, activity.getString(R.string.folder_sd_card))
+        if (locations.none { it.removable }) addChip(null, activity.getString(R.string.folder_sd_card))
         styleChips()
         body.addView(storageRow, matchWrap())
 
@@ -134,8 +134,8 @@ class FolderCreationMenu(
         body.addView(LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), 0, dp(14), dp(4))
-            addView(back, LinearLayout.LayoutParams(dp(40), dp(40)))
+            setPadding(dp(8), 0, dp(14), dp(2))
+            addView(back, LinearLayout.LayoutParams(dp(36), dp(36)))
             addView(path, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }, matchWrap())
 
@@ -172,17 +172,16 @@ class FolderCreationMenu(
                 refresh()
             }
         }
-        val listHeight = minOf(dp(300), (activity.resources.displayMetrics.heightPixels * 0.36f).toInt())
         val listBox = FrameLayout(activity)
         body.addView(listBox.apply {
             background = Ui.rounded(Ui.menuElevatedSurface(activity), 14, activity, Ui.menuBorder(activity), 1)
             clipToOutline = true
             addView(list, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(empty, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, listHeight).apply {
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f).apply {
             marginStart = dp(14)
             marginEnd = dp(14)
-            bottomMargin = dp(12)
+            bottomMargin = dp(10)
         })
 
         // Name of the new folder.
@@ -196,10 +195,20 @@ class FolderCreationMenu(
             setPadding(dp(14), dp(10), dp(14), dp(10))
             tag = "folder_creation_name"
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-            // The keyboard covers the lower half: the list shrinks while the name is typed so
-            // Cancelar and Criar stay visible.
+            // The keyboard covers the lower half: while the name is typed the window wraps a short
+            // list so Cancelar and Criar stay visible, then goes back to the tall list.
             setOnFocusChangeListener { _, focused ->
-                listBox.layoutParams = listBox.layoutParams.apply { height = if (focused) minOf(listHeight, dp(132)) else listHeight }
+                (listBox.layoutParams as LinearLayout.LayoutParams).apply {
+                    height = if (focused) dp(132) else 0
+                    weight = if (focused) 0f else 1f
+                    listBox.layoutParams = this
+                }
+                dialog.window?.let { window ->
+                    window.attributes = window.attributes.apply {
+                        height = if (focused) ViewGroup.LayoutParams.WRAP_CONTENT
+                            else (activity.resources.displayMetrics.heightPixels * 0.78f).toInt()
+                    }
+                }
             }
         }
         body.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply {
@@ -219,7 +228,7 @@ class FolderCreationMenu(
         ))
         confirm = {
             // Android keeps media out of the storage root, so a destination for "Mover" needs a parent.
-            if (internalOnly && sameFile(currentDirectory, location.root)) {
+            if (forMove && !location.removable && sameFile(currentDirectory, location.root)) {
                 Ui.toast(activity, activity.getString(R.string.folder_pick_parent))
             } else {
                 createFolder(currentDirectory, input.text.toString()) { dialog.dismiss() }
@@ -258,7 +267,8 @@ class FolderCreationMenu(
         dialog = AlertDialog.Builder(activity).setView(body).create()
         dialog.setOnDismissListener { requestVersion++ }
         dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-        Ui.showCenteredPanel(dialog)
+        // Tall window: the folder list takes the room the header does not use.
+        Ui.showCenteredPanel(dialog, fullHeight = true)
         refresh()
     }
 

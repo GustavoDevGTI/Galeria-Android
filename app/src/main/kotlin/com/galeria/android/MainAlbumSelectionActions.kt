@@ -98,6 +98,10 @@ internal fun MainActivity.toggleSecureSelectedAlbums() {
         albums.forEach { security.setFolderPassword(it.key, password); SecuritySession.unlockFolder(it.key) }
         Ui.toast(this, getString(R.string.security_folder_protected))
         exitSelectionMode(); loadAlbums()
+        // Then the secret question that recovers the folder if the password is forgotten.
+        window.decorView.post {
+            if (!isFinishing) FolderRecovery.askToCreate(this, albums.map { it.key }, getString(R.string.security_recovery_title))
+        }
         null
     }
 }
@@ -184,7 +188,7 @@ internal fun MainActivity.askMoveSelectedAlbums() {
             if (isFinishing || !moreButton.isAttachedToWindow) return@runOnUiThread
             Ui.showAlbumTargets(moreButton, getString(R.string.action_move_to), targets,
                 onNewFolder = {
-                    FolderCreationMenu(this, internalOnly = true) { folder ->
+                    FolderCreationMenu(this, forMove = true) { folder ->
                         if (!isFinishing) moveSelectedAlbums(albums, MediaActions.newFolderTarget(folder))
                     }.show()
                 }

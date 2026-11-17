@@ -14,9 +14,12 @@ import kotlin.math.roundToInt
 
 /** Texts shown while scrolling an album: the balloon by the finger, the year marks and the year on top. */
 internal object ScrollDateRules {
-    /** Sort orders where the position follows the date, so years make sense on screen. */
-    fun followsDate(sortMode: String): Boolean =
-        sortMode == MediaSortRules.SORT_DATE || sortMode == MediaSortRules.SORT_CUSTOM
+    /**
+     * Dates only make sense while the album runs in date order: sorted by date, or the custom order
+     * before any media was placed by hand (it falls back to newest first). Any other order shows none.
+     */
+    fun followsDate(sortMode: String, manualOrder: Boolean = false): Boolean =
+        sortMode == MediaSortRules.SORT_DATE || (sortMode == MediaSortRules.SORT_CUSTOM && !manualOrder)
 
     fun year(dateSeconds: Long, zone: TimeZone = TimeZone.getDefault()): Int? {
         if (dateSeconds <= 0L) return null
@@ -35,46 +38,8 @@ internal object ScrollDateRules {
         return format.format(java.util.Date(dateSeconds * 1000L)).replaceFirstChar { it.titlecase(locale) }
     }
 
-    /** The balloon text for the media under the finger, following the album's sort order. */
-    fun balloon(item: MediaItem, sortMode: String): String? =
-        balloon(item.name, item.mimeType, item.size, item.duration, item.dateAdded, sortMode)
-
-    fun balloon(
-        name: String,
-        mimeType: String,
-        size: Long,
-        durationMs: Long,
-        dateSeconds: Long,
-        sortMode: String,
-        locale: Locale = Locale.getDefault(),
-        monthYearText: (Long) -> String? = { monthYear(it, locale) }
-    ): String? = when (sortMode) {
-        MediaSortRules.SORT_NAME -> name.trim().firstOrNull()?.uppercaseChar()?.toString()
-        MediaSortRules.SORT_SIZE -> sizeLabel(size)
-        MediaSortRules.SORT_DURATION -> if (durationMs > 0L) durationLabel(durationMs) else null
-        MediaSortRules.SORT_TYPE -> name.substringAfterLast('.', "").takeIf(String::isNotBlank)?.uppercase(locale)
-            ?: mimeType.substringAfter('/').uppercase(locale).takeIf(String::isNotBlank)
-        else -> monthYearText(dateSeconds)
-    }
-
-    fun sizeLabel(bytes: Long): String? {
-        if (bytes <= 0L) return null
-        val units = listOf("B", "KB", "MB", "GB")
-        var value = bytes.toDouble()
-        var unit = 0
-        while (value >= 1024.0 && unit < units.lastIndex) { value /= 1024.0; unit++ }
-        return if (unit == 0 || value >= 10) "${value.roundToInt()} ${units[unit]}"
-        else String.format(Locale.getDefault(), "%.1f %s", value, units[unit])
-    }
-
-    fun durationLabel(durationMs: Long): String {
-        val totalSeconds = durationMs / 1000L
-        val hours = totalSeconds / 3600L
-        val minutes = (totalSeconds % 3600L) / 60L
-        val seconds = totalSeconds % 60L
-        return if (hours > 0) String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds)
-        else String.format(Locale.ROOT, "%d:%02d", minutes, seconds)
-    }
+    /** The balloon next to the finger always says the month and year of the media under it. */
+    fun balloon(item: MediaItem): String? = monthYear(item.dateAdded)
 
     /**
      * First position of each year, sampled across the album so huge albums stay cheap.

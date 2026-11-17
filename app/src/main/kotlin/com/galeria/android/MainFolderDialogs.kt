@@ -52,7 +52,7 @@ import kotlin.math.min
 
 internal fun MainActivity.showSortDialog() {
     val labels = resources.getStringArray(R.array.main_sort_labels)
-    val modes = arrayOf(MainActivity.SORT_NAME, MainActivity.SORT_PATH, MainActivity.SORT_SIZE, MainActivity.SORT_MODIFIED, MainActivity.SORT_CREATED, MainActivity.SORT_RANDOM)
+    val modes = arrayOf(MainActivity.SORT_NAME, MainActivity.SORT_PATH, MainActivity.SORT_SIZE, MainActivity.SORT_MODIFIED, MainActivity.SORT_CREATED, MainActivity.SORT_RANDOM, AlbumRules.SORT_CUSTOM)
     val checked = modes.indexOf(sortMode).takeIf { it >= 0 } ?: 3
 
     Ui.showSortChoiceDialog(

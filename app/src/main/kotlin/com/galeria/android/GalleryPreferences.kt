@@ -11,6 +11,8 @@ internal object GalleryPreferences {
     // Security
     const val APP_PASSWORD = "security_app_password"
     const val SECURE_FOLDERS = "security_secure_folders"
+    /** Per protected folder: the secret question and the hashed answer that recover it. */
+    const val SECURE_FOLDER_RECOVERY = "security_folder_recovery"
     const val LOCK_ENTIRE_APP = "lock_entire_app"
     const val LOCK_HIDDEN_ITEMS = "lock_hidden_items"
     const val LOCK_FILE_OPERATIONS = "lock_file_operations"
@@ -42,6 +44,8 @@ internal object GalleryPreferences {
     const val HORIZONTAL_THUMBNAIL_SCROLL = "horizontal_thumbnail_scroll"
     const val PULL_TO_REFRESH = "pull_to_refresh"
     const val FILE_THUMB_STYLE = "file_thumb_style"
+    /** Album keys in the order the user dragged them on the main screen ("Ordem personalizada"). */
+    const val ALBUM_CUSTOM_ORDER = "album_custom_order"
     const val SHOW_ALBUM_NAMES = "show_album_names"
     const val SHOW_FILE_NAMES = "show_file_names"
 

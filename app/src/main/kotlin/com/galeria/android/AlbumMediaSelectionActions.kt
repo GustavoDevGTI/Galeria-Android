@@ -155,7 +155,7 @@ internal fun AlbumMediaActivity.askMoveSelected() {
         if (isFinishing || !moreButton.isAttachedToWindow) return@loadMoveTargets
         Ui.showAlbumTargets(moreButton, getString(R.string.action_move_to), targets,
             onNewFolder = {
-                FolderCreationMenu(this, internalOnly = true) { folder ->
+                FolderCreationMenu(this, forMove = true) { folder ->
                     if (!isFinishing) moveSelected(selected, MediaActions.newFolderTarget(folder))
                 }.show()
             }

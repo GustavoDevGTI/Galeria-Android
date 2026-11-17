@@ -441,7 +441,7 @@
     <string name="security_folder_protect">Proteger com senha</string>
     <string name="security_folder_unprotect">Remover senha da pasta</string>
     <string name="security_folder_create_title">Senha para %s</string>
-    <string name="security_folder_create_message">Só quem souber esta senha abre a pasta. Ela não aparece em Recentes, Favoritos ou na pesquisa. Não há como recuperar uma senha esquecida.</string>
+    <string name="security_folder_create_message">Só quem souber esta senha abre a pasta. Ela não aparece em Recentes, Favoritos ou na pesquisa. Se esquecer a senha, a pergunta secreta abre a pasta.</string>
     <string name="security_folder_protected">Pasta protegida.</string>
     <string name="security_folder_unprotected">Senha da pasta removida.</string>
     <string name="security_folder_locked">Pasta segura</string>
@@ -668,4 +668,28 @@
     <string name="browse_bar_full">A barra comporta até %1$d atalhos.</string>
     <string name="browse_bar_min">A barra precisa de pelo menos um atalho.</string>
     <string name="action_theme">Tema</string>
+    <string name="main_custom_order_enabled">Ordem personalizada ativada. Escolha outra em Ordenar para mudar.</string>
+    <string name="security_forgot_password">Esqueci a senha</string>
+    <string name="security_recovery_title">Pergunta secreta</string>
+    <string name="security_recovery_add_title">Pergunta secreta para %1$s</string>
+    <string name="security_recovery_create_message">Se você esquecer a senha, a resposta a esta pergunta abre a pasta.</string>
+    <string name="security_recovery_choose">Escolher pergunta</string>
+    <string name="security_recovery_custom">Escrever minha pergunta</string>
+    <string name="security_recovery_question_hint">Sua pergunta</string>
+    <string name="security_recovery_answer_hint">Resposta</string>
+    <string name="security_recovery_save">Salvar</string>
+    <string name="security_recovery_later">Agora não</string>
+    <string name="security_recovery_saved">Pergunta secreta salva.</string>
+    <string name="security_recovery_missing_fields">Escolha uma pergunta e escreva uma resposta com pelo menos 2 letras.</string>
+    <string name="security_recovery_wrong">Resposta incorreta.</string>
+    <string name="security_recovery_none">Esta pasta foi protegida sem pergunta secreta, então não há como recuperar a senha.</string>
+    <string name="security_recovery_new_password_title">Nova senha para %1$s</string>
+    <string name="security_recovery_new_password_message">A pasta está aberta. Crie uma senha nova ou toque em Cancelar para manter a antiga.</string>
+    <string-array name="security_recovery_questions">
+        <item>Qual o nome do seu primeiro animal de estimação?</item>
+        <item>Em que cidade você nasceu?</item>
+        <item>Qual o nome da sua escola primária?</item>
+        <item>Qual o nome de solteira da sua mãe?</item>
+        <item>Qual a sua comida favorita?</item>
+    </string-array>
 </resources>

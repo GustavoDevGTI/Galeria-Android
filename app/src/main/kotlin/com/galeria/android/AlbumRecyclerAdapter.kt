@@ -130,6 +130,16 @@ class AlbumRecyclerAdapter(
         diff.dispatchUpdatesTo(this)
     }
 
+    /** Moves an album while it is dragged; only without a search, so the whole list keeps the order. */
+    fun moveAlbum(from: Int, to: Int): Boolean {
+        if (filter.isNotEmpty() || from !in visibleAlbums.indices || to !in visibleAlbums.indices || from == to) return false
+        visibleAlbums.add(to, visibleAlbums.removeAt(from))
+        allAlbums.clear()
+        allAlbums.addAll(visibleAlbums)
+        notifyItemMoved(from, to)
+        return true
+    }
+
     fun removeCompletedItems(items: List<MediaItem>, moved: Boolean) {
         if (items.isEmpty()) return
         val byAlbum = items.groupBy { it.albumKey }

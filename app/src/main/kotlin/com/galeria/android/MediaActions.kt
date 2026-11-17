@@ -265,6 +265,10 @@ class MediaActions private constructor() {
 
         @JvmStatic
         fun moveToFolder(activity: Activity, item: MediaItem, folderName: String): Int {
+            // A folder on the SD card comes as its full path: only a direct file move reaches it.
+            otherVolumeFolder(folderName)?.let { folder ->
+                return if (hasAllFilesAccess(activity)) moveToDirectory(activity, item, folder) else RESULT_NEEDS_PERMISSION
+            }
             val relativePath = destinationRelativePath(folderName, item.isVideo())
             if (relativePath.isEmpty()) {
                 return RESULT_FAILED
@@ -313,6 +317,9 @@ class MediaActions private constructor() {
 
         @JvmStatic
         fun copyToFolder(activity: Activity, item: MediaItem, folderName: String): Int {
+            otherVolumeFolder(folderName)?.let { folder ->
+                return if (hasAllFilesAccess(activity)) copyToDirectory(activity, item, folder) else RESULT_NEEDS_PERMISSION
+            }
             val relativePath = destinationRelativePath(folderName, item.isVideo())
             if (relativePath.isEmpty()) {
                 return RESULT_FAILED
@@ -475,9 +482,20 @@ class MediaActions private constructor() {
 
         /** A folder just created from "Mover", as a destination album (key and path relative to the storage). */
         fun newFolderTarget(folder: File): AlbumItem {
+            val sdCardRelative = StoragePathRules.volumeRelative(folder.absolutePath,
+                Environment.getExternalStorageDirectory().absolutePath)
+            if (sdCardRelative != null) {
+                // On the SD card the move needs the full path; the key stays relative like other albums.
+                return AlbumItem(sdCardRelative, folder.name, 0, null, 0L, 0L, 0L, folder.absolutePath)
+            }
             val relative = destinationRelativePath(folder.absolutePath, false)
             return AlbumItem(relative, folder.name, 0, null, 0L, 0L, 0L, relative)
         }
+
+        /** A full path on another storage volume (the SD card), or null for the internal storage. */
+        internal fun otherVolumeFolder(folderName: String?): File? =
+            folderName?.takeIf { StoragePathRules.volumeRelative(it, Environment.getExternalStorageDirectory().absolutePath) != null }
+                ?.let(::File)
 
         @JvmStatic
         fun cleanFolderName(value: String?): String =
@@ -550,13 +568,15 @@ class MediaActions private constructor() {
             }
         }
 
-        private fun moveToFolderDirect(activity: Activity, item: MediaItem, relativePath: String): Int {
+        private fun moveToFolderDirect(activity: Activity, item: MediaItem, relativePath: String): Int =
+            moveToDirectory(activity, item, File(Environment.getExternalStorageDirectory(), relativePath))
+
+        private fun moveToDirectory(activity: Activity, item: MediaItem, targetDir: File): Int {
             val currentFile = fileFromMediaStore(activity, item.uri)
             if (currentFile == null || !currentFile.exists()) {
                 return RESULT_FAILED
             }
 
-            val targetDir = File(Environment.getExternalStorageDirectory(), relativePath)
             if (!targetDir.exists() && !targetDir.mkdirs()) {
                 return RESULT_FAILED
             }
@@ -599,12 +619,14 @@ class MediaActions private constructor() {
             return RESULT_FAILED
         }
 
-        private fun copyToFolderDirect(activity: Activity, item: MediaItem, relativePath: String): Int {
+        private fun copyToFolderDirect(activity: Activity, item: MediaItem, relativePath: String): Int =
+            copyToDirectory(activity, item, File(Environment.getExternalStorageDirectory(), relativePath))
+
+        private fun copyToDirectory(activity: Activity, item: MediaItem, targetDir: File): Int {
             val currentFile = fileFromMediaStore(activity, item.uri)
             if (currentFile == null || !currentFile.exists()) {
                 return RESULT_FAILED
             }
-            val targetDir = File(Environment.getExternalStorageDirectory(), relativePath)
             if (!targetDir.exists() && !targetDir.mkdirs()) {
                 return RESULT_FAILED
             }
@@ -658,5 +680,19 @@ class MediaActions private constructor() {
                 output.write(buffer, 0, read)
             }
         }
+    }
+}
+
+/** Paths on a storage volume other than the internal one (the SD card), which MediaStore moves cannot reach. */
+internal object StoragePathRules {
+    /** "DCIM/Viagem/" for "/storage/1A2B-3C4D/DCIM/Viagem"; null for the internal storage or other paths. */
+    fun volumeRelative(path: String, primaryRoot: String): String? {
+        val normalized = path.replace("\\", "/").trimEnd('/')
+        val primary = primaryRoot.replace("\\", "/").trimEnd('/')
+        if (!normalized.startsWith("/storage/")) return null
+        if (normalized.equals(primary, ignoreCase = true) || normalized.startsWith("$primary/", ignoreCase = true)) return null
+        val parts = normalized.removePrefix("/storage/").split('/').filter(String::isNotEmpty)
+        if (parts.size < 2 || parts[0] == "emulated" || parts[0] == "self") return null
+        return parts.drop(1).joinToString("/") + "/"
     }
 }

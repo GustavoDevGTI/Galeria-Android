@@ -58,10 +58,16 @@ class AlbumSidebarInstrumentedTest {
                 onView(withHint("Pesquisar em ${first.name}")).check(matches(isDisplayed()))
                 val grid = allOf(isAssignableFrom(RecyclerView::class.java), isDisplayed())
 
-                // A vertical move scrolls the grid. (A drag from the left edge is the system back gesture,
-                // which closes the screen before the app sees it; AlbumSidebarRulesTest covers that rule.)
+                // A vertical move scrolls the grid.
                 onView(grid).perform(drag(0.5f, 0.35f, 0.52f, 0.75f))
                 onView(withTagValue(equalTo("album_sidebar"))).check(doesNotExist())
+
+                // From the very left edge, in the band kept from the system back gesture, it opens too.
+                onView(grid).perform(drag(0.004f, 0.5f, 0.7f, 0.5f))
+                waitFor { onView(withTagValue(equalTo("album_sidebar"))).check(matches(isDisplayed())) }
+                androidx.test.espresso.Espresso.pressBack()
+                waitFor { onView(withTagValue(equalTo("album_sidebar"))).check(doesNotExist()) }
+                onView(withHint("Pesquisar em ${first.name}")).check(matches(isDisplayed()))
 
                 onView(grid).perform(drag(0.25f, 0.5f, 0.85f, 0.52f))
                 waitFor { onView(withTagValue(equalTo("album_sidebar"))).check(matches(isDisplayed())) }

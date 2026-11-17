@@ -95,7 +95,29 @@ internal class SecurityStore(private val prefs: SharedPreferences) {
 
     fun removeFolder(albumKey: String) {
         val next = folders().apply { remove(albumKey) }
-        prefs.edit().putString(GalleryPreferences.SECURE_FOLDERS, next.toString()).apply()
+        val recovery = recoveries().apply { remove(albumKey) }
+        prefs.edit()
+            .putString(GalleryPreferences.SECURE_FOLDERS, next.toString())
+            .putString(GalleryPreferences.SECURE_FOLDER_RECOVERY, recovery.toString())
+            .apply()
+    }
+
+    private fun recoveries(): JSONObject =
+        runCatching { JSONObject(prefs.getString(GalleryPreferences.SECURE_FOLDER_RECOVERY, null) ?: "{}") }.getOrDefault(JSONObject())
+
+    fun hasRecovery(albumKey: String): Boolean = recoveries().has(albumKey)
+
+    /** The stored question: "preset:N" for one of the ready questions, otherwise the user's own text. */
+    fun recoveryQuestion(albumKey: String): String? = recoveries().optJSONObject(albumKey)?.optString("question")
+
+    fun setRecovery(albumKey: String, question: String, answer: String) {
+        val entry = JSONObject().put("question", question).put("answer", PasswordHashing.encode(RecoveryRules.normalize(answer)))
+        prefs.edit().putString(GalleryPreferences.SECURE_FOLDER_RECOVERY, recoveries().put(albumKey, entry).toString()).apply()
+    }
+
+    fun verifyRecovery(albumKey: String, answer: String): Boolean {
+        val stored = recoveries().optJSONObject(albumKey)?.optString("answer") ?: return false
+        return PasswordHashing.verify(RecoveryRules.normalize(answer), stored)
     }
 }
 
@@ -139,4 +161,20 @@ internal object SecurityRules {
         if (albumKey.isNullOrBlank()) return false
         return secureKeys.any { key -> albumKey == key || albumKey.startsWith(key.trimEnd('/') + "/") }
     }
+}
+
+/** Answers to the secret question match regardless of case, accents and extra spaces. */
+internal object RecoveryRules {
+    const val MIN_ANSWER = 2
+    const val PRESET_PREFIX = "preset:"
+
+    fun normalize(answer: String): String = java.text.Normalizer.normalize(answer.trim(), java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}+"), "")
+        .replace(Regex("\\s+"), " ")
+        .lowercase(java.util.Locale.ROOT)
+
+    fun isAcceptable(answer: String): Boolean = normalize(answer).length >= MIN_ANSWER
+
+    fun presetIndex(question: String?): Int? = question?.takeIf { it.startsWith(PRESET_PREFIX) }
+        ?.removePrefix(PRESET_PREFIX)?.toIntOrNull()
 }

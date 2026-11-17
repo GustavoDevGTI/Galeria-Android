@@ -160,13 +160,15 @@ class AlbumCatalogController(context: Context) {
         onAlbums: (List<AlbumItem>, String) -> Unit
     ) {
         val sorted = albums.toMutableList()
-        AlbumRules.sort(sorted, options.sortMode, options.sortDescending)
         val prefs = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val custom = options.sortMode == AlbumRules.SORT_CUSTOM
+        AlbumRules.sort(sorted, options.sortMode, options.sortDescending,
+            customOrder = AlbumReorderRules.savedOrder(prefs.getString(GalleryPreferences.ALBUM_CUSTOM_ORDER, null)))
         val pinned = prefs.getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty()
         val unpinned = prefs.getStringSet(VirtualAlbumRules.UNPINNED_ESSENTIAL_PREF, emptySet()).orEmpty()
         val screenshotKey = activeScreenshotKey
         val ordered = VirtualAlbumRules.pinEssential(sorted, pinned,
-            activeScreenshotKey = screenshotKey, unpinnedEssentialKeys = unpinned)
+            activeScreenshotKey = screenshotKey, unpinnedEssentialKeys = unpinned, customOrder = custom)
         val shownPinned = VirtualAlbumRules.pinnedKeys(sorted, pinned, unpinned, screenshotKey)
         val essential = sorted.filter { VirtualAlbumRules.isEssential(it, screenshotKey) }.mapTo(HashSet()) { it.key }
         mainHandler.post {

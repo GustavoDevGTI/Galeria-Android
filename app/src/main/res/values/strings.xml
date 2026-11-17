@@ -434,7 +434,7 @@
     <string name="security_folder_protect">Protect with password</string>
     <string name="security_folder_unprotect">Remove folder password</string>
     <string name="security_folder_create_title">Password for %s</string>
-    <string name="security_folder_create_message">Only someone who knows this password can open the folder. It does not appear in Recent, Favorites or search. A forgotten password cannot be recovered.</string>
+    <string name="security_folder_create_message">Only someone who knows this password can open the folder. It does not appear in Recent, Favorites or search. If you forget it, the secret question opens the folder.</string>
     <string name="security_folder_protected">Folder protected.</string>
     <string name="security_folder_unprotected">Folder password removed.</string>
     <string name="security_folder_locked">Secure folder</string>
@@ -655,6 +655,7 @@
         <item>@string/sort_modified_date</item>
         <item>@string/sort_created_date</item>
         <item>@string/sort_random</item>
+        <item>@string/album_sort_custom</item>
     </string-array>
     <string-array name="main_media_filter_labels">
         <item>@string/media_images</item>
@@ -735,4 +736,28 @@
     <string name="browse_bar_full">The bar holds up to %1$d shortcuts.</string>
     <string name="browse_bar_min">The bar needs at least one shortcut.</string>
     <string name="action_theme">Theme</string>
+    <string name="main_custom_order_enabled">Custom order on. Choose another sort in Sort to change it.</string>
+    <string name="security_forgot_password">Forgot password</string>
+    <string name="security_recovery_title">Secret question</string>
+    <string name="security_recovery_add_title">Secret question for %1$s</string>
+    <string name="security_recovery_create_message">If you forget the password, the answer to this question opens the folder.</string>
+    <string name="security_recovery_choose">Choose a question</string>
+    <string name="security_recovery_custom">Write my own question</string>
+    <string name="security_recovery_question_hint">Your question</string>
+    <string name="security_recovery_answer_hint">Answer</string>
+    <string name="security_recovery_save">Save</string>
+    <string name="security_recovery_later">Not now</string>
+    <string name="security_recovery_saved">Secret question saved.</string>
+    <string name="security_recovery_missing_fields">Choose a question and write an answer with at least 2 letters.</string>
+    <string name="security_recovery_wrong">Wrong answer.</string>
+    <string name="security_recovery_none">This folder was protected without a secret question, so its password cannot be recovered.</string>
+    <string name="security_recovery_new_password_title">New password for %1$s</string>
+    <string name="security_recovery_new_password_message">The folder is open. Create a new password, or tap Cancel to keep the old one.</string>
+    <string-array name="security_recovery_questions">
+        <item>What was the name of your first pet?</item>
+        <item>In which city were you born?</item>
+        <item>What was the name of your primary school?</item>
+        <item>What is your mother\'s maiden name?</item>
+        <item>What is your favourite food?</item>
+    </string-array>
 </resources>

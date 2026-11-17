@@ -173,8 +173,22 @@ object AlbumRules {
     const val SORT_MODIFIED = "modified"
     const val SORT_CREATED = "created"
     const val SORT_RANDOM = "random"
+    /** "Ordem personalizada": the order the user dragged the albums into. */
+    const val SORT_CUSTOM = "custom"
 
-    fun sort(albums: MutableList<AlbumItem>, mode: String, descending: Boolean, randomSeed: Long = 42L) {
+    fun sort(
+        albums: MutableList<AlbumItem>,
+        mode: String,
+        descending: Boolean,
+        randomSeed: Long = 42L,
+        customOrder: List<String> = emptyList()
+    ) {
+        if (mode == SORT_CUSTOM) {
+            // Albums never placed by hand (new ones) come after, newest first.
+            val index = customOrder.withIndex().associate { it.value to it.index }
+            albums.sortWith(compareBy<AlbumItem> { index[it.key] ?: Int.MAX_VALUE }.thenByDescending { it.latestDate })
+            return
+        }
         if (mode == SORT_RANDOM) {
             Collections.shuffle(albums, Random(randomSeed))
             if (descending) albums.reverse()
@@ -321,10 +335,13 @@ object VirtualAlbumRules {
         pinnedKeys: Set<String> = emptySet(),
         favoriteAddedAt: Long = 0L,
         activeScreenshotKey: String? = newestScreenshotKey(albums),
-        unpinnedEssentialKeys: Set<String> = emptySet()
+        unpinnedEssentialKeys: Set<String> = emptySet(),
+        customOrder: Boolean = false
     ): List<AlbumItem> {
         fun group(album: AlbumItem): Int {
             val essential = isEssential(album, activeScreenshotKey) && album.key !in unpinnedEssentialKeys
+            // "Ordem personalizada": pinned albums together, then the rest, each in the dragged order.
+            if (customOrder) return if (essential || album.key in pinnedKeys) 0 else 4
             return when {
                 album.key == RECENT_KEY && essential -> 0
                 album.key in pinnedKeys -> 1

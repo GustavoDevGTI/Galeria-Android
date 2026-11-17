@@ -52,6 +52,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var catalogLoadingView: LoadingIndicatorView
     internal lateinit var searchInput: EditText
     private lateinit var grid: AccessibleRecyclerView
+    internal val albumGrid: AccessibleRecyclerView get() = grid
+    internal var albumReorderHelper: androidx.recyclerview.widget.ItemTouchHelper? = null
     internal lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var layoutManager: GridLayoutManager
     private lateinit var root: LinearLayout
@@ -385,12 +387,14 @@ class MainActivity : ComponentActivity() {
                 adapter.selectPosition(position)
                 updateSelectionUi()
                 Ui.longPressFeedback(view)
+                startAlbumDrag(view)
                 return true
             }
         })
         adapter.setSpacing(albumSpacingDp)
         adapter.setCoverSize(albumCoverSizePx())
         grid.adapter = adapter
+        installAlbumReorder()
         grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 if (newState != RecyclerView.SCROLL_STATE_IDLE) return
@@ -757,7 +761,8 @@ class MainActivity : ComponentActivity() {
     }
 
     internal fun sortAlbums(albums: MutableList<AlbumItem>) {
-        AlbumRules.sort(albums, sortMode, sortDesc)
+        AlbumRules.sort(albums, sortMode, sortDesc,
+            customOrder = AlbumReorderRules.savedOrder(prefs.getString(GalleryPreferences.ALBUM_CUSTOM_ORDER, null)))
     }
 
     internal fun isHiddenAlbum(album: AlbumItem): Boolean =

@@ -447,7 +447,7 @@
     <string name="security_folder_protect">Proteger con contraseña</string>
     <string name="security_folder_unprotect">Quitar contraseña de la carpeta</string>
     <string name="security_folder_create_title">Contraseña para %s</string>
-    <string name="security_folder_create_message">Solo quien conozca esta contraseña podrá abrir la carpeta. No aparece en Recientes, Favoritos ni en la búsqueda. Una contraseña olvidada no se puede recuperar.</string>
+    <string name="security_folder_create_message">Solo quien conozca esta contraseña podrá abrir la carpeta. No aparece en Recientes, Favoritos ni en la búsqueda. Si la olvidas, la pregunta secreta abre la carpeta.</string>
     <string name="security_folder_protected">Carpeta protegida.</string>
     <string name="security_folder_unprotected">Contraseña de la carpeta quitada.</string>
     <string name="security_folder_locked">Carpeta segura</string>
@@ -676,4 +676,28 @@
     <string name="browse_bar_full">La barra admite hasta %1$d accesos directos.</string>
     <string name="browse_bar_min">La barra necesita al menos un acceso directo.</string>
     <string name="action_theme">Tema</string>
+    <string name="main_custom_order_enabled">Orden personalizado activado. Elige otro en Ordenar para cambiarlo.</string>
+    <string name="security_forgot_password">Olvidé la contraseña</string>
+    <string name="security_recovery_title">Pregunta secreta</string>
+    <string name="security_recovery_add_title">Pregunta secreta para %1$s</string>
+    <string name="security_recovery_create_message">Si olvidas la contraseña, la respuesta a esta pregunta abre la carpeta.</string>
+    <string name="security_recovery_choose">Elegir pregunta</string>
+    <string name="security_recovery_custom">Escribir mi pregunta</string>
+    <string name="security_recovery_question_hint">Tu pregunta</string>
+    <string name="security_recovery_answer_hint">Respuesta</string>
+    <string name="security_recovery_save">Guardar</string>
+    <string name="security_recovery_later">Ahora no</string>
+    <string name="security_recovery_saved">Pregunta secreta guardada.</string>
+    <string name="security_recovery_missing_fields">Elige una pregunta y escribe una respuesta de al menos 2 letras.</string>
+    <string name="security_recovery_wrong">Respuesta incorrecta.</string>
+    <string name="security_recovery_none">Esta carpeta se protegió sin pregunta secreta, así que no se puede recuperar la contraseña.</string>
+    <string name="security_recovery_new_password_title">Nueva contraseña para %1$s</string>
+    <string name="security_recovery_new_password_message">La carpeta está abierta. Crea una contraseña nueva o toca Cancelar para mantener la anterior.</string>
+    <string-array name="security_recovery_questions">
+        <item>¿Cuál fue el nombre de tu primera mascota?</item>
+        <item>¿En qué ciudad naciste?</item>
+        <item>¿Cómo se llamaba tu escuela primaria?</item>
+        <item>¿Cuál es el apellido de soltera de tu madre?</item>
+        <item>¿Cuál es tu comida favorita?</item>
+    </string-array>
 </resources>
