@@ -27,6 +27,8 @@ class EssentialAlbumOrderingInstrumentedTest {
     @Test fun recentIsFirstAndOnlyTheCurrentScreenshotFolderCompetesByActivityAfterReopening() {
         val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val pinnedBefore = prefs.getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty().toSet()
+        val unpinnedBefore = prefs.getStringSet(VirtualAlbumRules.UNPINNED_ESSENTIAL_PREF, emptySet()).orEmpty().toSet()
+        var lastPinned: Set<String> = emptySet()
         val favoriteBefore = prefs.getStringSet("favorites", emptySet()).orEmpty().toSet()
         val root = "Order-${System.nanoTime()}"
         val camera = "DCIM/Camera/$root/"
@@ -67,7 +69,7 @@ class EssentialAlbumOrderingInstrumentedTest {
             var result: List<AlbumItem>? = null
             instrumentation.runOnMainSync {
                 controller.load(AlbumCatalogOptions(false, false, emptySet(), "", MediaFilterOptions(),
-                    AlbumRules.SORT_NAME, false), onAlbums = { albums, _ -> result = albums; done.countDown() },
+                    AlbumRules.SORT_NAME, false), onAlbums = { albums, _ -> result = albums; lastPinned = controller.pinnedKeys; done.countDown() },
                     onDeferredRefreshRequired = {}, onFailure = { done.countDown() })
             }
             try {
@@ -100,6 +102,12 @@ class EssentialAlbumOrderingInstrumentedTest {
             prefs.edit().putStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, pinnedBefore + pinned)
                 .putStringSet("favorites", emptySet()).commit()
             assertEquals(listOf(VirtualAlbumRules.RECENT_KEY, pinned, download, screen, camera, legacy), load().map { it.key })
+            assertEquals("Os álbuns padrão começam fixados e mostram o alfinete; a pasta antiga de capturas não",
+                setOf(VirtualAlbumRules.RECENT_KEY, pinned, download, screen, camera), lastPinned.filter { it in keys }.toSet())
+            prefs.edit().putStringSet(VirtualAlbumRules.UNPINNED_ESSENTIAL_PREF, unpinnedBefore + camera).commit()
+            load()
+            assertFalse("Câmera desafixada perde o alfinete", camera in lastPinned)
+            prefs.edit().putStringSet(VirtualAlbumRules.UNPINNED_ESSENTIAL_PREF, unpinnedBefore).commit()
             MediaFavorites.toggle(prefs, favoriteUri.toString(), now)
             assertEquals(listOf(VirtualAlbumRules.RECENT_KEY, pinned, VirtualAlbumRules.FAVORITES_KEY, download, screen, camera, legacy), load().map { it.key })
             insert(camera, now + 10)
@@ -119,7 +127,8 @@ class EssentialAlbumOrderingInstrumentedTest {
                 context.contentResolver.delete(uri, null, null)
             }
             prefs.edit().putStringSet("favorites", favoriteBefore)
-                .putStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, pinnedBefore).commit()
+                .putStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, pinnedBefore)
+                .putStringSet(VirtualAlbumRules.UNPINNED_ESSENTIAL_PREF, unpinnedBefore).commit()
             MediaStoreRepository.invalidateCache()
             GalleryCatalogStore.markCatalogDirty(context)
         }

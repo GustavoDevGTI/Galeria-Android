@@ -58,6 +58,7 @@ class MediaRecyclerAdapter(
 
     /** Picks up thumbnail options changed in Settings; only redraws when something changed. */
     fun refreshDisplayPreferences() {
+        setShowFileNames(GalleryPreferences.flag(context, GalleryPreferences.SHOW_FILE_NAMES))
         val next = ThumbnailDisplay.read(context, MEDIA_CORNER_RADIUS_DP)
         if (next == display) return
         display = next
@@ -369,6 +370,9 @@ class MediaRecyclerAdapter(
     fun getItem(position: Int): MediaItem = itemOrNull(position)
         ?: throw IndexOutOfBoundsException("Mídia ainda não carregada na posição $position")
 
+    /** The media at [position], or null while its page is not loaded. */
+    fun peekItem(position: Int): MediaItem? = itemOrNull(position)
+
     fun positionOf(uri: String): Int = currentVisibleItems().indexOfFirst { it.uri.toString() == uri }
 
     private fun itemOrNull(position: Int): MediaItem? {
@@ -390,6 +394,16 @@ class MediaRecyclerAdapter(
         listMode -> 1
         horizontalGrid -> 2
         else -> 0
+    }
+
+    // "Mostrar nome dos arquivos": the grid tiles drop the name; the list keeps it, since it is the row.
+    private var showFileNames = GalleryPreferences.flag(context, GalleryPreferences.SHOW_FILE_NAMES)
+
+    @android.annotation.SuppressLint("NotifyDataSetChanged")
+    fun setShowFileNames(enabled: Boolean) {
+        if (showFileNames == enabled) return
+        showFileNames = enabled
+        if (itemCount > 0) notifyDataSetChanged()
     }
 
     // Every row changes its view type at once, so there is nothing narrower to notify.
@@ -551,6 +565,7 @@ class MediaRecyclerAdapter(
         bindSelection(holder, item)
         holder.name.text = item.name
         holder.mediaNameOverlay.text = item.name
+        holder.mediaNameOverlay.visibility = if (showFileNames) View.VISIBLE else View.INVISIBLE
         holder.itemView.contentDescription = item.name
         bindThumbnail(holder, item)
         bindVideoDuration(holder, item)

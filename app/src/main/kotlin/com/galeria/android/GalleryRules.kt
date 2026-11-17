@@ -201,11 +201,41 @@ object AlbumRules {
     }
 }
 
+/**
+ * "Fixar" on the selected albums. Standard albums start pinned, so unpinning one is remembered
+ * in its own list, and pinning it again only forgets that choice.
+ */
+object PinToggleRules {
+    data class Change(val pinned: Set<String>, val unpinnedEssential: Set<String>)
+
+    fun toggle(
+        selected: List<String>,
+        shownPinned: Set<String>,
+        essential: Set<String>,
+        pinned: Set<String>,
+        unpinnedEssential: Set<String>
+    ): Change {
+        val nextPinned = pinned.toMutableSet()
+        val nextUnpinned = unpinnedEssential.toMutableSet()
+        if (selected.all { it in shownPinned }) {
+            nextPinned.removeAll(selected.toSet())
+            nextUnpinned.addAll(selected.filter { it in essential })
+        } else {
+            for (key in selected) {
+                if (key in essential) nextUnpinned.remove(key) else nextPinned.add(key)
+            }
+        }
+        return Change(nextPinned, nextUnpinned)
+    }
+}
+
 object VirtualAlbumRules {
     const val RECENT_KEY = "virtual_recent"
     const val FAVORITES_KEY = "virtual_favorites"
     const val TRASH_KEY = "virtual_trash"
     const val PINNED_ALBUMS_PREF = "pinned_album_keys"
+    /** Standard albums (Recentes, Favoritos, Câmera, Baixar, Capturas, Lixeira) the user unpinned. */
+    const val UNPINNED_ESSENTIAL_PREF = "unpinned_essential_album_keys"
     const val SHOW_HIDDEN_TRASH_PREF = "show_hidden_trash_items"
 
     fun isVirtual(key: String): Boolean = key == RECENT_KEY || key == FAVORITES_KEY || key == TRASH_KEY || key == "all_media"
@@ -266,18 +296,42 @@ object VirtualAlbumRules {
         }
     }
 
+    /** The standard albums, pinned by default until the user unpins them. */
+    fun isEssential(album: AlbumItem, activeScreenshotKey: String?): Boolean =
+        album.key == RECENT_KEY || album.key == FAVORITES_KEY || album.key == TRASH_KEY ||
+            isCamera(album) || isDownload(album) || album.key == activeScreenshotKey
+
+    /** Albums shown with the pin: the ones the user pinned plus the standard ones still pinned. */
+    fun pinnedKeys(
+        albums: List<AlbumItem>,
+        pinnedKeys: Set<String>,
+        unpinnedEssentialKeys: Set<String>,
+        activeScreenshotKey: String?
+    ): Set<String> = pinnedKeys + albums.asSequence()
+        .filter { isEssential(it, activeScreenshotKey) && it.key !in unpinnedEssentialKeys }
+        .map { it.key }
+
+    /**
+     * Recentes first, then the albums the user pinned, then the other standard albums by latest
+     * activity with the Lixeira last among them, then everything else. A standard album the user
+     * unpinned goes back to the ordinary order.
+     */
     fun pinEssential(
         albums: List<AlbumItem>,
         pinnedKeys: Set<String> = emptySet(),
         favoriteAddedAt: Long = 0L,
-        activeScreenshotKey: String? = newestScreenshotKey(albums)
+        activeScreenshotKey: String? = newestScreenshotKey(albums),
+        unpinnedEssentialKeys: Set<String> = emptySet()
     ): List<AlbumItem> {
-        fun group(album: AlbumItem): Int = when {
-            album.key == RECENT_KEY -> 0
-            album.key in pinnedKeys -> 1
-            album.key == FAVORITES_KEY || isCamera(album) || isDownload(album) ||
-                album.key == activeScreenshotKey -> 2
-            else -> 3
+        fun group(album: AlbumItem): Int {
+            val essential = isEssential(album, activeScreenshotKey) && album.key !in unpinnedEssentialKeys
+            return when {
+                album.key == RECENT_KEY && essential -> 0
+                album.key in pinnedKeys -> 1
+                album.key == TRASH_KEY && essential -> 3
+                essential -> 2
+                else -> 4
+            }
         }
         return albums.withIndex().sortedWith(compareBy<IndexedValue<AlbumItem>> { group(it.value) }
             .thenByDescending {

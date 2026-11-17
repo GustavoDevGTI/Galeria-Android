@@ -76,6 +76,16 @@ class AlbumRecyclerAdapter(
         holder.name.layoutParams = params
     }
 
+    // "Mostrar nome dos álbuns": without it the grid shows only the covers.
+    private var showAlbumNames = GalleryPreferences.flag(context, GalleryPreferences.SHOW_ALBUM_NAMES)
+
+    @android.annotation.SuppressLint("NotifyDataSetChanged")
+    fun setShowAlbumNames(enabled: Boolean) {
+        if (showAlbumNames == enabled) return
+        showAlbumNames = enabled
+        if (itemCount > 0) notifyDataSetChanged()
+    }
+
     fun setPinnedKeys(keys: Set<String>) {
         if (pinnedKeys == keys) return
         pinnedKeys = keys.toSet()
@@ -226,16 +236,15 @@ class AlbumRecyclerAdapter(
             topMargin = Ui.dp(context, 5)
         }
         thumb.addView(check, checkParams)
+        // A small white pin with a soft shadow, readable on light covers without a dark badge.
         val pin = ImageView(context).apply {
-            setImageResource(R.drawable.ic_pin_filled)
-            setColorFilter(Color.WHITE)
-            background = Ui.rounded(0x99000000.toInt(), 8, context)
-            setPadding(Ui.dp(context, 3), Ui.dp(context, 3), Ui.dp(context, 3), Ui.dp(context, 3))
+            setImageDrawable(pinBadge(context))
             contentDescription = context.getString(R.string.album_pinned)
+            tag = "album_pin"
         }
-        thumb.addView(pin, FrameLayout.LayoutParams(Ui.dp(context, OVERLAY_ACTION_DP), Ui.dp(context, OVERLAY_ACTION_DP), Gravity.TOP or Gravity.END).apply {
-            marginEnd = Ui.dp(context, 6)
-            topMargin = Ui.dp(context, 6)
+        thumb.addView(pin, FrameLayout.LayoutParams(Ui.dp(context, PIN_DP), Ui.dp(context, PIN_DP), Gravity.TOP or Gravity.END).apply {
+            marginEnd = Ui.dp(context, 7)
+            topMargin = Ui.dp(context, 7)
         })
         val temporaryEye = ImageView(context).apply {
             setImageResource(R.drawable.ic_eye)
@@ -283,6 +292,7 @@ class AlbumRecyclerAdapter(
             if (album.key in temporarilyVisibleKeys) callbacks.onHideTemporarilyVisibleAlbum(album.key)
         }
         holder.name.text = context.getString(R.string.main_album_count_label, album.name, album.count)
+        holder.name.visibility = if (showAlbumNames) View.VISIBLE else View.GONE
         holder.name.setTextColor(Ui.text(context))
         bindCover(holder, album)
         holder.itemView.setOnClickListener { callbacks.onAlbumClick(holder.bindingAdapterPosition) }
@@ -433,6 +443,7 @@ class AlbumRecyclerAdapter(
     private companion object {
         const val OVERLAY_CHECK_DP = 20
         const val OVERLAY_ACTION_DP = 24
+        const val PIN_DP = 17
         const val PAYLOAD_SELECTION = "selection"
         const val PAYLOAD_SPACING = "spacing"
         const val PAYLOAD_COVER = "cover"
@@ -440,4 +451,19 @@ class AlbumRecyclerAdapter(
         const val PAYLOAD_TEMPORARY = "temporary"
     }
 
+}
+
+/** White pin with a thin dark outline (four shifted dark copies), readable on light and dark covers. */
+private fun pinBadge(context: Context): android.graphics.drawable.Drawable {
+    fun icon(color: Int, alpha: Int) = requireNotNull(androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_pin_filled))
+        .mutate().apply { setTint(color); this.alpha = alpha }
+    val d = Ui.dp(context, 1)
+    val layers = arrayOf(icon(Color.BLACK, 120), icon(Color.BLACK, 120), icon(Color.BLACK, 120), icon(Color.BLACK, 120), icon(Color.WHITE, 250))
+    return android.graphics.drawable.LayerDrawable(layers).apply {
+        setLayerInset(0, 0, 0, 2 * d, 2 * d)
+        setLayerInset(1, 2 * d, 0, 0, 2 * d)
+        setLayerInset(2, 0, 2 * d, 2 * d, 0)
+        setLayerInset(3, 2 * d, 2 * d, 0, 0)
+        setLayerInset(4, d, d, d, d)
+    }
 }

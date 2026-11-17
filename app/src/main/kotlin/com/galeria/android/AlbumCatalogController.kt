@@ -42,6 +42,11 @@ class AlbumCatalogController(context: Context) {
     private var indexedRevision = -1L
     private var indexedAt = 0L
     private var activeScreenshotKey: String? = null
+    // Main-thread copies for the screen: albums showing the pin and the standard albums among them.
+    var pinnedKeys: Set<String> = emptySet()
+        private set
+    var essentialKeys: Set<String> = emptySet()
+        private set
 
     fun load(
         options: AlbumCatalogOptions,
@@ -156,12 +161,20 @@ class AlbumCatalogController(context: Context) {
     ) {
         val sorted = albums.toMutableList()
         AlbumRules.sort(sorted, options.sortMode, options.sortDescending)
-        val pinned = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
-            .getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty()
+        val prefs = appContext.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val pinned = prefs.getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty()
+        val unpinned = prefs.getStringSet(VirtualAlbumRules.UNPINNED_ESSENTIAL_PREF, emptySet()).orEmpty()
+        val screenshotKey = activeScreenshotKey
         val ordered = VirtualAlbumRules.pinEssential(sorted, pinned,
-            activeScreenshotKey = activeScreenshotKey)
+            activeScreenshotKey = screenshotKey, unpinnedEssentialKeys = unpinned)
+        val shownPinned = VirtualAlbumRules.pinnedKeys(sorted, pinned, unpinned, screenshotKey)
+        val essential = sorted.filter { VirtualAlbumRules.isEssential(it, screenshotKey) }.mapTo(HashSet()) { it.key }
         mainHandler.post {
-            if (!closed && request == generation) onAlbums(ordered, options.query)
+            if (!closed && request == generation) {
+                pinnedKeys = shownPinned
+                essentialKeys = essential
+                onAlbums(ordered, options.query)
+            }
         }
     }
 

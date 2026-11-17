@@ -154,6 +154,8 @@ class SettingsActivity : Activity() {
         addSection(getString(R.string.settings_section_thumbnails))
         addSwitch(getString(R.string.settings_crop_square_thumbnails), getString(R.string.settings_crop_square_thumbnails_hint), GalleryPreferences.CROP_SQUARE_THUMBNAILS, GalleryPreferences.defaultOf(GalleryPreferences.CROP_SQUARE_THUMBNAILS), null)
         addSwitch(getString(R.string.settings_animate_gif_thumbnails), getString(R.string.settings_animate_gif_thumbnails_hint), GalleryPreferences.ANIMATE_GIF_THUMBNAILS, GalleryPreferences.defaultOf(GalleryPreferences.ANIMATE_GIF_THUMBNAILS), null)
+        addSwitch(getString(R.string.settings_show_album_names), getString(R.string.settings_show_album_names_hint), GalleryPreferences.SHOW_ALBUM_NAMES, GalleryPreferences.defaultOf(GalleryPreferences.SHOW_ALBUM_NAMES), null)
+        addSwitch(getString(R.string.settings_show_file_names), getString(R.string.settings_show_file_names_hint), GalleryPreferences.SHOW_FILE_NAMES, GalleryPreferences.defaultOf(GalleryPreferences.SHOW_FILE_NAMES), null)
         addChoice(getString(R.string.settings_file_thumbnail_style), ChoicePreferences.FILE_THUMBNAIL, R.array.settings_file_thumbnail_values)
         addChoice(getString(R.string.settings_folder_thumbnail_style), ChoicePreferences.FOLDER_THUMBNAIL, R.array.settings_folder_thumbnail_values)
         cacheSubtitle = addOption(getString(R.string.settings_clear_cache), "…") { clearCache() }

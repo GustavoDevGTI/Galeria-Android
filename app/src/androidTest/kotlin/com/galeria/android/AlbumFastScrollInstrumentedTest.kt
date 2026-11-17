@@ -129,6 +129,10 @@ class AlbumFastScrollInstrumentedTest {
                     .check(matches(isDisplayed()))
                     .perform(slowDragToMiddle(movedBeforeRelease))
                 assertTrue("A grade ficou congelada durante o arrasto lento.", movedBeforeRelease.get())
+                val expectedBubble = ScrollDateRules.monthYear(1L)
+                assertEquals("O balão ao lado do dedo mostra mês e ano da mídia", expectedBubble, scrubBubble.get())
+                assertEquals("Os anos ficam marcados ao longo da barra", listOf(ScrollDateRules.year(1L).toString()), scrubMarks.get())
+                assertEquals("O balão some ao soltar", "", bubbleAfterRelease.get())
                 waitUntilDisplayed(FAST_SCROLL_DESCRIPTION, scenario)
                 onView(withContentDescription(FAST_SCROLL_DESCRIPTION))
                     .perform(
@@ -287,6 +291,10 @@ class AlbumFastScrollInstrumentedTest {
         throw AssertionError("O fast scroll parou na posição $lastVisible de ${TOTAL_MEDIA - 1}.")
     }
 
+    private val scrubBubble = java.util.concurrent.atomic.AtomicReference<String?>()
+    private val scrubMarks = java.util.concurrent.atomic.AtomicReference<List<String>>(emptyList())
+    private val bubbleAfterRelease = java.util.concurrent.atomic.AtomicReference<String?>()
+
     private fun slowDragToMiddle(movedBeforeRelease: AtomicBoolean): ViewAction = object : ViewAction {
         override fun getConstraints(): Matcher<View> = isAssignableFrom(AlbumFastScroller::class.java)
 
@@ -310,6 +318,9 @@ class AlbumFastScrollInstrumentedTest {
             }
             uiController.loopMainThreadForAtLeast(85L)
             val recycler = findRecyclerView(view.rootView)
+            val overlay = findViewOfType(view.rootView, ScrollDateOverlay::class.java)
+            scrubBubble.set(overlay?.shownBubble)
+            scrubMarks.set(overlay?.shownMarks.orEmpty())
             val firstVisible = (recycler?.layoutManager as? GridLayoutManager)
                 ?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
             movedBeforeRelease.set(firstVisible > 0)
@@ -318,6 +329,7 @@ class AlbumFastScrollInstrumentedTest {
             view.dispatchTouchEvent(event)
             event.recycle()
             uiController.loopMainThreadUntilIdle()
+            bubbleAfterRelease.set(findViewOfType(view.rootView, ScrollDateOverlay::class.java)?.shownBubble ?: "")
         }
     }
 

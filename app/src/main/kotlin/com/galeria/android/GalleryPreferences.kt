@@ -42,6 +42,8 @@ internal object GalleryPreferences {
     const val HORIZONTAL_THUMBNAIL_SCROLL = "horizontal_thumbnail_scroll"
     const val PULL_TO_REFRESH = "pull_to_refresh"
     const val FILE_THUMB_STYLE = "file_thumb_style"
+    const val SHOW_ALBUM_NAMES = "show_album_names"
+    const val SHOW_FILE_NAMES = "show_file_names"
 
     // General
     const val DATE_TIME_FORMAT = "date_time_format"
@@ -98,7 +100,9 @@ internal object GalleryPreferences {
         CROP_SQUARE_THUMBNAILS to true,
         ANIMATE_GIF_THUMBNAILS to true,
         HORIZONTAL_THUMBNAIL_SCROLL to false,
-        PULL_TO_REFRESH to true
+        PULL_TO_REFRESH to true,
+        SHOW_ALBUM_NAMES to true,
+        SHOW_FILE_NAMES to true
     )
 
     fun defaultOf(key: String): Boolean = booleanDefaults[key] ?: false

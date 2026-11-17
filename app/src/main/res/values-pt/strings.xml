@@ -661,4 +661,8 @@
         <item>Marcador médio</item>
         <item>Marcador grosso</item>
     </string-array>
+    <string name="settings_show_album_names">Mostrar nome dos álbuns</string>
+    <string name="settings_show_album_names_hint">Mostra o nome e a quantidade de itens abaixo de cada álbum na tela principal.</string>
+    <string name="settings_show_file_names">Mostrar nome dos arquivos</string>
+    <string name="settings_show_file_names_hint">Mostra o nome do arquivo sobre cada miniatura dentro dos álbuns.</string>
 </resources>

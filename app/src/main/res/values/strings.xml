@@ -729,4 +729,8 @@
         <item>@string/settings_value_landscape</item>
         <item>@string/settings_value_sensor</item>
     </string-array>
+    <string name="settings_show_album_names">Show album names</string>
+    <string name="settings_show_album_names_hint">Shows the name and the number of items under each album on the main screen.</string>
+    <string name="settings_show_file_names">Show file names</string>
+    <string name="settings_show_file_names_hint">Shows the file name over each thumbnail inside the albums.</string>
 </resources>

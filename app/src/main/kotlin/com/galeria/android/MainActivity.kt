@@ -177,6 +177,7 @@ class MainActivity : ComponentActivity() {
         }
         loadSettings()
         applyThemeColors()
+        if (::adapter.isInitialized) adapter.setShowAlbumNames(GalleryPreferences.flag(this, GalleryPreferences.SHOW_ALBUM_NAMES))
         refreshVisibilityDialogCounts?.invoke()
         if (::adapter.isInitialized) adapter.refreshChangedCovers()
         if (accessCoordinator.hasMediaLibraryAccess()) {
@@ -685,7 +686,7 @@ class MainActivity : ComponentActivity() {
     private fun submitAlbumsNow(albums: List<AlbumItem>, query: String) {
         observeRevealedFolders()
         rememberVisibleFolderKeys(albums)
-        adapter.setPinnedKeys(prefs.getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty())
+        adapter.setPinnedKeys(catalogController.pinnedKeys)
         adapter.setTemporarilyVisibleKeys(TemporaryAlbumVisibility.activeKeys())
         adapter.submit(albums, query)
         mergeVisibleAlbumsIntoDialog?.invoke(albums) ?: refreshVisibilityDialogCounts?.invoke()

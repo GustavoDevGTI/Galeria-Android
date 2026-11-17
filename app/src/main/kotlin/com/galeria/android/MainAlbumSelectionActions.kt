@@ -106,9 +106,13 @@ internal fun MainActivity.togglePinnedSelectedAlbums() {
     val albums = adapter.selectedAlbums()
     if (albums.isEmpty()) return
     val pinned = HashSet(prefs.getStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, emptySet()).orEmpty())
-    val unpin = albums.all { it.key in pinned }
-    if (unpin) pinned.removeAll(albums.map { it.key }) else pinned.addAll(albums.map { it.key })
-    prefs.edit().putStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, pinned).apply()
+    val unpinned = HashSet(prefs.getStringSet(VirtualAlbumRules.UNPINNED_ESSENTIAL_PREF, emptySet()).orEmpty())
+    val change = PinToggleRules.toggle(albums.map { it.key }, catalogController.pinnedKeys,
+        catalogController.essentialKeys, pinned, unpinned)
+    prefs.edit()
+        .putStringSet(VirtualAlbumRules.PINNED_ALBUMS_PREF, change.pinned)
+        .putStringSet(VirtualAlbumRules.UNPINNED_ESSENTIAL_PREF, change.unpinnedEssential)
+        .apply()
     exitSelectionMode()
     loadAlbums()
 }

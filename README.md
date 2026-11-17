@@ -2,7 +2,7 @@
 
 App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, navegação fluida e gestão real de mídias e pastas do aparelho.
 
-Versão atual: **0.9.12** (código Android `9012`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9.12](docs/RELEASE-0.9.12.md).
+Versão atual: **0.9.13** (código Android `9013`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9.13](docs/RELEASE-0.9.13.md).
 
 ## Stack atual
 
@@ -130,7 +130,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A versão 0.9.12 faz a Galeria seguir o idioma principal do celular (português, inglês ou espanhol), traduz os textos que estavam fixos em português e reorganiza o código sem mudar a aparência. A regressão completa passou no emulador: **154 testes de interface**, **297 unitários** e lint sem erros. Consulte as [notas da release](docs/RELEASE-0.9.12.md).
+A versão 0.9.13 fixa por padrão os álbuns essenciais com um alfinete discreto (a Lixeira por último entre eles), permite esconder os nomes dos álbuns e dos arquivos e mostra a data ao rolar: o ano no topo e um balão com mês e ano ao lado do dedo na barra de rolagem. Consulte as [notas da release](docs/RELEASE-0.9.13.md).
 
 Os testes locais ficam em `app/src/test/kotlin` e as integrações Android em `app/src/androidTest/kotlin`. Os comandos por área, critérios de entrega e evidências estão no [guia de validação](docs/TESTES-VALIDACAO.md).
 
@@ -164,13 +164,13 @@ O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Med
 
 A árvore atual mantém o código e a documentação vigentes. APKs e notas de versões anteriores ficam nas [releases e tags do GitHub](https://github.com/GustavoDevGTI/Galeria-Android/releases), sem cópias de binários no repositório.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9.12 usa o código `9012`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9.13 usa o código `9013`.
 
 ## APK gerado
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.9.12](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9.12/Galeria-Android-versao-0.9.12.apk)
+[Baixar Galeria Android - versão 0.9.13](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9.13/Galeria-Android-versao-0.9.13.apk)
 
 Build padrão do Gradle:
 
@@ -181,10 +181,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado somente como anexo no GitHub Releases:
 
 ```text
-Galeria-Android-versao-0.9.12.apk
+Galeria-Android-versao-0.9.13.apk
 ```
 
-O APK 0.9.12 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.9.13 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de release no GitHub
 

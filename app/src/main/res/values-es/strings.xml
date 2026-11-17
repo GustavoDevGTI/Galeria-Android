@@ -670,4 +670,8 @@
     <string name="trim_error_sample_too_big">Muestra mayor que el límite admitido.</string>
     <string name="trim_error_protected">No se puede recortar un video con muestras protegidas.</string>
     <string name="trim_error_no_frames">No se encontró ningún fotograma de video en el intervalo.</string>
+    <string name="settings_show_album_names">Mostrar nombre de los álbumes</string>
+    <string name="settings_show_album_names_hint">Muestra el nombre y la cantidad de elementos debajo de cada álbum en la pantalla principal.</string>
+    <string name="settings_show_file_names">Mostrar nombre de los archivos</string>
+    <string name="settings_show_file_names_hint">Muestra el nombre del archivo sobre cada miniatura dentro de los álbumes.</string>
 </resources>

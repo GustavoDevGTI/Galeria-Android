@@ -52,10 +52,11 @@ import kotlin.math.min
 class AlbumMediaActivity : ComponentActivity() {
     internal val operations = ActivityOperationRunner(this)
     internal lateinit var adapter: MediaRecyclerAdapter
-    private lateinit var grid: AccessibleRecyclerView
-    private lateinit var fastScroller: AlbumFastScroller
+    internal lateinit var grid: AccessibleRecyclerView
+    internal lateinit var fastScroller: AlbumFastScroller
+    internal var scrollDateOverlay: ScrollDateOverlay? = null
     internal lateinit var swipeRefresh: SwipeRefreshLayout
-    private lateinit var layoutManager: GridLayoutManager
+    internal lateinit var layoutManager: GridLayoutManager
     internal lateinit var searchInput: EditText
     private lateinit var searchBox: LinearLayout
     private lateinit var selectAllChip: TextView
@@ -563,6 +564,7 @@ class AlbumMediaActivity : ComponentActivity() {
         content.addView(swipeRefresh, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         fastScroller = AlbumFastScroller(this, grid) { active ->
             grid.removeCallbacks(finishFastScrollPreview)
+            onScrollDateDrag(active)
             if (active) {
                 adapter.setFastScrollPreview(true)
             } else {
@@ -579,6 +581,7 @@ class AlbumMediaActivity : ComponentActivity() {
             bottomMargin = Ui.dp(this@AlbumMediaActivity, 6)
         }
         content.addView(fastScroller, fastScrollParams)
+        installScrollDates(content)
 
         emptyView = Ui.label(this, getString(R.string.album_empty)).apply {
             visibility = View.GONE
@@ -646,6 +649,7 @@ class AlbumMediaActivity : ComponentActivity() {
     }
 
     private fun applyBrowseTheme() {
+        scrollDateOverlay?.restyle()
         val color = Ui.bg(this)
         if (appliedThemeBackground == color || !::browseBar.isInitialized) return
         appliedThemeBackground = color

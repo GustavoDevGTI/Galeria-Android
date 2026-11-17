@@ -57,6 +57,9 @@ class AutomaticHiddenAlbumsInstrumentedTest {
                 }, null, null)
             }
 
+            // The inserts above and the previous test's cleanup still publish MediaStore changes;
+            // a forced scan that sees one cancels itself by design. Wait for a quiet window first.
+            awaitMediaStoreSettled(context)
             val media = MediaStoreRepository.refreshMedia(context, force = true)
             assertTrue("A varredura deve lembrar o cache antes de qualquer filtro de tela.",
                 parent.trimEnd('/') in automaticPrefs.getStringSet("hash_bucket_parents", emptySet()).orEmpty())
@@ -99,6 +102,7 @@ class AutomaticHiddenAlbumsInstrumentedTest {
                     put(MediaStore.Images.Media.IS_PENDING, 0)
                 }, null, null)
             }
+            awaitMediaStoreSettled(context)
             val refreshed = MediaStoreRepository.refreshMedia(context, force = true)
                 .filter { it.relativePath.startsWith(parent) }
             assertEquals(11, refreshed.size)
@@ -117,7 +121,29 @@ class AutomaticHiddenAlbumsInstrumentedTest {
             created.forEach { context.contentResolver.delete(it, null, null) }
             automaticPrefs.edit().putStringSet("hash_bucket_parents", originalParents).commit()
             MediaStoreRepository.invalidateCache()
+            awaitMediaStoreSettled(context)
             MediaStoreRepository.refreshMedia(context, force = true)
+        }
+    }
+
+    private fun awaitMediaStoreSettled(context: Context) {
+        val lastChange = java.util.concurrent.atomic.AtomicLong(android.os.SystemClock.elapsedRealtime())
+        val observer = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) { lastChange.set(android.os.SystemClock.elapsedRealtime()) }
+        }
+        context.contentResolver.registerContentObserver(MediaStore.Files.getContentUri("external"), true, observer)
+        try {
+            val deadline = android.os.SystemClock.elapsedRealtime() + 10_000L
+            var token = GalleryCatalogStore.mediaStoreChangeToken(context)
+            while (android.os.SystemClock.elapsedRealtime() < deadline) {
+                val current = GalleryCatalogStore.mediaStoreChangeToken(context)
+                if (current != token) { token = current; lastChange.set(android.os.SystemClock.elapsedRealtime()) }
+                if (android.os.SystemClock.elapsedRealtime() - lastChange.get() >= 1_500L) return
+                Thread.sleep(50L)
+            }
+            throw AssertionError("MediaStore não estabilizou antes da varredura")
+        } finally {
+            context.contentResolver.unregisterContentObserver(observer)
         }
     }
 }

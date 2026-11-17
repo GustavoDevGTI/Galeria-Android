@@ -41,6 +41,8 @@ class AlbumFastScroller(
     private var lastTouchAt = 0L
     private var lastScrollAppliedAt = 0L
     private var pendingTargetPosition = RecyclerView.NO_POSITION
+    /** While dragging: the media position under the finger and the thumb centre (this view's coordinates). */
+    var onDragPosition: ((position: Int, centerY: Float) -> Unit)? = null
     private val applyPendingScroll = Runnable {
         if (pendingTargetPosition != RecyclerView.NO_POSITION) {
             applyTargetPosition(pendingTargetPosition)
@@ -189,7 +191,15 @@ class AlbumFastScroller(
             postDelayed(applyPendingScroll, SCROLL_SETTLE_DELAY_MS)
         }
         thumbTop = desiredTop
+        onDragPosition?.invoke(targetPosition, desiredTop + thumbHeight / 2f)
         invalidate()
+    }
+
+    /** Thumb centre for [position], so marks line up with where dragging would put the thumb. */
+    fun centerYFor(position: Int, itemCount: Int): Float {
+        val travel = max(1f, height - paddingTop - paddingBottom - thumbHeight)
+        val fraction = if (itemCount <= 1) 0f else position.coerceIn(0, itemCount - 1).toFloat() / (itemCount - 1)
+        return paddingTop + thumbHeight / 2f + fraction * travel
     }
 
     private fun applyTargetPosition(position: Int) {
