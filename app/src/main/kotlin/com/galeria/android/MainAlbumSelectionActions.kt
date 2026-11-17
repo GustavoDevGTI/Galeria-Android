@@ -182,11 +182,13 @@ internal fun MainActivity.askMoveSelectedAlbums() {
         )
         runOnUiThread {
             if (isFinishing || !moreButton.isAttachedToWindow) return@runOnUiThread
-            if (targets.isEmpty()) {
-                Ui.toast(this, getString(R.string.main_no_move_target))
-                return@runOnUiThread
-            }
-            Ui.showAlbumTargets(moreButton, getString(R.string.action_move_to), targets) { album ->
+            Ui.showAlbumTargets(moreButton, getString(R.string.action_move_to), targets,
+                onNewFolder = {
+                    FolderCreationMenu(this, internalOnly = true) { folder ->
+                        if (!isFinishing) moveSelectedAlbums(albums, MediaActions.newFolderTarget(folder))
+                    }.show()
+                }
+            ) { album ->
                 moveSelectedAlbums(albums, album)
             }
         }

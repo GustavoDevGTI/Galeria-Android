@@ -158,7 +158,6 @@
     <string name="main_no_media_to_share">No media to share.</string>
     <string name="main_delete_albums_title">Move albums to the Trash</string>
     <string name="main_delete_albums_message">Move the media in %1$s to the Trash? %2$s</string>
-    <string name="main_no_move_target">No album available to move to.</string>
     <string name="main_folder_organization">Folder layout</string>
     <string name="main_album_spacing">Album spacing</string>
     <string name="action_information">Information</string>
@@ -390,14 +389,10 @@
     </plurals>
     <string name="settings_export_favorites_path">Export favorites path</string>
     <string name="settings_no_favorites">No favorites created yet.</string>
-
-    <string name="folder_choose_location">Choose where the new folder will be created.</string>
     <string name="folder_sd_card">SD card</string>
     <string name="folder_sd_card_numbered">SD card %d</string>
     <string name="folder_no_sd_card">No card mounted</string>
     <string name="folder_previous">Previous folder</string>
-    <string name="folder_choose_storage">Choose storage</string>
-    <string name="folder_create_here">Create folder here</string>
     <string name="folder_name">Folder name</string>
     <string name="folder_create">Create</string>
     <string name="folder_invalid_name">Enter a valid name.</string>
@@ -481,7 +476,6 @@
     <string name="msg_hide_file_message">The file will be copied to the app\'s hidden area and removed from the public gallery.</string>
     <string name="msg_hide">Hide</string>
     <string name="msg_item_hidden">Item hidden.</string>
-    <string name="msg_no_album">No album available.</string>
     <string name="msg_copy_to">Copy to</string>
     <string name="msg_move_to">Move to</string>
     <string name="msg_item_copied">Item copied.</string>
@@ -733,4 +727,7 @@
     <string name="settings_show_album_names_hint">Shows the name and the number of items under each album on the main screen.</string>
     <string name="settings_show_file_names">Show file names</string>
     <string name="settings_show_file_names_hint">Shows the file name over each thumbnail inside the albums.</string>
+    <string name="folder_empty">No folders here</string>
+    <string name="move_new_folder">New folder</string>
+    <string name="folder_pick_parent">Open a folder such as DCIM or Pictures to create the new folder inside it.</string>
 </resources>

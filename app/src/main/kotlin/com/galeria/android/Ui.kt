@@ -1062,6 +1062,28 @@ class Ui private constructor() {
         }
 
         /** Shared album presentation for moving files and configuring the organizer. */
+        internal fun newFolderTargetRow(context: Context): LinearLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(context, 60)
+            setPadding(dp(context, 12), dp(context, 6), dp(context, 14), dp(context, 6))
+            tag = "move_new_folder"
+            addView(ImageView(context).apply {
+                setImageResource(R.drawable.ic_folder_add)
+                setColorFilter(menuText(context))
+                scaleType = ImageView.ScaleType.CENTER
+                background = rounded(menuHighlightSurface(context), 6, context)
+            }, LinearLayout.LayoutParams(dp(context, 46), dp(context, 46)))
+            addView(TextView(context).apply {
+                text = context.getString(R.string.move_new_folder)
+                textSize = 16f
+                setTypeface(Typeface.DEFAULT_BOLD)
+                maxLines = 1
+                setTextColor(menuText(context))
+                setPadding(dp(context, 12), 0, 0, 0)
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+
         fun albumTargetRow(context: Context, album: AlbumItem): LinearLayout {
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -1102,6 +1124,7 @@ class Ui private constructor() {
             anchor: View,
             title: String,
             albums: List<AlbumItem>,
+            onNewFolder: (() -> Unit)? = null,
             onSelect: (AlbumItem) -> Unit
         ): PopupWindow {
             val context = anchor.context
@@ -1127,6 +1150,24 @@ class Ui private constructor() {
             }
             val pendingSelection = arrayOfNulls<AlbumItem>(1)
             val localPopupRef = arrayOfNulls<PopupWindow>(1)
+            // "Nova pasta" opens the folder creator; the new folder becomes the destination.
+            val pendingNewFolder = booleanArrayOf(false)
+            if (onNewFolder != null) {
+                val row = newFolderTargetRow(context).apply {
+                    background = RippleDrawable(
+                        ColorStateList.valueOf((menuText(context) and 0x00FFFFFF) or 0x22000000),
+                        rounded(menuOptionSurface(context), 10, context),
+                        rounded(Color.WHITE, 10, context)
+                    )
+                    setOnClickListener {
+                        pendingNewFolder[0] = true
+                        localPopupRef[0]?.dismiss()
+                    }
+                }
+                content.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 60)).apply {
+                    bottomMargin = dp(context, 3)
+                })
+            }
             albums.forEachIndexed { index, album ->
                 val row = albumTargetRow(context, album)
                 row.background = RippleDrawable(
@@ -1148,12 +1189,16 @@ class Ui private constructor() {
             anchor.getLocationOnScreen(location)
             val top = location[1] + anchor.height + dp(context, 6)
             val availableHeight = max(dp(context, 180), context.resources.displayMetrics.heightPixels - top - dp(context, 16))
-            val desiredHeight = dp(context, 56 + albums.size * 63)
+            val desiredHeight = dp(context, 56 + albums.size * 63 + if (onNewFolder != null) 63 else 0)
             val popup = PopupWindow(scroll, width, min(availableHeight, desiredHeight), true).apply {
                 isOutsideTouchable = true
                 setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
                 elevation = dp(context, 12).toFloat()
                 setOnDismissListener {
+                    if (pendingNewFolder[0]) {
+                        pendingNewFolder[0] = false
+                        onNewFolder?.let { anchor.postDelayed(it, POPUP_ACTION_DELAY_MS) }
+                    }
                     pendingSelection[0]?.let { selected ->
                         pendingSelection[0] = null
                         anchor.postDelayed({ onSelect(selected) }, POPUP_ACTION_DELAY_MS)
@@ -1187,7 +1232,7 @@ class Ui private constructor() {
             }
         }
 
-        private fun themedDialogBody(context: Context, title: String, message: String?): LinearLayout {
+        internal fun themedDialogBody(context: Context, title: String, message: String?): LinearLayout {
             val body = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 background = rounded(menuSurface(context), SIDE_PANEL_RADIUS_DP, context, menuBorder(context), 1)
@@ -1307,7 +1352,7 @@ class Ui private constructor() {
                 }
             }
 
-        private fun themedActionPair(
+        internal fun themedActionPair(
             context: Context,
             firstLabel: String,
             secondLabel: String,

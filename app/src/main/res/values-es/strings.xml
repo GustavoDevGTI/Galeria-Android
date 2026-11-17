@@ -169,7 +169,6 @@
     <string name="main_no_media_to_share">No hay contenido para compartir.</string>
     <string name="main_delete_albums_title">Mover álbumes a la Papelera</string>
     <string name="main_delete_albums_message">¿Mover el contenido de %1$s a la Papelera? %2$s</string>
-    <string name="main_no_move_target">No hay ningún álbum disponible para mover.</string>
     <string name="main_folder_organization">Organización de carpetas</string>
     <string name="main_album_spacing">Espaciado entre álbumes</string>
     <string name="action_information">Información</string>
@@ -403,14 +402,10 @@
     </plurals>
     <string name="settings_export_favorites_path">Exportar ruta de favoritos</string>
     <string name="settings_no_favorites">Aún no hay favoritos.</string>
-
-    <string name="folder_choose_location">Elige dónde se creará la carpeta nueva.</string>
     <string name="folder_sd_card">Tarjeta SD</string>
     <string name="folder_sd_card_numbered">Tarjeta SD %d</string>
     <string name="folder_no_sd_card">Ninguna tarjeta montada</string>
     <string name="folder_previous">Carpeta anterior</string>
-    <string name="folder_choose_storage">Elegir almacenamiento</string>
-    <string name="folder_create_here">Crear carpeta aquí</string>
     <string name="folder_name">Nombre de la carpeta</string>
     <string name="folder_create">Crear</string>
     <string name="folder_invalid_name">Escribe un nombre válido.</string>
@@ -495,7 +490,6 @@
     <string name="msg_hide_file_message">El archivo se copiará al área oculta de la app y se quitará de la galería pública.</string>
     <string name="msg_hide">Ocultar</string>
     <string name="msg_item_hidden">Elemento ocultado.</string>
-    <string name="msg_no_album">No hay ningún álbum disponible.</string>
     <string name="msg_copy_to">Copiar a</string>
     <string name="msg_move_to">Mover a</string>
     <string name="msg_item_copied">Elemento copiado.</string>
@@ -674,4 +668,7 @@
     <string name="settings_show_album_names_hint">Muestra el nombre y la cantidad de elementos debajo de cada álbum en la pantalla principal.</string>
     <string name="settings_show_file_names">Mostrar nombre de los archivos</string>
     <string name="settings_show_file_names_hint">Muestra el nombre del archivo sobre cada miniatura dentro de los álbumes.</string>
+    <string name="folder_empty">No hay carpetas aquí</string>
+    <string name="move_new_folder">Nueva carpeta</string>
+    <string name="folder_pick_parent">Abre una carpeta como DCIM o Pictures para crear la nueva carpeta dentro de ella.</string>
 </resources>

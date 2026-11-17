@@ -55,6 +55,7 @@ class AlbumMediaActivity : ComponentActivity() {
     internal lateinit var grid: AccessibleRecyclerView
     internal lateinit var fastScroller: AlbumFastScroller
     internal var scrollDateOverlay: ScrollDateOverlay? = null
+    internal var albumSidebar: AlbumSidebar? = null
     internal lateinit var swipeRefresh: SwipeRefreshLayout
     internal lateinit var layoutManager: GridLayoutManager
     internal lateinit var searchInput: EditText
@@ -582,6 +583,7 @@ class AlbumMediaActivity : ComponentActivity() {
         }
         content.addView(fastScroller, fastScrollParams)
         installScrollDates(content)
+        installAlbumSidebarGesture()
 
         emptyView = Ui.label(this, getString(R.string.album_empty)).apply {
             visibility = View.GONE

@@ -100,3 +100,30 @@ class ScrollDateRulesTest {
         assertEquals(listOf(0 to 2026, 5_000 to 2025), sampled)
     }
 }
+
+class AlbumSidebarRulesTest {
+    @Test
+    fun onlyAClearSwipeToTheRightAwayFromTheEdgeOpensTheSidebar() {
+        assertFalse("A borda esquerda é do gesto de voltar", AlbumSidebarRules.startsAwayFromEdge(20f, 32f))
+        assertTrue(AlbumSidebarRules.startsAwayFromEdge(80f, 32f))
+        assertTrue(AlbumSidebarRules.opens(dx = 120f, dy = 20f, distancePx = 56f))
+        assertFalse("Curto demais", AlbumSidebarRules.opens(dx = 40f, dy = 0f, distancePx = 56f))
+        assertFalse("Diagonal demais", AlbumSidebarRules.opens(dx = 80f, dy = 70f, distancePx = 56f))
+        assertFalse("Para a esquerda", AlbumSidebarRules.opens(dx = -120f, dy = 0f, distancePx = 56f))
+        assertTrue("Movimento vertical é rolagem", AlbumSidebarRules.isScroll(dx = 5f, dy = 40f, slopPx = 8f))
+        assertFalse(AlbumSidebarRules.isScroll(dx = 60f, dy = 20f, slopPx = 8f))
+    }
+}
+
+class DestinationPathRulesTest {
+    private val root = "/storage/emulated/0"
+
+    @Test
+    fun aNewFolderInsideTheStorageBecomesARelativeDestination() {
+        assertEquals("Pictures/Viagem/", MediaActions.destinationRelativePath("/storage/emulated/0/Pictures/Viagem", false, root))
+        assertEquals("DCIM/Viagem 2026/", MediaActions.destinationRelativePath("/storage/emulated/0/DCIM/Viagem 2026/", true, root))
+        assertEquals("Pictures/Viagem/", MediaActions.destinationRelativePath("Pictures/Viagem", false, root))
+        assertEquals("Uma pasta só com o mesmo começo de nome não é a raiz",
+            "storage/emulated/01/Pictures/", MediaActions.destinationRelativePath("/storage/emulated/01/Pictures", false, root))
+    }
+}

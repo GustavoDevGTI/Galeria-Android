@@ -473,6 +473,12 @@ class MediaActions private constructor() {
             return created
         }
 
+        /** A folder just created from "Mover", as a destination album (key and path relative to the storage). */
+        fun newFolderTarget(folder: File): AlbumItem {
+            val relative = destinationRelativePath(folder.absolutePath, false)
+            return AlbumItem(relative, folder.name, 0, null, 0L, 0L, 0L, relative)
+        }
+
         @JvmStatic
         fun cleanFolderName(value: String?): String =
             value
@@ -482,7 +488,11 @@ class MediaActions private constructor() {
                 .orEmpty()
 
         @JvmStatic
-        fun destinationRelativePath(value: String?, isVideo: Boolean): String {
+        fun destinationRelativePath(
+            value: String?,
+            isVideo: Boolean,
+            storageDirectory: String = Environment.getExternalStorageDirectory().absolutePath
+        ): String {
             var normalized = value
                 ?.trim()
                 ?.replace('\\', '/')
@@ -490,10 +500,10 @@ class MediaActions private constructor() {
                 .orEmpty()
             if (normalized.isEmpty()) return ""
 
-            val storageRoot = Environment.getExternalStorageDirectory().absolutePath
-                .replace('\\', '/')
-                .trimEnd('/')
-            if (normalized.startsWith(storageRoot, ignoreCase = true)) {
+            // Both sides without the leading slash, so an absolute path inside the storage becomes
+            // relative ("/storage/emulated/0/Pictures/Viagem" -> "Pictures/Viagem/").
+            val storageRoot = storageDirectory.replace('\\', '/').trim('/')
+            if (storageRoot.isNotEmpty() && normalized.startsWith("$storageRoot/", ignoreCase = true)) {
                 normalized = normalized.substring(storageRoot.length).trim('/')
             }
             if (!normalized.contains('/')) {

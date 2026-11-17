@@ -12,6 +12,7 @@ import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
 import androidx.test.espresso.matcher.ViewMatchers.withHint
+import androidx.test.espresso.matcher.ViewMatchers.withTagValue
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
@@ -48,19 +49,22 @@ class MainActivitySmokeTest {
     }
 
     @Test
-    fun createFolderUsesInternalStorageSubmenus() {
+    fun createFolderOpensOneCenteredWindowWithStorageFoldersAndName() {
         ActivityScenario.launch(MainActivity::class.java).use {
             onView(withContentDescription("Mais opções")).perform(click())
             onView(withText("Criar nova pasta")).perform(clickClickableAncestor())
+            // Storage choice, path, folder list, name and actions share one window.
             waitForView {
                 onView(withText("Armazenamento interno")).inRoot(isDialog()).check(matches(isDisplayed()))
                 onView(withText("Cartão SD")).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText("Raiz do armazenamento")).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withHint("Nome da pasta")).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText("Criar")).inRoot(isDialog()).check(matches(isDisplayed()))
             }
-            onView(withText("Armazenamento interno")).inRoot(isDialog()).perform(clickClickableAncestor())
-            waitForView {
-                onView(withText("Criar pasta aqui")).inRoot(isDialog()).check(matches(isDisplayed()))
-                onView(withText("Escolher armazenamento")).inRoot(isDialog()).check(matches(isDisplayed()))
-            }
+            // Opening a folder from the list goes inside it, and the path follows.
+            onView(withText("DCIM")).inRoot(isDialog()).perform(click())
+            waitForView { onView(withText("DCIM")).inRoot(isDialog()).check(matches(withTagValue(org.hamcrest.Matchers.equalTo<Any>("folder_creation_path")))) }
+            onView(withText("Cancelar")).inRoot(isDialog()).perform(click())
         }
     }
 

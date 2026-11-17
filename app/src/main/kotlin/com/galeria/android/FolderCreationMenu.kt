@@ -3,14 +3,21 @@ package com.galeria.android
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.RippleDrawable
 import android.os.Build
 import android.os.Environment
 import android.os.storage.StorageManager
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.BaseAdapter
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
@@ -18,185 +25,265 @@ import android.widget.TextView
 import java.io.File
 import java.util.concurrent.Executors
 
+/**
+ * "Criar nova pasta": one centred window in the app's dialog style. It shows the storage choice
+ * side by side, the current path with a step back, the folders inside it, the name field and
+ * Cancelar/Criar. Opened from "Mover" it only offers the internal storage, where moves go.
+ */
 class FolderCreationMenu(
     private val activity: Activity,
+    private val internalOnly: Boolean = false,
     private val onFolderCreated: (File) -> Unit = {}
 ) {
     private var creating = false
-    private data class StorageLocation(
-        val label: String,
-        val root: File,
-        val removable: Boolean
-    )
+    private data class StorageLocation(val label: String, val root: File, val removable: Boolean)
 
     fun show() {
-        showStorageChoices()
-    }
-
-    private fun showStorageChoices() {
         folderWorker.execute {
-            val locations = storageLocations()
+            val locations = storageLocations().let { all -> if (internalOnly) all.filterNot { it.removable } else all }
             activity.runOnUiThread {
-                if (!activity.isFinishing && !activity.isDestroyed) showStorageChoices(locations)
+                if (!activity.isFinishing && !activity.isDestroyed && locations.isNotEmpty()) showWindow(locations)
             }
         }
     }
 
-    private fun showStorageChoices(locations: List<StorageLocation>) {
+    private fun showWindow(locations: List<StorageLocation>) {
         lateinit var dialog: AlertDialog
-        val panel = panel().apply {
-            addView(title(activity.getString(R.string.action_create_folder)))
-            addView(description(activity.getString(R.string.folder_choose_location)))
-            locations.forEach { location ->
-                addView(storageRow(location.label, location.root.absolutePath, true) {
-                    dialog.dismiss()
-                    openAfterDismiss { showFolderBrowser(location, location.root) }
-                })
-            }
-            if (locations.none { it.removable }) {
-                addView(storageRow(
-                    activity.getString(R.string.folder_sd_card),
-                    activity.getString(R.string.folder_no_sd_card),
-                    false,
-                    null
-                ))
-            }
-        }
-        dialog = AlertDialog.Builder(activity).setView(panel).create()
-        Ui.showSidePanel(dialog)
-    }
-
-    private fun showFolderBrowser(location: StorageLocation, startDirectory: File) {
-        lateinit var dialog: AlertDialog
-        var currentDirectory = startDirectory
+        var location = locations.first()
+        // From "Mover" it starts in Pictures, the usual home for new albums.
+        var currentDirectory = if (internalOnly) {
+            File(location.root, Environment.DIRECTORY_PICTURES).takeIf { it.isDirectory } ?: location.root
+        } else location.root
         var requestVersion = 0
-        val path = TextView(activity).apply {
-            textSize = 12f
-            setTextColor(Ui.menuText(activity))
-            alpha = 0.70f
-            setPadding(Ui.dp(activity, 18), 0, Ui.dp(activity, 18), Ui.dp(activity, 8))
+        val folders = ArrayList<File>()
+
+        val body = Ui.themedDialogBody(activity, activity.getString(R.string.action_create_folder), null)
+
+        // Storage, side by side; the SD card stays visible but disabled when none is mounted.
+        val storageRow = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(14), 0, dp(14), dp(10))
         }
-        val folders = ArrayList<File?>()
+        val chips = ArrayList<Pair<StorageLocation?, TextView>>()
+        lateinit var refresh: () -> Unit
+        fun styleChips() {
+            chips.forEach { (chipLocation, chip) ->
+                val selected = chipLocation == location
+                chip.setTypeface(Typeface.DEFAULT, if (selected) Typeface.BOLD else Typeface.NORMAL)
+                chip.background = pill(if (selected) Ui.menuHighlightSurface(activity) else Ui.menuOptionSurface(activity))
+                chip.isSelected = selected
+            }
+        }
+        fun addChip(chipLocation: StorageLocation?, label: String) {
+            val chip = TextView(activity).apply {
+                text = label
+                textSize = 14f
+                gravity = Gravity.CENTER
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                setTextColor(Ui.menuText(activity))
+                setPadding(dp(10), 0, dp(10), 0)
+                isClickable = true
+                isFocusable = true
+                // Long storage names ("Armazenamento interno") shrink to fit instead of being cut.
+                androidx.core.widget.TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 10, 14, 1, android.util.TypedValue.COMPLEX_UNIT_SP
+                )
+                if (chipLocation == null) {
+                    alpha = 0.45f
+                    contentDescription = "$label: ${activity.getString(R.string.folder_no_sd_card)}"
+                    setOnClickListener { Ui.toast(activity, activity.getString(R.string.folder_no_sd_card)) }
+                } else {
+                    setOnClickListener {
+                        if (location == chipLocation) return@setOnClickListener
+                        location = chipLocation
+                        currentDirectory = chipLocation.root
+                        styleChips()
+                        refresh()
+                    }
+                }
+            }
+            chips.add(chipLocation to chip)
+            storageRow.addView(chip, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+                if (storageRow.childCount > 0) marginStart = dp(8)
+            })
+        }
+        locations.forEach { addChip(it, it.label) }
+        if (!internalOnly && locations.none { it.removable }) addChip(null, activity.getString(R.string.folder_sd_card))
+        styleChips()
+        body.addView(storageRow, matchWrap())
+
+        // Current path with a step back to the parent folder.
+        val back = ImageView(activity).apply {
+            setImageResource(R.drawable.ic_back)
+            setColorFilter(Ui.menuText(activity))
+            scaleType = ImageView.ScaleType.CENTER
+            contentDescription = activity.getString(R.string.folder_previous)
+            background = ripple(Color.TRANSPARENT, 18)
+            tag = "folder_creation_up"
+        }
+        val path = TextView(activity).apply {
+            textSize = 14f
+            setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+            setTextColor(Ui.menuText(activity))
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.START
+            setPadding(dp(6), 0, 0, 0)
+            tag = "folder_creation_path"
+        }
+        body.addView(LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(14), dp(4))
+            addView(back, LinearLayout.LayoutParams(dp(40), dp(40)))
+            addView(path, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }, matchWrap())
+
+        // Folders inside the current one.
         val adapter = object : BaseAdapter() {
             override fun getCount(): Int = folders.size
-            override fun getItem(position: Int): File? = folders[position]
+            override fun getItem(position: Int): File = folders[position]
             override fun getItemId(position: Int): Long = position.toLong()
-
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val folder = getItem(position)
-                val rowTone = if (folder == null) {
-                    Ui.menuElevatedSurface(activity)
-                } else {
-                    Ui.menuOptionSurface(activity)
-                }
-                return LinearLayout(activity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    minimumHeight = Ui.dp(activity, 52)
-                    setBackgroundColor(rowTone)
-                    setPadding(Ui.dp(activity, 14), Ui.dp(activity, 5), Ui.dp(activity, 14), Ui.dp(activity, 5))
-                    addView(
-                        ImageView(activity).apply {
-                            setImageResource(if (folder == null) R.drawable.ic_back else R.drawable.ic_folder)
-                            setColorFilter(Ui.menuText(activity))
-                            alpha = 0.78f
-                        },
-                        LinearLayout.LayoutParams(Ui.dp(activity, 24), Ui.dp(activity, 24))
-                    )
-                    addView(
-                        TextView(activity).apply {
-                            text = folder?.name ?: activity.getString(R.string.folder_previous)
-                            textSize = 15f
-                            maxLines = 1
-                            ellipsize = android.text.TextUtils.TruncateAt.END
-                            setTextColor(Ui.menuText(activity))
-                            setPadding(Ui.dp(activity, 12), 0, 0, 0)
-                        },
-                        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    )
-                }
+                val row = (convertView as? LinearLayout) ?: folderRow()
+                (row.getChildAt(1) as TextView).text = getItem(position).name
+                return row
             }
         }
-        lateinit var refresh: () -> Unit
+        val empty = TextView(activity).apply {
+            text = activity.getString(R.string.folder_empty)
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(Ui.menuText(activity))
+            alpha = 0.6f
+            visibility = View.GONE
+        }
         val list = ListView(activity).apply {
             divider = null
+            dividerHeight = dp(3)
             cacheColorHint = Color.TRANSPARENT
-            setBackgroundColor(Ui.menuSurface(activity))
+            selector = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
+            clipToPadding = false
             this.adapter = adapter
+            tag = "folder_creation_list"
             setOnItemClickListener { _, _, position, _ ->
-                val selected = folders[position]
-                currentDirectory = if (selected == null) {
-                    currentDirectory.parentFile?.takeIf { isInside(location.root, it) } ?: location.root
-                } else {
-                    selected
-                }
+                currentDirectory = folders[position]
                 refresh()
             }
         }
+        val listHeight = minOf(dp(300), (activity.resources.displayMetrics.heightPixels * 0.36f).toInt())
+        val listBox = FrameLayout(activity)
+        body.addView(listBox.apply {
+            background = Ui.rounded(Ui.menuElevatedSurface(activity), 14, activity, Ui.menuBorder(activity), 1)
+            clipToOutline = true
+            addView(list, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(empty, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, listHeight).apply {
+            marginStart = dp(14)
+            marginEnd = dp(14)
+            bottomMargin = dp(12)
+        })
+
+        // Name of the new folder.
+        val input = EditText(activity).apply {
+            setSingleLine(true)
+            hint = activity.getString(R.string.folder_name)
+            textSize = 16f
+            setTextColor(Ui.menuText(activity))
+            setHintTextColor((Ui.menuText(activity) and 0x00FFFFFF) or 0x99000000.toInt())
+            background = Ui.rounded(Ui.menuElevatedSurface(activity), 12, activity, Ui.menuBorder(activity), 1)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            tag = "folder_creation_name"
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
+            // The keyboard covers the lower half: the list shrinks while the name is typed so
+            // Cancelar and Criar stay visible.
+            setOnFocusChangeListener { _, focused ->
+                listBox.layoutParams = listBox.layoutParams.apply { height = if (focused) minOf(listHeight, dp(132)) else listHeight }
+            }
+        }
+        body.addView(input, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply {
+            marginStart = dp(14)
+            marginEnd = dp(14)
+            bottomMargin = dp(4)
+        })
+        lateinit var confirm: () -> Unit
+        body.addView(Ui.themedActionPair(
+            activity,
+            activity.getString(R.string.action_cancel),
+            activity.getString(R.string.folder_create),
+            onFirst = { dialog.dismiss() },
+            onSecond = {
+                confirm()
+            }
+        ))
+        confirm = {
+            // Android keeps media out of the storage root, so a destination for "Mover" needs a parent.
+            if (internalOnly && sameFile(currentDirectory, location.root)) {
+                Ui.toast(activity, activity.getString(R.string.folder_pick_parent))
+            } else {
+                createFolder(currentDirectory, input.text.toString()) { dialog.dismiss() }
+            }
+        }
+        input.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) { confirm(); true } else false
+        }
+
         refresh = {
-            path.text = displayPath(location, currentDirectory)
             val directory = currentDirectory
+            val atRoot = sameFile(directory, location.root)
+            path.text = displayPath(location, directory)
+            back.isEnabled = !atRoot
+            back.alpha = if (atRoot) 0.3f else 1f
             val version = ++requestVersion
-            folders.clear()
-            adapter.notifyDataSetChanged()
+            val current = location
             folderWorker.execute {
-                val next = ArrayList<File?>()
-                if (!sameFile(directory, location.root)) next.add(null)
-                next.addAll(visibleFolders(directory, location))
+                val next = visibleFolders(directory, current)
                 activity.runOnUiThread {
                     if (version == requestVersion && dialog.isShowing && !activity.isFinishing && !activity.isDestroyed) {
+                        folders.clear()
                         folders.addAll(next)
                         adapter.notifyDataSetChanged()
+                        list.setSelection(0)
+                        empty.visibility = if (next.isEmpty()) View.VISIBLE else View.GONE
                     }
                 }
             }
         }
-        val panel = panel().apply {
-            addView(title(activity.getString(R.string.action_create_folder)))
-            addView(
-                TextView(activity).apply {
-                    text = location.label
-                    textSize = 14f
-                    setTextColor(Ui.menuText(activity))
-                    setPadding(Ui.dp(activity, 18), 0, Ui.dp(activity, 18), Ui.dp(activity, 4))
-                },
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            )
-            addView(path)
-            addView(
-                list,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    minOf(Ui.dp(activity, 350), (activity.resources.displayMetrics.heightPixels * 0.44f).toInt())
-                )
-            )
-            addView(actionRow(activity.getString(R.string.folder_choose_storage)) {
-                dialog.dismiss()
-                openAfterDismiss { showStorageChoices() }
-            })
-            addView(actionRow(activity.getString(R.string.folder_create_here), primary = true) {
-                val parent = currentDirectory
-                dialog.dismiss()
-                openAfterDismiss { askFolderName(parent) }
-            })
+        back.setOnClickListener {
+            currentDirectory = currentDirectory.parentFile?.takeIf { isInside(location.root, it) } ?: location.root
+            refresh()
         }
-        dialog = AlertDialog.Builder(activity).setView(panel).create()
+
+        dialog = AlertDialog.Builder(activity).setView(body).create()
         dialog.setOnDismissListener { requestVersion++ }
-        Ui.showSidePanel(dialog, fullHeight = true)
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        Ui.showCenteredPanel(dialog)
         refresh()
     }
 
-    private fun askFolderName(parent: File) {
-        Ui.showTextInputDialog(
-            activity,
-            activity.getString(R.string.action_create_folder),
-            activity.getString(R.string.folder_name),
-            message = parent.absolutePath,
-            positiveText = activity.getString(R.string.folder_create)
-        ) { rawName -> createFolder(parent, rawName) }
+    private fun folderRow(): LinearLayout = LinearLayout(activity).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(50)
+        background = ripple(Ui.menuOptionSurface(activity), 10)
+        setPadding(dp(12), dp(4), dp(12), dp(4))
+        addView(ImageView(activity).apply {
+            setImageResource(R.drawable.ic_folder)
+            setColorFilter(Ui.menuText(activity))
+            alpha = 0.82f
+        }, LinearLayout.LayoutParams(dp(24), dp(24)))
+        addView(TextView(activity).apply {
+            textSize = 15f
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setTextColor(Ui.menuText(activity))
+            setPadding(dp(12), 0, 0, 0)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        layoutParams = android.widget.AbsListView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
-    private fun createFolder(parent: File, rawName: String) {
+    private fun createFolder(parent: File, rawName: String, onCreated: () -> Unit) {
         if (creating) return
         val name = MediaActions.cleanFolderName(rawName)
         if (name.isBlank()) {
@@ -222,6 +309,7 @@ class FolderCreationMenu(
                     when (result) {
                         1 -> {
                             Ui.toast(activity, activity.getString(R.string.folder_created_at, displayParent(parent)))
+                            onCreated()
                             onFolderCreated(target)
                         }
                         0 -> Ui.toast(activity, activity.getString(R.string.folder_exists_at_location))
@@ -327,98 +415,17 @@ class FolderCreationMenu(
 
     private fun canonicalPath(file: File): String = runCatching { file.canonicalPath }.getOrElse { file.absolutePath }
 
-    private fun panel(): LinearLayout = LinearLayout(activity).apply {
-        orientation = LinearLayout.VERTICAL
-        background = Ui.rounded(Ui.menuSurface(activity), 16, activity, Ui.menuBorder(activity), 1)
-        clipToOutline = true
-        setPadding(0, Ui.dp(activity, 4), 0, Ui.dp(activity, 4))
-    }
+    private fun dp(value: Int): Int = Ui.dp(activity, value)
 
-    private fun title(value: String): TextView = TextView(activity).apply {
-        text = value
-        textSize = 18f
-        setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-        setTextColor(Ui.menuText(activity))
-        setPadding(Ui.dp(activity, 18), Ui.dp(activity, 14), Ui.dp(activity, 18), Ui.dp(activity, 8))
-    }
+    private fun matchWrap() = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
-    private fun description(value: String): TextView = TextView(activity).apply {
-        text = value
-        textSize = 13f
-        setTextColor(Ui.menuText(activity))
-        alpha = 0.76f
-        setPadding(Ui.dp(activity, 18), 0, Ui.dp(activity, 18), Ui.dp(activity, 10))
-    }
+    private fun pill(color: Int) = ripple(color, 20, Ui.menuBorder(activity))
 
-    private fun storageRow(label: String, subtitle: String, enabled: Boolean, onClick: (() -> Unit)?): View =
-        LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = Ui.dp(activity, 62)
-            alpha = if (enabled) 1f else 0.46f
-            val rowTone = if (enabled) Ui.menuOptionSurface(activity) else Ui.menuSurface(activity)
-            background = Ui.rounded(rowTone, 10, activity, Ui.menuBorder(activity), 1)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                marginStart = Ui.dp(activity, 10)
-                marginEnd = Ui.dp(activity, 10)
-                bottomMargin = Ui.dp(activity, 4)
-            }
-            setPadding(Ui.dp(activity, 14), Ui.dp(activity, 6), Ui.dp(activity, 14), Ui.dp(activity, 6))
-            addView(
-                ImageView(activity).apply {
-                    setImageResource(R.drawable.ic_folder)
-                    setColorFilter(Ui.menuText(activity))
-                },
-                LinearLayout.LayoutParams(Ui.dp(activity, 28), Ui.dp(activity, 28))
-            )
-            addView(
-                LinearLayout(activity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(Ui.dp(activity, 12), 0, 0, 0)
-                    addView(TextView(activity).apply {
-                        text = label
-                        textSize = 15f
-                        setTextColor(Ui.menuText(activity))
-                    })
-                    addView(TextView(activity).apply {
-                        text = subtitle
-                        textSize = 11f
-                        maxLines = 1
-                        ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
-                        setTextColor(Ui.menuText(activity))
-                        alpha = 0.64f
-                    })
-                },
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            )
-            isClickable = enabled
-            isFocusable = enabled
-            if (enabled && onClick != null) setOnClickListener { onClick() }
-        }
-
-    private fun actionRow(label: String, primary: Boolean = false, onClick: () -> Unit): TextView =
-        TextView(activity).apply {
-            text = label
-            textSize = 14f
-            if (primary) setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-            setTextColor(Ui.menuText(activity))
-            gravity = Gravity.CENTER_VERTICAL or Gravity.START
-            minimumHeight = Ui.dp(activity, 50)
-            background = if (primary) {
-                Ui.rounded(Ui.menuHighlightSurface(activity), 0, activity)
-            } else {
-                Ui.rounded(Ui.menuElevatedSurface(activity), 0, activity)
-            }
-            setPadding(Ui.dp(activity, 18), Ui.dp(activity, 10), Ui.dp(activity, 18), Ui.dp(activity, 10))
-            setOnClickListener { onClick() }
-        }
-
-    private fun openAfterDismiss(block: () -> Unit) {
-        activity.window.decorView.postDelayed(block, 60L)
-    }
+    private fun ripple(color: Int, radius: Int, border: Int? = null) = RippleDrawable(
+        ColorStateList.valueOf((Ui.menuText(activity) and 0x00FFFFFF) or 0x22000000),
+        if (border != null) Ui.rounded(color, radius, activity, border, 1) else Ui.rounded(color, radius, activity),
+        Ui.rounded(Color.WHITE, radius, activity)
+    )
 
     private companion object { val folderWorker = Executors.newSingleThreadExecutor() }
 }

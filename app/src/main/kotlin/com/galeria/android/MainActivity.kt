@@ -689,6 +689,7 @@ class MainActivity : ComponentActivity() {
         adapter.setPinnedKeys(catalogController.pinnedKeys)
         adapter.setTemporarilyVisibleKeys(TemporaryAlbumVisibility.activeKeys())
         adapter.submit(albums, query)
+        AlbumSidebarSource.albums = adapter.allAlbumsSnapshot()
         mergeVisibleAlbumsIntoDialog?.invoke(albums) ?: refreshVisibilityDialogCounts?.invoke()
         if (forceAlbumCoverRefreshOnNextSubmit) {
             forceAlbumCoverRefreshOnNextSubmit = false

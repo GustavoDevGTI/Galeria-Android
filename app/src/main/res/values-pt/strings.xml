@@ -161,7 +161,6 @@
     <string name="main_no_media_to_share">Nenhuma mídia para compartilhar.</string>
     <string name="main_delete_albums_title">Mover álbuns para a Lixeira</string>
     <string name="main_delete_albums_message">Mover as mídias de %1$s para a Lixeira? %2$s</string>
-    <string name="main_no_move_target">Nenhum álbum disponível para mover.</string>
     <string name="main_folder_organization">Organização de pastas</string>
     <string name="main_album_spacing">Espaçamento entre álbuns</string>
     <string name="action_information">Informações</string>
@@ -397,13 +396,10 @@
     <string name="settings_no_favorites">Nenhum favorito criado ainda.</string>
 
     <!-- Criação de pastas -->
-    <string name="folder_choose_location">Escolha onde a nova pasta será criada.</string>
     <string name="folder_sd_card">Cartão SD</string>
     <string name="folder_sd_card_numbered">Cartão SD %d</string>
     <string name="folder_no_sd_card">Nenhum cartão montado</string>
     <string name="folder_previous">Pasta anterior</string>
-    <string name="folder_choose_storage">Escolher armazenamento</string>
-    <string name="folder_create_here">Criar pasta aqui</string>
     <string name="folder_name">Nome da pasta</string>
     <string name="folder_create">Criar</string>
     <string name="folder_invalid_name">Digite um nome válido.</string>
@@ -488,7 +484,6 @@
     <string name="msg_hide_file_message">O arquivo será copiado para a área oculta do app e removido da galeria pública.</string>
     <string name="msg_hide">Ocultar</string>
     <string name="msg_item_hidden">Item ocultado.</string>
-    <string name="msg_no_album">Nenhum álbum disponível.</string>
     <string name="msg_copy_to">Copiar para</string>
     <string name="msg_move_to">Mover para</string>
     <string name="msg_item_copied">Item copiado.</string>
@@ -665,4 +660,7 @@
     <string name="settings_show_album_names_hint">Mostra o nome e a quantidade de itens abaixo de cada álbum na tela principal.</string>
     <string name="settings_show_file_names">Mostrar nome dos arquivos</string>
     <string name="settings_show_file_names_hint">Mostra o nome do arquivo sobre cada miniatura dentro dos álbuns.</string>
+    <string name="folder_empty">Nenhuma pasta aqui</string>
+    <string name="move_new_folder">Nova pasta</string>
+    <string name="folder_pick_parent">Abra uma pasta como DCIM ou Pictures para criar a nova pasta dentro dela.</string>
 </resources>

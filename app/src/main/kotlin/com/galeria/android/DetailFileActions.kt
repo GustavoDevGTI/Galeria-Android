@@ -214,12 +214,8 @@ internal fun DetailActivity.askFolderForCopyOrMove(copy: Boolean, anchor: View) 
         includeHidden
     ) { targets ->
         if (operations.busy || isFinishing || !anchor.isAttachedToWindow || currentItem().uri != item.uri) return@loadTargets
-        if (targets.isEmpty()) {
-            Ui.toast(this, getString(R.string.msg_no_album))
-            return@loadTargets
-        }
-        Ui.showAlbumTargets(anchor, getString(if (copy) R.string.msg_copy_to else R.string.msg_move_to), targets) { album ->
-            if (operations.busy) return@showAlbumTargets
+        fun sendTo(album: AlbumItem) {
+            if (operations.busy) return
             val folder = album.path.ifBlank { album.name }
             if (copy) {
                 copyCurrentToFolder(item, folder)
@@ -229,6 +225,14 @@ internal fun DetailActivity.askFolderForCopyOrMove(copy: Boolean, anchor: View) 
                 moveCurrentToFolder(item, folder)
             }
         }
+        // With no other album the panel still opens: "Nova pasta" is the destination then.
+        Ui.showAlbumTargets(anchor, getString(if (copy) R.string.msg_copy_to else R.string.msg_move_to), targets,
+            onNewFolder = {
+                FolderCreationMenu(this, internalOnly = true) { folder ->
+                    if (!isFinishing && currentItem().uri == item.uri) sendTo(MediaActions.newFolderTarget(folder))
+                }.show()
+            }
+        ) { album -> sendTo(album) }
     }
 }
 
