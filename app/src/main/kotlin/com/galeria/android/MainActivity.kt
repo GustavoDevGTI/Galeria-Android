@@ -62,7 +62,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var selectionBar: LinearLayout
     private lateinit var selectionActions: LinearLayout
     private lateinit var selectionActionDock: LinearLayout
-    private lateinit var browseBar: GalleryBrowseBar
+    internal lateinit var browseBar: GalleryBrowseBar
+    internal var browsePanel: BrowseActionPanel? = null
     private lateinit var selectAllText: TextView
     internal lateinit var prefs: SharedPreferences
     private lateinit var scaleDetector: ScaleGestureDetector
@@ -177,6 +178,7 @@ class MainActivity : ComponentActivity() {
         }
         loadSettings()
         applyThemeColors()
+        if (::browseBar.isInitialized) refreshBrowseBar()
         if (::adapter.isInitialized) adapter.setShowAlbumNames(GalleryPreferences.flag(this, GalleryPreferences.SHOW_ALBUM_NAMES))
         refreshVisibilityDialogCounts?.invoke()
         if (::adapter.isInitialized) adapter.refreshChangedCovers()
@@ -313,7 +315,7 @@ class MainActivity : ComponentActivity() {
                 if (adapter.isSelectionMode()) {
                     exitSelectionMode()
                 } else {
-                    showMenu(it)
+                    openBrowsePanel()
                 }
             }
         }
@@ -460,14 +462,8 @@ class MainActivity : ComponentActivity() {
         content.addView(catalogLoadingView, FrameLayout.LayoutParams(Ui.dp(this, 32), Ui.dp(this, 32), Gravity.CENTER))
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        browseBar = GalleryBrowseBar(this, systemBars.bottom,
-            onSort = ::showSortDialog,
-            onOrganize = {
-                startActivity(OrganizerActivity.intent(this, adapter.allAlbumsSnapshot().map { it.key },
-                    shouldIncludeHiddenFilesystem()))
-            },
-            onHidden = { SecurityGate.requireHiddenAccess(this, action = ::showFolderVisibilityDialog) },
-            onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) })
+        browseBar = GalleryBrowseBar(this, systemBars.bottom)
+        refreshBrowseBar()
         root.addView(browseBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         selectionActions = LinearLayout(this).apply {
@@ -507,37 +503,6 @@ class MainActivity : ComponentActivity() {
             scaleType = ImageView.ScaleType.CENTER
             setPadding(Ui.dp(this@MainActivity, 9), Ui.dp(this@MainActivity, 9), Ui.dp(this@MainActivity, 9), Ui.dp(this@MainActivity, 9))
         }
-
-    private fun showMenu(anchor: View) {
-        val filter = getString(R.string.action_filter_media)
-        val organization = getString(R.string.main_folder_organization)
-        val spacing = getString(R.string.main_album_spacing)
-        val createFolder = getString(R.string.action_create_folder)
-        val refresh = getString(R.string.action_refresh)
-        val showHiddenTrash = GalleryPreferences.hiddenFlag(this, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)
-        val trashVisibility = getString(
-            if (showHiddenTrash) R.string.trash_hide_hidden else R.string.trash_show_hidden
-        )
-        Ui.showPopupOptions(
-            anchor,
-            listOf(filter, organization, spacing, createFolder, trashVisibility, refresh)
-        ) { selected ->
-            when (selected) {
-                filter -> showMediaFilterDialog()
-                organization -> showFolderOrganizationDialog()
-                spacing -> showAlbumSpacingDialog()
-                createFolder -> FolderCreationMenu(this) { loadAlbums() }.show()
-                trashVisibility -> {
-                    val apply = {
-                        prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, !showHiddenTrash).apply()
-                        loadAlbums()
-                    }
-                    if (showHiddenTrash) apply() else SecurityGate.requireHiddenAccess(this, action = apply)
-                }
-                refresh -> loadAlbums()
-            }
-        }
-    }
 
     private fun enterSelectionMode() {
         adapter.setSelectionMode(true)

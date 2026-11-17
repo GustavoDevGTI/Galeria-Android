@@ -50,6 +50,10 @@ class SettingsActivity : Activity() {
         prefs = getSharedPreferences(Ui.PREFS, MODE_PRIVATE)
         Ui.applySystemBars(this)
         buildLayout()
+        // "Tema" in the options panel opens the colour choice directly, once.
+        if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_OPEN_THEME, false)) {
+            window.decorView.post { if (!isFinishing) showThemeColorDialog() }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -688,8 +692,9 @@ class SettingsActivity : Activity() {
         }
     }
 
-    private companion object {
-        const val REQ_MEDIA_LIBRARY = 20
-        const val PREVIEW_REFRESH_DELAY_MS = 60L
+    companion object {
+        const val EXTRA_OPEN_THEME = "open_theme"
+        private const val REQ_MEDIA_LIBRARY = 20
+        private const val PREVIEW_REFRESH_DELAY_MS = 60L
     }
 }

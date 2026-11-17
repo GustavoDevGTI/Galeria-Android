@@ -53,67 +53,99 @@ import kotlin.math.min
  * Menu and dialogs of the album screen: folder menu, cinema mode, filters, grouping, view mode, new folder, spacing and sorting.
  */
 
-internal fun AlbumMediaActivity.showFolderMenu(anchor: View) {
-    val filter = getString(R.string.action_filter_media)
-    val viewMode = getString(R.string.album_view_mode)
-    val group = getString(R.string.album_group_by)
-    val createFolder = getString(R.string.action_create_folder)
-    val random = getString(R.string.album_random)
-    val spacing = getString(R.string.album_grid_spacing)
-    val cinemaMode = getString(R.string.album_cinema_mode)
-    val trashVisibility = getString(
-        if (GalleryPreferences.hiddenFlag(this, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)) R.string.trash_hide_hidden
-        else R.string.trash_show_hidden
+/** Options of the album screen, split between the bottom bar and the panel that replaced the three-dot menu. */
+internal object AlbumBrowseLayout {
+    val defaultBar = listOf("sort", "organize", "shuffle", "settings")
+    val defaultOrder = defaultBar + listOf(
+        "filter", "group", "view_mode", "create_folder", "choose_cover", "automatic_cover", "trash_hidden",
+        "spacing", "cinema", "theme"
     )
-    val chooseCover = getString(R.string.album_choose_cover)
-    val automaticCover = getString(R.string.album_automatic_cover)
+}
+
+internal fun AlbumMediaActivity.albumBrowseLayoutStore() = BrowseLayoutStore(
+    prefs, "album", AlbumBrowseLayout.defaultBar, AlbumBrowseLayout.defaultOrder
+)
+
+/** The options this album offers right now; the trash and virtual albums leave some out. */
+internal fun AlbumMediaActivity.albumBrowseActions(): List<BrowseAction> {
+    val inTrash = albumKey == VirtualAlbumRules.TRASH_KEY
     val hasManualCover = prefs.contains(AlbumCoverRules.preferenceKey(albumKey ?: "all_media"))
-    val options = buildList {
-        add(filter)
-        addAll(listOf(group, viewMode))
-        if (albumKey != VirtualAlbumRules.TRASH_KEY) addAll(listOf(createFolder, random))
-        if (albumKey != VirtualAlbumRules.TRASH_KEY) add(chooseCover)
-        if (albumKey != VirtualAlbumRules.TRASH_KEY && hasManualCover) add(automaticCover)
-        if (albumKey == VirtualAlbumRules.TRASH_KEY) add(trashVisibility)
-        add(spacing)
-        if (CinemaModeRules.supportsAlbum(albumKey)) add(cinemaMode)
-    }
-    Ui.showPopupOptions(
-        anchor,
-        options,
-        selectedItems = if (cinemaPreferences.isEnabled(albumKey)) setOf(cinemaMode) else emptySet()
-    ) { selected ->
-        when (selected) {
-            filter -> showMediaFilterDialog()
-            viewMode -> showViewModeDialog()
-            group -> showGroupDialog()
-            createFolder -> showCreateFolderDialog()
-            random -> startRandomPlayback()
-            chooseCover -> {
+    val showHiddenTrash = GalleryPreferences.hiddenFlag(this, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)
+    return buildList {
+        add(BrowseAction("sort", R.drawable.ic_sort, getString(R.string.browse_sort), getString(R.string.action_sort_by)) {
+            showMediaSortDialog()
+        })
+        add(BrowseAction("organize", R.drawable.ic_organize, getString(R.string.action_organize)) {
+            startActivity(OrganizerActivity.intent(this@albumBrowseActions,
+                intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS),
+                shouldIncludeHiddenFilesystem(), albumKey))
+        })
+        // Trashed media does not offer random playback.
+        add(BrowseAction("shuffle", R.drawable.ic_shuffle, getString(R.string.album_random),
+            getString(R.string.action_random_playback), enabled = !inTrash) { startRandomPlayback() })
+        add(BrowseAction("settings", R.drawable.ic_settings, getString(R.string.action_settings)) {
+            startActivity(Intent(this@albumBrowseActions, SettingsActivity::class.java))
+        })
+        add(BrowseAction("filter", R.drawable.ic_filter, getString(R.string.action_filter_media)) { showMediaFilterDialog() })
+        add(BrowseAction("group", R.drawable.ic_group, getString(R.string.album_group_by)) { showGroupDialog() })
+        add(BrowseAction("view_mode", R.drawable.ic_view_mode, getString(R.string.album_view_mode)) { showViewModeDialog() })
+        if (!inTrash) {
+            add(BrowseAction("create_folder", R.drawable.ic_folder_add, getString(R.string.action_create_folder)) {
+                showCreateFolderDialog()
+            })
+            add(BrowseAction("choose_cover", R.drawable.ic_cover, getString(R.string.album_choose_cover)) {
                 choosingAlbumCover = true
                 searchInput.setText("")
                 searchInput.clearFocus()
                 hideKeyboard()
                 searchInput.isEnabled = false
                 updateSearchPresentation()
-                Ui.toast(this, getString(R.string.album_choose_cover_hint))
-            }
-            automaticCover -> {
-                prefs.edit().remove(AlbumCoverRules.preferenceKey(albumKey ?: "all_media")).apply()
-                Ui.toast(this, getString(R.string.album_automatic_cover_saved))
-            }
-            trashVisibility -> {
-                val showHidden = !GalleryPreferences.hiddenFlag(this, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)
-                val apply = {
-                    prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, showHidden).apply()
-                    loadMedia(true)
-                }
-                if (showHidden) SecurityGate.requireHiddenAccess(this, action = apply) else apply()
-            }
-            spacing -> showSpacingDialog()
-            cinemaMode -> toggleAlbumCinemaMode()
+                Ui.toast(this@albumBrowseActions, getString(R.string.album_choose_cover_hint))
+            })
         }
+        if (!inTrash && hasManualCover) {
+            add(BrowseAction("automatic_cover", R.drawable.ic_cover_auto, getString(R.string.album_automatic_cover)) {
+                prefs.edit().remove(AlbumCoverRules.preferenceKey(albumKey ?: "all_media")).apply()
+                Ui.toast(this@albumBrowseActions, getString(R.string.album_automatic_cover_saved))
+                refreshAlbumBrowseBar()
+            })
+        }
+        if (inTrash) {
+            add(BrowseAction("trash_hidden", R.drawable.ic_trash_eye,
+                getString(if (showHiddenTrash) R.string.trash_hide_hidden else R.string.trash_show_hidden)) {
+                val apply = {
+                    prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, !showHiddenTrash).apply()
+                    loadMedia(true)
+                    refreshAlbumBrowseBar()
+                }
+                if (!showHiddenTrash) SecurityGate.requireHiddenAccess(this@albumBrowseActions, action = apply) else apply()
+            })
+        }
+        add(BrowseAction("spacing", R.drawable.ic_spacing, getString(R.string.album_grid_spacing)) { showSpacingDialog() })
+        if (CinemaModeRules.supportsAlbum(albumKey)) {
+            add(BrowseAction("cinema", R.drawable.ic_movie, getString(R.string.album_cinema_mode),
+                selected = cinemaPreferences.isEnabled(albumKey)) {
+                toggleAlbumCinemaMode()
+                refreshAlbumBrowseBar()
+            })
+        }
+        add(BrowseAction("theme", R.drawable.ic_palette, getString(R.string.action_theme)) {
+            startActivity(Intent(this@albumBrowseActions, SettingsActivity::class.java)
+                .putExtra(SettingsActivity.EXTRA_OPEN_THEME, true))
+        })
     }
+}
+
+internal fun AlbumMediaActivity.refreshAlbumBrowseBar() {
+    val actions = albumBrowseActions().associateBy { it.id }
+    browseBar.setActions(albumBrowseLayoutStore().load().bar.mapNotNull(actions::get))
+}
+
+internal fun AlbumMediaActivity.openAlbumBrowsePanel() {
+    val panel = browsePanel ?: BrowseActionPanel(this, browseBar, albumBrowseLayoutStore(), ::albumBrowseActions) {
+        refreshAlbumBrowseBar()
+    }.also { browsePanel = it }
+    panel.show()
 }
 
 internal fun AlbumMediaActivity.toggleAlbumCinemaMode() {

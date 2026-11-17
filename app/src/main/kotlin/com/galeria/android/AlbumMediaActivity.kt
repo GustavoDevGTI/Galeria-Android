@@ -84,7 +84,8 @@ class AlbumMediaActivity : ComponentActivity() {
     private lateinit var selectionBar: LinearLayout
     private lateinit var selectionActions: LinearLayout
     private lateinit var selectionActionDock: LinearLayout
-    private lateinit var browseBar: GalleryBrowseBar
+    internal lateinit var browseBar: GalleryBrowseBar
+    internal var browsePanel: BrowseActionPanel? = null
     private var appliedThemeBackground: Int? = null
     private lateinit var selectAllText: TextView
     private var spacingDecoration: RecyclerView.ItemDecoration? = null
@@ -209,6 +210,7 @@ class AlbumMediaActivity : ComponentActivity() {
         }
         Ui.applySystemBars(this)
         applyBrowseTheme()
+        if (::browseBar.isInitialized) refreshAlbumBrowseBar()
         if (firstResume) {
             firstResume = false
             if (pendingMediaRefresh) scheduleMediaRefresh()
@@ -374,7 +376,7 @@ class AlbumMediaActivity : ComponentActivity() {
                 } else if (adapter.isSelectionMode()) {
                     exitSelectionMode()
                 } else {
-                    showFolderMenu(it)
+                    openAlbumBrowsePanel()
                 }
             }
         }
@@ -593,20 +595,8 @@ class AlbumMediaActivity : ComponentActivity() {
         content.addView(catalogLoadingView, FrameLayout.LayoutParams(Ui.dp(this, 32), Ui.dp(this, 32), Gravity.CENTER))
         root.addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        browseBar = GalleryBrowseBar(this, systemBars.bottom,
-            onSort = ::showMediaSortDialog,
-            onOrganize = {
-                startActivity(OrganizerActivity.intent(this,
-                    intent.getStringArrayListExtra(AlbumTargetRules.EXTRA_EXPOSED_ALBUM_KEYS),
-                    shouldIncludeHiddenFilesystem(), albumKey))
-            },
-            onSettings = { startActivity(Intent(this, SettingsActivity::class.java)) },
-            onRandomPlayback = ::startRandomPlayback)
-        browseBar.findViewWithTag<View>("browse_shuffle").apply {
-            // Trashed media does not offer random playback in the album menu either.
-            isEnabled = albumKey != VirtualAlbumRules.TRASH_KEY
-            alpha = if (isEnabled) 1f else 0.4f
-        }
+        browseBar = GalleryBrowseBar(this, systemBars.bottom)
+        refreshAlbumBrowseBar()
         root.addView(browseBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         selectionActions = LinearLayout(this).apply {

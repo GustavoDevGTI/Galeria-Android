@@ -730,4 +730,9 @@
     <string name="folder_empty">No folders here</string>
     <string name="move_new_folder">New folder</string>
     <string name="folder_pick_parent">Open a folder such as DCIM or Pictures to create the new folder inside it.</string>
+    <string name="browse_panel_hint">Hold an icon and drag it to the bar to make a shortcut, or drag a shortcut back here to remove it.</string>
+    <string name="browse_panel_empty">Every option is on the bar. Drag a shortcut here to bring it back.</string>
+    <string name="browse_bar_full">The bar holds up to %1$d shortcuts.</string>
+    <string name="browse_bar_min">The bar needs at least one shortcut.</string>
+    <string name="action_theme">Theme</string>
 </resources>

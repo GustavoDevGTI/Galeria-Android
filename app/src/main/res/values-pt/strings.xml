@@ -663,4 +663,9 @@
     <string name="folder_empty">Nenhuma pasta aqui</string>
     <string name="move_new_folder">Nova pasta</string>
     <string name="folder_pick_parent">Abra uma pasta como DCIM ou Pictures para criar a nova pasta dentro dela.</string>
+    <string name="browse_panel_hint">Segure um ícone e arraste para a barra para criar um atalho, ou traga um atalho de volta para cá para tirá-lo da barra.</string>
+    <string name="browse_panel_empty">Todas as opções estão na barra. Arraste um atalho para cá para trazê-lo de volta.</string>
+    <string name="browse_bar_full">A barra comporta até %1$d atalhos.</string>
+    <string name="browse_bar_min">A barra precisa de pelo menos um atalho.</string>
+    <string name="action_theme">Tema</string>
 </resources>

@@ -671,4 +671,9 @@
     <string name="folder_empty">No hay carpetas aquí</string>
     <string name="move_new_folder">Nueva carpeta</string>
     <string name="folder_pick_parent">Abre una carpeta como DCIM o Pictures para crear la nueva carpeta dentro de ella.</string>
+    <string name="browse_panel_hint">Mantén pulsado un icono y arrástralo a la barra para crear un acceso directo, o devuelve un acceso directo aquí para quitarlo de la barra.</string>
+    <string name="browse_panel_empty">Todas las opciones están en la barra. Arrastra un acceso directo aquí para recuperarlo.</string>
+    <string name="browse_bar_full">La barra admite hasta %1$d accesos directos.</string>
+    <string name="browse_bar_min">La barra necesita al menos un acceso directo.</string>
+    <string name="action_theme">Tema</string>
 </resources>

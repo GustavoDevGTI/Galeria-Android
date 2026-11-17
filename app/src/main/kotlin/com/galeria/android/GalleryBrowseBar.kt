@@ -1,20 +1,22 @@
 package com.galeria.android
 
 import android.content.Context
+import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 
-/** Shared browsing actions; selection actions belong to their existing dock. */
-internal class GalleryBrowseBar @JvmOverloads constructor(
-    context: Context,
-    bottomInset: Int = 0,
-    onSort: () -> Unit = {},
-    onOrganize: () -> Unit = {},
-    onHidden: () -> Unit = {},
-    onSettings: () -> Unit = {},
-    onRandomPlayback: (() -> Unit)? = null
-) : LinearLayout(context) {
+/**
+ * Bottom bar with the shortcuts the user picked; the rest live in the options panel. Each button
+ * keeps the tag "browse_<id>". Selection actions belong to their existing dock.
+ */
+internal class GalleryBrowseBar(context: Context, bottomInset: Int = 0) : LinearLayout(context) {
     private val dock = Ui.selectionActionDock(context)
+
+    /** Long press on a shortcut; returns true when it started something (a drag). */
+    var onShortcutLongPress: ((BrowseAction, View) -> Boolean)? = null
+
+    /** The row holding the shortcuts, where drops land. */
+    val shortcutRow: LinearLayout get() = dock
 
     /** Space for the navigation bar under the buttons. */
     fun setBottomInset(bottomInset: Int) = setPadding(paddingLeft, paddingTop, paddingRight, bottomInset)
@@ -24,20 +26,22 @@ internal class GalleryBrowseBar @JvmOverloads constructor(
         orientation = VERTICAL
         setPadding(0, Ui.dp(context, 1), 0, bottomInset)
         addView(dock, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        fun add(icon: Int, label: Int, description: Int, actionTag: String, action: () -> Unit): LinearLayout =
-            Ui.selectionAction(context, icon, context.getString(label), action).apply {
-                tag = actionTag
-                contentDescription = context.getString(description)
+        restyle()
+    }
+
+    fun setActions(actions: List<BrowseAction>) {
+        dock.removeAllViews()
+        for (action in actions) {
+            Ui.selectionAction(context, action.icon, action.label, action.run).apply {
+                tag = "browse_${action.id}"
+                contentDescription = action.description
+                isEnabled = action.enabled
+                alpha = if (action.enabled) 1f else 0.4f
+                isSelected = action.selected
+                setOnLongClickListener { view -> onShortcutLongPress?.invoke(action, view) == true }
                 Ui.addSelectionActionToDock(dock, this)
             }
-        add(R.drawable.ic_sort, R.string.browse_sort, R.string.action_sort_by, "browse_sort", onSort)
-        add(R.drawable.ic_organize, R.string.action_organize, R.string.action_organize, "browse_organize", onOrganize)
-        if (onRandomPlayback != null) {
-            add(R.drawable.ic_shuffle, R.string.album_random, R.string.action_random_playback, "browse_shuffle", onRandomPlayback)
-        } else {
-            add(R.drawable.ic_eye_off, R.string.browse_hidden, R.string.main_folder_visibility, "browse_hidden", onHidden)
         }
-        add(R.drawable.ic_settings, R.string.action_settings, R.string.action_settings, "browse_settings", onSettings)
         restyle()
     }
 
@@ -45,5 +49,4 @@ internal class GalleryBrowseBar @JvmOverloads constructor(
         setBackgroundColor(Ui.surface(context))
         Ui.restyleSelectionActionDock(dock)
     }
-
 }
