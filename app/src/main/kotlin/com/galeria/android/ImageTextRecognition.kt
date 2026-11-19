@@ -64,6 +64,24 @@ internal object ImageTextRecognition {
         }
     }
 
+    /**
+     * Text for the search index, on the caller's (background) thread: a reduced decode, already turned
+     * upright by the photo's orientation, read once instead of in every rotation like the viewer does.
+     */
+    fun recognizeForIndex(context: Context, uri: Uri): String {
+        val bitmap = normalize(decode(context.applicationContext, uri, detailed = false))
+        try {
+            val inverted = if (hasDarkBackground(bitmap)) invert(bitmap) else null
+            try {
+                return Tasks.await(recognizer.process(InputImage.fromBitmap(inverted ?: bitmap, 0))).text
+            } finally {
+                inverted?.recycle()
+            }
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
     private fun readOrientations(recognizer: TextRecognizer, bitmap: Bitmap, detailed: Boolean, isRelevant: () -> Boolean): OcrReading {
         var best = OcrReading("")
         for (rotation in OcrRules.rotations) {

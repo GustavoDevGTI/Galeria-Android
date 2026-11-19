@@ -185,12 +185,13 @@ abstract class GalleryDao {
 }
 
 @Database(
-    entities = [CachedMediaEntity::class, CatalogStateEntity::class, CustomMediaOrderEntity::class],
-    version = 3,
+    entities = [CachedMediaEntity::class, CatalogStateEntity::class, CustomMediaOrderEntity::class, MediaTextEntity::class],
+    version = 4,
     exportSchema = true
 )
 abstract class GalleryDatabase : RoomDatabase() {
     abstract fun galleryDao(): GalleryDao
+    abstract fun mediaTextDao(): MediaTextDao
 
     companion object {
         @Volatile private var instance: GalleryDatabase? = null
@@ -200,7 +201,7 @@ abstract class GalleryDatabase : RoomDatabase() {
                 context.applicationContext,
                 GalleryDatabase::class.java,
                 "gallery_catalog.db"
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
         }
 
         internal val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -213,6 +214,14 @@ abstract class GalleryDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_media_scope_albumKey_dateAdded ON cached_media(scope, albumKey, dateAdded)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_cached_media_scope_dateAdded ON cached_media(scope, dateAdded)")
+            }
+        }
+
+        // Text read from the photos for the search; the rest of the catalog is untouched.
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `media_text` (`uri` TEXT NOT NULL, `signature` TEXT NOT NULL, " +
+                    "`text` TEXT NOT NULL, `indexedAt` INTEGER NOT NULL, PRIMARY KEY(`uri`))")
             }
         }
     }

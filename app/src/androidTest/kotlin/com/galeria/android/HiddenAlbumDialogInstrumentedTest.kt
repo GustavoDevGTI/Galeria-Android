@@ -343,7 +343,7 @@ class HiddenAlbumDialogInstrumentedTest {
             assertTrue("A janela principal precisa receber o foco após fechar o diálogo.",
                 root.hasWindowFocus() && !root.isLayoutRequested)
         }
-        onView(withContentDescription(R.string.action_more_options))
+        onView(withContentDescription(R.string.action_menu))
             .inRoot(withDecorView(sameInstance(root)))
             .check(matches(isDisplayed()))
     }

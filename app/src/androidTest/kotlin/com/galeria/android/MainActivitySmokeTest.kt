@@ -51,7 +51,7 @@ class MainActivitySmokeTest {
     @Test
     fun createFolderOpensOneCenteredWindowWithStorageFoldersAndName() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withContentDescription("Mais opções")).perform(click())
+            onView(withContentDescription(R.string.action_menu)).perform(click())
             onView(withText("Criar nova pasta")).perform(clickClickableAncestor())
             // Storage choice, path, folder list, name and actions share one window.
             waitForView {
@@ -76,9 +76,9 @@ class MainActivitySmokeTest {
         prefs.edit().putBoolean(VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF, false).commit()
         try {
             ActivityScenario.launch(MainActivity::class.java).use {
-                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withContentDescription(R.string.action_menu)).perform(click())
                 onView(withText(R.string.trash_show_hidden)).perform(clickClickableAncestor())
-                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withContentDescription(R.string.action_menu)).perform(click())
                 onView(withText(R.string.trash_hide_hidden)).check(matches(isDisplayed()))
             }
         } finally {

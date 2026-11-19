@@ -21,6 +21,10 @@ class GalleryTestRunner : AndroidJUnitRunner() {
 
     override fun onCreate(arguments: Bundle?) {
         phase = arguments?.getString("upgradePhase")
+        // Background reading of the photos' text would compete with the UI tests for the CPU; the
+        // index tests turn it on themselves.
+        targetContext.getSharedPreferences("gallery_albums", Context.MODE_PRIVATE).edit()
+            .putBoolean("text_index_enabled", false).commit()
         super.onCreate(arguments)
     }
 

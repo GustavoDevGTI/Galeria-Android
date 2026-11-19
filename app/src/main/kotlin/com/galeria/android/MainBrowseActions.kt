@@ -68,12 +68,16 @@ internal fun MainActivity.mainBrowseActions(): List<BrowseAction> {
 /** Shows the bar's shortcuts as saved, skipping options this screen does not offer right now. */
 internal fun MainActivity.refreshBrowseBar() {
     val actions = mainBrowseActions().associateBy { it.id }
-    browseBar.setActions(mainBrowseLayoutStore().load().bar.mapNotNull(actions::get))
+    browseBar.setActions(mainBrowseLayoutStore().load().bar.mapNotNull(actions::get), browseMenuAction { openBrowsePanel() })
 }
 
 internal fun MainActivity.openBrowsePanel() {
     val panel = browsePanel ?: BrowseActionPanel(this, browseBar, mainBrowseLayoutStore(), ::mainBrowseActions) {
         refreshBrowseBar()
     }.also { browsePanel = it }
-    panel.show()
+    panel.toggle()
 }
+
+/** The fixed "Menu" button at the end of the bottom bar, which opens the options panel. */
+internal fun android.content.Context.browseMenuAction(open: () -> Unit) =
+    BrowseAction("menu", R.drawable.ic_menu, getString(R.string.action_menu)) { open() }

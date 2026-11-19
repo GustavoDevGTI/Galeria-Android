@@ -144,6 +144,7 @@ class SettingsActivity : Activity() {
             if (wantOn) SecurityGate.requireHiddenAccess(this, onCancel = revert, action = commit) else commit()
         }
         addSwitch(getString(R.string.settings_search_all_files), getString(R.string.settings_search_all_files_hint), GalleryPreferences.SEARCH_ALL_FILES, false, null)
+        addTextIndexOptions()
 
         addSection(getString(R.string.settings_section_photos))
         addOption(getString(R.string.settings_photo_filter), getString(R.string.settings_photo_filter_hint), null)
@@ -628,6 +629,20 @@ class SettingsActivity : Activity() {
                 bottomMargin = Ui.dp(this@SettingsActivity, 8)
             }
         }
+
+    /** "Pesquisar no texto das fotos": the switch and how far the background reading got. */
+    private fun addTextIndexOptions() {
+        addSwitch(getString(R.string.settings_text_index), getString(R.string.settings_text_index_hint),
+            MediaTextSettings.ENABLED, true, Runnable {
+                if (MediaTextSettings.enabled(this)) MediaTextIndexScheduler.schedule(this) else MediaTextIndexScheduler.stop(this)
+            })
+        val progress = addOption(getString(R.string.settings_text_index_progress_title), "…", null)
+        progress.tag = "settings_text_index_progress"
+        cacheScope.launch {
+            val (indexed, total) = withContext(Dispatchers.IO) { MediaTextSearch.progress(applicationContext) }
+            progress.text = getString(R.string.settings_text_index_progress, indexed, total)
+        }
+    }
 
     /** A list setting stored as a fixed code; the label shown follows the phone language. */
     private fun addChoice(title: String, spec: ChoiceSpec, labelsRes: Int) {

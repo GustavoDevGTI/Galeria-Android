@@ -29,7 +29,8 @@ internal class GalleryBrowseBar(context: Context, bottomInset: Int = 0) : Linear
         restyle()
     }
 
-    fun setActions(actions: List<BrowseAction>) {
+    /** The shortcuts, then the fixed "Menu" button that opens the options panel (never dragged or removed). */
+    fun setActions(actions: List<BrowseAction>, menu: BrowseAction? = null) {
         dock.removeAllViews()
         for (action in actions) {
             Ui.selectionAction(context, action.icon, action.label, action.run).apply {
@@ -42,7 +43,19 @@ internal class GalleryBrowseBar(context: Context, bottomInset: Int = 0) : Linear
                 Ui.addSelectionActionToDock(dock, this)
             }
         }
+        menu?.let { action ->
+            Ui.selectionAction(context, action.icon, action.label, action.run).apply {
+                tag = MENU_TAG
+                contentDescription = action.description
+                isSelected = action.selected
+                Ui.addSelectionActionToDock(dock, this)
+            }
+        }
         restyle()
+    }
+
+    companion object {
+        const val MENU_TAG = "browse_menu"
     }
 
     fun restyle() {

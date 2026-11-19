@@ -20,6 +20,8 @@ class MediaScanWorker(context: Context, params: WorkerParameters) : Worker(conte
         val includeHidden = inputData.getBoolean(KEY_INCLUDE_HIDDEN, false)
         val force = inputData.getBoolean(KEY_FORCE, false)
         val count = MediaStoreRepository.refreshMedia(applicationContext, includeHidden, force).size
+        // New or removed photos: the text index catches up.
+        MediaTextIndexScheduler.schedule(applicationContext)
         Result.success(workDataOf(KEY_ITEM_COUNT to count))
     } catch (_: MediaStoreRepository.CatalogChangedDuringScanException) {
         // A user-requested refresh must finish instead of spinning through

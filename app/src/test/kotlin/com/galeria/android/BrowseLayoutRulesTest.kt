@@ -18,10 +18,12 @@ class BrowseLayoutRulesTest {
 
     @Test
     fun draggingToTheBarMovesTheOptionOutOfThePanel() {
-        val (next, result) = BrowseLayoutRules.addToBar(layout, "theme", 1)
+        // Four shortcuts at most, the fixed "Menu" button comes after them.
+        val three = BrowseLayoutRules.Layout(listOf("sort", "organize", "settings"), defaults)
+        val (next, result) = BrowseLayoutRules.addToBar(three, "theme", 1)
         assertEquals(BrowseLayoutRules.Result.DONE, result)
-        assertEquals(listOf("sort", "theme", "organize", "hidden", "settings"), next.bar)
-        assertEquals(listOf("filter", "spacing", "refresh"), BrowseLayoutRules.panel(next, all))
+        assertEquals(listOf("sort", "theme", "organize", "settings"), next.bar)
+        assertEquals(listOf("hidden", "filter", "spacing", "refresh"), BrowseLayoutRules.panel(next, all))
         val (full, blocked) = BrowseLayoutRules.addToBar(next, "filter", 0)
         assertEquals(BrowseLayoutRules.Result.BAR_FULL, blocked)
         assertEquals(next, full)

@@ -17,8 +17,17 @@ internal object CatalogPagingQuery {
         args.add(scope)
         if (albumKey != "__all__") { sql.append("AND cached_media.albumKey = ? "); args.add(albumKey) }
         if (query.isNotEmpty()) {
-            sql.append("AND (cached_media.name LIKE ? OR cached_media.relativePath LIKE ?) ")
+            // Name or folder, or the text read from the photo containing every word of the search.
+            val terms = MediaTextRules.terms(query)
+            sql.append("AND (cached_media.name LIKE ? OR cached_media.relativePath LIKE ?")
             args.add("%$query%"); args.add("%$query%")
+            if (terms.isNotEmpty()) {
+                sql.append(" OR (")
+                sql.append(terms.joinToString(" AND ") { "cached_media.uri IN (SELECT uri FROM media_text WHERE text LIKE ? ESCAPE '\\')" })
+                sql.append(")")
+                terms.forEach { args.add(MediaTextRules.likePattern(it)) }
+            }
+            sql.append(") ")
         }
         val direction = if (descending) "DESC" else "ASC"
         val order = when (sortMode) {

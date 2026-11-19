@@ -367,6 +367,7 @@ class AlbumMediaActivity : ComponentActivity() {
             setBackgroundColor(Color.TRANSPARENT)
             setColorFilter(Ui.text(this@AlbumMediaActivity))
             setPadding(Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9), Ui.dp(this@AlbumMediaActivity, 9))
+            visibility = View.GONE
             contentDescription = getString(R.string.action_more_options)
             setOnClickListener {
                 if (choosingAlbumCover) {
@@ -724,6 +725,7 @@ class AlbumMediaActivity : ComponentActivity() {
         moreButton.contentDescription = getString(
             if (active) R.string.action_cancel_selection else R.string.action_more_options
         )
+        updateTopButton()
         if (active) {
             searchInput.clearFocus()
             hideKeyboard()
@@ -758,8 +760,21 @@ class AlbumMediaActivity : ComponentActivity() {
         finish()
     }
 
+    /** The options live in the "Menu" button of the bottom bar; the top button only leaves the selection
+     * or the cover choice. */
+    internal fun updateTopButton() {
+        if (!::moreButton.isInitialized) return
+        val visible = choosingAlbumCover || (::adapter.isInitialized && adapter.isSelectionMode())
+        moreButton.visibility = if (visible) View.VISIBLE else View.GONE
+        if (choosingAlbumCover) {
+            moreButton.setImageResource(R.drawable.ic_close)
+            moreButton.contentDescription = getString(R.string.action_cancel)
+        }
+    }
+
     internal fun updateSearchPresentation() {
         if (!::searchInput.isInitialized || !::searchBox.isInitialized) return
+        updateTopButton()
         val selecting = ::adapter.isInitialized && adapter.isSelectionMode() && adapter.selectedCount() > 0
         val searching = !selecting && (searchInput.hasFocus() || searchInput.text.isNotEmpty())
 
@@ -772,6 +787,11 @@ class AlbumMediaActivity : ComponentActivity() {
             choosingAlbumCover -> getString(R.string.album_choose_cover_hint)
             selecting -> getString(R.string.album_selected_of_total, adapter.selectedCount(), adapter.getCount())
             searching -> getString(R.string.album_search_folder)
+            // Search results show the words and how many photos were found.
+            VirtualAlbumRules.searchTerm(albumKey) != null -> {
+                val found = if (::adapter.isInitialized) adapter.getCount() else 0
+                resources.getQuantityString(R.plurals.search_results_hint, found, VirtualAlbumRules.searchTerm(albumKey), found)
+            }
             else -> getString(R.string.album_search_in, albumName)
         }
         Ui.styleSelectionCounter(searchInput, selecting, idleTextSizeSp = if (searching) 14f else 15f)
@@ -1009,7 +1029,19 @@ class AlbumMediaActivity : ComponentActivity() {
 
     internal fun updateEmptyState() {
         catalogLoadingView.visibility = View.GONE
-        emptyView.setText(R.string.album_empty)
+        if (VirtualAlbumRules.searchTerm(albumKey) != null) {
+            // No photo with those words; while the index is still being built, say how far it got.
+            emptyView.text = getString(R.string.search_no_results)
+            lifecycleScope.launch {
+                val (indexed, total) = withContext(Dispatchers.IO) { MediaTextSearch.progress(applicationContext) }
+                if (indexed < total && !isFinishing && adapter.getCount() == 0) {
+                    emptyView.text = getString(R.string.search_no_results_while_indexing, indexed, total)
+                }
+            }
+            updateSearchPresentation()
+        } else {
+            emptyView.setText(R.string.album_empty)
+        }
         emptyView.visibility = if (adapter.getCount() == 0) View.VISIBLE else View.GONE
     }
 

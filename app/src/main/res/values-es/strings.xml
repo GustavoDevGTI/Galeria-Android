@@ -700,4 +700,18 @@
         <item>¿Cuál es el apellido de soltera de tu madre?</item>
         <item>¿Cuál es tu comida favorita?</item>
     </string-array>
+    <string name="search_text_in_photos">Buscar “%1$s” en el texto de las fotos</string>
+    <string name="search_results_title">Resultados de la búsqueda</string>
+    <plurals name="search_results_hint">
+        <item quantity="one">“%1$s” · %2$d foto</item>
+        <item quantity="many">“%1$s” · %2$d fotos</item>
+        <item quantity="other">“%1$s” · %2$d fotos</item>
+    </plurals>
+    <string name="search_no_results">Ninguna foto tiene este texto.</string>
+    <string name="search_no_results_while_indexing">Ninguna foto con este texto por ahora. El texto de las fotos todavía se está leyendo (%1$d de %2$d).</string>
+    <string name="settings_text_index">Buscar en el texto de las fotos</string>
+    <string name="settings_text_index_hint">Lee el texto de las fotos en segundo plano, en el propio teléfono, para que la búsqueda las encuentre por lo que tienen escrito.</string>
+    <string name="settings_text_index_progress_title">Texto leído</string>
+    <string name="settings_text_index_progress">%1$d de %2$d fotos</string>
+    <string name="action_menu">Menú</string>
 </resources>

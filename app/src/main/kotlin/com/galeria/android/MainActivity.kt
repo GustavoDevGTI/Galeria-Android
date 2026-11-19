@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var layoutManager: GridLayoutManager
     private lateinit var root: LinearLayout
     private lateinit var top: LinearLayout
+    internal var textSearchRow: TextView? = null
     private lateinit var searchIconButton: ImageButton
     private lateinit var selectAllChip: TextView
     internal lateinit var moreButton: ImageButton
@@ -270,6 +271,10 @@ class MainActivity : ComponentActivity() {
             setMargins(Ui.dp(this@MainActivity, 24), systemBars.top + Ui.dp(this@MainActivity, 14), Ui.dp(this@MainActivity, 24), Ui.dp(this@MainActivity, 14))
         }
         root.addView(top, topParams)
+        textSearchRow = createTextSearchRow()
+        root.addView(textSearchRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            setMargins(Ui.dp(this@MainActivity, 24), 0, Ui.dp(this@MainActivity, 24), Ui.dp(this@MainActivity, 10))
+        })
 
         selectAllChip = Ui.title(this, "", 16).apply {
             gravity = Gravity.CENTER
@@ -305,14 +310,17 @@ class MainActivity : ComponentActivity() {
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     adapter.applyFilter(s?.toString().orEmpty())
                     updateEmptyText()
+                    updateTextSearchRow(s?.toString().orEmpty())
                 }
                 override fun afterTextChanged(s: Editable?) = Unit
             })
         }
         top.addView(searchInput, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        installTextSearchKey()
 
         moreButton = iconButton(R.drawable.ic_more_vertical).apply {
             contentDescription = getString(R.string.action_more_options)
+            visibility = View.GONE
             setOnClickListener {
                 if (adapter.isSelectionMode()) {
                     exitSelectionMode()
@@ -524,6 +532,7 @@ class MainActivity : ComponentActivity() {
         browseBar.visibility = if (active) View.GONE else View.VISIBLE
         selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
         searchIconButton.visibility = if (active) View.GONE else View.VISIBLE
+        updateTextSearchRow(if (active) "" else searchInput.text.toString())
         Ui.styleSelectionToggle(selectAllChip, adapter.allVisibleSelected())
         searchInput.hint = if (active) {
             getString(R.string.album_selected_of_total, adapter.selectedCount(), adapter.getCount())
@@ -536,6 +545,8 @@ class MainActivity : ComponentActivity() {
         moreButton.contentDescription = getString(
             if (active) R.string.action_cancel_selection else R.string.action_more_options
         )
+        // The options live in the "Menu" button of the bottom bar; the top button only leaves the selection.
+        moreButton.visibility = if (active) View.VISIBLE else View.GONE
         if (active && adapter.selectedCount() == 0) {
             exitSelectionMode()
         }

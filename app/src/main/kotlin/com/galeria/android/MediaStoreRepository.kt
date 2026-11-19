@@ -160,6 +160,8 @@ object MediaStoreRepository {
     fun loadMediaForAlbum(context: Context, albumKey: String?, includeHiddenFilesystem: Boolean = false): List<MediaItem> {
         // A physical album must not wait for a device-wide dirty catalog or scan.
         if (isPhysicalAlbum(albumKey)) return queryAlbumMedia(context, albumKey!!, includeHiddenFilesystem)
+        // Search results: the photos whose text has every word of the search.
+        VirtualAlbumRules.searchTerm(albumKey)?.let { return MediaTextSearch.results(context, it) }
         val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val hiddenKeys = prefs.getStringSet(GalleryPreferences.HIDDEN_FOLDER_KEYS, emptySet()).orEmpty() +
             SecurityStore(prefs).secureFolderKeys()

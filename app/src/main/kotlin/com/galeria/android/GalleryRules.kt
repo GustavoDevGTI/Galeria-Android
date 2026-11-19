@@ -252,9 +252,18 @@ object VirtualAlbumRules {
     const val UNPINNED_ESSENTIAL_PREF = "unpinned_essential_album_keys"
     const val SHOW_HIDDEN_TRASH_PREF = "show_hidden_trash_items"
 
-    fun isVirtual(key: String): Boolean = key == RECENT_KEY || key == FAVORITES_KEY || key == TRASH_KEY || key == "all_media"
+    /** "Resultados da pesquisa" by the text inside the photos: key "search:<words>". */
+    const val SEARCH_PREFIX = "search:"
 
-    fun remainsAfterMove(key: String?): Boolean = key == RECENT_KEY || key == FAVORITES_KEY || key == "all_media"
+    fun searchKey(query: String): String = SEARCH_PREFIX + query.trim()
+
+    fun searchTerm(key: String?): String? = key?.takeIf { it.startsWith(SEARCH_PREFIX) }?.removePrefix(SEARCH_PREFIX)
+
+    fun isVirtual(key: String): Boolean = key == RECENT_KEY || key == FAVORITES_KEY || key == TRASH_KEY ||
+        key == "all_media" || key.startsWith(SEARCH_PREFIX)
+
+    fun remainsAfterMove(key: String?): Boolean = key == RECENT_KEY || key == FAVORITES_KEY || key == "all_media" ||
+        key?.startsWith(SEARCH_PREFIX) == true
 
     fun mediaForAlbum(
         source: List<MediaItem>,

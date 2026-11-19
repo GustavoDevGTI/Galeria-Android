@@ -692,4 +692,18 @@
         <item>Qual o nome de solteira da sua mãe?</item>
         <item>Qual a sua comida favorita?</item>
     </string-array>
+    <string name="search_text_in_photos">Procurar “%1$s” no texto das fotos</string>
+    <string name="search_results_title">Resultados da pesquisa</string>
+    <plurals name="search_results_hint">
+        <item quantity="one">“%1$s” · %2$d foto</item>
+        <item quantity="many">“%1$s” · %2$d fotos</item>
+        <item quantity="other">“%1$s” · %2$d fotos</item>
+    </plurals>
+    <string name="search_no_results">Nenhuma foto tem esse texto.</string>
+    <string name="search_no_results_while_indexing">Nenhuma foto com esse texto por enquanto. O texto das fotos ainda está sendo lido (%1$d de %2$d).</string>
+    <string name="settings_text_index">Pesquisar no texto das fotos</string>
+    <string name="settings_text_index_hint">Lê o texto das fotos em segundo plano, no próprio celular, para a pesquisa encontrá-las pelo que está escrito nelas.</string>
+    <string name="settings_text_index_progress_title">Texto lido</string>
+    <string name="settings_text_index_progress">%1$d de %2$d fotos</string>
+    <string name="action_menu">Menu</string>
 </resources>

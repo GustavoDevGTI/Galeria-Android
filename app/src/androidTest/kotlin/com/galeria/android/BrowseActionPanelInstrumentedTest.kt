@@ -59,12 +59,17 @@ class BrowseActionPanelInstrumentedTest {
     @Test fun dragMovesAnOptionBetweenThePanelAndTheBarAndTheChoiceIsKept() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             // The panel replaced the three-dot menu: every option off the bar, each with its icon.
-            onView(withContentDescription(R.string.action_more_options)).perform(click())
+            onView(withContentDescription(R.string.action_menu)).perform(click())
             onView(withTagValue(`is`("browse_panel"))).check(matches(isDisplayed()))
             for (id in listOf("filter", "folder_organization", "spacing", "create_folder", "trash_hidden", "refresh", "trash", "theme")) {
                 onView(withTagValue(`is`("browse_panel_$id"))).check(matches(isDisplayed()))
             }
             onView(withTagValue(`is`("browse_panel_sort"))).check(doesNotExist())
+
+            // The bar holds four shortcuts plus the fixed "Menu" button: free a place first.
+            onView(isRoot()).perform(dragBetween("browse_settings", "browse_panel_filter", toLeftHalf = true))
+            waitFor { onView(withTagValue(`is`("browse_panel_settings"))).check(matches(isDisplayed())) }
+            assertEquals("sort,organize,hidden", prefs.getString("browse_bar_main", null))
 
             // Panel -> bar: "Tema" becomes the first shortcut and leaves the panel.
             onView(isRoot()).perform(dragBetween("browse_panel_theme", "browse_sort", toLeftHalf = true))
@@ -74,14 +79,15 @@ class BrowseActionPanelInstrumentedTest {
                 val row = activity.window.decorView.findViewWithTag<View>("gallery_browse_bar").let { it as android.view.ViewGroup }.getChildAt(0) as android.view.ViewGroup
                 assertEquals("browse_theme", row.getChildAt(0).tag)
                 assertEquals(5, row.childCount)
+                assertEquals(GalleryBrowseBar.MENU_TAG, row.getChildAt(4).tag)
             }
-            assertEquals("theme,sort,organize,hidden,settings", prefs.getString("browse_bar_main", null))
+            assertEquals("theme,sort,organize,hidden", prefs.getString("browse_bar_main", null))
 
             // Bar -> panel: the shortcut goes back to the panel and the bar keeps the others.
-            onView(isRoot()).perform(dragBetween("browse_theme", "browse_panel_filter", toLeftHalf = true))
+            onView(isRoot()).perform(dragBetween("browse_theme", "browse_panel_settings", toLeftHalf = true))
             waitFor { onView(withTagValue(`is`("browse_panel_theme"))).check(matches(isDisplayed())) }
             onView(withTagValue(`is`("browse_theme"))).check(doesNotExist())
-            assertEquals("sort,organize,hidden,settings", prefs.getString("browse_bar_main", null))
+            assertEquals("sort,organize,hidden", prefs.getString("browse_bar_main", null))
             assertTrue(prefs.getString("browse_order_main", null).orEmpty().indexOf("theme") <
                 prefs.getString("browse_order_main", null).orEmpty().indexOf("filter"))
             pressBack()
@@ -89,7 +95,7 @@ class BrowseActionPanelInstrumentedTest {
         }
         // Reopening keeps the panel order the user chose.
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withContentDescription(R.string.action_more_options)).perform(click())
+            onView(withContentDescription(R.string.action_menu)).perform(click())
             it.onActivity { activity ->
                 val grid = activity.window.decorView.findViewWithTag<android.view.ViewGroup>("browse_panel_grid")
                 val firstRow = grid.getChildAt(0) as android.view.ViewGroup

@@ -18,7 +18,9 @@ class CatalogPagingQueryTest {
     @Test fun customSortJoinsOnlyWhenNeededAndSearchInputIsAlwaysBound() {
         val hostile = "%' OR 1=1 --"
         val search = CatalogPagingQuery.build("visible", "__all__", "all_media", hostile, MediaSortRules.SORT_NAME, false)
-        assertEquals(3, search.argCount); assertFalse(search.sql.contains(hostile))
+        // Scope, name, folder and one bound value per word for the text read from the photos.
+        assertEquals(3 + MediaTextRules.terms(hostile).size, search.argCount); assertFalse(search.sql.contains(hostile))
+        assertTrue(search.sql.contains("SELECT uri FROM media_text WHERE text LIKE ?"))
         assertTrue(search.sql.contains("LOWER(cached_media.name) ASC"))
         assertFalse(search.sql.contains("LEFT JOIN"))
         val custom = CatalogPagingQuery.build("complete", "Pictures/Test/", "Pictures/Test/", "", MediaSortRules.SORT_CUSTOM, true)

@@ -146,7 +146,7 @@ class AlbumCoverInstrumentedTest {
                 waitForView { onView(withContentDescription(name)).check(matches(isDisplayed())) }
                 // A visible grid can precede window focus during ActivityScenario's launch transition.
                 waitForView { scenario.onActivity { activity -> assertTrue(activity.hasWindowFocus()) } }
-                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withContentDescription(R.string.action_menu)).perform(click())
                 onView(withText("Escolher capa")).perform(click())
                 waitForView {
                     onView(withContentDescription("Pesquisar nesta pasta"))
@@ -156,7 +156,7 @@ class AlbumCoverInstrumentedTest {
                 assertTrue(MediaIdentityRules.sameUri(uri.toString(), prefs.getString(prefKey, null).orEmpty()))
                 onView(withContentDescription(name)).check(matches(isDisplayed()))
                 waitForView { scenario.onActivity { activity -> assertTrue(activity.hasWindowFocus()) } }
-                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withContentDescription(R.string.action_menu)).perform(click())
                 onView(withText("Usar capa automática")).perform(click())
                 assertNull(prefs.getString(prefKey, null))
             }

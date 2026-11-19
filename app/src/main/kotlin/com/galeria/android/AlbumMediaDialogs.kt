@@ -138,14 +138,14 @@ internal fun AlbumMediaActivity.albumBrowseActions(): List<BrowseAction> {
 
 internal fun AlbumMediaActivity.refreshAlbumBrowseBar() {
     val actions = albumBrowseActions().associateBy { it.id }
-    browseBar.setActions(albumBrowseLayoutStore().load().bar.mapNotNull(actions::get))
+    browseBar.setActions(albumBrowseLayoutStore().load().bar.mapNotNull(actions::get), browseMenuAction { openAlbumBrowsePanel() })
 }
 
 internal fun AlbumMediaActivity.openAlbumBrowsePanel() {
     val panel = browsePanel ?: BrowseActionPanel(this, browseBar, albumBrowseLayoutStore(), ::albumBrowseActions) {
         refreshAlbumBrowseBar()
     }.also { browsePanel = it }
-    panel.show()
+    panel.toggle()
 }
 
 internal fun AlbumMediaActivity.toggleAlbumCinemaMode() {

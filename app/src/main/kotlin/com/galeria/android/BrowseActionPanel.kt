@@ -57,11 +57,12 @@ internal class BrowseActionPanel(
         val rootLocation = IntArray(2).also(root::getLocationInWindow)
         val barLocation = IntArray(2).also(bar::getLocationInWindow)
         val barTop = if (bar.isShown) barLocation[1] - rootLocation[1] else root.height
-        val frame = FrameLayout(activity).apply { tag = "browse_panel_overlay" }
-        frame.addView(View(activity).apply {
+        val frame = PanelFrame(activity).apply { tag = "browse_panel_overlay" }
+        val scrim = View(activity).apply {
             setBackgroundColor(0x40000000)
             setOnClickListener { dismiss() }
-        }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        frame.addView(scrim, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         val card = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -100,18 +101,47 @@ internal class BrowseActionPanel(
         overlay = frame
         backCallback.isEnabled = true
         fillGrid()
+        // Rises a little from the bar that opened it, with the dimmed background fading in as one surface.
+        scrim.alpha = 0f
+        scrim.animate().alpha(1f).setDuration(ENTER_MS).setInterpolator(Motion.easeOut).start()
         card.alpha = 0f
-        card.translationY = dp(24).toFloat()
-        card.animate().alpha(1f).translationY(0f).setDuration(ANIMATION_MS).start()
+        card.translationY = if (Motion.movementEnabled()) dp(16).toFloat() else 0f
+        card.animate().alpha(1f).translationY(0f).setDuration(ENTER_MS).setInterpolator(Motion.easeOut).start()
     }
+
+    /** The "Menu" button opens the panel, or closes it when it is already open. */
+    fun toggle() = if (overlay != null) dismiss() else show()
 
     fun dismiss() {
         val frame = overlay ?: return
         overlay = null
         grid = null
         tiles.clear()
+        highlighted = null
         backCallback.isEnabled = false
-        (frame.parent as? ViewGroup)?.removeView(frame)
+        // Leaves the way it came in. While it fades it no longer takes touches or answers to its tags.
+        (frame as? PanelFrame)?.leaving = true
+        clearPanelTags(frame)
+        val remove = { (frame.parent as? ViewGroup)?.removeView(frame); Unit }
+        if (!frame.isAttachedToWindow) { remove(); return }
+        val card = frame.getChildAt(1)
+        frame.getChildAt(0)?.animate()?.alpha(0f)?.setDuration(Motion.EXIT_MS)?.setInterpolator(Motion.easeOut)?.start()
+        card?.animate()?.alpha(0f)
+            ?.translationY(if (Motion.movementEnabled()) dp(12).toFloat() else 0f)
+            ?.setDuration(Motion.EXIT_MS)?.setInterpolator(Motion.easeOut)
+            ?.withEndAction(remove)?.start() ?: remove()
+    }
+
+    private fun clearPanelTags(view: View) {
+        if ((view.tag as? String)?.startsWith("browse_panel") == true) view.tag = null
+        if (view is ViewGroup) for (index in 0 until view.childCount) clearPanelTags(view.getChildAt(index))
+    }
+
+    /** The overlay container; once it is leaving, touches and drags pass through to the screen. */
+    private class PanelFrame(context: android.content.Context) : FrameLayout(context) {
+        var leaving = false
+        override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean = !leaving && super.dispatchTouchEvent(event)
+        override fun dispatchDragEvent(event: DragEvent): Boolean = !leaving && super.dispatchDragEvent(event)
     }
 
     /** Lays the panel's options out four per row, in the saved order. */
@@ -233,10 +263,11 @@ internal class BrowseActionPanel(
             DragEvent.ACTION_DRAG_EXITED, DragEvent.ACTION_DRAG_ENDED -> bar.restyle()
             DragEvent.ACTION_DROP -> {
                 bar.restyle()
-                // Insertion point: how many shortcuts sit left of the finger.
+                // Insertion point: how many shortcuts sit left of the finger; never after the fixed Menu button.
                 var index = 0
                 for (child in 0 until row.childCount) {
                     val view = row.getChildAt(child)
+                    if (view.tag == GalleryBrowseBar.MENU_TAG) continue
                     if (event.x > view.left + view.width / 2f) index = child + 1
                 }
                 val layout = store.load()
@@ -271,9 +302,16 @@ internal class BrowseActionPanel(
 
     private fun highlight(id: String?) {
         if (highlighted == id) return
-        highlighted?.let { tiles[it]?.isActivated = false; tiles[it]?.scaleX = 1f; tiles[it]?.scaleY = 1f }
+        highlighted?.let { tiles[it]?.let { tile -> tile.isActivated = false; scaleTile(tile, 1f) } }
         highlighted = id
-        id?.let { tiles[it]?.scaleX = 1.08f; tiles[it]?.scaleY = 1.08f }
+        id?.let { tiles[it]?.let { tile -> scaleTile(tile, 1.06f) } }
+    }
+
+    /** The drop target grows a little under the finger, quickly enough to follow it. */
+    private fun scaleTile(tile: View, scale: Float) {
+        tile.animate().cancel()
+        if (!Motion.movementEnabled()) { tile.scaleX = scale; tile.scaleY = scale; return }
+        tile.animate().scaleX(scale).scaleY(scale).setDuration(120L).setInterpolator(Motion.easeOut).start()
     }
 
     private fun tileAt(content: LinearLayout, x: Float, y: Float): String? {
@@ -290,6 +328,6 @@ internal class BrowseActionPanel(
 
     private companion object {
         const val COLUMNS = 4
-        const val ANIMATION_MS = 160L
+        const val ENTER_MS = 200L
     }
 }

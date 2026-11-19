@@ -98,7 +98,7 @@ class AlbumMediaHeaderInstrumentedTest {
             }
             onView(withText("Nome alfabético")).inRoot(isDialog()).perform(clickClickableAncestor())
             waitForView {
-                onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
+                onView(withContentDescription(R.string.action_menu)).check(matches(isDisplayed()))
             }
             onView(withContentDescription(R.string.action_sort_by)).perform(click())
             onView(allOf(withText("↑"), isDisplayed())).inRoot(isDialog()).check(matches(isDisplayed()))
@@ -108,9 +108,9 @@ class AlbumMediaHeaderInstrumentedTest {
             onView(withText("Nome alfabético")).inRoot(isDialog()).perform(clickClickableAncestor())
 
             waitForView {
-                onView(withContentDescription("Mais opções")).check(matches(isDisplayed()))
+                onView(withContentDescription(R.string.action_menu)).check(matches(isDisplayed()))
             }
-            onView(withContentDescription("Mais opções")).perform(click())
+            onView(withContentDescription(R.string.action_menu)).perform(click())
             onView(withText("Criar nova pasta")).perform(clickClickableAncestor())
             waitForView {
                 onView(withHint("Título")).inRoot(isDialog()).check { view, exception ->
@@ -135,13 +135,13 @@ class AlbumMediaHeaderInstrumentedTest {
 
         try {
             ActivityScenario.launch<AlbumMediaActivity>(intent).use {
-                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withContentDescription(R.string.action_menu)).perform(click())
                 waitForView { onView(withText("Modo cinema")).check(matches(isDisplayed())) }
                 onView(withText("Modo cinema")).perform(click())
                 waitForView {
                     assertTrue(CinemaModePreferences(prefs).isEnabled(albumKey))
                 }
-                onView(withContentDescription("Mais opções")).perform(click())
+                onView(withContentDescription(R.string.action_menu)).perform(click())
                 waitForView { onView(withText("Modo cinema")).check(matches(isDisplayed())) }
                 androidx.test.espresso.Espresso.pressBack()
             }

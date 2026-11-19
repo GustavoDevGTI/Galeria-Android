@@ -19,7 +19,8 @@ internal data class BrowseAction(
  * panel only the order changes, so no option ever disappears.
  */
 internal object BrowseLayoutRules {
-    const val MAX_BAR = 5
+    /** Shortcuts on the bar; the fixed "Menu" button comes after them. */
+    const val MAX_BAR = 4
     const val MIN_BAR = 1
 
     enum class Result { DONE, BAR_FULL, BAR_MIN, UNCHANGED }

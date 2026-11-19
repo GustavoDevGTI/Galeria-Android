@@ -24,7 +24,6 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
-import android.view.animation.OvershootInterpolator
 import android.view.inputmethod.InputMethodManager
 import android.widget.BaseAdapter
 import android.widget.CheckBox
@@ -224,11 +223,20 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
     val checkedKeys = HashSet<String>()
     lateinit var dialog: AlertDialog
     val dialogBg = Ui.menuSurface(this)
-    val dialogRow = Ui.menuOptionSurface(this)
     val dialogElevated = Ui.menuElevatedSurface(this)
-    val dialogHighlight = Ui.menuHighlightSurface(this)
     val dialogText = Ui.menuText(this)
     val dialogMuted = Ui.blend(dialogText, dialogBg, 0.34f)
+    // Same language as the other menus: the accent marks what is chosen, and only rows that carry
+    // a state (pinned, revealed) get a soft rounded surface; the rest show just the touch.
+    val dialogAccent = Ui.accent(this).let {
+        if (ThemeToneRules.contrastRatio(it, dialogBg) >= 4.5) it else dialogText
+    }
+    val rippleTint = android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x22000000)
+    fun rowBackground(highlighted: Boolean) = android.graphics.drawable.RippleDrawable(
+        rippleTint,
+        if (highlighted) Ui.rounded(dialogElevated, 12, this) else null,
+        Ui.rounded(Color.WHITE, 12, this)
+    )
     for (album in mutableAlbums) {
         if (!hiddenKeys.contains(album.key) && (showHiddenFolders || !isHiddenAlbum(album))) {
             checkedKeys.add(album.key)
@@ -258,9 +266,15 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
     lateinit var listAdapter: BaseAdapter
     val listView = ListView(this).apply {
         choiceMode = ListView.CHOICE_MODE_NONE
-        divider = null
+        divider = Color.TRANSPARENT.toDrawable()
+        dividerHeight = Ui.dp(this@showFolderVisibilityDialog, 2)
         cacheColorHint = Color.TRANSPARENT
-        setBackgroundColor(dialogBg)
+        selector = Color.TRANSPARENT.toDrawable()
+        isVerticalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+        clipToPadding = false
+        setPadding(0, Ui.dp(this@showFolderVisibilityDialog, 4), 0, Ui.dp(this@showFolderVisibilityDialog, 8))
+        setBackgroundColor(Color.TRANSPARENT)
     }
     listAdapter = object : BaseAdapter() {
         override fun getCount(): Int = mutableAlbums.size
@@ -271,12 +285,12 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
             val row = (convertView as? LinearLayout) ?: LinearLayout(this@showFolderVisibilityDialog).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = Ui.dp(this@showFolderVisibilityDialog, 58)
+                minimumHeight = Ui.dp(this@showFolderVisibilityDialog, 56)
                 setPadding(
-                    Ui.dp(this@showFolderVisibilityDialog, 18),
-                    Ui.dp(this@showFolderVisibilityDialog, 8),
                     Ui.dp(this@showFolderVisibilityDialog, 12),
-                    Ui.dp(this@showFolderVisibilityDialog, 8)
+                    Ui.dp(this@showFolderVisibilityDialog, 4),
+                    Ui.dp(this@showFolderVisibilityDialog, 4),
+                    Ui.dp(this@showFolderVisibilityDialog, 4)
                 )
                 addView(
                     TextView(this@showFolderVisibilityDialog).apply {
@@ -291,7 +305,7 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
                     ImageButton(this@showFolderVisibilityDialog).apply {
                         tag = "pin"
                         setImageResource(R.drawable.ic_pin)
-                        setBackgroundColor(Color.TRANSPARENT)
+                        background = android.graphics.drawable.RippleDrawable(rippleTint, null, null)
                         scaleType = ImageView.ScaleType.CENTER
                         contentDescription = getString(R.string.main_pin_hidden)
                         setPadding(
@@ -307,7 +321,7 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
                     ImageButton(this@showFolderVisibilityDialog).apply {
                         tag = "eye"
                         setImageResource(R.drawable.ic_eye_off)
-                        setBackgroundColor(Color.TRANSPARENT)
+                        background = android.graphics.drawable.RippleDrawable(rippleTint, null, null)
                         scaleType = ImageView.ScaleType.CENTER
                         contentDescription = getString(R.string.main_reveal_hidden_temporarily)
                         setPadding(
@@ -322,7 +336,7 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
                 addView(
                     CheckBox(this@showFolderVisibilityDialog).apply {
                         tag = "check"
-                        buttonTintList = android.content.res.ColorStateList.valueOf(dialogText)
+                        buttonTintList = android.content.res.ColorStateList.valueOf(dialogAccent)
                         isClickable = false
                         isFocusable = false
                         gravity = Gravity.CENTER
@@ -339,11 +353,13 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
             label.text = SpannableString(getString(R.string.main_album_count_label, album.name, album.count)).apply {
                 setSpan(RelativeSizeSpan(0.78f), album.name.length.coerceAtMost(length), length,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(android.text.style.ForegroundColorSpan(dialogMuted), album.name.length.coerceAtMost(length), length,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             label.setTextColor(dialogText)
             pin.setImageResource(if (pinned) R.drawable.ic_pin_filled else R.drawable.ic_pin)
-            pin.setColorFilter(if (pinned) dialogText else dialogMuted)
-            pin.alpha = if (pinned) 1f else 0.48f
+            pin.setColorFilter(if (pinned) dialogAccent else dialogMuted)
+            pin.alpha = if (pinned) 1f else 0.7f
             pin.contentDescription = getString(
                 if (pinned) R.string.main_unpin_hidden else R.string.main_pin_hidden
             )
@@ -355,22 +371,22 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
                 }
                 val nowPinned = pinnedKeys.contains(album.key)
                 pin.setImageResource(if (nowPinned) R.drawable.ic_pin_filled else R.drawable.ic_pin)
-                pin.setColorFilter(if (nowPinned) dialogText else dialogMuted)
-                pin.alpha = if (nowPinned) 1f else 0.48f
+                pin.setColorFilter(if (nowPinned) dialogAccent else dialogMuted)
+                pin.alpha = if (nowPinned) 1f else 0.7f
                 animateHiddenControl(pin)
                 savePinnedFolders()
                 sortVisibilityAlbums()
                 pin.postDelayed({
                     notifyDataSetChanged()
                     if (nowPinned) listView.smoothScrollToPosition(0)
-                }, 190L)
+                }, Motion.PRESS_MS)
             }
             val temporarilyRevealed = album.key in TemporaryAlbumVisibility.activeKeys()
             eye.visibility = if (album.key !in checkedKeys &&
                 (album.key in hiddenKeys || isHiddenAlbum(album))) View.VISIBLE else View.INVISIBLE
             eye.setImageResource(if (temporarilyRevealed) R.drawable.ic_eye else R.drawable.ic_eye_off)
-            eye.setColorFilter(if (temporarilyRevealed) dialogText else dialogMuted)
-            eye.alpha = if (temporarilyRevealed) 1f else 0.65f
+            eye.setColorFilter(if (temporarilyRevealed) dialogAccent else dialogMuted)
+            eye.alpha = if (temporarilyRevealed) 1f else 0.8f
             eye.contentDescription = getString(
                 if (temporarilyRevealed) R.string.main_hide_revealed_album
                 else R.string.main_reveal_hidden_temporarily
@@ -385,18 +401,17 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
                 }
                 val revealed = TemporaryAlbumVisibility.toggle(album.key, requiresFilesystem)
                 eye.setImageResource(if (revealed) R.drawable.ic_eye else R.drawable.ic_eye_off)
-                eye.setColorFilter(if (revealed) dialogText else dialogMuted)
-                eye.alpha = if (revealed) 1f else 0.65f
+                eye.setColorFilter(if (revealed) dialogAccent else dialogMuted)
+                eye.alpha = if (revealed) 1f else 0.8f
                 animateHiddenControl(eye)
                 scheduleRevealExpiry()
                 mediaRefreshHandler.postDelayed({
                     if (dialog.isShowing) dialog.dismiss()
                     if (!isFinishing) loadAlbums()
-                }, 190L)
+                }, Motion.PRESS_MS)
             }
             check.isChecked = checkedKeys.contains(album.key)
-            val rowTone = if (pinned || temporarilyRevealed) dialogElevated else dialogRow
-            row.setBackgroundColor(rowTone)
+            row.background = rowBackground(pinned || temporarilyRevealed)
             row.setOnClickListener {
                 if (checkedKeys.contains(album.key)) {
                     checkedKeys.remove(album.key)
@@ -412,14 +427,11 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
     }
     listView.adapter = listAdapter
     visibilityDialogAdapter = listAdapter
-    val dialogListHeight = min(
-        Ui.dp(this, 248),
-        (resources.displayMetrics.heightPixels * 0.29f).toInt()
-    )
+    // The list takes whatever height the panel has left, so there is no empty band above the OK bar.
     val refresher = SwipeRefreshLayout(this).apply {
-        setColorSchemeColors(dialogText)
-        setProgressBackgroundColorSchemeColor(dialogBg)
-        addView(listView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dialogListHeight))
+        setColorSchemeColors(dialogAccent)
+        setProgressBackgroundColorSchemeColor(dialogElevated)
+        addView(listView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
     }
 
     var showHiddenCheck: CheckBox? = null
@@ -592,117 +604,114 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
         dialog.dismiss()
     }
 
-    fun dialogButton(text: String, onClick: () -> Unit): TextView =
-        TextView(this).apply {
-            this.text = text
-            textSize = 14f
-            setTextColor(dialogText)
-            gravity = Gravity.CENTER_VERTICAL or Gravity.START
-            minimumHeight = Ui.dp(this@showFolderVisibilityDialog, 50)
-            isClickable = true
-            isFocusable = true
-            background = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x18000000),
-                Ui.rounded(dialogElevated, 10, this@showFolderVisibilityDialog, Ui.menuBorder(this@showFolderVisibilityDialog), 1),
-                Ui.rounded(Color.WHITE, 10, this@showFolderVisibilityDialog)
-            )
-            setPadding(
-                Ui.dp(this@showFolderVisibilityDialog, 14),
-                Ui.dp(this@showFolderVisibilityDialog, 8),
-                Ui.dp(this@showFolderVisibilityDialog, 14),
-                Ui.dp(this@showFolderVisibilityDialog, 8)
-            )
-            setOnClickListener {
-                Haptics.perform(this, Haptics.Effect.TAP)
-                onClick()
-            }
-        }
+    val ctx = this
+    val hairline = (dialogText and 0x00FFFFFF) or 0x1A000000
 
     val content = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(
-            Ui.dp(this@showFolderVisibilityDialog, 22),
-            Ui.dp(this@showFolderVisibilityDialog, 16),
-            Ui.dp(this@showFolderVisibilityDialog, 22),
-            Ui.dp(this@showFolderVisibilityDialog, 52)
-        )
+        // Same rhythm as the other menus: title and text at 18 dp, rows inset at 10 dp.
+        setPadding(Ui.dp(ctx, 10), Ui.dp(ctx, 18), Ui.dp(ctx, 10), 0)
         addView(
-            TextView(this@showFolderVisibilityDialog).apply {
+            TextView(ctx).apply {
                 setText(R.string.main_folder_visibility)
                 textSize = 18f
                 setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
                 setTextColor(dialogText)
+                setPadding(Ui.dp(ctx, 8), 0, Ui.dp(ctx, 8), 0)
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
         addView(
-            TextView(this@showFolderVisibilityDialog).apply {
+            TextView(ctx).apply {
                 setText(R.string.main_hidden_dialog_help)
                 textSize = 14f
-                setTextColor(dialogText)
-                alpha = 0.78f
-                setPadding(0, Ui.dp(this@showFolderVisibilityDialog, 5), 0, Ui.dp(this@showFolderVisibilityDialog, 6))
+                setTextColor(dialogMuted)
+                setLineSpacing(0f, 1.1f)
+                setPadding(Ui.dp(ctx, 8), Ui.dp(ctx, 6), Ui.dp(ctx, 8), Ui.dp(ctx, 12))
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
         addView(
-            LinearLayout(this@showFolderVisibilityDialog).apply {
+            LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 addView(
-                    LinearLayout(this@showFolderVisibilityDialog).apply {
+                    LinearLayout(ctx).apply {
                         orientation = LinearLayout.HORIZONTAL
                         gravity = Gravity.CENTER_VERTICAL
                         isClickable = true
-                        setOnClickListener { toggleShowHiddenSelection() }
-                        val checkbox = CheckBox(this@showFolderVisibilityDialog).apply {
-                            buttonTintList = android.content.res.ColorStateList.valueOf(dialogText)
+                        isFocusable = true
+                        background = rowBackground(false)
+                        setPadding(Ui.dp(ctx, 4), 0, Ui.dp(ctx, 8), 0)
+                        setOnClickListener {
+                            Haptics.perform(this, Haptics.Effect.TAP)
+                            toggleShowHiddenSelection()
+                            showHiddenCheck?.let(Motion::settle)
+                        }
+                        val checkbox = CheckBox(ctx).apply {
+                            buttonTintList = android.content.res.ColorStateList.valueOf(dialogAccent)
                             isClickable = false
                             isFocusable = false
                         }
                         showHiddenCheck = checkbox
-                        val label = TextView(this@showFolderVisibilityDialog).apply {
+                        val label = TextView(ctx).apply {
                             setText(R.string.main_show_hidden)
                             textSize = 15f
                             setTextColor(dialogText)
-                            setPadding(Ui.dp(this@showFolderVisibilityDialog, 8), 0, 0, 0)
+                            setPadding(Ui.dp(ctx, 4), 0, 0, 0)
                         }
                         showHiddenLabel = label
                         addView(checkbox)
                         addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
                     },
-                    LinearLayout.LayoutParams(0, Ui.dp(this@showFolderVisibilityDialog, 48), 1f)
+                    LinearLayout.LayoutParams(0, Ui.dp(ctx, 48), 1f)
                 )
                 addView(
-                    FrameLayout(this@showFolderVisibilityDialog).apply {
-                      addView(dialogButton(getString(R.string.main_load_hidden)) { loadHiddenAlbums() }.apply {
-                        loadHiddenButton = this
-                        textSize = 14f
-                        setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-                        gravity = Gravity.CENTER_VERTICAL or Gravity.END
-                        background = android.graphics.drawable.RippleDrawable(
-                            android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x18000000),
-                            null,
-                            Ui.rounded(Color.WHITE, 10, this@showFolderVisibilityDialog)
-                        )
-                        setPadding(
-                            Ui.dp(this@showFolderVisibilityDialog, 8),
-                            Ui.dp(this@showFolderVisibilityDialog, 8),
-                            Ui.dp(this@showFolderVisibilityDialog, 8),
-                            Ui.dp(this@showFolderVisibilityDialog, 8)
-                        )
-                      }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-                      addView(LoadingIndicatorView(this@showFolderVisibilityDialog, dialogText).apply {
-                          loadHiddenIndicator = this
-                          visibility = View.GONE
-                      }, FrameLayout.LayoutParams(Ui.dp(this@showFolderVisibilityDialog, 32), Ui.dp(this@showFolderVisibilityDialog, 32), Gravity.CENTER))
+                    FrameLayout(ctx).apply {
+                        // A compact tonal pill: clearly a button, quieter than the confirmation.
+                        addView(TextView(ctx).apply {
+                            loadHiddenButton = this
+                            setText(R.string.main_load_hidden)
+                            textSize = 14f
+                            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL))
+                            setTextColor(dialogAccent)
+                            gravity = Gravity.CENTER
+                            isClickable = true
+                            isFocusable = true
+                            maxLines = 1
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                            background = android.graphics.drawable.RippleDrawable(
+                                rippleTint,
+                                Ui.rounded(dialogElevated, 18, ctx, Ui.menuBorder(ctx), 1),
+                                Ui.rounded(Color.WHITE, 18, ctx)
+                            )
+                            setPadding(Ui.dp(ctx, 16), 0, Ui.dp(ctx, 16), 0)
+                            setOnClickListener {
+                                Haptics.perform(this, Haptics.Effect.TAP)
+                                loadHiddenAlbums()
+                            }
+                        }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(ctx, 36),
+                            Gravity.CENTER_VERTICAL or Gravity.END))
+                        addView(LoadingIndicatorView(ctx, dialogAccent).apply {
+                            loadHiddenIndicator = this
+                            visibility = View.GONE
+                        }, FrameLayout.LayoutParams(Ui.dp(ctx, 32), Ui.dp(ctx, 32), Gravity.CENTER_VERTICAL or Gravity.END).apply {
+                            marginEnd = Ui.dp(ctx, 24)
+                        })
+                        setPadding(0, 0, Ui.dp(ctx, 4), 0)
                     },
-                    LinearLayout.LayoutParams(0, Ui.dp(this@showFolderVisibilityDialog, 48), 1f)
+                    LinearLayout.LayoutParams(0, Ui.dp(ctx, 48), 1f)
                 )
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
-        addView(refresher, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        addView(View(ctx).apply { setBackgroundColor(hairline) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 1)).apply {
+                topMargin = Ui.dp(ctx, 4)
+                marginStart = Ui.dp(ctx, 8)
+                marginEnd = Ui.dp(ctx, 8)
+            })
+        addView(refresher, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
     }
     val buttonBar = ClickFeedbackActionLayout(this).apply {
         tag = "hidden_dialog_confirm"
@@ -711,36 +720,38 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
         isFocusable = true
         contentDescription = getString(R.string.action_ok)
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        // Flat confirmation strip, separated by a hairline, like the actions of the other menus.
         background = android.graphics.drawable.RippleDrawable(
-            android.content.res.ColorStateList.valueOf((dialogText and 0x00FFFFFF) or 0x18000000),
-            Ui.rounded(dialogHighlight, 0, this@showFolderVisibilityDialog),
+            rippleTint,
+            android.graphics.drawable.LayerDrawable(arrayOf(
+                dialogBg.toDrawable(),
+                android.graphics.drawable.GradientDrawable().apply { setColor(hairline) }
+            )).apply { setLayerHeight(1, Ui.dp(ctx, 1)); setLayerGravity(1, Gravity.TOP) },
             Color.WHITE.toDrawable()
         )
         setOnClickListener {
             isEnabled = false
             // Let the shared, momentary click pulse finish before closing.
-            postDelayed({ if (dialog.isShowing && !isFinishing) applyFolderVisibility() }, 180L)
+            postDelayed({ if (dialog.isShowing && !isFinishing) applyFolderVisibility() }, Motion.PRESS_MS + 20L)
         }
         addView(
-            TextView(this@showFolderVisibilityDialog).apply {
+            TextView(ctx).apply {
                 setText(R.string.action_ok)
-                textSize = 14f
+                textSize = 15f
                 setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
-                setTextColor(dialogText)
+                setTextColor(dialogAccent)
                 gravity = Gravity.CENTER
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         )
     }
-    val panel = FrameLayout(this).apply {
-        background = Ui.rounded(dialogBg, 16, this@showFolderVisibilityDialog, Ui.menuBorder(this@showFolderVisibilityDialog), 1)
+    val panel = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = Ui.rounded(dialogBg, 16, ctx, Ui.menuBorder(ctx), 1)
         clipToOutline = true
-        addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        addView(
-            buttonBar,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this@showFolderVisibilityDialog, 48), Gravity.BOTTOM)
-        )
+        addView(content, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        addView(buttonBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 48)))
     }
 
     dialog = AlertDialog.Builder(this)
@@ -813,10 +824,4 @@ internal fun MainActivity.observeVisibilityDialogFolders(albums: List<AlbumItem>
     }
 }
 
-internal fun MainActivity.animateHiddenControl(view: View) {
-    view.animate().cancel()
-    view.scaleX = 0.76f
-    view.scaleY = 0.76f
-    view.animate().scaleX(1f).scaleY(1f).setDuration(190)
-        .setInterpolator(OvershootInterpolator(1.5f)).start()
-}
+internal fun MainActivity.animateHiddenControl(view: View) = Motion.settle(view)

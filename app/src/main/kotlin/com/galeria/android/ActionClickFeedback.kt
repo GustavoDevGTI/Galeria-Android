@@ -9,7 +9,6 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Build
 import android.view.View
-import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageButton
 import android.widget.LinearLayout
 
@@ -36,11 +35,11 @@ internal class ActionClickFeedback(private val view: View) {
         previous?.cancel()
         val pulse = AnimatorSet().apply {
             playTogether(
-                ObjectAnimator.ofFloat(view, View.SCALE_X, fromScaleX, restingScaleX * 0.94f, restingScaleX),
-                ObjectAnimator.ofFloat(view, View.SCALE_Y, fromScaleY, restingScaleY * 0.94f, restingScaleY)
+                ObjectAnimator.ofFloat(view, View.SCALE_X, fromScaleX, restingScaleX * Motion.PRESS_SCALE, restingScaleX),
+                ObjectAnimator.ofFloat(view, View.SCALE_Y, fromScaleY, restingScaleY * Motion.PRESS_SCALE, restingScaleY)
             )
-            duration = 180L
-            interpolator = AccelerateDecelerateInterpolator()
+            duration = Motion.PRESS_MS
+            interpolator = Motion.easeOut
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animator: Animator) {
                     if (animation === animator) {

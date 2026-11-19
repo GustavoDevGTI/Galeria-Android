@@ -760,4 +760,17 @@
         <item>What is your mother\'s maiden name?</item>
         <item>What is your favourite food?</item>
     </string-array>
+    <string name="search_text_in_photos">Search “%1$s” in the text of the photos</string>
+    <string name="search_results_title">Search results</string>
+    <plurals name="search_results_hint">
+        <item quantity="one">“%1$s” · %2$d photo</item>
+        <item quantity="other">“%1$s” · %2$d photos</item>
+    </plurals>
+    <string name="search_no_results">No photo has this text.</string>
+    <string name="search_no_results_while_indexing">No photo has this text yet. The text of the photos is still being read (%1$d of %2$d).</string>
+    <string name="settings_text_index">Search the text in photos</string>
+    <string name="settings_text_index_hint">Reads the text of the photos in the background, on the phone itself, so the search finds them by what is written in them.</string>
+    <string name="settings_text_index_progress_title">Text read</string>
+    <string name="settings_text_index_progress">%1$d of %2$d photos</string>
+    <string name="action_menu">Menu</string>
 </resources>

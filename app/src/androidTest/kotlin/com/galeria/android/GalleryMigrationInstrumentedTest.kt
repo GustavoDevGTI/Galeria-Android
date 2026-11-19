@@ -49,6 +49,22 @@ class GalleryMigrationInstrumentedTest {
     }
 
     @Test
+    fun versionThreeUpgradeAddsAnEmptyTextIndexAndKeepsTheCatalog() {
+        helper.createDatabase(databaseName, 3).use { database ->
+            database.execSQL("INSERT INTO cached_media VALUES ('visible', 'content://media/external/file/3', 3, 'nota.jpg', 'image/jpeg', 100, 4096, 'Pictures/Test/', 'Pictures/Test/', 'Test', 0)")
+        }
+        helper.runMigrationsAndValidate(databaseName, 4, true, GalleryDatabase.MIGRATION_3_4).use { database ->
+            database.query("SELECT name FROM cached_media").use { cursor ->
+                assertTrue(cursor.moveToFirst()); assertEquals("nota.jpg", cursor.getString(0))
+            }
+            database.query("SELECT COUNT(*) FROM media_text").use { cursor ->
+                assertTrue(cursor.moveToFirst()); assertEquals(0, cursor.getInt(0))
+            }
+            database.execSQL("INSERT INTO media_text VALUES ('content://media/external/file/3', '100:4096', 'nota fiscal', 1)")
+        }
+    }
+
+    @Test
     fun versionTwoUpgradeKeepsDurationAndUsesCompoundCoverIndex() {
         helper.createDatabase(databaseName, 2).use { database ->
             database.execSQL("INSERT INTO cached_media VALUES ('visible', 'content://media/external/file/2', 2, 'movie.mp4', 'video/mp4', 100, 4096, 'Movies/Test/', 'Movies/Test/', 'Test', 12345)")

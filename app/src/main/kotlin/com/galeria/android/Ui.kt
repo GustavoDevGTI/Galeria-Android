@@ -438,11 +438,10 @@ class Ui private constructor() {
                 decor.postDelayed({
                     if (!dialog.isShowing) return@postDelayed
                     applySidePanelStyle(dialog, widthFraction, fullHeight)
-                    decor.animate()
-                        .alpha(1f)
-                        .setDuration(SIDE_PANEL_FADE_MS)
-                        .withEndAction { onShown?.invoke() }
-                        .start()
+                    // Grows out of its top-end corner, where the panel is anchored.
+                    val rtl = decor.layoutDirection == View.LAYOUT_DIRECTION_RTL
+                    Motion.enter(decor, Motion.POPOVER_SCALE, Motion.POPOVER_MS,
+                        pivotX = if (rtl) 0f else decor.width.toFloat(), pivotY = 0f) { onShown?.invoke() }
                 }, SIDE_PANEL_LAYOUT_DELAY_MS)
             }
             dialog.show()
@@ -469,7 +468,13 @@ class Ui private constructor() {
                 alignPrimaryDialogActions(window.decorView, Gravity.END)
             }
             position()
-            dialog.setOnShowListener { position() }
+            dialog.window?.decorView?.alpha = 0f
+            dialog.setOnShowListener {
+                position()
+                val decor = dialog.window?.decorView ?: return@setOnShowListener
+                // A modal is not anchored to a trigger: it settles in place from its center.
+                Motion.enter(decor, Motion.MODAL_SCALE, Motion.MODAL_MS)
+            }
             dialog.show()
             return dialog
         }
@@ -1418,7 +1423,6 @@ class Ui private constructor() {
 
         private const val POPUP_ACTION_DELAY_MS = 48L
         private const val SIDE_PANEL_LAYOUT_DELAY_MS = 16L
-        private const val SIDE_PANEL_FADE_MS = 90L
         private const val SELECTION_ACTION_ICON_TAG = "selection_action_icon"
         private const val SELECTION_ACTION_LABEL_TAG = "selection_action_label"
         private const val SELECTION_ACTION_DOCK_TAG = "selection_action_dock"

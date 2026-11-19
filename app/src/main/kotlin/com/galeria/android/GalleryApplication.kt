@@ -16,6 +16,8 @@ class GalleryApplication : Application(), SingletonImageLoader.Factory, Configur
         registerActivityLifecycleCallbacks(SecurityLifecycle())
         LauncherIconManager.syncWithPreferences(this)
         GalleryUpgradeCoordinator.initialize(this)
+        // Text of the photos for the search, read in the background from the first opening.
+        MediaTextIndexScheduler.schedule(this)
     }
 
     override val workManagerConfiguration: Configuration

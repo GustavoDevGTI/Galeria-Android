@@ -146,6 +146,7 @@ class MediaRecyclerAdapter(
         val wasPaging = pagingMode
         listWorker.execute {
             if (version != listVersion) return@execute
+            textMatchesFor(requestedFilter)
             val next = filtered(source, requestedFilter)
             val diff = if (wasPaging) null else mediaDiff(previous, next)
             listHandler.post {
@@ -168,8 +169,21 @@ class MediaRecyclerAdapter(
     fun cancelPendingUpdates() = invalidateListRequest()
     private fun invalidateListRequest() { listVersion++; pendingItems = null }
     private fun normalizedQuery(query: String?) = query?.trim()?.lowercase(Locale.US).orEmpty()
-    private fun filtered(items: List<MediaItem>, query: String) = items.filter {
-        query.isEmpty() || it.name.lowercase(Locale.US).contains(query) || it.relativePath.lowercase(Locale.US).contains(query)
+    /** Photos of the search by the text inside them, for the last query looked up on the list worker. */
+    @Volatile private var textMatches: Pair<String, Set<String>> = "" to emptySet()
+
+    /** Looks the query up in the text index; only on the list worker, never on the main thread. */
+    private fun textMatchesFor(query: String) {
+        if (query.isEmpty() || textMatches.first == query) return
+        textMatches = query to runCatching { MediaTextSearch.matchingUris(context, query) }.getOrDefault(emptySet())
+    }
+
+    private fun filtered(items: List<MediaItem>, query: String): List<MediaItem> {
+        val inText = textMatches.takeIf { it.first == query }?.second.orEmpty()
+        return items.filter {
+            query.isEmpty() || it.name.lowercase(Locale.US).contains(query) || it.relativePath.lowercase(Locale.US).contains(query) ||
+                MediaIdentityRules.canonicalKey(it.uri.toString()) in inText
+        }
     }
     private fun mediaDiff(old: List<MediaItem>, next: List<MediaItem>) = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
         override fun getOldListSize() = old.size

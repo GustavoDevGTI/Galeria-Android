@@ -60,14 +60,14 @@ class GalleryBrowseBarInstrumentedTest {
             onView(withTagValue(`is`("browse_sort"))).perform(click())
             onView(withText(R.string.action_sort_by)).inRoot(isDialog()).check(matches(isDisplayed()))
             pressBack()
-            onView(withContentDescription(R.string.action_more_options)).perform(click())
+            onView(withContentDescription(R.string.action_menu)).perform(click())
             onView(withText(R.string.action_filter_media)).perform(click())
             onView(withText(R.string.action_filter_media)).inRoot(isDialog()).check(matches(isDisplayed()))
             pressBack()
             onView(withTagValue(`is`("browse_hidden"))).perform(click())
             onView(withText(R.string.main_folder_visibility)).inRoot(isDialog()).check(matches(isDisplayed()))
             pressBack()
-            onView(withContentDescription(R.string.action_more_options)).perform(click())
+            onView(withContentDescription(R.string.action_menu)).perform(click())
             for (text in listOf(R.string.main_folder_organization, R.string.main_album_spacing, R.string.action_create_folder, R.string.action_refresh)) {
                 onView(withText(text)).check(matches(isDisplayed()))
             }
@@ -113,7 +113,7 @@ class GalleryBrowseBarInstrumentedTest {
             var reduced = 8
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 assertSpacing(scenario, 8)
-                onView(withContentDescription(R.string.action_more_options)).perform(click())
+                onView(withContentDescription(R.string.action_menu)).perform(click())
                 onView(withText(R.string.main_album_spacing)).perform(click())
                 onView(withTagValue(`is`("album_spacing_slider"))).inRoot(isDialog())
                     .perform(androidx.test.espresso.action.ViewActions.swipeRight())
@@ -128,7 +128,7 @@ class GalleryBrowseBarInstrumentedTest {
             }
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 assertSpacing(scenario, reduced)
-                onView(withContentDescription(R.string.action_more_options)).perform(click())
+                onView(withContentDescription(R.string.action_menu)).perform(click())
                 onView(withText(R.string.main_album_spacing)).perform(click())
                 onView(withTagValue(`is`("album_spacing_slider"))).inRoot(isDialog()).check { view, error ->
                     if (error != null) throw error
@@ -198,7 +198,7 @@ class GalleryBrowseBarInstrumentedTest {
                     assertBar(it.window.decorView, "browse_shuffle")
                 }
                 assertTrue("Voltar do visualizador não equivale a fechar o app", folder in TemporaryAlbumVisibility.activeKeys())
-                onView(withContentDescription(R.string.action_more_options)).perform(click())
+                onView(withContentDescription(R.string.action_menu)).perform(click())
                 for (text in listOf(R.string.album_view_mode, R.string.album_random, R.string.album_choose_cover, R.string.album_cinema_mode)) {
                     onView(withText(text)).check(matches(isDisplayed()))
                 }
@@ -308,8 +308,9 @@ class GalleryBrowseBarInstrumentedTest {
         val bar = root.findViewWithTag<ViewGroup>("gallery_browse_bar")
         assertTrue(bar.isShown)
         val dock = bar.getChildAt(0) as ViewGroup
-        assertEquals(4, dock.childCount)
-        val tags = listOf("browse_sort", "browse_organize", thirdAction, "browse_settings")
+        // Four shortcuts and the fixed "Menu" button that opens the options panel.
+        assertEquals(5, dock.childCount)
+        val tags = listOf("browse_sort", "browse_organize", thirdAction, "browse_settings", GalleryBrowseBar.MENU_TAG)
         tags.forEachIndexed { index, tag ->
             val action = dock.getChildAt(index)
             assertEquals(tag, action.tag)
