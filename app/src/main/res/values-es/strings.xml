@@ -65,6 +65,15 @@
     <string name="ocr_copied">Texto copiado.</string>
     <string name="action_motion_photo">Ver foto en movimiento</string>
     <string name="action_motion_photo_stop">Detener foto en movimiento</string>
+    <string name="motion_frame_title">Elegir fotograma</string>
+    <string name="motion_frame_strip">Fotogramas de la foto en movimiento</string>
+    <string name="motion_frame_save">Guardar</string>
+    <string name="motion_frame_original">Original</string>
+    <string name="motion_frame_more_edits">Más ediciones</string>
+    <string name="motion_frame_saved">Fotograma guardado en la foto.</string>
+    <string name="motion_frame_restored">Foto original restaurada.</string>
+    <string name="motion_frame_save_error">No se pudo guardar el fotograma.</string>
+    <string name="motion_frame_open_error">No se pudieron abrir los fotogramas de esta foto.</string>
     <string name="motion_photo_error">No se pudo reproducir esta foto en movimiento.</string>
     <string name="app_name">Galeria</string>
 

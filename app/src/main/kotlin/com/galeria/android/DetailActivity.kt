@@ -726,7 +726,12 @@ class DetailActivity : ComponentActivity() {
             contentDescription = getString(R.string.action_edit)
             visibility = if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) View.GONE else View.VISIBLE
             setOnClickListener {
-                if (currentItem().isVideo()) openCurrentEditor() else showImageEditMenu()
+                when {
+                    currentItem().isVideo() -> openCurrentEditor()
+                    // A Motion Photo opens straight on choosing its frame.
+                    motionPhotoController.clipFor(motionPhotoSource(currentItem())) != null -> openMotionFrameChooser()
+                    else -> showImageEditMenu()
+                }
             }
         }
         val share = actionButton(R.drawable.ic_share).apply {
@@ -1945,6 +1950,27 @@ class DetailActivity : ComponentActivity() {
     internal val renameWriteLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()) {
         onRenameWriteResult(it.resultCode == RESULT_OK)
     }
+    // The frame screen rewrites the photo in place; show the new version when it comes back.
+    private val motionFrameLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode != RESULT_OK || isFinishing || isDestroyed) return@registerForActivityResult
+        val item = mediaQueue.getOrNull(currentIndex) ?: return@registerForActivityResult
+        imageMetadataCache.remove(item.uri.toString())
+        imagePreloadJobs.values.forEach { it.cancel() }
+        imagePreloadJobs.clear()
+        loadCurrentItem()
+        scheduleAdjacentPreload()
+    }
+
+    private fun openMotionFrameChooser() {
+        val item = currentItem()
+        inlineMotionPhoto?.stop(animated = false)
+        motionFrameLauncher.launch(Intent(this, MotionFrameActivity::class.java).apply {
+            putExtra(MotionFrameActivity.EXTRA_URI, item.uri.toString())
+            putExtra(MotionFrameActivity.EXTRA_MIME, item.mimeType)
+            putExtra(MotionFrameActivity.EXTRA_NAME, item.name)
+        })
+    }
+
     internal val rotateWriteLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()) {
         onRotateWriteResult(it.resultCode == RESULT_OK)
     }

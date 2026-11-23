@@ -61,6 +61,15 @@
     <string name="ocr_copied">Texto copiado.</string>
     <string name="action_motion_photo">Ver foto em movimento</string>
     <string name="action_motion_photo_stop">Parar foto em movimento</string>
+    <string name="motion_frame_title">Escolher quadro</string>
+    <string name="motion_frame_strip">Quadros da foto em movimento</string>
+    <string name="motion_frame_save">Salvar</string>
+    <string name="motion_frame_original">Original</string>
+    <string name="motion_frame_more_edits">Mais edições</string>
+    <string name="motion_frame_saved">Quadro salvo na foto.</string>
+    <string name="motion_frame_restored">Foto original restaurada.</string>
+    <string name="motion_frame_save_error">Não foi possível salvar o quadro.</string>
+    <string name="motion_frame_open_error">Não foi possível abrir os quadros desta foto.</string>
     <string name="motion_photo_error">Não foi possível reproduzir esta foto em movimento.</string>
     <string name="app_name">Galeria</string>
 

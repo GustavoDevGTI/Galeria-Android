@@ -61,6 +61,15 @@
     <string name="ocr_copied">Text copied.</string>
     <string name="action_motion_photo">View motion photo</string>
     <string name="action_motion_photo_stop">Stop motion photo</string>
+    <string name="motion_frame_title">Choose frame</string>
+    <string name="motion_frame_strip">Motion photo frames</string>
+    <string name="motion_frame_save">Save</string>
+    <string name="motion_frame_original">Original</string>
+    <string name="motion_frame_more_edits">More edits</string>
+    <string name="motion_frame_saved">Frame saved to the photo.</string>
+    <string name="motion_frame_restored">Original photo restored.</string>
+    <string name="motion_frame_save_error">Could not save the frame.</string>
+    <string name="motion_frame_open_error">Could not open the frames of this photo.</string>
     <string name="motion_photo_error">Could not play this motion photo.</string>
     <string name="app_name">Galeria</string>
 

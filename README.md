@@ -2,7 +2,7 @@
 
 App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, navegação fluida e gestão real de mídias e pastas do aparelho.
 
-Versão atual: **0.9.21** (código Android `9021`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9.21](docs/RELEASE-0.9.21.md).
+Versão atual: **0.9.22** (código Android `9022`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9.22](docs/RELEASE-0.9.22.md).
 
 ## Stack atual
 
@@ -51,7 +51,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Excluir em posição fixa à direita para fotos e vídeos, sem deslocamento quando OCR ou Motion Photo ficam disponíveis
 - Barra inferior com Ordenar, Organizar, Ocultos e Configurações na página inicial; dentro dos álbuns, Aleatório substitui Ocultos e inicia a reprodução das mídias da pasta. Filtrar fica no menu de três pontos. A seleção de itens utiliza a barra de ações própria.
 - Favorito por coração no topo do visualizador, próximo ao menu de opções
-- Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção pelos metadados da câmera (Google e Samsung) e reprodução na própria foto pelo botão no rodapé, sem alterar o original
+- Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção pelos metadados da câmera (Google e Samsung) e reprodução na própria foto pelo botão no rodapé; Editar escolhe qual quadro do vídeo fica como foto, guardando a original dentro do arquivo
 - Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção diretamente sobre a imagem, alças de ajuste, cópia do trecho escolhido e seleção integral
 - Ícone de texto exibido automaticamente quando a foto aberta contém texto reconhecido; análise local adiada durante a troca rápida de fotos
 - Barra simples de reprodução no visualizador de vídeo; um ícone ao lado abre/fecha a linha do tempo sob demanda
@@ -130,7 +130,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A versão 0.9.21 toca a foto em movimento na própria foto, pelo botão no rodapé, no mesmo lugar e com o mesmo zoom, e a detecta pelos metadados gravados pela câmera. A tela separada de foto em movimento saiu do app. Consulte as [notas da release](docs/RELEASE-0.9.21.md).
+A versão 0.9.22 permite escolher qual quadro da foto em movimento fica como foto: Editar abre a faixa de quadros do vídeo, Salvar substitui a foto mantendo-a em movimento, e Original devolve a foto da câmera. Consulte as [notas da release](docs/RELEASE-0.9.22.md).
 
 Os testes locais ficam em `app/src/test/kotlin` e as integrações Android em `app/src/androidTest/kotlin`. Os comandos por área, critérios de entrega e evidências estão no [guia de validação](docs/TESTES-VALIDACAO.md).
 
@@ -164,13 +164,13 @@ O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Med
 
 A árvore atual mantém o código e a documentação vigentes. APKs e notas de versões anteriores ficam nas [releases e tags do GitHub](https://github.com/GustavoDevGTI/Galeria-Android/releases), sem cópias de binários no repositório.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9.21 usa o código `9021`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9.22 usa o código `9022`.
 
 ## APK gerado
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.9.21](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9.21/Galeria-Android-versao-0.9.21.apk)
+[Baixar Galeria Android - versão 0.9.22](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9.22/Galeria-Android-versao-0.9.22.apk)
 
 Build padrão do Gradle:
 
@@ -181,10 +181,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado somente como anexo no GitHub Releases:
 
 ```text
-Galeria-Android-versao-0.9.21.apk
+Galeria-Android-versao-0.9.22.apk
 ```
 
-O APK 0.9.21 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.9.22 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de release no GitHub
 
