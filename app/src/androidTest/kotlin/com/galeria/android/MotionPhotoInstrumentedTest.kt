@@ -9,17 +9,11 @@ import androidx.test.core.app.ActivityScenario
 import androidx.lifecycle.Lifecycle
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
-import androidx.test.espresso.action.GeneralClickAction
-import androidx.test.espresso.action.Tap
-import androidx.test.espresso.action.Press
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
-import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.media3.common.Player
-import androidx.media3.ui.PlayerView
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -135,26 +129,60 @@ class MotionPhotoInstrumentedTest {
                 }
                 screenshot.recycle()
             }
-            onView(withContentDescription(R.string.action_motion_photo)).perform(click())
-            onView(withText(R.string.album_back)).check(matches(isDisplayed()))
-            awaitAndroidInputReady()
-            onView(withText(R.string.album_back)).perform(GeneralClickAction(Tap.SINGLE, { view ->
-                val location = IntArray(2).also(view::getLocationOnScreen)
-                // Tap the visible label, not the status-bar padding included in
-                // this edge-to-edge TextView's bounding box. Still inject touch.
-                floatArrayOf(location[0] + view.paddingLeft + (view.width - view.paddingLeft - view.paddingRight) / 2f,
-                    location[1] + view.paddingTop + (view.height - view.paddingTop - view.paddingBottom) / 2f)
-            }, Press.FINGER, null))
-            val returnDeadline = SystemClock.uptimeMillis() + 10_000L
-            var returned = false
-            while (!returned && SystemClock.uptimeMillis() < returnDeadline) {
-                if (scenario.state == Lifecycle.State.RESUMED) {
-                    scenario.onActivity { returned = it.hasWindowFocus() }
+            // The footer button plays the clip on the photo itself: no other screen opens.
+            fun surface(activity: DetailActivity) =
+                activity.window.decorView.findViewWithTag<android.view.TextureView>(InlineMotionPhotoPlayer.SURFACE_TAG)
+            fun awaitSurface(present: Boolean, message: String) {
+                val deadline = SystemClock.uptimeMillis() + 10_000L
+                var settled = false
+                while (!settled && SystemClock.uptimeMillis() < deadline) {
+                    scenario.onActivity { activity ->
+                        val view = surface(activity)
+                        settled = if (present) view != null && view.alpha >= 0.99f else view == null
+                    }
+                    if (!settled) SystemClock.sleep(50L)
                 }
-                if (!returned) SystemClock.sleep(50L)
+                assertTrue(message, settled)
             }
-            assertTrue("Voltar da Motion Photo deve retomar o visualizador original", returned)
-            awaitAndroidInputReady()
+            onView(withContentDescription(R.string.action_motion_photo)).perform(click())
+            awaitSurface(true, "O vídeo da foto em movimento deve aparecer sobre a própria foto")
+            assertEquals("O visualizador deve continuar em primeiro plano", Lifecycle.State.RESUMED, scenario.state)
+            scenario.onActivity { activity ->
+                val view = surface(activity)
+                val page = view.parent as android.view.ViewGroup
+                val image = page.getChildAt(page.indexOfChild(view) - 1)
+                assertTrue("O vídeo deve ficar logo acima da foto ampliável, na mesma página",
+                    image is com.github.panpf.zoomimage.CoilZoomImageView)
+                image as android.widget.ImageView
+                assertTrue("O vídeo não deve receber toques", !view.isClickable)
+                // The clip lands inside the photo's on-screen rectangle (same place and zoom).
+                val drawable = image.drawable
+                val photo = android.graphics.RectF(0f, 0f, drawable.intrinsicWidth.toFloat(), drawable.intrinsicHeight.toFloat())
+                image.imageMatrix.mapRect(photo)
+                val clipRect = android.graphics.RectF(0f, 0f, view.width.toFloat(), view.height.toFloat())
+                view.getTransform(null).mapRect(clipRect)
+                val tolerance = 2f
+                assertTrue("O vídeo deve ocupar o retângulo da foto: $clipRect em $photo",
+                    clipRect.left >= photo.left - tolerance && clipRect.top >= photo.top - tolerance &&
+                        clipRect.right <= photo.right + tolerance && clipRect.bottom <= photo.bottom + tolerance &&
+                        (clipRect.width() >= photo.width() - tolerance || clipRect.height() >= photo.height() - tolerance))
+                val button = activity.window.decorView.findViewWithTag<android.widget.ImageButton>("viewer_motion_photo")
+                assertEquals(activity.getString(R.string.action_motion_photo_stop), button.contentDescription)
+            }
+            // The same button stops it, and the photo is back.
+            onView(withContentDescription(R.string.action_motion_photo_stop)).perform(click())
+            awaitSurface(false, "Parar deve devolver a foto")
+            onView(withContentDescription(R.string.action_motion_photo)).check(matches(isDisplayed()))
+            // Played to the end, the clip fades back to the photo by itself.
+            onView(withContentDescription(R.string.action_motion_photo)).perform(click())
+            awaitSurface(true, "A foto em movimento deve tocar de novo")
+            val endDeadline = SystemClock.uptimeMillis() + 20_000L
+            var ended = false
+            while (!ended && SystemClock.uptimeMillis() < endDeadline) {
+                scenario.onActivity { ended = surface(it) == null }
+                if (!ended) SystemClock.sleep(100L)
+            }
+            assertTrue("Ao terminar, o vídeo deve voltar sozinho para a foto", ended)
             onView(withContentDescription(R.string.action_motion_photo)).check(matches(isDisplayed()))
             scenario.onActivity { activity ->
                 val queue = DetailActivity::class.java.getDeclaredField("queueController")
@@ -162,57 +190,45 @@ class MotionPhotoInstrumentedTest {
                 assertEquals("Motion Photo não deve avançar a fila da galeria", originalIndex, queue.currentIndex)
                 assertEquals(originalUri, queue.items[queue.currentIndex].uri.toString())
             }
-        }
-
-        ActivityScenario.launch<MotionPhotoActivity>(Intent(context, MotionPhotoActivity::class.java).apply {
-            putExtra(MotionPhotoActivity.EXTRA_URI, Uri.fromFile(photo).toString())
-            putExtra(MotionPhotoActivity.EXTRA_OFFSET, clip.offset)
-            putExtra(MotionPhotoActivity.EXTRA_LENGTH, clip.length)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }).use { scenario ->
-            val deadline = System.currentTimeMillis() + 10_000L
-            var ready = false
-            while (!ready && System.currentTimeMillis() < deadline) {
-                scenario.onActivity { activity ->
-                    val state = activity.window.decorView.findViewWithTag<PlayerView>("motion_photo_player")
-                        ?.player?.playbackState
-                    ready = (state == Player.STATE_READY || state == Player.STATE_ENDED) &&
-                        activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline").isPrepared
-                }
-                if (!ready) Thread.sleep(100)
-            }
-            assertTrue("O vídeo embutido não ficou pronto para reprodução", ready)
-            scenario.onActivity { activity ->
-                val controls = activity.window.decorView.findViewWithTag<android.view.View>("video_playback_controls")
-                val play = activity.window.decorView.findViewWithTag<android.view.View>("video_play_pause")
-                assertTrue("Play/pause da Motion Photo deve seguir o alinhamento central dos vídeos",
-                    controls.width > 0 && kotlin.math.abs(play.x + play.width / 2f - controls.width / 2f) <= 1f)
-                val timeline = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
-                assertNotNull("Motion Photo deve ter a mesma linha do tempo", timeline)
-                assertEquals(android.view.View.GONE, timeline.visibility)
-                activity.window.decorView.findViewWithTag<android.view.View>("video_timeline_toggle").performClick()
-                assertEquals(android.view.View.VISIBLE, timeline.visibility)
-                val player = activity.window.decorView.findViewWithTag<PlayerView>("motion_photo_player").player!!
-                player.pause()
-                timeline.update(0L, player.duration)
-                timeline.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, null)
-                assertTrue(player.currentPosition > 0L)
-            }
-            var ownedPlayer: Player? = null
-            scenario.onActivity { activity ->
-                ownedPlayer = activity.window.decorView.findViewWithTag<PlayerView>("motion_photo_player").player
-                ownedPlayer!!.play()
-            }
+            // Leaving the viewer while it plays stops it; coming back shows the photo.
+            onView(withContentDescription(R.string.action_motion_photo)).perform(click())
+            awaitSurface(true, "A foto em movimento deve tocar antes de sair")
             scenario.moveToState(Lifecycle.State.CREATED)
-            scenario.onActivity {
-                assertTrue("Motion Photo deve pausar em segundo plano", ownedPlayer?.playWhenReady == false)
-            }
+            scenario.onActivity { assertEquals(null, surface(it)) }
             scenario.moveToState(Lifecycle.State.RESUMED)
             scenario.onActivity { activity ->
-                org.junit.Assert.assertSame(ownedPlayer,
-                    activity.window.decorView.findViewWithTag<PlayerView>("motion_photo_player").player)
-                assertTrue("Retornar não deve forçar reprodução que ficou pausada", ownedPlayer?.playWhenReady == false)
+                assertEquals(null, surface(activity))
+                assertEquals(activity.getString(R.string.action_motion_photo),
+                    activity.window.decorView.findViewWithTag<android.widget.ImageButton>("viewer_motion_photo").contentDescription)
             }
+        }
+    }
+
+    @Test fun metadataNamesTheClipWithoutScanningTheFile() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val photo = File(context.cacheDir, "motion-xmp-${System.nanoTime()}.jpg")
+        try {
+            val still = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.GREEN) }
+            val jpeg = java.io.ByteArrayOutputStream().also { still.compress(Bitmap.CompressFormat.JPEG, 95, it) }.toByteArray()
+            still.recycle()
+            val video = InstrumentationRegistry.getInstrumentation().context.assets.open("playback-sample.mp4").use { it.readBytes() }
+            // MicroVideo XMP: the clip is the last bytes of the file, as Google cameras write it.
+            val xmp = "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF><rdf:Description GCamera:MicroVideo=\"1\" " +
+                "GCamera:MicroVideoVersion=\"1\" GCamera:MicroVideoOffset=\"${video.size}\"/></rdf:RDF></x:xmpmeta>"
+            val payload = "http://ns.adobe.com/xap/1.0/\u0000".toByteArray(Charsets.ISO_8859_1) + xmp.toByteArray()
+            val segment = byteArrayOf(0xFF.toByte(), 0xE1.toByte(), ((payload.size + 2) shr 8).toByte(), (payload.size + 2).toByte()) + payload
+            photo.outputStream().use { output ->
+                output.write(jpeg, 0, 2)
+                output.write(segment)
+                output.write(jpeg, 2, jpeg.size - 2)
+                output.write(video)
+            }
+            var checks = 0
+            val clip = MotionPhotoSupport.detect(context, Uri.fromFile(photo)) { checks++; true }
+            assertEquals(MotionPhotoClip(photo.length() - video.size, video.size.toLong()), clip)
+            assertTrue("Os metadados devem dispensar a varredura do arquivo ($checks verificações)", checks <= 3)
+        } finally {
+            photo.delete()
         }
     }
 }

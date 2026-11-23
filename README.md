@@ -2,7 +2,7 @@
 
 App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, navegação fluida e gestão real de mídias e pastas do aparelho.
 
-Versão atual: **0.9.20** (código Android `9020`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9.20](docs/RELEASE-0.9.20.md).
+Versão atual: **0.9.21** (código Android `9021`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9.21](docs/RELEASE-0.9.21.md).
 
 ## Stack atual
 
@@ -51,11 +51,11 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Excluir em posição fixa à direita para fotos e vídeos, sem deslocamento quando OCR ou Motion Photo ficam disponíveis
 - Barra inferior com Ordenar, Organizar, Ocultos e Configurações na página inicial; dentro dos álbuns, Aleatório substitui Ocultos e inicia a reprodução das mídias da pasta. Filtrar fica no menu de três pontos. A seleção de itens utiliza a barra de ações própria.
 - Favorito por coração no topo do visualizador, próximo ao menu de opções
-- Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção ao abrir e reprodução sob demanda, sem alterar o original
+- Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção pelos metadados da câmera (Google e Samsung) e reprodução na própria foto pelo botão no rodapé, sem alterar o original
 - Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção diretamente sobre a imagem, alças de ajuste, cópia do trecho escolhido e seleção integral
 - Ícone de texto exibido automaticamente quando a foto aberta contém texto reconhecido; análise local adiada durante a troca rápida de fotos
-- Barra simples de reprodução no visualizador de vídeo e em Motion Photos; um ícone ao lado abre/fecha a linha do tempo sob demanda
-- Linha do tempo horizontal contínua com miniaturas por segundo em vídeos, Motion Photos e na prévia de corte; deslizar move a faixa sob o marcador central e atualiza o vídeo durante o gesto
+- Barra simples de reprodução no visualizador de vídeo; um ícone ao lado abre/fecha a linha do tempo sob demanda
+- Linha do tempo horizontal contínua com miniaturas por segundo em vídeos e na prévia de corte; deslizar move a faixa sob o marcador central e atualiza o vídeo durante o gesto
 - A faixa cresce com a duração do vídeo e carrega somente as miniaturas do trecho visível; a barra simples permite saltar por toda a duração e a faixa permite ajuste fino sem toque prolongado
 - Miniaturas da linha do tempo extraídas progressivamente, com uma extração por vez, cache de memória de 12 MB e cache privado em disco limitado
 - O trecho atual da linha do tempo é preparado em segundo plano enquanto o vídeo reproduz, mesmo com a faixa fechada; a abertura revela miniaturas prontas com uma transição curta, e a preparação é suspensa ao sair do app
@@ -130,7 +130,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A versão 0.9.20 traz uma revisão visual (painel de pastas ocultas no mesmo padrão dos outros menus e animações mais curtas e consistentes), o botão Menu fixo no fim da barra inferior e a pesquisa pelo texto escrito dentro das fotos, na tela principal e dentro dos álbuns. Consulte as [notas da release](docs/RELEASE-0.9.20.md).
+A versão 0.9.21 toca a foto em movimento na própria foto, pelo botão no rodapé, no mesmo lugar e com o mesmo zoom, e a detecta pelos metadados gravados pela câmera. A tela separada de foto em movimento saiu do app. Consulte as [notas da release](docs/RELEASE-0.9.21.md).
 
 Os testes locais ficam em `app/src/test/kotlin` e as integrações Android em `app/src/androidTest/kotlin`. Os comandos por área, critérios de entrega e evidências estão no [guia de validação](docs/TESTES-VALIDACAO.md).
 
@@ -164,13 +164,13 @@ O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Med
 
 A árvore atual mantém o código e a documentação vigentes. APKs e notas de versões anteriores ficam nas [releases e tags do GitHub](https://github.com/GustavoDevGTI/Galeria-Android/releases), sem cópias de binários no repositório.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9.20 usa o código `9020`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9.21 usa o código `9021`.
 
 ## APK gerado
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.9.20](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9.20/Galeria-Android-versao-0.9.20.apk)
+[Baixar Galeria Android - versão 0.9.21](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9.21/Galeria-Android-versao-0.9.21.apk)
 
 Build padrão do Gradle:
 
@@ -181,10 +181,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado somente como anexo no GitHub Releases:
 
 ```text
-Galeria-Android-versao-0.9.20.apk
+Galeria-Android-versao-0.9.21.apk
 ```
 
-O APK 0.9.20 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.9.21 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de release no GitHub
 

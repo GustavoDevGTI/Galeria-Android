@@ -64,6 +64,7 @@
     <string name="ocr_select_on_image">Seleccionar texto en la imagen</string>
     <string name="ocr_copied">Texto copiado.</string>
     <string name="action_motion_photo">Ver foto en movimiento</string>
+    <string name="action_motion_photo_stop">Detener foto en movimiento</string>
     <string name="motion_photo_error">No se pudo reproducir esta foto en movimiento.</string>
     <string name="app_name">Galeria</string>
 

@@ -92,6 +92,11 @@ class DetailActivity : ComponentActivity() {
     internal val executor = Executors.newSingleThreadExecutor()
     private val videoPreviewExecutor = Executors.newSingleThreadExecutor()
     private val motionPhotoExecutor = Executors.newSingleThreadExecutor()
+    // Neighbours are checked ahead on their own low-priority thread, so the photo on screen never waits behind them.
+    private val motionPhotoPrefetchExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "motion-photo-prefetch").apply { priority = Thread.MIN_PRIORITY }
+    }
+    @Volatile private var motionPhotoPrefetchGeneration = 0
     private val imagePreloadScope = CoroutineScope(
         SupervisorJob() + Dispatchers.IO.limitedParallelism(MAX_CONCURRENT_IMAGE_PRELOADS)
     )
@@ -444,6 +449,7 @@ class DetailActivity : ComponentActivity() {
             if (!isFinishing) {
                 scheduleAdjacentPreload()
                 scheduleShuffleAdvance()
+                refreshMotionPhotoAfterQueueLoad()
             }
         }
     }
@@ -764,14 +770,7 @@ class DetailActivity : ComponentActivity() {
             )
             contentDescription = getString(R.string.action_motion_photo)
             visibility = View.GONE
-            setOnClickListener {
-                val clip = motionPhotoController.clipFor(motionPhotoSource(currentItem())) ?: return@setOnClickListener
-                startActivity(Intent(this@DetailActivity, MotionPhotoActivity::class.java).apply {
-                    putExtra(MotionPhotoActivity.EXTRA_URI, currentItem().uri.toString())
-                    putExtra(MotionPhotoActivity.EXTRA_OFFSET, clip.offset)
-                    putExtra(MotionPhotoActivity.EXTRA_LENGTH, clip.length)
-                })
-            }
+            setOnClickListener { toggleInlineMotionPhoto() }
         }
         textRecognitionButton = actionButton(R.drawable.ic_text_recognition).apply {
             tag = "ocr_text_action"
@@ -1275,7 +1274,7 @@ class DetailActivity : ComponentActivity() {
         val outgoingPage = activePage
         if (!mediaTransitionController.begin()) return
         scheduleTextDetection(null)
-        motionPhotoController.select(null)
+        clearMotionPhoto()
         zoomed = false
         val outgoingPlayer = playbackController.detachCurrent()
         handler.removeCallbacks(progressUpdater)
@@ -1429,7 +1428,7 @@ class DetailActivity : ComponentActivity() {
         cancelInteractiveSwipe()
         if (!mediaTransitionController.begin()) return
         scheduleTextDetection(null)
-        motionPhotoController.select(null)
+        clearMotionPhoto()
         cancelPendingSingleTap()
         resetZoom(false)
         handler.removeCallbacks(progressUpdater)
@@ -1525,7 +1524,7 @@ class DetailActivity : ComponentActivity() {
 
     private fun showVideo(item: MediaItem, page: FrameLayout) {
         scheduleTextDetection(null)
-        motionPhotoController.select(null)
+        clearMotionPhoto()
         videoControls.visibility = View.VISIBLE
         timelineRow.visibility = View.VISIBLE
         videoProgressRow.visibility = View.VISIBLE
@@ -1754,13 +1753,76 @@ class DetailActivity : ComponentActivity() {
         scheduleTextDetection(item)
     }
 
+    // Plays the clip on the photo itself; created on first use.
+    private var inlineMotionPhoto: InlineMotionPhotoPlayer? = null
+
+    private fun clearMotionPhoto() {
+        inlineMotionPhoto?.stop(animated = false)
+        motionPhotoController.select(null)
+    }
+
+    /** The footer button plays the clip in place, or stops it when it is already playing. */
+    private fun toggleInlineMotionPhoto() {
+        val player = inlineMotionPhoto ?: InlineMotionPhotoPlayer(this, motionPhotoExecutor, { videoMuted },
+            ::showMotionPhotoPlaying) { Ui.toast(this, getString(R.string.motion_photo_error)) }.also { inlineMotionPhoto = it }
+        if (player.isPlaying) { player.stop(animated = true); return }
+        val item = currentItem()
+        val clip = motionPhotoController.clipFor(motionPhotoSource(item)) ?: return
+        val page = activePage ?: return
+        val image = activeZoomImage() ?: return
+        player.play(page, image, item.uri, clip)
+    }
+
+    private fun showMotionPhotoPlaying(playing: Boolean) {
+        if (!::motionPhotoButton.isInitialized) return
+        motionPhotoButton.isActivated = playing
+        motionPhotoButton.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_motion_photo)
+        motionPhotoButton.contentDescription =
+            getString(if (playing) R.string.action_motion_photo_stop else R.string.action_motion_photo)
+    }
+
+    /**
+     * The viewer opens before the album is read, with the photo's size still unknown; the loaded
+     * queue gives the photo its full identity. Check it again (from the cache, so it is quick) and
+     * look ahead at the real neighbours, which the one-item queue did not have.
+     */
+    private fun refreshMotionPhotoAfterQueueLoad() {
+        if (!::motionPhotoButton.isInitialized) return
+        val item = mediaQueue.getOrNull(currentIndex)?.takeIf { it.isImage() } ?: return
+        if (inlineMotionPhoto?.isPlaying == true) return
+        if (motionPhotoController.clipFor(motionPhotoSource(item)) == null) updateMotionPhotoAction(item)
+        else prefetchMotionPhotoNeighbours()
+    }
+
     private fun updateMotionPhotoAction(item: MediaItem) {
+        inlineMotionPhoto?.stop(animated = false)
         motionPhotoController.select(motionPhotoSource(item))
+        prefetchMotionPhotoNeighbours()
+    }
+
+    /** Checks the photos next to the current one, so their button is ready when the user swipes. */
+    private fun prefetchMotionPhotoNeighbours() {
+        val generation = ++motionPhotoPrefetchGeneration
+        val neighbours = MotionPhotoPrefetchRules.neighbours(currentIndex, mediaQueue.size)
+            .mapNotNull { mediaQueue.getOrNull(it)?.let(::motionPhotoSource) }
+        if (neighbours.isEmpty()) return
+        val context = applicationContext
+        runCatching { motionPhotoPrefetchExecutor.execute {
+            for (source in neighbours) {
+                val relevant = { generation == motionPhotoPrefetchGeneration && !isDestroyed }
+                if (!relevant()) return@execute
+                runCatching { MotionPhotoSupport.detect(context, source.uri.toUri(), relevant) }
+            }
+        } }
     }
 
     private fun motionPhotoSource(item: MediaItem): ViewerMotionPhotoController.Source? =
         if (item.mimeType in setOf("image/jpeg", "image/heic", "image/heif")) {
-            ViewerMotionPhotoController.Source(item.uri.toString(), "${MediaContentRevision.key(this, item.uri)}:${item.size}")
+            item.uri.toString().let { uri ->
+                // Same photo whichever MediaStore form the queue holds (images/media/id or file/id).
+                val revision = MediaContentRevision.key(this, item.uri).removePrefix(uri)
+                ViewerMotionPhotoController.Source(uri, "${MediaIdentityRules.canonicalKey(uri)}$revision:${item.size}")
+            }
         } else null
 
     private fun toggleVideoSound() {
@@ -2557,6 +2619,7 @@ class DetailActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
+        inlineMotionPhoto?.stop(animated = false)
         if (isInPictureInPictureModeCompat()) playbackController.pauseForLifecycle()
     }
 
@@ -2605,6 +2668,7 @@ class DetailActivity : ComponentActivity() {
         super.onDestroy()
         if (::timelineBinding.isInitialized) timelineBinding.unbind()
         textRecognitionController.close()
+        inlineMotionPhoto?.stop(animated = false)
         motionPhotoController.close()
         cinemaController.close()
         cancelPendingSingleTap()
@@ -2620,6 +2684,7 @@ class DetailActivity : ComponentActivity() {
         executor.shutdownNow()
         videoPreviewExecutor.shutdownNow()
         motionPhotoExecutor.shutdownNow()
+        motionPhotoPrefetchExecutor.shutdownNow()
         queueController.close()
         if (::mediaActions.isInitialized) mediaActions.close()
     }

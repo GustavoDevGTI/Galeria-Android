@@ -60,6 +60,7 @@
     <string name="ocr_select_on_image">Select text on the image</string>
     <string name="ocr_copied">Text copied.</string>
     <string name="action_motion_photo">View motion photo</string>
+    <string name="action_motion_photo_stop">Stop motion photo</string>
     <string name="motion_photo_error">Could not play this motion photo.</string>
     <string name="app_name">Galeria</string>
 

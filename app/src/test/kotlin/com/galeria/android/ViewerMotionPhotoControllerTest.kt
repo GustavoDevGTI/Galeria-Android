@@ -43,6 +43,11 @@ class ViewerMotionPhotoControllerTest {
         val f = Fixture(); f.select(a); f.select(b); f.select(a); f.calls[0].complete(clip)
         assertNull(f.controller.clipFor(a)); f.calls[2].complete(clip); assertEquals(clip, f.controller.clipFor(a))
     }
+    @Test fun queueSwitchingTheUriFormKeepsTheResultForTheSamePhoto() {
+        // Loading the album replaces content://…/images/media/7 with content://…/file/7.
+        val f = Fixture(); f.select(a); f.source = a.copy(uri = "photo:a-file-form"); f.calls[0].complete(clip)
+        assertEquals(clip, f.changes.last()); assertEquals(clip, f.controller.clipFor(f.source))
+    }
     @Test fun revisedContentRejectsOldResultEvenBeforeNextSelect() {
         val f = Fixture(); f.select(a); f.source = a.copy(key = "a:2|100"); f.calls[0].complete(clip)
         assertFalse(f.calls[0].relevant()); assertNull(f.controller.clipFor(f.source))

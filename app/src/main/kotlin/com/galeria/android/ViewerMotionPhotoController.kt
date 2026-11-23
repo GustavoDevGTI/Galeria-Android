@@ -7,6 +7,7 @@ internal class ViewerMotionPhotoController(
     private val hostActive: () -> Boolean,
     private val changed: (MotionPhotoClip?) -> Unit
 ) {
+    /** [key] identifies the photo and its content; the URI may switch between MediaStore forms. */
     data class Source(val uri: String, val key: String)
     interface Detector {
         fun detect(source: Source, isRelevant: () -> Boolean, complete: (MotionPhotoClip?) -> Unit)
@@ -27,7 +28,7 @@ internal class ViewerMotionPhotoController(
         selected = source
         clip = null
         changed(null)
-        if (source == null || paused || !hostActive() || currentSource() != source) return
+        if (source == null || paused || !hostActive() || currentSource()?.key != source.key) return
         if (cache.containsKey(source.key)) {
             clip = cache[source.key]
             changed(clip)
@@ -37,7 +38,7 @@ internal class ViewerMotionPhotoController(
         active = request
         detector.detect(source, { relevant(request) }) { result ->
             if (!relevant(request)) return@detect
-            if (currentSource() != source) { active = null; return@detect }
+            if (currentSource()?.key != source.key) { active = null; return@detect }
             active = null
             cache[source.key] = result
             clip = result
@@ -46,7 +47,7 @@ internal class ViewerMotionPhotoController(
     }
 
     fun clipFor(source: Source?): MotionPhotoClip? =
-        if (!closed && !paused && hostActive() && source != null && source == selected && currentSource() == source) clip else null
+        if (!closed && !paused && hostActive() && source != null && source.key == selected?.key && currentSource()?.key == source.key) clip else null
 
     fun pause() { paused = true; active = null }
     fun resume() { if (!closed) paused = false }
