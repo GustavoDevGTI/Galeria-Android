@@ -52,7 +52,17 @@ internal data class JoinWindow(val junction: Int, val type: JoinTransition, val 
 /** How one layer looks at a moment: opacity, horizontal shift (in frame widths) and size. */
 internal data class JoinLook(val alpha: Float, val shift: Float = 0f, val scale: Float = 1f)
 
-internal enum class JoinQuality(val maxShortSide: Int?) { NATIVE(null), P1080(1080), P720(720) }
+/**
+ * The output size: [maxShortSide] caps the short side of the video, null keeps the native one.
+ * Only sizes below the native one are offered ([MediaJoinRules.qualityOptions]).
+ */
+internal data class JoinQuality(val maxShortSide: Int?) {
+    companion object {
+        val NATIVE = JoinQuality(null)
+        /** Usual short sides, largest first. */
+        val STEPS = listOf(2160, 1440, 1080, 720, 540, 480, 360)
+    }
+}
 
 internal data class JoinCanvas(val width: Int, val height: Int)
 
@@ -226,7 +236,7 @@ internal object MediaJoinRules {
     /**
      * Upright output size. Only landscape media give a landscape video; any portrait or square
      * one makes it portrait, and the rest fit inside with black borders. Native keeps the
-     * largest video's short side, so no video is scaled down; photos alone stop at 4K.
+     * largest video's short side; photos alone stop at 4K. A smaller quality only lowers it.
      */
     fun canvas(medias: List<JoinMedia>, quality: JoinQuality): JoinCanvas {
         val usable = medias.filter { it.width > 0 && it.height > 0 }
@@ -246,6 +256,59 @@ internal object MediaJoinRules {
 
     private fun even(value: Int): Int = maxOf(2, value - value % 2)
 
+    /** Native, then every usual size smaller than it: a choice never makes the video bigger. */
+    fun qualityOptions(medias: List<JoinMedia>): List<JoinQuality> {
+        val native = canvas(medias, JoinQuality.NATIVE)
+        val short = minOf(native.width, native.height)
+        return listOf(JoinQuality.NATIVE) + JoinQuality.STEPS.filter { it < short }.map { JoinQuality(it) }
+    }
+
+    /** [quality] when it still lowers the size, otherwise Native (it would give the same video). */
+    fun effectiveQuality(medias: List<JoinMedia>, quality: JoinQuality): JoinQuality =
+        if (quality in qualityOptions(medias)) quality else JoinQuality.NATIVE
+
+    /** Lowest bitrate asked for a smaller video, so a tiny size still plays cleanly. */
+    const val MIN_BITRATE = 250_000
+
+    /**
+     * Bits per second asked of the encoder; 0 lets it choose (no video to go by). Native keeps
+     * the source's. A smaller size gets the source's scaled by the pixel ratio to the power 0.75:
+     * smaller frames need a little more per pixel to look as clean, and the file still shrinks
+     * (1080p to 720p keeps about 54%, 4K to 1080p about 35%).
+     */
+    fun videoBitrate(sourceBitrate: Int, native: JoinCanvas, output: JoinCanvas): Int {
+        if (sourceBitrate <= 0) return 0
+        val ratio = output.width.toDouble() * output.height / (native.width.toDouble() * native.height)
+        if (ratio >= 1.0) return sourceBitrate
+        return minOf(sourceBitrate, maxOf(MIN_BITRATE, Math.round(sourceBitrate * Math.pow(ratio, 0.75)).toInt()))
+    }
+
+    /**
+     * Space kept after the file header for the video's index, so it can sit at the start. The
+     * muxer would keep 400 KB in every file, which outweighs a short or small video; this keeps
+     * about what the index needs (60 frames and 50 sound packets a second, 16 bytes each, plus
+     * the montage record of [recordBytes]). A longer index simply goes to the end of the file.
+     */
+    fun indexReserveBytes(totalMs: Long, recordBytes: Int = 0): Int =
+        (16_000L + recordBytes.coerceAtLeast(0) + totalMs.coerceAtLeast(0L) * 2_000L / 1_000L).coerceAtMost(400_000L).toInt()
+
+    /** A video's average bitrate from its file size and length, sound included; 0 if unknown. */
+    fun fileBitrate(media: JoinMedia): Int =
+        if (!media.isVideo || media.size <= 0L || media.durationMs <= 0L) 0
+        else (media.size * 8_000L / media.durationMs).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+
+    /**
+     * About how big the saved video will be, from the videos' own bitrates; null with no video to
+     * go by. Encoders do not hit the bitrate exactly, so this is a guide, not a promise.
+     */
+    fun estimatedBytes(request: JoinRequest): Long? {
+        val medias = request.clips.map { it.media }
+        val source = medias.maxOfOrNull { fileBitrate(it) } ?: 0
+        if (source <= 0) return null
+        val bitrate = videoBitrate(source, canvas(medias, JoinQuality.NATIVE), canvas(medias, request.quality))
+        return bitrate.toLong() * totalMs(request.clips, request.photoMs, request.transitions) / 8_000L
+    }
+
     /**
      * One MP4 video with only cuts, at native quality, is copied sample by sample: nothing is
      * encoded again and every audio and subtitle track stays. Anything else is encoded.
@@ -255,7 +318,12 @@ internal object MediaJoinRules {
         return media.isVideo && request.quality == JoinQuality.NATIVE && VideoTrimRules.copyable(media.name, media.mime)
     }
 
-    fun outputName(stamp: String): String = "Juntado_$stamp.mp4"
+    /** A merge is named after its first media, with " Merged" at the end ("Gustavo.mp4" gives "Gustavo Merged.mp4"). */
+    fun outputName(firstName: String): String {
+        val leaf = firstName.substringAfterLast('/').substringAfterLast('\\')
+        val base = leaf.substringBeforeLast('.', leaf).replace(Regex("[^\\p{L}\\p{N} _()-]"), "_").trim()
+        return "${base.ifBlank { "video" }} Merged.mp4"
+    }
 
     fun encode(record: JoinRecord): String = buildString {
         append(HEADER).append('\n')

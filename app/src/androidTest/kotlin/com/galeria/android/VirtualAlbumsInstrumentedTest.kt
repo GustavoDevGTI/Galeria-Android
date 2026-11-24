@@ -35,6 +35,34 @@ class VirtualAlbumsInstrumentedTest {
     )
 
     @Test
+    fun trashedItemsOfAHiddenAlbumShowOnlyWhileTheEyeRevealsIt() {
+        fun item(id: Long, name: String, folder: String, key: String) =
+            MediaItem(id, android.net.Uri.parse("content://media/external/images/media/$id"), name, "image/jpeg", id, 1L, folder, key, key)
+        val visible = item(1L, "praia.jpg", "Pictures/Praia/", "praia")
+        val secret = item(2L, "segredo.jpg", "Pictures/Segredo/", "segredo")
+        val other = item(3L, "outro.jpg", "Pictures/Outro/", "outro")
+        val trash = listOf(visible, secret, other)
+        val hidden = setOf("segredo", "outro")
+        fun shown(revealed: Set<String>, showAll: Boolean = false) =
+            VirtualAlbumRules.visibleTrash(trash, hidden, showAll, revealed).map { it.name }
+        // Hidden albums keep their trashed items out of the Lixeira.
+        assertEquals(listOf("praia.jpg"), shown(emptySet()))
+        // The eye on "Segredo": its items show, the other hidden album's stay out.
+        assertEquals(listOf("praia.jpg", "segredo.jpg"), shown(setOf("segredo")))
+        // Hidden again: only its items leave; the visible one stays.
+        assertEquals(listOf("praia.jpg"), shown(emptySet()))
+        // "Mostrar ocultos na lixeira" still shows everything.
+        assertEquals(listOf("praia.jpg", "segredo.jpg", "outro.jpg"), shown(emptySet(), showAll = true))
+        // The Lixeira album counts what it shows, and stays even with only hidden items.
+        val albums = VirtualAlbumRules.addCollections(emptyList(), emptyList(), emptySet(), listOf(secret),
+            hiddenKeys = hidden, keepTrash = true, revealedKeys = setOf("segredo"))
+        assertEquals(1, albums.single { it.key == VirtualAlbumRules.TRASH_KEY }.count)
+        val hiddenAgain = VirtualAlbumRules.addCollections(emptyList(), emptyList(), emptySet(), listOf(secret),
+            hiddenKeys = hidden, keepTrash = true)
+        assertEquals(0, hiddenAgain.single { it.key == VirtualAlbumRules.TRASH_KEY }.count)
+    }
+
+    @Test
     fun recentFavoritesAndTrashReferenceTheOriginalMedia() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val resolver = context.contentResolver

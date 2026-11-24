@@ -72,6 +72,60 @@ class MediaJoinInstrumentedTest {
         }
     }
 
+    @Test fun wholeMatchingVideosAreMergedByCopyingNamedAfterTheFirstAndStaySeparable() {
+        val suffix = System.nanoTime()
+        val folder = "Pictures/GaleriaMergeCopy-$suffix/"
+        val bytes = instrumentation.context.assets.open("playback-sample.mp4").use { it.readBytes() }
+        val first = insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "Gustavo-$suffix.mp4", "video/mp4", folder, bytes)
+        val second = insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "second-$suffix.mp4", "video/mp4", folder, bytes)
+        var merged: Uri? = null
+        try {
+            val clips = listOf(first, second).mapIndexed { index, uri ->
+                JoinClip(requireNotNull(MediaJoinExporter.probe(context, uri, "video/mp4", if (index == 0) "Gustavo-$suffix.mp4" else "second.mp4", bytes.size.toLong())))
+            }
+            val request = JoinRequest(clips, 4_000L, JoinQuality.NATIVE)
+            assertTrue(VideoConcatRules.eligible(request))
+            merged = MediaJoinExporter.export(context, request, {}, { false })
+            assertEquals("Gustavo-$suffix Merged.mp4", column(merged, MediaStore.MediaColumns.DISPLAY_NAME))
+            assertEquals(folder, column(merged, MediaStore.MediaColumns.RELATIVE_PATH))
+            // Copied, not encoded: the same tracks and exactly twice the samples of each video, up to
+            // its length (sound that runs past the picture would overlap the next video).
+            val source = samples(first, clips[0].media.durationMs * 1000L)
+            val result = samples(merged)
+            assertEquals(source.keys, result.keys)
+            source.forEach { (mime, stats) -> assertEquals("Faixa $mime copiada duas vezes", stats.first * 2 to stats.second * 2, result.getValue(mime)) }
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, merged)
+                val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
+                assertTrue("Duração $duration", abs(duration - MediaJoinRules.totalMs(clips, 4_000L)) < 400L)
+            } finally { retriever.release() }
+            // Separar still knows the montage.
+            assertEquals(JoinRecord(4_000L, clips), MediaJoinExporter.readRecord(context, merged))
+            assertEquals(emptySet<Int>(), MediaJoinExporter.keptPhotos(context, merged))
+        } finally {
+            listOfNotNull(first, second, merged).forEach { runCatching { context.contentResolver.delete(it, null, null) } }
+        }
+    }
+
+    /** Sample count and total bytes per track mime, of the samples before [untilUs]. */
+    private fun samples(uri: Uri, untilUs: Long = Long.MAX_VALUE): Map<String, Pair<Int, Long>> {
+        val extractor = android.media.MediaExtractor()
+        return try {
+            extractor.setDataSource(context, uri, null)
+            val mimes = (0 until extractor.trackCount).map { extractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME).orEmpty() }
+            val counts = IntArray(mimes.size); val sizes = LongArray(mimes.size)
+            mimes.indices.forEach { extractor.selectTrack(it) }
+            val buffer = java.nio.ByteBuffer.allocateDirect(4 * 1024 * 1024)
+            while (extractor.sampleTrackIndex >= 0) {
+                val track = extractor.sampleTrackIndex
+                if (extractor.sampleTime < untilUs) { counts[track]++; sizes[track] += extractor.readSampleData(buffer, 0).toLong() }
+                if (!extractor.advance()) break
+            }
+            mimes.indices.associate { mimes[it] to (counts[it] to sizes[it]) }
+        } finally { extractor.release() }
+    }
+
     @Test fun cancellingSavesNothing() {
         val suffix = System.nanoTime()
         val folder = "Pictures/GaleriaJoinCancel-$suffix/"

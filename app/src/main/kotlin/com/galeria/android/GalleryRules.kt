@@ -285,8 +285,14 @@ object VirtualAlbumRules {
     fun isHiddenMedia(item: MediaItem, hiddenKeys: Set<String>): Boolean =
         item.albumKey in hiddenKeys || AlbumRules.isHidden(item.relativePath, item.albumKey)
 
-    fun visibleTrash(items: List<MediaItem>, hiddenKeys: Set<String>, showHidden: Boolean): List<MediaItem> =
-        if (showHidden) items else items.filterNot { isHiddenMedia(it, hiddenKeys) }
+    /**
+     * What the Lixeira shows. Items from a hidden album stay out of it, except while that album is
+     * revealed with the eye ([revealedKeys]): then they show until it is hidden again. With mixed
+     * items, only the ones from the album that is hidden again leave. [showHidden] shows them all.
+     */
+    fun visibleTrash(items: List<MediaItem>, hiddenKeys: Set<String>, showHidden: Boolean,
+        revealedKeys: Set<String> = emptySet()): List<MediaItem> =
+        if (showHidden) items else items.filterNot { isHiddenMedia(it, hiddenKeys) && it.albumKey !in revealedKeys }
 
     fun availableMedia(physicalAlbums: List<AlbumItem>, media: List<MediaItem>, hiddenKeys: Set<String>): List<MediaItem> =
         if (physicalAlbums.any { it.key == "all_media" }) {
@@ -305,17 +311,21 @@ object VirtualAlbumRules {
         favoritesName: String = "Favoritos",
         trashName: String = "Lixeira",
         hiddenKeys: Set<String> = emptySet(),
-        showHiddenTrash: Boolean = false
+        showHiddenTrash: Boolean = false,
+        /** With the trash on, the Lixeira stays even when empty (or holding only hidden items). */
+        keepTrash: Boolean = false,
+        /** Hidden albums revealed with the eye: their trashed items show in the Lixeira meanwhile. */
+        revealedKeys: Set<String> = emptySet()
     ): List<AlbumItem> {
         val availableMedia = availableMedia(physicalAlbums, visibleMedia, hiddenKeys)
         val favoriteKeys = favoriteUris.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
         val favorites = availableMedia.filter { MediaIdentityRules.canonicalKey(it.uri.toString()) in favoriteKeys }
-        val displayedTrash = visibleTrash(trashedMedia, hiddenKeys, showHiddenTrash)
+        val displayedTrash = visibleTrash(trashedMedia, hiddenKeys, showHiddenTrash, revealedKeys)
         return buildList {
             addAll(physicalAlbums.filter { !isVirtual(it.key) && it.count > 0 })
             if (availableMedia.isNotEmpty()) add(aggregate(RECENT_KEY, recentName, availableMedia))
             if (favorites.isNotEmpty()) add(aggregate(FAVORITES_KEY, favoritesName, favorites))
-            if (displayedTrash.isNotEmpty()) add(aggregate(TRASH_KEY, trashName, displayedTrash))
+            if (displayedTrash.isNotEmpty() || keepTrash) add(aggregate(TRASH_KEY, trashName, displayedTrash))
         }
     }
 

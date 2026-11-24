@@ -54,9 +54,9 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção pelos metadados da câmera (Google e Samsung) e reprodução na própria foto pelo botão no rodapé; Editar escolhe qual quadro do vídeo fica como foto, guardando a original dentro do arquivo
 - Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção diretamente sobre a imagem, alças de ajuste, cópia do trecho escolhido e seleção integral
 - Ícone de texto exibido automaticamente quando a foto aberta contém texto reconhecido; análise local adiada durante a troca rápida de fotos
-- Juntar fotos e vídeos em um vídeo só, pelo Menu da seleção, na ordem dos toques; o mesmo editor serve para cortar um vídeo sozinho, com quadrados arrastáveis, linha do tempo, cortes no meio, tempo das fotos de 4 a 10 s, qualidade nativa e transições Seco, Dissolver, Escurecer, Deslizar e Zoom
-- Relógio de 48 horas nas mídias usadas em uma junção (vídeos sempre; fotos por opção); tocar no relógio mantém a mídia, e ao fim do prazo ela vai para a lixeira
-- Separar devolve as mídias de um vídeo juntado pelo app sem criar duplicatas: usa os originais existentes, restaura os da lixeira e refaz só o que foi apagado
+- Mesclar fotos e vídeos em um vídeo só, pelo Menu da seleção, na ordem dos toques, com o nome do primeiro vídeo seguido de "Merged"; o mesmo editor serve para cortar ou reduzir um vídeo sozinho, com quadrados arrastáveis e removíveis, linha do tempo, cortes no meio, tempo das fotos de 4 a 10 s, qualidade nativa ou resoluções menores (2160p a 360p, só as abaixo da original, com tamanho estimado) e uma transição para todas as passagens: Seco, Dissolver, Escurecer, Deslizar ou Zoom; vídeos MP4 inteiros e compatíveis são mesclados por cópia, sem recodificar
+- Relógio de 48 horas nas mídias usadas em uma mesclagem (vídeos sempre; fotos por opção); tocar no relógio mantém a mídia, e ao fim do prazo ela vai para a lixeira
+- Separar devolve as mídias de um vídeo mesclado pelo app sem criar duplicatas: usa os originais existentes, restaura os da lixeira e refaz só o que foi apagado
 - Agrupar mídias do álbum por tipo, extensão, dia, mês ou tamanho do arquivo, com o título de cada grupo acima das miniaturas
 - Barra simples de reprodução no visualizador de vídeo; um ícone ao lado abre/fecha a linha do tempo sob demanda
 - Linha do tempo horizontal contínua com miniaturas por segundo em vídeos e na prévia de corte; deslizar move a faixa sob o marcador central e atualiza o vídeo durante o gesto
@@ -89,7 +89,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Submenu de ocultos limitado aos álbuns visíveis ou já exibidos anteriormente; novos álbuns ocultos só são procurados pelo botão `Carregar ocultos`
 - Menus e submenus acompanham a cor do tema escolhido, mantendo contraste adequado em temas claros e escuros
 - No seletor de tema, o cartão usa o fundo principal da galeria e a prévia mostra a cor secundária real dos submenus, com atualização em tempo real.
-- Editor com tema preto e ferramentas por ícones: recorte por cantos/bordas, proporções, espelhamento, giro, filtros e redimensionamento em pixels
+- Editor com tema preto e ferramentas por ícones: recorte por cantos/bordas, proporções, espelhamento, giro, filtros e redimensionamento para resoluções menores que a original (com tamanho estimado) ou largura personalizada em pixels
 - Texto digitado diretamente sobre a imagem e pincel com seis combinações de espessura/tipo e espectro de cores; cada traço mantém seu estilo
 - OCR acionável ao segurar uma foto e também dentro do editor; seleção acompanha o zoom e considera a imagem editada, sem alterar o arquivo original
 - Exportação de imagem para PDF
@@ -134,7 +134,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A versão 0.9.23 junta fotos e vídeos num editor único (o mesmo que corta um vídeo), com transições, relógio de 48 horas nas mídias usadas e Separar para devolvê-las; os álbuns também passam a agrupar por tamanho, com títulos nos grupos. Consulte as [notas da release](docs/RELEASE-0.9.23.md).
+A versão 0.9.24 renomeia Juntar para Mesclar, acelera a mesclagem de vídeos compatíveis, traz mais resoluções para reduzir vídeos e fotos, uma transição única no editor, remoção de mídias da mesclagem e a Lixeira sempre visível quando ativada. Consulte as [notas da release](docs/RELEASE-0.9.24.md).
 
 Os testes locais ficam em `app/src/test/kotlin` e as integrações Android em `app/src/androidTest/kotlin`. Os comandos por área, critérios de entrega e evidências estão no [guia de validação](docs/TESTES-VALIDACAO.md).
 
@@ -265,7 +265,8 @@ Se o Java no Windows falhar com `Unable to establish loopback connection` antes 
 - Coleções virtuais de Recentes e Favoritos agregam mídias sem duplicar os arquivos originais
 - Recentes e Favoritos não revelam mídias de pastas ocultas; Favoritos só aparece quando contém pelo menos uma mídia
 - Lixeira com restauração e exclusão definitiva usa o MediaStore no Android 11+ e armazenamento de recuperação próprio nas versões anteriores
-- Itens excluídos de pastas ocultas ficam ocultos também na Lixeira, com alternância explícita no menu da Lixeira e no menu principal quando não houver itens visíveis
+- Itens excluídos de pastas ocultas ficam ocultos também na Lixeira, com alternância explícita no menu da Lixeira e no menu principal quando não houver itens visíveis; enquanto o olho revela o álbum oculto de origem, os itens dele aparecem na Lixeira e somem de novo quando o álbum volta a ficar oculto
+- Com a lixeira ativada, o álbum Lixeira continua visível mesmo vazio
 - Recentes fica sempre em primeiro, seguido dos álbuns pinados pelo usuário. Câmera, Favoritos, Downloads e a pasta ativa de Capturas de tela aparecem depois, ordenados pela atividade mais recente; os demais mantêm a ordenação escolhida.
 - Ao favoritar uma mídia, Favoritos ganha destaque pela data da adição, mesmo se a foto for antiga. Entre pastas de capturas duplicadas, só a que contém as capturas mais recentes recebe destaque automático; a pasta legada continua como álbum comum, sem exclusão ou movimentação de arquivos. A identificação prioriza a data de captura disponível no MediaStore, com fallback às datas disponíveis quando ausente.
 - Álbuns podem ser fixados ou desafixados pela seleção; favoritar continua sendo uma ação sobre mídias individuais.

@@ -77,6 +77,8 @@ class ImageEditActivity : ComponentActivity() {
     private lateinit var filterRow: LinearLayout
     private var selectedFilter = EditorFilter.ORIGINAL
     private var cropOnly = false
+    /** The original file's byte count and pixel size, for the resize estimates. */
+    private var sourceFile: Pair<Long, PixelSize>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(android.R.style.Theme_Material_NoActionBar)
@@ -161,7 +163,7 @@ class ImageEditActivity : ComponentActivity() {
             transformImage { source -> Bitmap.createBitmap(source, 0, 0, source.width, source.height,
                 Matrix().apply { postRotate(90f) }, true) }
         }
-        val resize = EditorUi.button(this, R.drawable.ic_resize, getString(R.string.msg_resize_image)) { commitText(); showResizeInput() }
+        val resize = EditorUi.button(this, R.drawable.ic_resize, getString(R.string.msg_resize_image)) { commitText(); showResizeOptions() }
         textButton = EditorUi.button(this, R.drawable.ic_text, getString(R.string.image_edit_text)) {
                 showTextInput()
                 refreshToolButtons()
@@ -311,6 +313,47 @@ class ImageEditActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * The photo's current size, then each usual size smaller than it (with about how big the
+     * saved photo gets), then a custom width.
+     */
+    private fun showResizeOptions() {
+        val (width, height) = editor.currentSize() ?: return
+        val shortSides = ImageResizeRules.options(width, height)
+        val sizes = listOf(PixelSize(width, height)) + shortSides.map { ImageResizeRules.scaled(width, height, it) }
+        val names = listOf(getString(R.string.image_resize_current)) + shortSides.map { "${it}p" }
+        val labels = sizes.mapIndexed { index, size ->
+            val estimate = sourceFile?.let { (bytes, file) -> ImageResizeRules.estimatedBytes(bytes, file.width, file.height, size) }
+            buildString {
+                append(names[index]).append(" · ").append(size.width).append('×').append(size.height)
+                estimate?.let { append(" · ≈ ").append(android.text.format.Formatter.formatShortFileSize(this@ImageEditActivity, it)) }
+            }
+        } + getString(R.string.image_resize_custom)
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.msg_resize_image))
+            .setSingleChoiceItems(labels.toTypedArray(), 0) { dialog, which ->
+                dialog.dismiss()
+                when (which) {
+                    0 -> Unit
+                    labels.lastIndex -> showResizeInput()
+                    else -> sizes[which].let { target -> transformImage { source -> scaleDown(source, target) } }
+                }
+            }
+            .setNegativeButton(getString(R.string.action_cancel), null)
+            .show()
+    }
+
+    /** Scales in halves first, then to the exact size, so a large reduction stays smooth. */
+    private fun scaleDown(source: Bitmap, target: PixelSize): Bitmap {
+        var current = source
+        for (step in ImageResizeRules.steps(PixelSize(source.width, source.height), target)) {
+            val next = Bitmap.createScaledBitmap(current, step.width, step.height, true)
+            if (current !== source && next !== current) current.recycle()
+            current = next
+        }
+        return current
+    }
+
     private fun showResizeInput() {
         val size = editor.currentSize() ?: return
         val input = EditText(this).apply {
@@ -331,7 +374,7 @@ class ImageEditActivity : ComponentActivity() {
                     transformImage { source ->
                         val height = (source.height.toLong() * width / source.width).coerceAtLeast(1L)
                         require(height <= 4096L)
-                        Bitmap.createScaledBitmap(source, width, height.toInt(), true)
+                        scaleDown(source, PixelSize(width, height.toInt()))
                     }
                 }
             }
@@ -356,6 +399,15 @@ class ImageEditActivity : ComponentActivity() {
 
     private fun loadImage() {
         executor.execute {
+            val file = runCatching {
+                val bytes = contentResolver.query(sourceUri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)
+                    ?.use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
+                    ?: contentResolver.openFileDescriptor(sourceUri, "r")?.use { it.statSize }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                contentResolver.openInputStream(sourceUri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                if (bytes != null && bytes > 0L && bounds.outWidth > 0 && bounds.outHeight > 0) bytes to PixelSize(bounds.outWidth, bounds.outHeight) else null
+            }.getOrNull()
+            runOnUiThread { sourceFile = file }
             try {
                 val bitmap = decodeBitmap(sourceUri, 4096)
                 runOnUiThread {

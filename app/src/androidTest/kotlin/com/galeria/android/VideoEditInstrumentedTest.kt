@@ -15,14 +15,19 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.RootMatchers.isPlatformPopup
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
+import androidx.test.espresso.matcher.ViewMatchers.withText
+import org.hamcrest.Matchers.startsWith
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -121,6 +126,85 @@ class VideoEditInstrumentedTest {
             context.contentResolver.delete(source, null, null)
         }
     }
+
+    @Test fun makingOneVideoSmallerWritesItAtTheChosenSizeAndShrinksTheFile() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = insertSample(context)
+        var result: Uri? = null
+        try {
+            val sourceBytes = byteSize(context, source)
+            val media = requireNotNull(MediaJoinExporter.probe(context, source, "video/mp4", "sample.mp4", sourceBytes))
+            val options = MediaJoinRules.qualityOptions(listOf(media))
+            val shortSide = minOf(media.width, media.height)
+            assertTrue("Só tamanhos menores que o original: $options", options.size > 1 && options.drop(1).all { it.maxShortSide!! < shortSide })
+            val smallest = options.last()
+            val request = JoinRequest(listOf(JoinClip(media)), 5_000L, smallest)
+            assertFalse("Diminuir exige gravar de novo", MediaJoinRules.copiesWithoutEncoding(request))
+            result = MediaJoinExporter.export(context, request, {}, { false })
+            val written = requireNotNull(MediaJoinExporter.probe(context, result, "video/mp4", "out.mp4", 1L))
+            val expected = MediaJoinRules.canvas(listOf(media), smallest)
+            assertEquals("Grava no tamanho escolhido", expected.width to expected.height, written.width to written.height)
+            val writtenBytes = byteSize(context, result)
+            assertTrue("O arquivo fica menor: $writtenBytes < $sourceBytes\nORIGEM ${describe(context, source)}\nSAIDA ${describe(context, result)}", writtenBytes < sourceBytes)
+            val name = context.contentResolver.query(result, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)!!.use { it.moveToFirst(); it.getString(0) }
+            assertTrue("Nome com o novo tamanho: $name", name.contains("-${smallest.maxShortSide}p-"))
+        } finally {
+            result?.let { context.contentResolver.delete(it, null, null) }
+            context.contentResolver.delete(source, null, null)
+        }
+    }
+
+    @Test fun qualityMenuOnlyOffersSmallerSizesAndTheChipShowsTheChoice() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = insertSample(context)
+        try {
+            val media = requireNotNull(MediaJoinExporter.probe(context, source, "video/mp4", "sample.mp4", byteSize(context, source)))
+            val options = MediaJoinRules.qualityOptions(listOf(media))
+            val native = MediaJoinRules.canvas(listOf(media), JoinQuality.NATIVE)
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
+                putExtra("uri", source.toString())
+                putExtra("name", "sample.mp4")
+                putExtra("mime", "video/mp4")
+                putExtra("path", "Movies/GaleriaEditorTest/")
+                putExtra("album_key", "Movies/GaleriaEditorTest/")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }).use {
+                onView(withContentDescription("Editar")).perform(clickClickableAncestor())
+                waitFor { onView(withContentDescription(R.string.join_quality)).check(matches(withText("Nativa"))) }
+                onView(withContentDescription(R.string.join_quality)).perform(click())
+                // Native shows its real size; sizes as big as the video are not offered.
+                waitFor { onView(withText(startsWith("Nativa · ${native.width}×${native.height}"))).inRoot(isPlatformPopup()).check(matches(isDisplayed())) }
+                onView(withText(startsWith("${minOf(native.width, native.height)}p"))).inRoot(isPlatformPopup()).check(doesNotExist())
+                val smallest = requireNotNull(options.last().maxShortSide)
+                onView(withText(startsWith("${smallest}p · "))).inRoot(isPlatformPopup()).perform(click())
+                waitFor { onView(withContentDescription(R.string.join_quality)).check(matches(withText("${smallest}p"))) }
+            }
+        } finally {
+            context.contentResolver.delete(source, null, null)
+        }
+    }
+
+    private fun describe(context: Context, uri: Uri): String {
+        val extractor = MediaExtractor()
+        return try {
+            extractor.setDataSource(context, uri, null)
+            val formats = (0 until extractor.trackCount).map { extractor.getTrackFormat(it) }
+            val bytes = LongArray(formats.size); val counts = IntArray(formats.size)
+            formats.indices.forEach { extractor.selectTrack(it) }
+            val buffer = ByteBuffer.allocateDirect(4 * 1024 * 1024)
+            while (extractor.sampleTrackIndex >= 0) {
+                val track = extractor.sampleTrackIndex
+                bytes[track] += extractor.readSampleData(buffer, 0).toLong(); counts[track]++
+                if (!extractor.advance()) break
+            }
+            val retriever = android.media.MediaMetadataRetriever()
+            val stated = try { retriever.setDataSource(context, uri); retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_BITRATE) } finally { retriever.release() }
+            "statedBitrate=$stated " + formats.indices.joinToString(" | ") { "$it ${formats[it]} samples=${counts[it]} bytes=${bytes[it]}" }
+        } finally { extractor.release() }
+    }
+
+    private fun byteSize(context: Context, uri: Uri): Long =
+        requireNotNull(context.contentResolver.openFileDescriptor(uri, "r")).use { it.statSize }
 
     private fun waitFor(check: () -> Unit) {
         val deadline = android.os.SystemClock.uptimeMillis() + 10_000L

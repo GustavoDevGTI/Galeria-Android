@@ -27,10 +27,11 @@ internal object VideoTrimRules {
         return start..end.coerceIn(start + minimum, durationMs)
     }
 
-    fun outputName(sourceName: String, timestamp: Long): String {
+    /** The copy's name: the original's, then [mark] (what was done to it) and [timestamp]. */
+    fun outputName(sourceName: String, timestamp: Long, mark: String = "cortado"): String {
         val leaf = sourceName.substringAfterLast('/').substringAfterLast('\\')
         val base = leaf.substringBeforeLast('.', leaf).replace(Regex("[^\\p{L}\\p{N} _-]"), "_").trim()
-        return "${base.ifBlank { "video" }}-cortado-$timestamp.mp4"
+        return "${base.ifBlank { "video" }}-$mark-$timestamp.mp4"
     }
 
     /** True when the source can be cut by copying its samples, without encoding again. */

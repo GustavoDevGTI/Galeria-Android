@@ -50,6 +50,21 @@ class BrowseLayoutRulesTest {
     }
 
     @Test
+    fun holdingAnOptionOverTheBarPreviewsWhereItLands() {
+        val three = BrowseLayoutRules.Layout(listOf("sort", "organize", "settings"), defaults)
+        // From the panel: room opens at the finger.
+        assertEquals(listOf("sort", "theme", "organize", "settings"), BrowseLayoutRules.previewBar(three, "theme", false, 1))
+        // A full bar has no room to open.
+        assertEquals(null, BrowseLayoutRules.previewBar(layout, "theme", false, 1))
+        // From the bar itself: the others close behind it.
+        assertEquals(listOf("organize", "hidden", "sort", "settings"), BrowseLayoutRules.previewBar(layout, "sort", true, 3))
+        assertEquals(bar, BrowseLayoutRules.previewBar(layout, "sort", true, 0))
+        // Four buttons plus Menu across 500 px: centres every 100 px.
+        assertEquals(listOf(50f, 150f, 250f, 350f, 450f), BrowseLayoutRules.slotCenters(5, 0f, 500f))
+        assertEquals(emptyList<Float>(), BrowseLayoutRules.slotCenters(0, 0f, 500f))
+    }
+
+    @Test
     fun savedLayoutsSurviveNewAndRemovedOptions() {
         // Saved order first, an option that no longer exists is dropped, new options join in their default place.
         assertEquals(listOf("theme", "sort", "organize", "hidden", "settings", "filter", "spacing", "refresh"),

@@ -392,6 +392,16 @@ class AlbumRulesTest {
     }
 
     @Test
+    fun withTheTrashOnTheLixeiraStaysEvenWhenEmpty() {
+        val empty = VirtualAlbumRules.addCollections(emptyList(), emptyList(), emptySet(), emptyList(), keepTrash = true)
+        val trash = empty.single { it.key == VirtualAlbumRules.TRASH_KEY }
+        assertEquals(0, trash.count)
+        assertNull(trash.cover)
+        // With the trash off, deleting is permanent: nothing to show.
+        assertFalse(VirtualAlbumRules.addCollections(emptyList(), emptyList(), emptySet(), emptyList()).any { it.key == VirtualAlbumRules.TRASH_KEY })
+    }
+
+    @Test
     fun virtualAlbumsCannotBeMoveTargetsAndAggregatesRemainAfterMove() {
         assertTrue(VirtualAlbumRules.isVirtual(VirtualAlbumRules.FAVORITES_KEY))
         assertTrue(VirtualAlbumRules.remainsAfterMove(VirtualAlbumRules.RECENT_KEY))

@@ -30,6 +30,8 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.rule.GrantPermissionRule
+import org.hamcrest.Matchers.startsWith
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -124,6 +126,9 @@ class ImageEditorInstrumentedTest {
                 onView(withContentDescription("Cortar")).perform(click())
                 onView(withContentDescription("Girar")).perform(click())
                 onView(withContentDescription("Redimensionar imagem")).perform(scrollTo(), click())
+                // 160×120 is below every usual size: only the current one and a custom width.
+                onView(withText(startsWith("Atual · 120×160"))).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText("Largura personalizada…")).inRoot(isDialog()).perform(click())
                 onView(isAssignableFrom(EditText::class.java)).perform(replaceText("80"))
                 onView(withText("Aplicar")).perform(click())
                 onView(withContentDescription("Texto")).perform(scrollTo(), click())
@@ -149,6 +154,66 @@ class ImageEditorInstrumentedTest {
         } finally {
             output?.let { context.contentResolver.delete(it, null, null) }
             context.contentResolver.delete(source, null, null)
+        }
+    }
+
+    @Test fun resizeOffersOnlySmallerUsualSizesAndSavesTheChosenOne() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "resize-${System.nanoTime()}.jpg"
+        val resolver = context.contentResolver
+        val source = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/GaleriaEditorTest/")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }))
+        resolver.openOutputStream(source)?.use { output ->
+            val bitmap = Bitmap.createBitmap(1600, 1200, Bitmap.Config.ARGB_8888)
+            for (y in 0 until 1200) for (x in 0 until 1600) bitmap.setPixel(x, y, Color.rgb(x % 256, y % 256, (x + y) % 256))
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output); bitmap.recycle()
+        }
+        resolver.update(source, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+        val outputName = name.removeSuffix(".jpg") + "-editada.jpg"
+        var output: Uri? = null
+        try {
+            ActivityScenario.launch<ImageEditActivity>(Intent(context, ImageEditActivity::class.java).apply {
+                putExtra("uri", source.toString()); putExtra("name", name); putExtra("mime", "image/jpeg")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }).use {
+                waitForText("Editar imagem")
+                onView(withContentDescription("Redimensionar imagem")).perform(scrollTo(), click())
+                // The current size with its estimate; 1200p and up would not make it smaller.
+                onView(withText(startsWith("Atual · 1600×1200 · ≈ "))).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText(startsWith("1440p"))).inRoot(isDialog()).check(doesNotExist())
+                onView(withText(startsWith("1080p · 1440×1080 · ≈ "))).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText(startsWith("360p · 480×360"))).inRoot(isDialog()).perform(click())
+                val readyDeadline = System.currentTimeMillis() + 10_000L
+                var resized = false
+                while (!resized && System.currentTimeMillis() < readyDeadline) {
+                    it.onActivity { activity ->
+                        val canvas = activity.window.decorView.findViewWithTag<android.view.View>("editor_canvas")
+                        resized = canvas.javaClass.getDeclaredMethod("currentSize").apply { isAccessible = true }.invoke(canvas) == (480 to 360)
+                    }
+                    if (!resized) Thread.sleep(100L)
+                }
+                assertTrue("A foto deve ficar em 480×360 no editor", resized)
+                onView(withContentDescription("Salvar cópia")).perform(click())
+                val deadline = System.currentTimeMillis() + 20_000L
+                while (output == null && System.currentTimeMillis() < deadline) {
+                    output = findImage(context, outputName)
+                    if (output == null) Thread.sleep(150L)
+                }
+            }
+            assertNotNull("A cópia reduzida não apareceu no MediaStore", output)
+            val saved = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(requireNotNull(output))?.use { BitmapFactory.decodeStream(it, null, saved) }
+            assertEquals(480 to 360, saved.outWidth to saved.outHeight)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(source)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            assertEquals("O original fica intacto", 1600 to 1200, bounds.outWidth to bounds.outHeight)
+        } finally {
+            output?.let { resolver.delete(it, null, null) }
+            resolver.delete(source, null, null)
         }
     }
 

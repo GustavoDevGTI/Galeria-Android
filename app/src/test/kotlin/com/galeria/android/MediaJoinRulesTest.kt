@@ -56,8 +56,98 @@ class MediaJoinRulesTest {
         assertEquals(JoinCanvas(3840, 2160), MediaJoinRules.canvas(listOf(landscapeVideo, landscapePhoto), JoinQuality.NATIVE))
         // Mixed: portrait, keeping the largest video's short side, so the 4K video is not reduced.
         assertEquals(JoinCanvas(2160, 3840), MediaJoinRules.canvas(listOf(portraitVideo, landscapeVideo, photo), JoinQuality.NATIVE))
-        assertEquals(JoinCanvas(1080, 1920), MediaJoinRules.canvas(listOf(portraitVideo, landscapeVideo), JoinQuality.P1080))
-        assertEquals(JoinCanvas(720, 1280), MediaJoinRules.canvas(listOf(landscapeVideo, portraitVideo), JoinQuality.P720))
+        assertEquals(JoinCanvas(1080, 1920), MediaJoinRules.canvas(listOf(portraitVideo, landscapeVideo), JoinQuality(1080)))
+        assertEquals(JoinCanvas(720, 1280), MediaJoinRules.canvas(listOf(landscapeVideo, portraitVideo), JoinQuality(720)))
+    }
+
+    @Test fun qualityChoicesOnlyOfferSizesBelowTheNativeOne() {
+        val native = JoinQuality.NATIVE
+        // A 1080p video: 1080p and up would give the same video, so they are not offered.
+        assertEquals(listOf(native, JoinQuality(720), JoinQuality(540), JoinQuality(480), JoinQuality(360)),
+            MediaJoinRules.qualityOptions(listOf(portraitVideo)))
+        assertEquals(listOf(native) + listOf(1440, 1080, 720, 540, 480, 360).map { JoinQuality(it) },
+            MediaJoinRules.qualityOptions(listOf(landscapeVideo)))
+        val small = portraitVideo.copy(width = 480, height = 854)
+        assertEquals(listOf(native, JoinQuality(360)), MediaJoinRules.qualityOptions(listOf(small)))
+        assertEquals(listOf(native), MediaJoinRules.qualityOptions(listOf(small.copy(width = 360, height = 640))))
+        // A choice that would not lower the size counts as Native.
+        assertEquals(native, MediaJoinRules.effectiveQuality(listOf(small), JoinQuality(720)))
+        assertEquals(JoinQuality(360), MediaJoinRules.effectiveQuality(listOf(small), JoinQuality(360)))
+        // Lowering keeps the shape: 1080×1920 at 540p is 540×960.
+        assertEquals(JoinCanvas(540, 960), MediaJoinRules.canvas(listOf(portraitVideo), JoinQuality(540)))
+    }
+
+    @Test fun aSmallerSizeAsksForFewerBitsSoTheFileShrinks() {
+        val full = JoinCanvas(1080, 1920)
+        assertEquals(17_000_000, MediaJoinRules.videoBitrate(17_000_000, full, full))
+        val at720 = MediaJoinRules.videoBitrate(17_000_000, full, JoinCanvas(720, 1280))
+        assertTrue("720p fica com cerca de 54% dos bits: $at720", at720 in 9_000_000..9_500_000)
+        // Never more than the source, never below the floor, nothing to go by gives 0.
+        assertEquals(1_000_000, MediaJoinRules.videoBitrate(1_000_000, full, JoinCanvas(2160, 3840)))
+        assertEquals(MediaJoinRules.MIN_BITRATE, MediaJoinRules.videoBitrate(300_000, JoinCanvas(2160, 3840), JoinCanvas(360, 640)))
+        assertEquals(0, MediaJoinRules.videoBitrate(0, full, JoinCanvas(720, 1280)))
+    }
+
+    @Test fun theSizeEstimateFollowsTheVideosBitrateAndTheChosenSize() {
+        // 12 s and 24 MB: 16 Mbit/s.
+        val video = portraitVideo.copy(size = 24_000_000L)
+        assertEquals(16_000_000, MediaJoinRules.fileBitrate(video))
+        val clip = JoinClip(video)
+        assertEquals(24_000_000L, MediaJoinRules.estimatedBytes(JoinRequest(listOf(clip), 5_000L, JoinQuality.NATIVE)))
+        val smaller = MediaJoinRules.estimatedBytes(JoinRequest(listOf(clip), 5_000L, JoinQuality(720)))!!
+        assertTrue("720p ≈ 13 MB: $smaller", smaller in 12_500_000L..14_000_000L)
+        // Cutting half of it halves the estimate.
+        val half = MediaJoinRules.estimatedBytes(JoinRequest(listOf(JoinClip(video, listOf(0L..6_000L))), 5_000L, JoinQuality.NATIVE))
+        assertEquals(12_000_000L, half)
+        assertNull(MediaJoinRules.estimatedBytes(JoinRequest(listOf(JoinClip(photo)), 5_000L, JoinQuality.NATIVE)))
+    }
+
+    @Test fun theIndexReserveGrowsWithTheVideoInsteadOfAFixed400KB() {
+        assertEquals(18_000, MediaJoinRules.indexReserveBytes(1_000L))
+        assertEquals(19_000, MediaJoinRules.indexReserveBytes(1_000L, 1_000))
+        assertEquals(136_000, MediaJoinRules.indexReserveBytes(60_000L))
+        assertEquals(400_000, MediaJoinRules.indexReserveBytes(3_600_000L))
+    }
+
+    @Test fun aMergeIsNamedAfterItsFirstMediaWithMergedAtTheEnd() {
+        assertEquals("Gustavo Merged.mp4", MediaJoinRules.outputName("Gustavo.mp4"))
+        assertEquals("Praia 2024 Merged.mp4", MediaJoinRules.outputName("Praia 2024.jpg"))
+        assertEquals("video Merged.mp4", MediaJoinRules.outputName(".mp4"))
+        val merge = JoinRequest(listOf(JoinClip(portraitVideo), JoinClip(photo)), 5_000L, JoinQuality.NATIVE)
+        assertEquals("a Merged.mp4", MediaJoinExporter.defaultName(merge, 42L))
+    }
+
+    @Test fun wholeMatchingVideosAtNativeAreMergedByCopying() {
+        val second = portraitVideo.copy(uri = "content://v/9")
+        val whole = JoinRequest(listOf(JoinClip(portraitVideo), JoinClip(second)), 5_000L, JoinQuality.NATIVE)
+        assertTrue(VideoConcatRules.eligible(whole))
+        // A photo, a cut, a transition, a smaller size or a single video: encoded (or copied by the trimmer).
+        assertFalse(VideoConcatRules.eligible(whole.copy(clips = whole.clips + JoinClip(photo))))
+        assertFalse(VideoConcatRules.eligible(whole.copy(clips = listOf(JoinClip(portraitVideo, listOf(0L..4_000L)), JoinClip(second)))))
+        assertFalse(VideoConcatRules.eligible(whole.copy(transitions = listOf(JoinTransition.FADE))))
+        assertFalse(VideoConcatRules.eligible(whole.copy(quality = JoinQuality(720))))
+        assertFalse(VideoConcatRules.eligible(whole.copy(clips = whole.clips.take(1))))
+        assertFalse(VideoConcatRules.eligible(whole.copy(clips = listOf(JoinClip(portraitVideo.copy(name = "a.webm", mime = "video/webm")), JoinClip(second)))))
+    }
+
+    @Test fun onlyVideosWithTheSameTracksAndSetupAreCopiedTogether() {
+        val video = TrackSignature("video/avc", 1920, 1080, setup = listOf("0001", "0002"))
+        val audio = TrackSignature("audio/mp4a-latm", sampleRate = 48_000, channels = 2, setup = listOf("1190"))
+        assertTrue(VideoConcatRules.compatible(listOf(listOf(video, audio), listOf(video, audio)), listOf(90, 90)))
+        assertFalse("Outra resolução", VideoConcatRules.compatible(listOf(listOf(video, audio), listOf(video.copy(width = 1280, height = 720), audio)), listOf(0, 0)))
+        assertFalse("Outro ajuste do codificador", VideoConcatRules.compatible(listOf(listOf(video), listOf(video.copy(setup = listOf("0003", "0002")))), listOf(0, 0)))
+        assertFalse("Outra rotação", VideoConcatRules.compatible(listOf(listOf(video), listOf(video)), listOf(0, 90)))
+        assertFalse("Um sem som", VideoConcatRules.compatible(listOf(listOf(video, audio), listOf(video)), listOf(0, 0)))
+        assertFalse("Legenda", VideoConcatRules.compatible(listOf(listOf(video, TrackSignature("text/vtt")), listOf(video, TrackSignature("text/vtt"))), listOf(0, 0)))
+        assertEquals(listOf(0L, 12_000_000L, 20_000_000L), VideoConcatRules.offsetsUs(listOf(12_000L, 8_000L, 5_000L)))
+    }
+
+    @Test fun aVideoOnlyMadeSmallerIsNamedByItsNewSize() {
+        val whole = JoinRequest(listOf(JoinClip(portraitVideo)), 5_000L, JoinQuality(720))
+        assertEquals("a-720p-42.mp4", MediaJoinExporter.defaultName(whole, 42L))
+        val cut = whole.copy(clips = listOf(JoinClip(portraitVideo, listOf(0L..4_000L))))
+        assertEquals("a-cortado-42.mp4", MediaJoinExporter.defaultName(cut, 42L))
+        assertEquals("a-cortado-42.mp4", MediaJoinExporter.defaultName(cut.copy(quality = JoinQuality.NATIVE), 42L))
     }
 
     @Test fun photosAloneKeepTheirShapeUpTo4K() {
@@ -71,7 +161,7 @@ class MediaJoinRulesTest {
     @Test fun oneCutVideoIsCopiedAndEverythingElseIsEncoded() {
         val cut = JoinClip(portraitVideo, listOf(0L..4_000L, 7_000L..12_000L))
         assertTrue(MediaJoinRules.copiesWithoutEncoding(JoinRequest(listOf(cut), 5_000L, JoinQuality.NATIVE)))
-        assertFalse(MediaJoinRules.copiesWithoutEncoding(JoinRequest(listOf(cut), 5_000L, JoinQuality.P720)))
+        assertFalse(MediaJoinRules.copiesWithoutEncoding(JoinRequest(listOf(cut), 5_000L, JoinQuality(720))))
         assertFalse(MediaJoinRules.copiesWithoutEncoding(JoinRequest(listOf(cut, JoinClip(photo)), 5_000L, JoinQuality.NATIVE)))
         assertFalse(MediaJoinRules.copiesWithoutEncoding(JoinRequest(listOf(JoinClip(photo)), 5_000L, JoinQuality.NATIVE)))
         val webm = portraitVideo.copy(name = "a.webm", mime = "video/webm")

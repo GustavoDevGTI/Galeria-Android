@@ -72,8 +72,8 @@ class MediaJoinEditorInstrumentedTest {
                     assertEquals("image/jpeg", activity.clipsForTest()[0].media.mime)
                 }
 
-                // The circle between the two media opens the transitions; Dissolver overlaps them.
-                scenario.onActivity { strip.onJunction?.invoke(0, strip.junctionCenter(0)) }
+                // One button at the top picks the transition for every junction; Dissolver overlaps them.
+                tap(scenario, context.getString(R.string.join_transition))
                 onView(withText(R.string.join_transition_dissolve)).inRoot(isPlatformPopup()).perform(click())
                 awaitTrue("A transição deve ser escolhida") {
                     var chosen: List<JoinTransition> = emptyList()
@@ -101,6 +101,65 @@ class MediaJoinEditorInstrumentedTest {
         } finally {
             listOf(video, photo).forEach { MediaClocks.cancel(context, it.toString()) }
             listOfNotNull(video, photo, joined).forEach { runCatching { context.contentResolver.delete(it, null, null) } }
+        }
+    }
+
+    @Test fun aWrongPickCanBeRemovedAndManyQuickMovesLeaveThePreviewReady() {
+        val suffix = System.nanoTime()
+        val folder = "Pictures/GaleriaJoinRemove-$suffix/"
+        val video = insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "clip-$suffix.mp4", "video/mp4", folder,
+            instrumentation.context.assets.open("playback-sample.mp4").use { it.readBytes() })
+        val photos = listOf(Color.RED, Color.GREEN, Color.BLUE).mapIndexed { index, color ->
+            insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "photo$index-$suffix.jpg", "image/jpeg", folder, jpeg(color))
+        }
+        // The same photo picked twice by mistake.
+        val items = listOf(MediaItem(1L, video, "clip-$suffix.mp4", "video/mp4", 0L, 1L, folder, null, null)) +
+            (photos + photos[0]).mapIndexed { index, uri -> MediaItem(10L + index, uri, "photo-$index.jpg", "image/jpeg", 0L, 1L, folder, null, null) }
+        try {
+            ActivityScenario.launch<MediaJoinActivity>(MediaJoinActivity.intent(context, items)).use { scenario ->
+                val strip = await(scenario) { it.window.decorView.findViewWithClass<JoinStripView>() }
+                awaitTrue("O editor deve abrir com as cinco mídias") { var n = 0; scenario.onActivity { n = it.clipsForTest().size }; n == 5 }
+                // The repeated photo (last square) goes away with the remove button.
+                scenario.onActivity { strip.onSelect?.invoke(4) }
+                tap(scenario, context.getString(R.string.join_remove))
+                scenario.onActivity { activity ->
+                    assertEquals(4, activity.clipsForTest().size)
+                    assertEquals(listOf(video, photos[0], photos[1], photos[2]).map { it.toString() }, activity.clipsForTest().map { it.media.uri })
+                }
+                var state = ""
+                fun previewReady(): Boolean {
+                    var ready = false
+                    scenario.onActivity { activity ->
+                        val player = MediaJoinActivity::class.java.getDeclaredField("player").apply { isAccessible = true }.get(activity) as androidx.media3.common.Player
+                        val dirty = MediaJoinActivity::class.java.getDeclaredField("previewDirty").apply { isAccessible = true }.getBoolean(activity)
+                        val causes = generateSequence(activity.lastPreviewError) { it.cause }.take(8).joinToString(" <- ") { "${it.javaClass.simpleName}: ${it.message} @ ${it.stackTrace.firstOrNull()}" }
+                        state = "dirty=$dirty state=${player.playbackState} error=$causes position=${player.currentPosition}"
+                        ready = !dirty && player.playbackState == androidx.media3.common.Player.STATE_READY
+                    }
+                    return ready
+                }
+                try {
+                    awaitTrue("A prévia inicial deve ficar pronta", 15_000L) { previewReady() }
+                } catch (error: AssertionError) { throw AssertionError("${error.message}: $state") }
+                // Many squares moved in a row: the preview gets only the last order and stays ready.
+                repeat(12) { step ->
+                    scenario.onActivity { strip.onMove?.invoke(step % 4, (step + 1) % 4) }
+                }
+                try {
+                    awaitTrue("A prévia deve ficar pronta com a última ordem", 15_000L) { previewReady() }
+                } catch (error: AssertionError) { throw AssertionError("${error.message}: $state") }
+                // Report any error the preview recovered from, so a recurring one is not hidden.
+                scenario.onActivity { activity -> activity.lastPreviewError?.let { android.util.Log.w("JoinTest", "Prévia se recuperou de: $state", it) } }
+                // The last media cannot be removed: the montage always keeps one.
+                scenario.onActivity { activity ->
+                    repeat(3) { strip.onRemove?.invoke(0) }
+                    assertEquals(1, activity.clipsForTest().size)
+                    strip.onRemove?.invoke(0)
+                    assertEquals(1, activity.clipsForTest().size)
+                }
+            }
+        } finally {
+            (photos + video).forEach { runCatching { context.contentResolver.delete(it, null, null) } }
         }
     }
 
@@ -138,8 +197,8 @@ class MediaJoinEditorInstrumentedTest {
         return requireNotNull(found)
     }
 
-    private fun awaitTrue(message: String, check: () -> Boolean) {
-        val deadline = SystemClock.uptimeMillis() + 10_000L
+    private fun awaitTrue(message: String, timeoutMs: Long = 10_000L, check: () -> Boolean) {
+        val deadline = SystemClock.uptimeMillis() + timeoutMs
         while (!check()) {
             if (SystemClock.uptimeMillis() > deadline) throw AssertionError(message)
             SystemClock.sleep(100L)

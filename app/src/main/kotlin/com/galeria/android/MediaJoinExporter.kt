@@ -39,9 +39,6 @@ import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.VideoEncoderSettings
 import java.io.File
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -180,13 +177,30 @@ internal object MediaJoinExporter {
                 // A file the copier cannot handle (odd tracks, protected samples) is encoded instead.
             }
         }
+        if (VideoConcatRules.eligible(request)) {
+            // Whole videos from the same camera settings: copied one after the other, no encoding.
+            try {
+                return VideoConcatExporter.export(context, request, defaultName(request), recordBytes(request), progress, cancelled)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // Different formats or an odd file: encoded instead.
+                progress(0)
+            }
+        }
         return encode(context, request, Uri.parse(request.clips.first().media.uri), defaultName(request), progress, cancelled)
     }
 
-    /** A join is named by its date; a single edited video keeps its name, marked as cut. */
-    private fun defaultName(request: JoinRequest): String =
-        if (request.clips.size > 1) MediaJoinRules.outputName(SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()))
-        else VideoTrimRules.outputName(request.clips.single().media.name, System.currentTimeMillis())
+    /**
+     * A merge is named after its first media plus " Merged"; a single edited video keeps its
+     * name, marked as cut, or with its new size when it was only made smaller.
+     */
+    internal fun defaultName(request: JoinRequest, now: Long = System.currentTimeMillis()): String {
+        if (request.clips.size > 1) return MediaJoinRules.outputName(request.clips.first().media.name)
+        val clip = request.clips.single()
+        val smaller = request.quality.maxShortSide?.takeIf { !clip.trimmed }
+        return VideoTrimRules.outputName(clip.media.name, now, smaller?.let { "${it}p" } ?: "cortado")
+    }
 
     /** Encodes [request] exactly, frame by frame, and saves it as [name] in the folder of [beside]. */
     internal fun encode(context: Context, request: JoinRequest, beside: Uri, name: String,
@@ -218,7 +232,11 @@ internal object MediaJoinExporter {
         context.contentResolver.openFileDescriptor(uri, "r")?.use { fd ->
             java.io.FileInputStream(fd.fileDescriptor).use { JoinPhotoBoxes.indices(it.channel) }
         }
-    }.getOrNull().orEmpty()
+    }.getOrNull().orEmpty().filterTo(LinkedHashSet()) { it >= 0 }
+
+    /** The montage as written inside the video (a copied merge keeps it in its own box). */
+    private fun recordBytes(request: JoinRequest): ByteArray = MediaJoinRules.encode(JoinRecord(request.photoMs, request.clips,
+        request.transitions.takeIf { list -> list.any { it != JoinTransition.NONE } }.orEmpty())).toByteArray(Charsets.UTF_8)
 
     fun keptPhoto(context: Context, uri: Uri, clipIndex: Int): EmbeddedPhoto? = runCatching {
         context.contentResolver.openFileDescriptor(uri, "r")?.use { fd ->
@@ -228,9 +246,10 @@ internal object MediaJoinExporter {
 
     private fun render(context: Context, request: JoinRequest, output: File, progress: (Int) -> Unit, cancelled: () -> Boolean) {
         val canvas = MediaJoinRules.canvas(request.clips.map { it.media }, request.quality)
-        val record = MediaJoinRules.encode(JoinRecord(request.photoMs, request.clips,
-            request.transitions.takeIf { list -> list.any { it != JoinTransition.NONE } }.orEmpty())).toByteArray(Charsets.UTF_8)
-        val bitrate = if (request.quality == JoinQuality.NATIVE) sourceBitrate(context, request.clips) else 0
+        val record = recordBytes(request)
+        // A smaller size also asks for fewer bits, so the file really shrinks.
+        val native = MediaJoinRules.canvas(request.clips.map { it.media }, JoinQuality.NATIVE)
+        val bitrate = MediaJoinRules.videoBitrate(sourceBitrate(context, request.clips), native, canvas)
         val thread = HandlerThread("media-join").apply { start() }
         val handler = Handler(thread.looper)
         val done = CountDownLatch(1)
@@ -261,7 +280,8 @@ internal object MediaJoinExporter {
                     // Only a join remembers its montage; a single cut video is an ordinary video.
                     .setMuxerFactory(InAppMp4Muxer.Factory { entries ->
                         if (request.clips.size > 1) entries.add(MdtaMetadataEntry(MediaJoinRules.METADATA_KEY, record, MdtaMetadataEntry.TYPE_INDICATOR_STRING))
-                    })
+                    }.setFreeSpaceAfterFileTypeBoxBytes(MediaJoinRules.indexReserveBytes(
+                        MediaJoinRules.totalMs(request.clips, request.photoMs, request.transitions), record.size)))
                     .addListener(object : Transformer.Listener {
                         override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                             handler.removeCallbacks(poll)
@@ -298,13 +318,17 @@ internal object MediaJoinExporter {
         progress(100)
     }
 
-    /** The highest bitrate among the videos, so Native never squeezes a clip below its source. */
+    /**
+     * The highest bitrate among the videos, so Native never squeezes a clip below its source.
+     * A file that does not state it is measured by its size and length.
+     */
     private fun sourceBitrate(context: Context, clips: List<JoinClip>): Int = clips.filter { it.media.isVideo }.maxOfOrNull { clip ->
         val retriever = MediaMetadataRetriever()
-        try {
+        val stated = try {
             retriever.setDataSource(context, Uri.parse(clip.media.uri))
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull() ?: 0
         } catch (_: Exception) { 0 } finally { retriever.release() }
+        stated.takeIf { it > 0 } ?: MediaJoinRules.fileBitrate(clip.media)
     } ?: 0
 
     /** Copies a finished file into the folder of [source], dated now. */
@@ -315,7 +339,12 @@ internal object MediaJoinExporter {
             val folder = (if (source.scheme == "file") File(source.path.orEmpty()) else MediaActions.fileFromMediaStore(context, source))
                 ?.parentFile ?: File(Environment.getExternalStoragePublicDirectory(fallback), "Galeria Editada")
             folder.mkdirs()
-            val target = File(folder, name)
+            // "Gustavo Merged.mp4" may already exist: the next one is "Gustavo Merged (1).mp4".
+            val base = name.substringBeforeLast('.')
+            val extension = name.substringAfterLast('.', "")
+            val target = generateSequence(0) { it + 1 }.map { n ->
+                File(folder, if (n == 0) name else "$base ($n)" + if (extension.isEmpty()) "" else ".$extension")
+            }.first { !it.exists() }
             file.copyTo(target, overwrite = false)
             MediaScannerConnection.scanFile(context, arrayOf(target.absolutePath), arrayOf(mime), null)
             announce(context)
@@ -360,7 +389,12 @@ internal object MediaJoinExporter {
     }
 
     /** The montage written inside a video joined by the app, or null for any other video. */
-    fun readRecord(context: Context, uri: Uri): JoinRecord? = runCatching {
+    fun readRecord(context: Context, uri: Uri): JoinRecord? = metadataRecord(context, uri)
+        // A merge written by copying keeps the record in its own box instead.
+        ?: keptPhoto(context, uri, VideoConcatRules.RECORD_INDEX)?.takeIf { it.mime == VideoConcatRules.RECORD_MIME }
+            ?.let { MediaJoinRules.decode(String(it.bytes, Charsets.UTF_8)) }
+
+    private fun metadataRecord(context: Context, uri: Uri): JoinRecord? = runCatching {
         val groups = MetadataRetriever.Builder(context, PlayerMediaItem.fromUri(uri)).build().use {
             it.retrieveTrackGroups().get(10L, TimeUnit.SECONDS)
         }

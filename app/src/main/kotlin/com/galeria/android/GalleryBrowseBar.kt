@@ -60,8 +60,21 @@ internal class GalleryBrowseBar(
         restyle()
     }
 
+    /** The buttons on the bar by action id; the fixed Menu button is under [MENU_ID]. */
+    fun viewsById(): Map<String, View> = buildMap {
+        for (index in 0 until dock.childCount) {
+            val view = dock.getChildAt(index)
+            val tag = view.tag as? String ?: continue
+            when {
+                tag == menuTag -> put(MENU_ID, view)
+                tag.startsWith(actionPrefix) -> put(tag.removePrefix(actionPrefix), view)
+            }
+        }
+    }
+
     companion object {
         const val MENU_TAG = "browse_menu"
+        const val MENU_ID = "@menu"
     }
 
     fun restyle() {

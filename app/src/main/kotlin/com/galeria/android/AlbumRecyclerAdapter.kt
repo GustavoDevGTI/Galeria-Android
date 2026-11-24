@@ -356,6 +356,17 @@ class AlbumRecyclerAdapter(
             holder.cover.contentDescription = context.getString(R.string.security_folder_locked)
             return
         }
+        if (album.cover == null && album.key == VirtualAlbumRules.TRASH_KEY) {
+            // An empty Lixeira stays in the grid with its icon, so it is always easy to find.
+            holder.thumbnailLoad?.dispose()
+            holder.thumbnailLoad = null
+            holder.boundUri = null
+            holder.cover.scaleType = ImageView.ScaleType.CENTER
+            holder.cover.setImageResource(R.drawable.ic_trash)
+            holder.cover.setColorFilter(Ui.muted(context))
+            holder.cover.contentDescription = null
+            return
+        }
         holder.cover.scaleType = ImageView.ScaleType.CENTER_CROP
         holder.cover.clearColorFilter()
         holder.cover.contentDescription = null

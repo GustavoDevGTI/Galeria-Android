@@ -100,7 +100,7 @@ internal object MediaSplitter {
 
     /** The part of the joined video where the media played, encoded again exactly. */
     private fun cutJoined(context: Context, joined: Uri, clip: JoinClip, step: SplitStep.CutJoined): Uri {
-        val media = MediaJoinExporter.probe(context, joined, "video/mp4", clip.media.name, 0L) ?: throw IOException("Vídeo juntado ilegível")
+        val media = MediaJoinExporter.probe(context, joined, "video/mp4", clip.media.name, 0L) ?: throw IOException("Vídeo mesclado ilegível")
         val end = step.endMs.coerceAtMost(media.durationMs)
         val request = JoinRequest(listOf(JoinClip(media, listOf(step.startMs..end))), MediaJoinRules.DEFAULT_PHOTO_SECONDS * 1000L, JoinQuality.NATIVE)
         val name = if (step.newVideo) VideoTrimRules.outputName(clip.media.name, System.currentTimeMillis())

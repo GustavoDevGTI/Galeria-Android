@@ -67,6 +67,10 @@ class MediaJoinActivity : ComponentActivity() {
             putExtra(EXTRA_SIZES, items.map { it.size }.toLongArray())
         }
 
+        /** How long the montage must stay unchanged before the preview player gets it. */
+        private const val PREVIEW_SETTLE_MS = 350L
+        private const val MAX_PREVIEW_RECOVERIES = 3
+
         internal fun time(ms: Long): String {
             val seconds = (ms + 500L) / 1000L
             return "%d:%02d".format(seconds / 60L, seconds % 60L)
@@ -80,6 +84,16 @@ class MediaJoinActivity : ComponentActivity() {
     private var photoSeconds = MediaJoinRules.DEFAULT_PHOTO_SECONDS
     /** The transition at each junction; index i sits between clip i and clip i + 1. */
     private var transitions: List<JoinTransition> = emptyList()
+    /** One transition for the whole montage: every junction uses it. */
+    private var transitionAll = JoinTransition.NONE
+    /** True once the preview player got its first composition. */
+    private var previewBuilt = false
+    /** The montage changed and the preview still plays the previous one. */
+    private var previewDirty = false
+    private val rebuildPreview = Runnable { buildPreview() }
+    /** Times the preview was rebuilt after an error since it last played. */
+    private var previewRecoveries = 0
+    @androidx.annotation.VisibleForTesting internal var lastPreviewError: Throwable? = null
     private var quality = JoinQuality.NATIVE
     private val photoMs get() = photoSeconds * 1000L
 
@@ -90,8 +104,10 @@ class MediaJoinActivity : ComponentActivity() {
     private lateinit var timeline: JoinTimelineView
     private lateinit var playButton: ImageButton
     private lateinit var splitButton: ImageButton
+    private lateinit var removeButton: ImageButton
     private lateinit var saveButton: ImageButton
     private lateinit var qualityChip: TextView
+    private lateinit var transitionChip: TextView
     private lateinit var timeLabel: TextView
     private lateinit var photoControls: LinearLayout
     private lateinit var photoLabel: TextView
@@ -132,26 +148,7 @@ class MediaJoinActivity : ComponentActivity() {
             isAppearanceLightStatusBars = false
             isAppearanceLightNavigationBars = false
         }
-        player = CompositionPlayer.Builder(this)
-            .build().apply {
-            addListener(object : Player.Listener {
-                override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    playButton.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
-                    playButton.contentDescription = getString(if (isPlaying) R.string.video_pause else R.string.video_play)
-                    handler.removeCallbacks(ticker)
-                    if (isPlaying) handler.post(ticker)
-                }
-
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_ENDED) { pause(); seek(0L) }
-                    // A paused preview only draws after a seek; ask for the frame under the playhead.
-                    if (playbackState == Player.STATE_READY && pendingFrame && !isPlaying) {
-                        pendingFrame = false
-                        seekTo(currentPosition)
-                    }
-                }
-            })
-        }
+        player = newPlayer()
         buildLayout()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -168,9 +165,16 @@ class MediaJoinActivity : ComponentActivity() {
         val names = intent.getStringArrayListExtra(EXTRA_NAMES).orEmpty()
         val sizes = intent.getLongArrayExtra(EXTRA_SIZES) ?: LongArray(uris.size)
         executor.execute {
-            val medias = uris.indices.mapNotNull { i ->
-                MediaJoinExporter.probe(this, Uri.parse(uris[i]), mimes.getOrElse(i) { "" }, names.getOrElse(i) { "" }, sizes.getOrElse(i) { 0L })
-            }
+            // Each media is read at the same time: opening the editor with many videos no longer
+            // waits for them one by one. The order stays the one they were picked in.
+            val readers = Executors.newFixedThreadPool(uris.size.coerceIn(1, 4))
+            val medias = try {
+                readers.invokeAll(uris.indices.map { i ->
+                    java.util.concurrent.Callable {
+                        MediaJoinExporter.probe(this, Uri.parse(uris[i]), mimes.getOrElse(i) { "" }, names.getOrElse(i) { "" }, sizes.getOrElse(i) { 0L })
+                    }
+                }).mapNotNull { runCatching { it.get() }.getOrNull() }
+            } finally { readers.shutdown() }
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 if (medias.isEmpty()) {
@@ -260,6 +264,16 @@ class MediaJoinActivity : ComponentActivity() {
         }
         header.addView(EditorUi.button(this, R.drawable.ic_close, getString(R.string.msg_back)) { finish() }, LinearLayout.LayoutParams(dp(48), dp(48)))
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        transitionChip = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setPadding(dp(14), 0, dp(14), 0)
+            background = Ui.rounded(0xFF23272C.toInt(), 18, context)
+            contentDescription = getString(R.string.join_transition)
+            setOnClickListener { chooseTransition() }
+        }
+        header.addView(transitionChip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36)).apply { marginEnd = dp(8) })
         qualityChip = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 14f
@@ -316,6 +330,8 @@ class MediaJoinActivity : ComponentActivity() {
         controls.addView(timeLabel, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         splitButton = EditorUi.button(this, R.drawable.ic_split, getString(R.string.join_split)) { splitAtPlayhead() }
         controls.addView(splitButton, LinearLayout.LayoutParams(dp(48), dp(48)))
+        removeButton = EditorUi.button(this, R.drawable.ic_trash, getString(R.string.join_remove)) { removeClip(selected) }
+        controls.addView(removeButton, LinearLayout.LayoutParams(dp(48), dp(48)))
         photoControls = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         photoControls.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_timer)
@@ -337,7 +353,7 @@ class MediaJoinActivity : ComponentActivity() {
         strip = JoinStripView(this).apply {
             onSelect = { index -> select(index) }
             onMove = { from, to -> move(from, to) }
-            onJunction = { index, centerX -> showTransitions(index, centerX) }
+            onRemove = { index -> removeClip(index) }
             onAdd = { mediaPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }
         }
         column.addView(strip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
@@ -386,11 +402,17 @@ class MediaJoinActivity : ComponentActivity() {
 
     /** Puts the model on screen and, when the montage changed, into the preview player. */
     private fun refresh(rebuild: Boolean) {
-        // One junction between each pair of neighbours; new ones start as a plain cut.
-        transitions = List(maxOf(0, clips.size - 1)) { transitions.getOrElse(it) { JoinTransition.NONE } }
+        // One junction between each pair of neighbours, all with the montage's transition.
+        transitions = List(maxOf(0, clips.size - 1)) { transitionAll }
         val labels = clips.map { time(MediaJoinRules.clipDurationMs(it, photoMs)) }
         selected = selected.coerceIn(0, maxOf(0, clips.lastIndex))
-        strip.setClips(clips, labels, selected, transitions)
+        // New media can raise the native size; a choice that no longer lowers it reads Native.
+        quality = MediaJoinRules.effectiveQuality(clips.map { it.media }, quality)
+        showQuality()
+        transitionChip.text = transitionLabel(transitionAll)
+        transitionChip.visibility = if (clips.size > 1) View.VISIBLE else View.GONE
+        removeButton.visibility = if (clips.size > 1) View.VISIBLE else View.GONE
+        strip.setClips(clips, labels, selected)
         timeline.setClips(clips, photoMs, selected, transitions)
         photoControls.visibility = if (clips.any { !it.media.isVideo }) View.VISIBLE else View.GONE
         photoLabel.text = getString(R.string.join_seconds, photoSeconds)
@@ -399,13 +421,63 @@ class MediaJoinActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 26) saveButton.tooltipText = saveButton.contentDescription
         splitButton.visibility = if (clips.getOrNull(selected)?.media?.isVideo == true) View.VISIBLE else View.GONE
         if (rebuild && clips.isNotEmpty()) {
-            val position = timeline.positionMs
-            pendingFrame = true
-            player.setComposition(MediaJoinExporter.previewComposition(this, JoinRequest(clips, photoMs, quality, transitions)), position)
-            player.prepare()
-            loadTransitionStills()
+            // Giving the player a new montage on every quick change (several squares moved in a
+            // row) can stall it; wait until the changes settle and send only the last one.
+            handler.removeCallbacks(rebuildPreview)
+            if (previewBuilt) { previewDirty = true; handler.postDelayed(rebuildPreview, PREVIEW_SETTLE_MS) } else buildPreview()
         }
         showTime(timeline.positionMs)
+    }
+
+    private val playerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            playButton.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+            playButton.contentDescription = getString(if (isPlaying) R.string.video_pause else R.string.video_play)
+            handler.removeCallbacks(ticker)
+            if (isPlaying) handler.post(ticker)
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            // A preview that failed would stay frozen: give it the montage again, a few times at most.
+            android.util.Log.w("MediaJoin", "Prévia falhou; recriando", error)
+            lastPreviewError = error
+            if (previewRecoveries++ < MAX_PREVIEW_RECOVERIES) handler.post { buildPreview() }
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_READY) previewRecoveries = 0
+            if (playbackState == Player.STATE_ENDED) { pause(); seek(0L) }
+            // A paused preview only draws after a seek; ask for the frame under the playhead.
+            if (playbackState == Player.STATE_READY && pendingFrame && !player.isPlaying) {
+                pendingFrame = false
+                player.seekTo(player.currentPosition)
+            }
+        }
+    }
+
+    private fun newPlayer(): CompositionPlayer = CompositionPlayer.Builder(this).build().apply { addListener(playerListener) }
+
+    private fun buildPreview() {
+        handler.removeCallbacks(rebuildPreview)
+        if (isDestroyed || clips.isEmpty()) return
+        if (previewBuilt) {
+            // A new montage goes to a new player. Giving it to the same one makes the player let
+            // go of its previous sources first; when that takes too long the whole preview fails
+            // and freezes. The old player is let go without listening to it any more.
+            val old = player
+            old.removeListener(playerListener)
+            old.pause()
+            player = newPlayer()
+            playerView.player = player
+            old.release()
+            playerListener.onIsPlayingChanged(false)
+        }
+        previewDirty = false
+        previewBuilt = true
+        pendingFrame = true
+        player.setComposition(MediaJoinExporter.previewComposition(this, JoinRequest(clips, photoMs, quality, transitions)), timeline.positionMs)
+        player.prepare()
+        loadTransitionStills()
     }
 
     private fun showTime(position: Long) {
@@ -515,28 +587,39 @@ class MediaJoinActivity : ComponentActivity() {
         }
     }.getOrNull()
 
+    private fun qualityName(option: JoinQuality): String =
+        option.maxShortSide?.let { "${it}p" } ?: getString(R.string.join_quality_native)
+
     private fun showQuality() {
-        qualityChip.text = when (quality) {
-            JoinQuality.NATIVE -> getString(R.string.join_quality_native)
-            JoinQuality.P1080 -> "1080p"
-            JoinQuality.P720 -> "720p"
+        qualityChip.text = qualityName(quality)
+    }
+
+    /** Each choice with the size it gives and, when there are videos to go by, about how big the file gets. */
+    private fun qualityLabel(option: JoinQuality): String {
+        val canvas = MediaJoinRules.canvas(clips.map { it.media }, option)
+        val estimate = MediaJoinRules.estimatedBytes(JoinRequest(clips, photoMs, option, transitions))
+        return buildString {
+            append(qualityName(option)).append(" · ").append(canvas.width).append('×').append(canvas.height)
+            estimate?.let { append(" · ≈ ").append(android.text.format.Formatter.formatShortFileSize(this@MediaJoinActivity, it)) }
         }
     }
 
     private fun chooseQuality() {
+        if (clips.isEmpty()) return
+        val options = MediaJoinRules.qualityOptions(clips.map { it.media })
         PopupMenu(this, qualityChip).apply {
-            JoinQuality.entries.forEachIndexed { index, option ->
-                menu.add(0, index, index, when (option) {
-                    JoinQuality.NATIVE -> getString(R.string.join_quality_native)
-                    JoinQuality.P1080 -> "1080p"
-                    JoinQuality.P720 -> "720p"
-                }).isCheckable = true
+            options.forEachIndexed { index, option ->
+                menu.add(0, index, index, qualityLabel(option)).isCheckable = true
                 menu.getItem(index).isChecked = option == quality
             }
             menu.setGroupCheckable(0, true, true)
             setOnMenuItemClickListener { item ->
-                quality = JoinQuality.entries[item.itemId]
-                showQuality()
+                val chosen = options[item.itemId]
+                if (chosen != quality) {
+                    quality = chosen
+                    showQuality()
+                    refresh(rebuild = true)
+                }
                 true
             }
             show()
@@ -565,8 +648,6 @@ class MediaJoinActivity : ComponentActivity() {
         refresh(rebuild = true)
     }
 
-    private var transitionPopup: android.widget.PopupWindow? = null
-
     private fun transitionLabel(type: JoinTransition): String = getString(when (type) {
         JoinTransition.NONE -> R.string.join_transition_none
         JoinTransition.DISSOLVE -> R.string.join_transition_dissolve
@@ -575,68 +656,49 @@ class MediaJoinActivity : ComponentActivity() {
         JoinTransition.ZOOM -> R.string.join_transition_zoom
     })
 
-    /** The choices for one junction, in a small row that rises from the circle that was tapped. */
-    private fun showTransitions(junction: Int, centerX: Float) {
-        if (junction !in transitions.indices) return
-        transitionPopup?.dismiss()
-        strip.setActiveJunction(junction)
-        val row = LinearLayout(this).apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), dp(6), dp(6), dp(6))
-            background = Ui.rounded(0xFF1A1D21.toInt(), 24, context)
-            elevation = dp(8).toFloat()
+    /** One transition for every junction, picked from the button at the top. */
+    private fun chooseTransition() {
+        if (clips.size < 2) return
+        PopupMenu(this, transitionChip).apply {
+            JoinTransition.entries.forEachIndexed { index, type ->
+                menu.add(0, index, index, transitionLabel(type)).isCheckable = true
+                menu.getItem(index).isChecked = type == transitionAll
+            }
+            menu.setGroupCheckable(0, true, true)
+            setOnMenuItemClickListener { item -> applyTransition(JoinTransition.entries[item.itemId]); true }
+            show()
         }
-        JoinTransition.entries.forEach { type ->
-            val chosen = transitions[junction] == type
-            row.addView(TextView(this).apply {
-                text = transitionLabel(type)
-                textSize = 14f
-                gravity = Gravity.CENTER
-                minHeight = dp(40)
-                setPadding(dp(14), 0, dp(14), 0)
-                setTextColor(if (chosen) 0xFF101214.toInt() else Color.WHITE)
-                background = Ui.rounded(if (chosen) Color.WHITE else 0xFF23272C.toInt(), 20, context)
-                isSelected = chosen
-                setOnClickListener { chooseTransition(junction, type) }
-            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(4) })
-        }
-        val scroll = android.widget.HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            clipToPadding = false
-            setPadding(dp(4), dp(4), dp(4), dp(10))
-            addView(row)
-        }
-        scroll.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
-        val width = minOf(scroll.measuredWidth, strip.width - dp(16))
-        val height = scroll.measuredHeight
-        val x = (centerX - width / 2f).toInt().coerceIn(dp(8), maxOf(dp(8), strip.width - width - dp(8)))
-        transitionPopup = android.widget.PopupWindow(scroll, width, height, true).apply {
-            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-            isOutsideTouchable = true
-            animationStyle = 0
-            setOnDismissListener { strip.setActiveJunction(-1); transitionPopup = null }
-            showAsDropDown(strip, x, -(strip.height + height))
-        }
-        // Rises from the circle that opened it.
-        Motion.enter(row, Motion.POPOVER_SCALE, Motion.POPOVER_MS, pivotX = centerX - x, pivotY = height.toFloat())
     }
 
-    private fun chooseTransition(junction: Int, type: JoinTransition) {
-        val popup = transitionPopup
-        val content = (popup?.contentView as? ViewGroup)?.getChildAt(0)
-        if (content != null) {
-            content.animate().alpha(0f).setDuration(Motion.EXIT_MS).setInterpolator(Motion.easeOut).withEndAction { popup.dismiss() }.start()
-        } else popup?.dismiss()
-        if (transitions.getOrNull(junction) == type) return
-        strip.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
-        transitions = transitions.toMutableList().apply { set(junction, type) }
+    private fun applyTransition(type: JoinTransition) {
+        if (type == transitionAll) return
+        transitionChip.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        transitionAll = type
         refresh(rebuild = true)
-        // Stop a little before the junction, so pressing play shows the transition at once.
-        val window = MediaJoinRules.windows(clips, photoMs, transitions).firstOrNull { it.junction == junction }
+        // Stop a little before the first junction, so pressing play shows the transition at once.
+        val window = MediaJoinRules.windows(clips, photoMs, transitions).firstOrNull()
         val starts = MediaJoinRules.clipStarts(clips, photoMs, transitions)
-        val at = maxOf(0L, (window?.startMs ?: starts.getOrElse(junction + 1) { 0L }) - 700L)
+        val at = maxOf(0L, (window?.startMs ?: starts.getOrElse(1) { 0L }) - 700L)
         timeline.setPosition(at)
         seek(at)
+        showTime(at)
+    }
+
+    /** Takes one media out of the montage (a repeated or wrong pick); the last one always stays. */
+    private fun removeClip(index: Int) {
+        if (index !in clips.indices || clips.size < 2) {
+            removeButton.performHapticFeedback(HapticFeedbackConstants.REJECT)
+            return
+        }
+        removeButton.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        clips = clips.toMutableList().apply { removeAt(index) }
+        selected = index.coerceAtMost(clips.lastIndex)
+        transitions = List(maxOf(0, clips.size - 1)) { transitionAll }
+        // The playhead goes to the start of the media that took its place.
+        val at = MediaJoinRules.segments(clips, photoMs, transitions).firstOrNull { it.clipIndex == selected }?.startMs ?: 0L
+        timeline.setPosition(at)
+        refresh(rebuild = true)
+        seek(at + 1L)
         showTime(at)
     }
 
@@ -709,6 +771,8 @@ class MediaJoinActivity : ComponentActivity() {
 
     private fun togglePlay() {
         if (clips.isEmpty()) return
+        // Play what is on screen, even within the short wait after the last change.
+        if (previewDirty) buildPreview()
         if (player.isPlaying) player.pause() else {
             if (timeline.positionMs >= MediaJoinRules.totalMs(clips, photoMs, transitions)) seek(0L)
             player.play()
@@ -794,6 +858,7 @@ class MediaJoinActivity : ComponentActivity() {
     override fun onDestroy() {
         MediaJoinJobs.stopObserving(jobListener)
         handler.removeCallbacks(ticker)
+        handler.removeCallbacks(rebuildPreview)
         edgeFrames.values.forEach { it.close() }
         if (::timeline.isInitialized) timeline.release()
         player.release()

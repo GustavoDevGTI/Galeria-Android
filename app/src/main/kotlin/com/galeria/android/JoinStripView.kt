@@ -45,8 +45,8 @@ internal class JoinStripView(context: Context) : View(context) {
     var onMove: ((from: Int, to: Int) -> Unit)? = null
     /** The square after the last media, which adds more media to the montage. */
     var onAdd: (() -> Unit)? = null
-    /** A junction circle was tapped: its index and its centre, in this view's coordinates. */
-    var onJunction: ((index: Int, centerX: Float) -> Unit)? = null
+    /** Takes the media at this index out of the montage (accessibility; the editor has a button too). */
+    var onRemove: ((Int) -> Unit)? = null
 
     private var clips: List<JoinClip> = emptyList()
     private var labels: List<String> = emptyList()
@@ -55,12 +55,8 @@ internal class JoinStripView(context: Context) : View(context) {
 
     private val density = resources.displayMetrics.density
     private val cell = 56f * density
-    // Room between squares for the junction circle that picks the transition.
-    private val gap = 28f * density
-    private val junctionRadius = 11f * density
-    private var transitions: List<JoinTransition> = emptyList()
-    private var activeJunction = -1
-    private var downJunction = -1
+    // The transition is chosen once for the whole montage, so the squares sit close together.
+    private val gap = 8f * density
     private val padding = 16f * density
     private val radius = 10f * density
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -72,8 +68,6 @@ internal class JoinStripView(context: Context) : View(context) {
     private val image = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f * density; color = Color.WHITE }
     private val plus = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; strokeWidth = 2.5f * density; strokeCap = Paint.Cap.ROUND }
-    private val junctionFill = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val junctionMark = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.6f * density; strokeCap = Paint.Cap.ROUND }
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 11f * density; textAlign = Paint.Align.RIGHT; setShadowLayer(3f * density, 0f, 0f, 0x99000000.toInt()) }
     private val clip = Path()
     private val rect = RectF()
@@ -99,8 +93,7 @@ internal class JoinStripView(context: Context) : View(context) {
         contentDescription = context.getString(R.string.join_strip)
     }
 
-    fun setClips(clips: List<JoinClip>, labels: List<String>, selected: Int, transitions: List<JoinTransition> = emptyList()) {
-        this.transitions = transitions
+    fun setClips(clips: List<JoinClip>, labels: List<String>, selected: Int) {
         this.clips = clips
         this.labels = labels
         this.selected = selected
@@ -148,7 +141,6 @@ internal class JoinStripView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         val top = (height - cell) / 2f
         clips.indices.forEach { if (it != dragFrom) drawSquare(canvas, it, shown.getOrElse(it) { 0f }, top, 1f) }
-        if (dragFrom < 0) (0 until maxOf(0, clips.lastIndex)).forEach { drawJunction(canvas, it, top + cell / 2f) }
         drawAddSquare(canvas, JoinStripRules.slotX(addSlot(), padding, cell, gap), top)
         if (dragFrom in clips.indices) drawSquare(canvas, dragFrom, dragX, top, 1f + 0.08f * lift)
     }
@@ -184,33 +176,6 @@ internal class JoinStripView(context: Context) : View(context) {
         canvas.drawLine(x + c, top + c - arm, x + c, top + c + arm, plus)
     }
 
-    fun junctionCenter(index: Int): Float = JoinStripRules.slotX(index, padding, cell, gap) + cell + gap / 2f - scrollX
-
-    fun setActiveJunction(index: Int) { activeJunction = index; invalidate() }
-
-    private fun drawJunction(canvas: Canvas, index: Int, centerY: Float) {
-        val x = JoinStripRules.slotX(index, padding, cell, gap) + cell + gap / 2f
-        val chosen = transitions.getOrElse(index) { JoinTransition.NONE } != JoinTransition.NONE
-        junctionFill.color = if (chosen) Color.WHITE else 0xFF23272C.toInt()
-        canvas.drawCircle(x, centerY, junctionRadius, junctionFill)
-        if (index == activeJunction) canvas.drawCircle(x, centerY, junctionRadius + 3f * density, ring)
-        junctionMark.color = if (chosen) 0xFF101214.toInt() else 0xFFC9CED6.toInt()
-        if (chosen) {
-            // Two overlapping squares: one media blending into the next.
-            val s = 4f * density
-            rect.set(x - s * 1.4f, centerY - s * 1.4f, x + s * 0.6f, centerY + s * 0.6f)
-            canvas.drawRoundRect(rect, s / 3f, s / 3f, junctionMark)
-            rect.offset(s * 0.8f, s * 0.8f)
-            canvas.drawRoundRect(rect, s / 3f, s / 3f, junctionMark)
-        } else {
-            canvas.drawLine(x, centerY - 5f * density, x, centerY + 5f * density, junctionMark)
-        }
-    }
-
-    private fun junctionAt(x: Float): Int = (0 until maxOf(0, clips.lastIndex)).firstOrNull {
-        abs(x + scrollX - (JoinStripRules.slotX(it, padding, cell, gap) + cell + gap / 2f)) <= gap / 2f
-    } ?: -1
-
     private fun isAddAt(x: Float): Boolean {
         val left = JoinStripRules.slotX(addSlot(), padding, cell, gap)
         return x + scrollX in left..(left + cell)
@@ -233,7 +198,6 @@ internal class JoinStripView(context: Context) : View(context) {
                 downX = event.x
                 downScroll = scrollX
                 downIndex = indexAt(event.x)
-                downJunction = if (downIndex < 0) junctionAt(event.x) else -1
                 scrolling = false
                 if (downIndex >= 0) postDelayed(lifter, holdMs)
                 parent?.requestDisallowInterceptTouchEvent(true)
@@ -263,7 +227,6 @@ internal class JoinStripView(context: Context) : View(context) {
                         postInvalidateOnAnimation()
                     }
                     downIndex >= 0 -> { performClick(); onSelect?.invoke(downIndex) }
-                    downJunction >= 0 -> { performClick(); onJunction?.invoke(downJunction, junctionCenter(downJunction)) }
                     isAddAt(event.x) -> { performClick(); onAdd?.invoke() }
                 }
                 velocity?.recycle(); velocity = null
@@ -372,14 +335,14 @@ internal class JoinStripView(context: Context) : View(context) {
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
         super.onInitializeAccessibilityNodeInfo(info)
         info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.join_add, context.getString(R.string.join_add)))
-        if (selected in 0 until clips.lastIndex) info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.join_transition, context.getString(R.string.join_transition)))
+        if (selected in clips.indices && clips.size > 1) info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.join_remove, context.getString(R.string.join_remove)))
         if (selected > 0) info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.join_move_left, context.getString(R.string.join_move_left)))
         if (selected in 0 until clips.lastIndex) info.addAction(AccessibilityNodeInfo.AccessibilityAction(R.id.join_move_right, context.getString(R.string.join_move_right)))
     }
 
     override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean = when (action) {
         R.id.join_add -> { onAdd?.invoke(); true }
-        R.id.join_transition -> { onJunction?.invoke(selected, junctionCenter(selected)); true }
+        R.id.join_remove -> { onRemove?.invoke(selected); true }
         R.id.join_move_left -> { onMove?.invoke(selected, selected - 1); true }
         R.id.join_move_right -> { onMove?.invoke(selected, selected + 1); true }
         else -> super.performAccessibilityAction(action, arguments)

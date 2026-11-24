@@ -3,7 +3,9 @@ package com.galeria.android
 import android.content.ClipData
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.PointF
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.RippleDrawable
 import android.text.TextUtils
@@ -236,12 +238,13 @@ internal class BrowseActionPanel(
                 } else {
                     BrowseLayoutRules.movePanel(layout, item.id, before)
                 }
-                apply(next, result)
+                apply(next, result, item.id, windowPoint(content, event.x, event.y))
                 return true
             }
             DragEvent.ACTION_DRAG_ENDED -> {
                 highlight(null)
-                if (overlay != null) fillGrid()
+                // Dropped nowhere: the option fades back where it was. A real drop already rebuilt the panel.
+                if (!event.result) tiles[item.id]?.animate()?.alpha(1f)?.setDuration(Motion.EXIT_MS)?.start()
             }
         }
         return true
@@ -250,32 +253,80 @@ internal class BrowseActionPanel(
     private fun onBarDrag(row: LinearLayout, event: DragEvent): Boolean {
         val item = event.localState as? DragItem ?: return false
         when (event.action) {
-            DragEvent.ACTION_DRAG_STARTED -> return overlay != null
+            DragEvent.ACTION_DRAG_STARTED -> {
+                if (overlay == null) return false
+                if (item.fromBar) bar.viewsById()[item.id]?.alpha = 0.3f
+                return true
+            }
             DragEvent.ACTION_DRAG_ENTERED -> row.background = Ui.rounded(Ui.menuHighlightSurface(activity), 16, activity)
-            DragEvent.ACTION_DRAG_EXITED, DragEvent.ACTION_DRAG_ENDED -> bar.restyle()
+            DragEvent.ACTION_DRAG_LOCATION -> openRoom(row, item, insertionIndex(row, event.x))
+            DragEvent.ACTION_DRAG_EXITED -> { bar.restyle(); openRoom(row, item, null) }
+            DragEvent.ACTION_DRAG_ENDED -> {
+                bar.restyle()
+                openRoom(row, item, null)
+                if (!event.result) bar.viewsById()[item.id]?.animate()?.alpha(1f)?.setDuration(Motion.EXIT_MS)?.start()
+            }
             DragEvent.ACTION_DROP -> {
                 bar.restyle()
-                // Insertion point: how many shortcuts sit left of the finger; never after the fixed Menu button.
-                var index = 0
-                for (child in 0 until row.childCount) {
-                    val view = row.getChildAt(child)
-                    if (view.tag == GalleryBrowseBar.MENU_TAG) continue
-                    if (event.x > view.left + view.width / 2f) index = child + 1
-                }
+                val index = insertionIndex(row, event.x)
                 val layout = store.load()
                 val (next, result) = if (item.fromBar) {
                     BrowseLayoutRules.moveInBar(layout, item.id, index)
                 } else {
                     BrowseLayoutRules.addToBar(layout, item.id, index)
                 }
-                apply(next, result)
+                apply(next, result, item.id, windowPoint(row, event.x, event.y))
                 return true
             }
         }
         return true
     }
 
-    private fun apply(layout: BrowseLayoutRules.Layout, result: BrowseLayoutRules.Result) {
+    /** How many shortcuts sit left of the finger; never after the fixed Menu button. */
+    private fun insertionIndex(row: LinearLayout, x: Float): Int {
+        var index = 0
+        for (child in 0 until row.childCount) {
+            val view = row.getChildAt(child)
+            if (view.tag == GalleryBrowseBar.MENU_TAG) continue
+            if (x > view.left + view.width / 2f) index = child + 1
+        }
+        return index
+    }
+
+    private var roomIndex: Int? = null
+
+    /**
+     * While an option is held over the bar, the buttons slide apart to show where it will land,
+     * like icons making room on a phone's home screen; [index] null closes the room again.
+     */
+    private fun openRoom(row: LinearLayout, item: DragItem, index: Int?) {
+        if (roomIndex == index) return
+        roomIndex = index
+        val views = bar.viewsById()
+        val preview = index?.let { BrowseLayoutRules.previewBar(store.load(), item.id, item.fromBar, it) }
+        val slots = preview?.let { it + GalleryBrowseBar.MENU_ID }
+        val centers = slots?.let {
+            BrowseLayoutRules.slotCenters(it.size, row.paddingLeft.toFloat(), (row.width - row.paddingLeft - row.paddingRight).toFloat())
+        }
+        views.forEach { (id, view) ->
+            val target = if (slots == null || centers == null) 0f else {
+                val slot = slots.indexOf(id)
+                if (slot < 0) 0f else centers[slot] - (view.left + view.width / 2f)
+            }
+            view.animate().translationX(target).setDuration(if (Motion.movementEnabled()) ROOM_MS else 0L)
+                .setInterpolator(Motion.easeOut).start()
+        }
+    }
+
+    private fun windowPoint(view: View, x: Float, y: Float): PointF {
+        val location = IntArray(2).also(view::getLocationInWindow)
+        return PointF(location[0] + x, location[1] + y)
+    }
+
+    private fun apply(layout: BrowseLayoutRules.Layout, result: BrowseLayoutRules.Result,
+        droppedId: String? = null, dropPoint: PointF? = null) {
+        roomIndex = null
+        val before = buttonRects()
         when (result) {
             BrowseLayoutRules.Result.DONE -> {
                 store.save(layout)
@@ -287,8 +338,88 @@ internal class BrowseActionPanel(
             BrowseLayoutRules.Result.BAR_MIN -> Ui.toast(activity, activity.getString(R.string.browse_bar_min))
             BrowseLayoutRules.Result.UNCHANGED -> Unit
         }
+        // Even when nothing changed, the bar is drawn again: the held button gets its look back.
+        if (result != BrowseLayoutRules.Result.DONE) onLayoutChanged()
         fillGrid()
+        glide(before, if (result == BrowseLayoutRules.Result.DONE) droppedId else null, dropPoint)
     }
+
+    /** Where every button of the bar and the panel is now, in window coordinates. */
+    private fun buttonRects(): Map<String, RectF> = buildMap {
+        bar.viewsById().forEach { (id, view) -> put("bar:$id", windowRect(view)) }
+        tiles.forEach { (id, view) -> put("panel:$id", windowRect(view)) }
+    }
+
+    private fun windowRect(view: View): RectF {
+        val location = IntArray(2).also(view::getLocationInWindow)
+        return RectF(location[0].toFloat(), location[1].toFloat(), location[0] + view.width.toFloat(), location[1] + view.height.toFloat())
+    }
+
+    /**
+     * After the bar and the panel are rebuilt, each button glides from where it was to its new
+     * place, and the dropped one from under the finger. The moving pictures are drawn over the
+     * whole screen, so a button can travel between the panel and the bar without being cut off.
+     */
+    private fun glide(before: Map<String, RectF>, droppedId: String?, dropPoint: PointF?) {
+        if (!Motion.movementEnabled()) return
+        val root = activity.findViewById<ViewGroup>(android.R.id.content)
+        root.viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                root.viewTreeObserver.removeOnPreDrawListener(this)
+                val rootRect = windowRect(root)
+                val moves = ArrayList<Glide>()
+                val after = bar.viewsById().mapKeys { "bar:${it.key}" } + tiles.mapKeys { "panel:${it.key}" }
+                after.forEach { (key, view) ->
+                    if (view.width == 0 || view.height == 0) return@forEach
+                    val id = key.substringAfter(':')
+                    val to = windowRect(view)
+                    val from = if (id == droppedId && dropPoint != null) {
+                        RectF(dropPoint.x - to.width() / 2f, dropPoint.y - to.height() / 2f, dropPoint.x + to.width() / 2f, dropPoint.y + to.height() / 2f)
+                    } else before[key] ?: before["bar:$id"] ?: before["panel:$id"] ?: return@forEach
+                    if (id != droppedId && kotlin.math.abs(from.centerX() - to.centerX()) < 1f && kotlin.math.abs(from.centerY() - to.centerY()) < 1f) return@forEach
+                    val picture = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+                    view.draw(android.graphics.Canvas(picture))
+                    val drawable = android.graphics.drawable.BitmapDrawable(activity.resources, picture).apply { alpha = (view.alpha * 255).toInt() }
+                    from.offset(-rootRect.left, -rootRect.top)
+                    to.offset(-rootRect.left, -rootRect.top)
+                    moves += Glide(view, view.alpha, drawable, from, to, id == droppedId)
+                    view.alpha = 0f
+                    root.overlay.add(drawable)
+                }
+                if (moves.isEmpty()) return true
+                val bounds = android.graphics.Rect()
+                fun place(f: Float) = moves.forEach { move ->
+                    // The dropped button starts a little bigger, as if set down from the finger.
+                    val grow = if (move.dropped) 0.12f * (1f - f) else 0f
+                    val w = move.to.width() * (1f + grow)
+                    val h = move.to.height() * (1f + grow)
+                    val cx = move.from.centerX() + (move.to.centerX() - move.from.centerX()) * f
+                    val cy = move.from.centerY() + (move.to.centerY() - move.from.centerY()) * f
+                    bounds.set((cx - w / 2f).toInt(), (cy - h / 2f).toInt(), (cx + w / 2f).toInt(), (cy + h / 2f).toInt())
+                    move.drawable.bounds = bounds
+                }
+                place(0f)
+                android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+                    duration = GLIDE_MS
+                    interpolator = Motion.easeOut
+                    addUpdateListener { place(it.animatedValue as Float) }
+                    addListener(object : android.animation.AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(animation: android.animation.Animator) {
+                            moves.forEach { move ->
+                                root.overlay.remove(move.drawable)
+                                move.view.alpha = move.alpha
+                            }
+                        }
+                    })
+                    start()
+                }
+                return true
+            }
+        })
+    }
+
+    private class Glide(val view: View, val alpha: Float, val drawable: android.graphics.drawable.BitmapDrawable,
+        val from: RectF, val to: RectF, val dropped: Boolean)
 
     private var highlighted: String? = null
 
@@ -321,5 +452,9 @@ internal class BrowseActionPanel(
     private companion object {
         const val COLUMNS = 4
         const val ENTER_MS = 200L
+        /** The buttons sliding apart under the finger. */
+        const val ROOM_MS = 160L
+        /** A button travelling to its new place after the drop. */
+        const val GLIDE_MS = 280L
     }
 }

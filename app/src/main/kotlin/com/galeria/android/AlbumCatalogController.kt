@@ -210,6 +210,8 @@ class AlbumCatalogController(context: Context) {
             .getStringSet(GalleryPreferences.FAVORITES, emptySet()).orEmpty()
         val trash = MediaStoreRepository.loadTrashedMedia(appContext)
         val hiddenTrashKeys = virtualHiddenKeys + AutomaticHiddenAlbums.keysForMedia(appContext, trash, markers)
+        // Albums revealed with the eye show their trashed items too; secure folders never do.
+        val revealedTrashKeys = TemporaryAlbumVisibility.activeKeys() - SecurityStore(appContext).secureFolderKeys()
         val collections = VirtualAlbumRules.addCollections(
             physical,
             media,
@@ -219,7 +221,9 @@ class AlbumCatalogController(context: Context) {
             appContext.getString(R.string.album_favorites),
             appContext.getString(R.string.album_trash),
             hiddenTrashKeys,
-            GalleryPreferences.hiddenFlag(appContext, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)
+            GalleryPreferences.hiddenFlag(appContext, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF),
+            keepTrash = TrashPreferences.isEnabled(appContext),
+            revealedKeys = revealedTrashKeys
         )
         val available = VirtualAlbumRules.availableMedia(physical, media, virtualHiddenKeys)
         val favoriteKeys = favorites.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
@@ -233,7 +237,8 @@ class AlbumCatalogController(context: Context) {
                 }
                 VirtualAlbumRules.TRASH_KEY -> VirtualAlbumRules.visibleTrash(
                     trash, hiddenTrashKeys,
-                    GalleryPreferences.hiddenFlag(appContext, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF)
+                    GalleryPreferences.hiddenFlag(appContext, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF),
+                    revealedTrashKeys
                 )
                 else -> byFolder[album.key].orEmpty()
             }

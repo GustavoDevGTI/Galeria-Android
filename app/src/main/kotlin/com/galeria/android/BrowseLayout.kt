@@ -72,6 +72,26 @@ internal object BrowseLayoutRules {
         return if (bar == layout.bar) layout to Result.UNCHANGED else layout.copy(bar = bar) to Result.DONE
     }
 
+    /**
+     * The bar as it would be if the dragged option were dropped at [index], for the preview that
+     * opens room under the finger; null when it would not fit (the bar is full).
+     */
+    fun previewBar(layout: Layout, id: String, fromBar: Boolean, index: Int): List<String>? {
+        val (next, result) = if (fromBar) moveInBar(layout, id, index) else addToBar(layout, id, index)
+        return when (result) {
+            Result.DONE -> next.bar
+            Result.UNCHANGED -> layout.bar
+            else -> null
+        }
+    }
+
+    /** Centres of [count] equal slots across a row that starts at [left] and is [width] wide. */
+    fun slotCenters(count: Int, left: Float, width: Float): List<Float> {
+        if (count <= 0) return emptyList()
+        val slot = width / count
+        return List(count) { left + slot * it + slot / 2f }
+    }
+
     /** Reorders the panel: [id] goes right before [beforeId]; null puts it at the end. */
     fun movePanel(layout: Layout, id: String, beforeId: String?): Pair<Layout, Result> {
         if (id == beforeId) return layout to Result.UNCHANGED

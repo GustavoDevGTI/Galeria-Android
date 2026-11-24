@@ -64,7 +64,7 @@ class DetailPlaybackInstrumentedTest {
                 onView(withContentDescription("Desativar som")).perform(click())
                 onView(withContentDescription("Ativar som")).check(matches(isDisplayed()))
 
-                onView(withText("1x")).perform(click())
+                onView(withText("1x")).perform(quickTap())
                 onView(withText("1,5x")).check(matches(isDisplayed()))
 
                 scenario.recreate()
@@ -107,17 +107,19 @@ class DetailPlaybackInstrumentedTest {
                 fun assertSpeed(expected: Float) = scenario.onActivity { activity ->
                     val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
                     assertSame(original, player)
-                    assertEquals(expected, player.playbackParameters.speed, 0.001f)
+                    // If the selector is open, the tap reached the button as a long press.
+                    assertEquals("Velocidade (seletor aberto: ${activity.speedPopup?.isShowing == true})",
+                        expected, player.playbackParameters.speed, 0.001f)
                     assertEquals(DetailPlaybackRules.speedLabel(expected), activity.window.decorView.findViewWithTag<TextView>("video_speed").text.toString())
                     assertFalse("Mudar velocidade não deve dar play", player.playWhenReady)
                 }
                 repeat(2) {
                     for (speed in listOf(1.5f, 2f, 1f)) {
-                        onView(withTagValue(`is`("video_speed"))).perform(click())
+                        onView(withTagValue(`is`("video_speed"))).perform(quickTap())
                         assertSpeed(speed)
                     }
                 }
-                onView(withTagValue(`is`("video_speed"))).perform(click())
+                onView(withTagValue(`is`("video_speed"))).perform(quickTap())
                 assertSpeed(1.5f)
                 onView(withTagValue(`is`("video_speed"))).perform(longClick())
                 assertSpeed(1.5f)
@@ -130,11 +132,30 @@ class DetailPlaybackInstrumentedTest {
                     val popup = DetailActivity::class.java.getDeclaredField("speedPopup").apply { isAccessible = true }.get(it) as PopupWindow
                     assertFalse("Escolher velocidade fecha o seletor", popup.isShowing)
                 }
-                onView(withTagValue(`is`("video_speed"))).perform(click())
+                onView(withTagValue(`is`("video_speed"))).perform(quickTap())
                 assertSpeed(1f)
             }
         } finally { file.delete() }
     }
+
+    /**
+     * A quick tap. When the emulator is busy (the first test after installing), Espresso can
+     * oversleep between finger down and up, and the system then sees a long press, which opens
+     * the speed selector instead of changing the speed. Espresso notices that it overslept and
+     * runs this rollback (closing the selector) before tapping again; a real tap the app ignored
+     * still fails the test.
+     */
+    private fun quickTap() = click(object : androidx.test.espresso.ViewAction {
+        override fun getConstraints(): org.hamcrest.Matcher<View> = androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(View::class.java)
+        override fun getDescription() = "fechar o seletor de velocidade aberto por um toque que virou toque longo"
+        override fun perform(uiController: androidx.test.espresso.UiController, view: View) {
+            android.util.Log.w("SpeedTest", "Toque virou toque longo; fechando o seletor e tocando de novo")
+            androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                .filterIsInstance<DetailActivity>().forEach { it.speedPopup?.dismiss() }
+            uiController.loopMainThreadUntilIdle()
+        }
+    })
 
     private fun insertEmptyVideo(context: Context): Uri {
         val values = ContentValues().apply {
