@@ -321,7 +321,6 @@ class ImageEditActivity : ComponentActivity() {
         }
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.msg_resize_image))
-            .setMessage(getString(R.string.msg_resize_message))
             .setView(input)
             .setNegativeButton(getString(R.string.action_cancel), null)
             .setPositiveButton(getString(R.string.settings_theme_apply)) { _, _ ->

@@ -2,6 +2,7 @@ package com.galeria.android
 
 import android.graphics.Rect
 import android.view.View
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
 class GridSpacingItemDecoration(
@@ -26,7 +27,13 @@ class GridSpacingItemDecoration(
             return
         }
 
-        val column = position % spanCount
+        // The span GridLayoutManager assigned, so rows after a full-width group title stay aligned.
+        val params = view.layoutParams as? GridLayoutManager.LayoutParams
+        if (params != null && params.spanSize >= spanCount) {
+            if (horizontal) outRect.set(spacingPx, 0, 0, 0) else outRect.set(0, spacingPx, 0, 0)
+            return
+        }
+        val column = params?.spanIndex?.takeIf { it >= 0 } ?: (position % spanCount)
         val start = spacingPx - column * spacingPx / spanCount
         val end = (column + 1) * spacingPx / spanCount
         if (horizontal) {

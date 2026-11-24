@@ -150,7 +150,7 @@ class AlbumCoverInstrumentedTest {
                 onView(withText("Escolher capa")).perform(click())
                 waitForView {
                     onView(withContentDescription("Pesquisar nesta pasta"))
-                        .check(matches(withHint("Toque na mídia que será a capa")))
+                        .check(matches(withHint(context.getString(R.string.album_choose_cover))))
                 }
                 onView(withContentDescription(name)).perform(click())
                 assertTrue(MediaIdentityRules.sameUri(uri.toString(), prefs.getString(prefKey, null).orEmpty()))

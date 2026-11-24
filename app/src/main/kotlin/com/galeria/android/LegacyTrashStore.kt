@@ -31,7 +31,7 @@ object LegacyTrashStore {
         return true
     }
 
-    fun restore(activity: Activity, uri: Uri): Boolean {
+    fun restore(activity: Context, uri: Uri): Boolean {
         val source = file(uri) ?: return false
         val encoded = entries(activity).firstOrNull { decode(it)?.trashPath == source.absolutePath } ?: return false
         val entry = decode(encoded) ?: return false
@@ -44,6 +44,11 @@ object LegacyTrashStore {
         scan(activity, source.absolutePath, target.absolutePath)
         return true
     }
+
+    /** The copy in the Trash of the file that was at [originalPath], if any. */
+    fun trashedCopyOf(context: Context, originalPath: String): Uri? = entries(context).asSequence()
+        .mapNotNull(::decode).firstOrNull { it.originalPath == originalPath && File(it.trashPath).exists() }
+        ?.let { Uri.fromFile(File(it.trashPath)) }
 
     fun forget(context: Context, uri: Uri) {
         val path = file(uri)?.absolutePath ?: return

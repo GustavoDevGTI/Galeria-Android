@@ -84,13 +84,34 @@ class AlbumViewerOrderInstrumentedTest {
         }
     }
 
+    @Test fun groupTitleAppearsAboveTheMediaAndTapsStillOpenTheTappedMedia() {
+        prefs.edit().putString(key("group_mode"), AlbumMediaRules.GROUP_SIZE).commit()
+        ActivityScenario.launch<AlbumMediaActivity>(Intent(context, AlbumMediaActivity::class.java).apply {
+            putExtra("album_key", path); putExtra("album_name", "Ordem do visualizador")
+        }).use { scenario ->
+            awaitGrid(scenario, listOf("Beta.png", "Zeta.png", "Alpha.png"))
+            await {
+                var shown = false
+                scenario.onActivity {
+                    val adapter = AlbumMediaActivity::class.java.getDeclaredField("adapter").apply { isAccessible = true }.get(it) as MediaRecyclerAdapter
+                    val title = it.window.decorView.findViewWithTag<android.widget.TextView>(MediaRecyclerAdapter.TAG_GROUP_HEADER)
+                    shown = adapter.itemCount == 4 && adapter.isGroupHeader(0) && title?.isShown == true && title.text.toString() == "1 MB"
+                }
+                shown
+            }
+            onView(withContentDescription("Zeta.png")).perform(clickClickableAncestor())
+            awaitViewer("Zeta.png", listOf("Beta.png", "Zeta.png", "Alpha.png"))
+            pressBack()
+        }
+    }
+
     @Test fun queueUsesTheAlbumSortAndGroupingInsteadOfAlwaysApplyingSavedManualOrder() {
         val source = MediaStoreRepository.queryAlbumMedia(context, path, false)
         val saved = GalleryCatalogStore.migrateLegacyOrder(context, path)
         val current = source.first { it.name == "Beta.png" }
         val modes = listOf(MediaSortRules.SORT_CUSTOM, MediaSortRules.SORT_DATE, MediaSortRules.SORT_NAME,
             MediaSortRules.SORT_SIZE, MediaSortRules.SORT_DURATION, MediaSortRules.SORT_TYPE)
-        for (mode in modes) for (descending in listOf(false, true)) for (group in listOf(AlbumMediaRules.GROUP_NONE, AlbumMediaRules.GROUP_DAY)) {
+        for (mode in modes) for (descending in listOf(false, true)) for (group in listOf(AlbumMediaRules.GROUP_NONE, AlbumMediaRules.GROUP_DAY, AlbumMediaRules.GROUP_SIZE)) {
             prefs.edit().putString(key("sort_mode"), mode).putBoolean(key("sort_desc"), descending).putString(key("group_mode"), group).commit()
             val expected = AlbumMediaRules.prepare(source, AlbumMediaPreparationOptions(MediaFilterOptions(), group, mode, descending), saved)
             lateinit var controller: DetailMediaQueueController

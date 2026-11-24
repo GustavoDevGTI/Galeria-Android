@@ -205,7 +205,7 @@ class MediaActions private constructor() {
         }
 
         @JvmStatic
-        fun deleteDirect(activity: Activity, uri: Uri): Boolean {
+        fun deleteDirect(activity: Context, uri: Uri): Boolean {
             val file = fileFromMediaStore(activity, uri)
             if ((hasAllFilesAccess(activity) || uri.scheme == "file") && file != null && file.exists()) {
                 val path = file.absolutePath

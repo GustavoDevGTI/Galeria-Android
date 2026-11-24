@@ -481,6 +481,27 @@ object AlbumMediaRules {
     const val GROUP_EXTENSION = "extension"
     const val GROUP_DAY = "day"
     const val GROUP_MONTH = "month"
+    const val GROUP_SIZE = "size"
+
+    private const val MB = 1_000_000L
+    private const val GB = 1_000_000_000L
+
+    /** Size group floors, largest first, in the same decimal units shown by
+     * Formatter.formatFileSize: 3 GB, 2.5 GB, 2 GB, 1.5 GB, 1.2 GB, 1 GB,
+     * 900..100 MB, 90..10 MB and 9..1 MB. The first group also takes everything
+     * above 3 GB and the last (1 MB) everything below 2 MB, including < 1 MB. */
+    val SIZE_GROUP_FLOORS: List<Long> = buildList {
+        add(3 * GB); add(5 * GB / 2); add(2 * GB); add(3 * GB / 2); add(6 * GB / 5); add(GB)
+        for (mb in 900 downTo 100 step 100) add(mb * MB)
+        for (mb in 90 downTo 10 step 10) add(mb * MB)
+        for (mb in 9 downTo 1) add(mb * MB)
+    }
+
+    /** Index in SIZE_GROUP_FLOORS of the group a file of [bytes] belongs to. */
+    fun sizeGroupIndex(bytes: Long): Int {
+        for (index in SIZE_GROUP_FLOORS.indices) if (bytes >= SIZE_GROUP_FLOORS[index]) return index
+        return SIZE_GROUP_FLOORS.lastIndex
+    }
 
     fun shouldUsePaging(albumKey: String?, groupMode: String, selectionMode: Boolean): Boolean =
         (albumKey.isNullOrEmpty() || albumKey == "all_media" || albumKey == VirtualAlbumRules.RECENT_KEY) &&
@@ -545,11 +566,15 @@ object AlbumMediaRules {
         item.mimeType
     )
 
+    /** The group [item] belongs to; groups are shown in the ascending order of this key. */
+    fun groupKey(item: MediaItem, groupMode: String): String = groupValue(item, groupMode)
+
     private fun groupValue(item: MediaItem, groupMode: String): String = when (groupMode) {
         GROUP_TYPE -> if (item.isVideo()) "2_video" else "1_image"
         GROUP_EXTENSION -> item.name.substringAfterLast('.', "").lowercase(Locale.US)
         GROUP_DAY -> dateGroup(item.dateAdded, includeDay = true)
         GROUP_MONTH -> dateGroup(item.dateAdded, includeDay = false)
+        GROUP_SIZE -> String.format(Locale.US, "%03d", sizeGroupIndex(item.size))
         else -> ""
     }
 
@@ -665,13 +690,15 @@ object ViewerMenuRules {
     const val AUDIO_TRACK = "Trilha de áudio"
     const val SUBTITLES = "Legenda"
     const val RECOGNIZE_TEXT = "Reconhecer texto"
+    const val SEPARATE = "Separar"
 
     fun options(
         isVideo: Boolean,
         loopEnabled: Boolean,
         shuffleMode: Boolean,
         hasLocation: Boolean = false,
-        cinemaMode: Boolean = false
+        cinemaMode: Boolean = false,
+        separable: Boolean = false
     ): List<String> {
         if (!isVideo) {
             return buildList {
@@ -696,6 +723,8 @@ object ViewerMenuRules {
             add(MOVE_TO)
             add(HIDE)
             add(INFORMATION)
+            // Only a video joined by the app can give back its media.
+            if (separable) add(SEPARATE)
             if (cinemaMode) {
                 add(AUDIO_TRACK)
                 add(SUBTITLES)

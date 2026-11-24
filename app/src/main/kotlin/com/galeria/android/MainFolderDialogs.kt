@@ -110,13 +110,7 @@ internal fun MainActivity.showAlbumSpacingDialog() {
         textSize = 18f
         setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
         setTextColor(Ui.menuText(this@showAlbumSpacingDialog))
-    })
-    panel.addView(TextView(this).apply {
-        setText(R.string.main_album_spacing_hint)
-        textSize = 13f
-        setTextColor(Ui.menuText(this@showAlbumSpacingDialog))
-        alpha = 0.78f
-        Ui.setPadding(this, 0, 6, 0, 12)
+        Ui.setPadding(this, 0, 0, 0, 12)
     })
     panel.addView(SeekBar(this).apply {
         tag = "album_spacing_slider"
@@ -150,8 +144,7 @@ internal fun MainActivity.showFolderOrganizationDialog() {
         this,
         getString(R.string.main_folder_organization),
         labels,
-        checked,
-        message = getString(R.string.main_folder_organization_hint)
+        checked
     ) { which ->
         setColumnCount(which + 2)
     }
@@ -520,10 +513,8 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
         )
     }
 
-    refresher.setOnRefreshListener {
-        refresher.isRefreshing = false
-        Ui.toast(this, getString(R.string.main_hidden_refresh_instruction))
-    }
+    // Hidden folders load from their own button; pulling the list does nothing here.
+    refresher.isEnabled = false
     renderAlbums()
 
     var countsRefreshPending = false
@@ -617,17 +608,7 @@ internal fun MainActivity.showFolderVisibilityDialog(albums: List<AlbumItem>): (
                 textSize = 18f
                 setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
                 setTextColor(dialogText)
-                setPadding(Ui.dp(ctx, 8), 0, Ui.dp(ctx, 8), 0)
-            },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        )
-        addView(
-            TextView(ctx).apply {
-                setText(R.string.main_hidden_dialog_help)
-                textSize = 14f
-                setTextColor(dialogMuted)
-                setLineSpacing(0f, 1.1f)
-                setPadding(Ui.dp(ctx, 8), Ui.dp(ctx, 6), Ui.dp(ctx, 8), Ui.dp(ctx, 12))
+                setPadding(Ui.dp(ctx, 8), 0, Ui.dp(ctx, 8), Ui.dp(ctx, 12))
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )

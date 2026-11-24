@@ -1,7 +1,7 @@
 <resources>
     <string name="action_organize">Organize</string>
     <string name="organizer_undo">Undo</string>
-    <string name="organizer_source">Choose the source album</string>
+    <string name="organizer_source">Source album</string>
     <plurals name="organizer_in_progress">
         <item quantity="one">Organizing · %d sorted</item>
         <item quantity="other">Organizing · %d sorted</item>
@@ -16,7 +16,7 @@
         <item quantity="other">%1$d items sent</item>
     </plurals>
     <string name="organizer_reserve">Reserve · %1$d</string>
-    <string name="organizer_empty">Album organized. You can still sort the media in the reserve.</string>
+    <string name="organizer_empty">Album organized</string>
     <string name="organizer_access">Allow file management to move media continuously.</string>
     <string name="organizer_loading">Preparing media…</string>
     <plurals name="organizer_remaining">
@@ -42,7 +42,7 @@
     <string name="image_rotate_done">Orientation changed.</string>
     <string name="image_rotate_error">Could not change the orientation.</string>
     <string name="image_rotate_permission_error">Could not get permission to rotate this photo.</string>
-    <string name="image_rotate_copy_required">This format has to be saved as a copy. Check the rotation and tap Save copy.</string>
+    <string name="image_rotate_copy_required">This format has to be saved as a copy.</string>
     <string name="video_play">Play video</string>
     <string name="video_pause">Pause video</string>
     <string name="viewer_previous_media">Previous media</string>
@@ -89,7 +89,6 @@
     <string name="action_pin_album">Pin/unpin</string>
     <string name="album_pinned">Album pinned</string>
     <string name="album_choose_cover">Choose cover</string>
-    <string name="album_choose_cover_hint">Tap the media that will be the cover</string>
     <string name="album_cover_saved">Album cover set.</string>
     <string name="album_automatic_cover">Use automatic cover</string>
     <string name="album_automatic_cover_saved">The cover will follow the album order.</string>
@@ -171,9 +170,7 @@
     <string name="main_folder_organization">Folder layout</string>
     <string name="main_album_spacing">Album spacing</string>
     <string name="action_information">Information</string>
-    <string name="main_album_spacing_hint">Left: more space. Right: less space. The setting is saved automatically and does not change the grid inside folders.</string>
     <string name="main_folder_visibility">Show/hide folders</string>
-    <string name="main_folder_organization_hint">Use two fingers on the grid: pinch to shrink the covers, spread to enlarge them.</string>
     <string name="main_pin_hidden">Pin to hidden</string>
     <string name="main_unpin_hidden">Unpin from hidden</string>
     <string name="main_reveal_hidden_temporarily">Show for 30 minutes</string>
@@ -182,9 +179,7 @@
     <string name="main_show_hidden">Show hidden</string>
     <string name="main_unselect_hidden">Unselect hidden</string>
     <string name="main_load_hidden">Load hidden</string>
-    <string name="main_hidden_dialog_help">Check the folders that should always appear and confirm with OK. The eye shows a hidden folder for 30 minutes without changing its setting.</string>
     <string name="main_hidden_refresh_failed">Could not refresh the hidden folders.</string>
-    <string name="main_hidden_refresh_instruction">Use the Load hidden button to look for new folders.</string>
     <string name="sort_name">Alphabetical name</string>
     <string name="sort_path">Path</string>
     <string name="sort_size">Size</string>
@@ -213,17 +208,17 @@
     <string name="album_cinema_mode_enabled">Cinema mode on.</string>
     <string name="album_cinema_mode_disabled">Cinema mode off.</string>
     <string name="album_grid_spacing">Grid spacing</string>
-    <string name="album_grid_spacing_hint">Applies to every folder. Left: more space. Right: no space.</string>
-    <string name="album_group_none">Do not group files</string>
+    <string name="album_group_none">No grouping</string>
     <string name="album_group_type">File type</string>
     <string name="album_group_extension">Extension</string>
     <string name="album_group_day">Photo date (by day)</string>
     <string name="album_group_month">Photo date (by month)</string>
+    <string name="album_group_size">File size</string>
+    <string name="album_group_no_extension">No extension</string>
     <string name="album_sort_custom">Custom order</string>
     <string name="album_sort_added_date">Date added/downloaded</string>
     <string name="album_sort_duration">Duration</string>
     <string name="album_sort_type">Type and format</string>
-    <string name="album_sort_group_hint">Sorting works together with the current grouping.</string>
     <string name="album_delete_selected_title">Move to the Trash</string>
     <string name="album_delete_selected_message">Move %s to the Trash?</string>
     <string name="album_loading_media">Loading media…</string>
@@ -551,7 +546,6 @@
     <string name="msg_ratio_free">Free</string>
     <string name="msg_ratio_original">Original</string>
     <string name="msg_width_pixels">Width in pixels</string>
-    <string name="msg_resize_message">Set the width. The height is adjusted proportionally (up to 4096 px).</string>
     <string name="msg_resize_invalid">Choose a valid width of up to 4096 px.</string>
     <string name="msg_wait_image">Wait for the image to load.</string>
     <string name="msg_edited_image_saved">Edited image saved.</string>
@@ -562,15 +556,6 @@
     <string name="msg_filter_warm">Warm</string>
     <string name="msg_filter_cool">Cool</string>
     <string name="msg_filter_soft">Soft</string>
-    <string name="msg_video_duration_failed">Could not get this video\'s duration.</string>
-    <string name="msg_trim_video">Trim video</string>
-    <string name="msg_trim_hint">Select the start and end. Trimming keeps the supported tracks and saves a copy.</string>
-    <string name="msg_trim_start">Start  %1$s</string>
-    <string name="msg_trim_end">End  %1$s</string>
-    <string name="msg_trimmed_video_saved">Trimmed video saved in Galeria Editada.</string>
-    <string name="msg_trim_failed">Could not trim</string>
-    <string name="msg_trim_failed_message">%1$s\n\nThe original file was not changed.</string>
-    <string name="msg_trim_unsupported">Format not supported on this device.</string>
     <string name="msg_wait_saving">Wait for saving to finish.</string>
     <plurals name="msg_save_changes">
         <item quantity="one">Save %d change?</item>
@@ -640,7 +625,6 @@
     <string name="image_edit_filters">Filters</string>
     <string name="image_edit_flip">Flip</string>
     <string name="image_edit_ready">Image ready for editing</string>
-    <string name="video_edit_preview">Preview</string>
     <string name="video_edit_saving">Saving…</string>
     <string name="track_mono">Mono</string>
     <string name="track_stereo">Stereo</string>
@@ -695,6 +679,7 @@
         <item>@string/album_group_extension</item>
         <item>@string/album_group_day</item>
         <item>@string/album_group_month</item>
+        <item>@string/album_group_size</item>
     </string-array>
     <string-array name="album_view_mode_labels">
         <item>@string/view_grid</item>
@@ -741,12 +726,11 @@
     <string name="folder_empty">No folders here</string>
     <string name="move_new_folder">New folder</string>
     <string name="folder_pick_parent">Open a folder such as DCIM or Pictures to create the new folder inside it.</string>
-    <string name="browse_panel_hint">Hold an icon and drag it to the bar to make a shortcut, or drag a shortcut back here to remove it.</string>
-    <string name="browse_panel_empty">Every option is on the bar. Drag a shortcut here to bring it back.</string>
+    <string name="browse_panel_empty">Every option is on the bar</string>
     <string name="browse_bar_full">The bar holds up to %1$d shortcuts.</string>
     <string name="browse_bar_min">The bar needs at least one shortcut.</string>
     <string name="action_theme">Theme</string>
-    <string name="main_custom_order_enabled">Custom order on. Choose another sort in Sort to change it.</string>
+    <string name="main_custom_order_enabled">Custom order on</string>
     <string name="security_forgot_password">Forgot password</string>
     <string name="security_recovery_title">Secret question</string>
     <string name="security_recovery_add_title">Secret question for %1$s</string>
@@ -783,4 +767,50 @@
     <string name="settings_text_index_progress_title">Text read</string>
     <string name="settings_text_index_progress">%1$d of %2$d photos</string>
     <string name="action_menu">Menu</string>
+    <string name="action_join">Join</string>
+    <string name="action_selection_menu">Selection menu</string>
+    <string name="join_need_two">Select two or more items</string>
+    <string name="join_channel">Join media</string>
+    <string name="join_running">Joining media</string>
+    <string name="join_saved">Video saved</string>
+    <string name="join_failed">Couldn\'t join the media</string>
+    <string name="join_open_error">Couldn\'t open the media</string>
+    <string name="join_quality">Quality</string>
+    <string name="join_quality_native">Native</string>
+    <string name="join_photo_time">Time per photo</string>
+    <string name="join_seconds">%d s</string>
+    <string name="join_split">Split</string>
+    <string name="join_add">Add media</string>
+    <string name="join_transition">Transition</string>
+    <string name="join_transition_none">Cut</string>
+    <string name="join_transition_dissolve">Dissolve</string>
+    <string name="join_transition_fade">Fade</string>
+    <string name="join_transition_slide">Slide</string>
+    <string name="join_transition_zoom">Zoom</string>
+    <string name="join_background">Background</string>
+    <string name="join_strip">Media order</string>
+    <string name="join_timeline">Timeline</string>
+    <string name="join_move_left">Move left</string>
+    <string name="join_move_right">Move right</string>
+    <string name="settings_join_in_background">Join in the background</string>
+    <string name="settings_join_in_background_hint">Keeps joining media after you leave the editor.</string>
+    <string name="action_separate">Separate</string>
+    <string name="separate_title">Separate this video?</string>
+    <string name="separate_message">The joined video goes to the trash.</string>
+    <string name="separated">Media separated</string>
+    <string name="separate_cancelled">Separation cancelled</string>
+    <string name="settings_clock_photos">Clock on photos too</string>
+    <string name="settings_clock_photos_hint">Photos used in a join also leave after 48 hours, like the videos.</string>
+    <string name="settings_clock_permanent">Clock deletes for good</string>
+    <string name="settings_clock_permanent_hint">Only with the trash off. Otherwise, media whose clock runs out go to the trash.</string>
+    <string name="clock_hours">%1$d h</string>
+    <string name="clock_minutes">%1$d min</string>
+    <string name="clock_cancel">Keep this media, %1$s left</string>
+    <string name="clock_cancelled">It will not be deleted</string>
+    <string name="clock_channel">Automatic deletion</string>
+    <string name="clock_confirm_title">Media ready to leave</string>
+    <plurals name="clock_confirm_text">
+        <item quantity="one">%1$d media waits for your confirmation</item>
+        <item quantity="other">%1$d media wait for your confirmation</item>
+    </plurals>
 </resources>

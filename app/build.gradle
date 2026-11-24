@@ -35,8 +35,8 @@ android {
         applicationId = "com.galeria.android"
         minSdk 23
         targetSdk 37
-        versionCode = 9022
-        versionName = "0.9.22"
+        versionCode = 9023
+        versionName = "0.9.23"
         testInstrumentationRunner providers.gradleProperty("ocrReleaseSmoke").orNull == "true"
             ? "com.galeria.android.OcrReleaseSmokeRunner" : "com.galeria.android.GalleryTestRunner"
     }
@@ -123,6 +123,8 @@ dependencies {
     implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.2.0"
     implementation "androidx.media3:media3-exoplayer:1.10.1"
     implementation "androidx.media3:media3-ui:1.10.1"
+    implementation "androidx.media3:media3-transformer:1.10.1"
+    implementation "androidx.media3:media3-effect:1.10.1"
     implementation "io.coil-kt.coil3:coil:3.6.2"
     implementation "io.coil-kt.coil3:coil-video:3.6.2"
     implementation "io.coil-kt.coil3:coil-gif:3.6.2"

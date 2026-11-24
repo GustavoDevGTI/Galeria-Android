@@ -219,10 +219,8 @@ internal fun DetailActivity.openCurrentEditor() {
     }
     val item = currentItem()
     confirmPublicEditedCopy(item) {
-        startActivity(Intent(this, VideoEditActivity::class.java).apply {
-            putExtra("uri", item.uri.toString())
-            putExtra("name", item.name)
-        })
+        // One editor for every video: a single clip to cut, or the start of a montage.
+        startActivity(MediaJoinActivity.intent(this, listOf(item)))
     }
 }
 

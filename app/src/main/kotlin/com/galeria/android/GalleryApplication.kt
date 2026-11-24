@@ -18,6 +18,8 @@ class GalleryApplication : Application(), SingletonImageLoader.Factory, Configur
         GalleryUpgradeCoordinator.initialize(this)
         // Text of the photos for the search, read in the background from the first opening.
         MediaTextIndexScheduler.schedule(this)
+        // Clocks that ran out while the phone was off are handled now.
+        MediaClocks.schedule(this, includeOverdue = true)
     }
 
     override val workManagerConfiguration: Configuration

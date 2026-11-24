@@ -9,7 +9,13 @@ import android.widget.LinearLayout
  * Bottom bar with the shortcuts the user picked; the rest live in the options panel. Each button
  * keeps the tag "browse_<id>". Selection actions belong to their existing dock.
  */
-internal class GalleryBrowseBar(context: Context, bottomInset: Int = 0) : LinearLayout(context) {
+internal class GalleryBrowseBar(
+    context: Context,
+    bottomInset: Int = 0,
+    barTag: String = "gallery_browse_bar",
+    private val actionPrefix: String = "browse_",
+    private val menuTag: String = MENU_TAG
+) : LinearLayout(context) {
     private val dock = Ui.selectionActionDock(context)
 
     /** Long press on a shortcut; returns true when it started something (a drag). */
@@ -22,7 +28,7 @@ internal class GalleryBrowseBar(context: Context, bottomInset: Int = 0) : Linear
     fun setBottomInset(bottomInset: Int) = setPadding(paddingLeft, paddingTop, paddingRight, bottomInset)
 
     init {
-        tag = "gallery_browse_bar"
+        tag = barTag
         orientation = VERTICAL
         setPadding(0, Ui.dp(context, 1), 0, bottomInset)
         addView(dock, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -34,7 +40,7 @@ internal class GalleryBrowseBar(context: Context, bottomInset: Int = 0) : Linear
         dock.removeAllViews()
         for (action in actions) {
             Ui.selectionAction(context, action.icon, action.label, action.run).apply {
-                tag = "browse_${action.id}"
+                tag = "$actionPrefix${action.id}"
                 contentDescription = action.description
                 isEnabled = action.enabled
                 alpha = if (action.enabled) 1f else 0.4f
@@ -45,7 +51,7 @@ internal class GalleryBrowseBar(context: Context, bottomInset: Int = 0) : Linear
         }
         menu?.let { action ->
             Ui.selectionAction(context, action.icon, action.label, action.run).apply {
-                tag = MENU_TAG
+                tag = menuTag
                 contentDescription = action.description
                 isSelected = action.selected
                 Ui.addSelectionActionToDock(dock, this)

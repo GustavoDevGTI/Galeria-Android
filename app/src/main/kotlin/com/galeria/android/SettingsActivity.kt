@@ -153,6 +153,9 @@ class SettingsActivity : Activity() {
         addSwitch(getString(R.string.settings_autoplay_videos), getString(R.string.settings_autoplay_videos_hint), GalleryPreferences.AUTOPLAY_VIDEOS, true, null)
         addSwitch(getString(R.string.settings_remember_video_position), getString(R.string.settings_remember_video_position_hint), GalleryPreferences.REMEMBER_VIDEO_POSITION, true, null)
         addSwitch(getString(R.string.settings_loop_videos), getString(R.string.settings_loop_videos_hint), GalleryPreferences.LOOP_VIDEOS, false, null)
+        addSwitch(getString(R.string.settings_join_in_background), getString(R.string.settings_join_in_background_hint), GalleryPreferences.JOIN_IN_BACKGROUND, GalleryPreferences.defaultOf(GalleryPreferences.JOIN_IN_BACKGROUND), null)
+        addSwitch(getString(R.string.settings_clock_photos), getString(R.string.settings_clock_photos_hint), GalleryPreferences.CLOCK_PHOTOS, GalleryPreferences.defaultOf(GalleryPreferences.CLOCK_PHOTOS), null)
+        addSwitch(getString(R.string.settings_clock_permanent), getString(R.string.settings_clock_permanent_hint), GalleryPreferences.CLOCK_DELETES_PERMANENTLY, GalleryPreferences.defaultOf(GalleryPreferences.CLOCK_DELETES_PERMANENTLY), null)
         addSwitch(getString(R.string.settings_video_separate_screen), getString(R.string.settings_video_separate_screen_hint), GalleryPreferences.VIDEO_SEPARATE_SCREEN, GalleryPreferences.defaultOf(GalleryPreferences.VIDEO_SEPARATE_SCREEN), null)
         addSwitch(getString(R.string.settings_video_vertical_gestures), getString(R.string.settings_video_vertical_gestures_hint), GalleryPreferences.VIDEO_VERTICAL_GESTURES, GalleryPreferences.defaultOf(GalleryPreferences.VIDEO_VERTICAL_GESTURES), null)
 

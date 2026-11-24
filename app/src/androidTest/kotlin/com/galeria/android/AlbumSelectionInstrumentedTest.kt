@@ -140,7 +140,9 @@ class AlbumSelectionInstrumentedTest {
                         assertEquals(true, view.background is RippleDrawable)
                         if (action == "Compartilhar") {
                             val dock = view.parent as LinearLayout
-                            assertEquals("A barra deve ter quatro ações sem divisórias.", 4, dock.childCount)
+                            // Four shortcuts and the fixed Menu, like the browse bar, without dividers.
+                            assertEquals("A barra deve ter quatro ações e o Menu, sem divisórias.", 5, dock.childCount)
+                            assertEquals(AlbumMediaActivity.SELECTION_MENU_TAG, dock.getChildAt(4).tag)
                             val fullBar = dock.parent as View
                             assertEquals("O conjunto de ações deve preencher toda a barra inferior.", fullBar.width, dock.width)
                             assertEquals("A barra não deve deixar recorte na lateral esquerda.", 0, fullBar.paddingLeft)
@@ -152,6 +154,11 @@ class AlbumSelectionInstrumentedTest {
                 }
                 onView(withContentDescription("Visualizar $secondName sem alterar a seleção")).perform(tapVisibleCenter())
                 waitUntilText(secondName)
+                pressBack()
+                waitUntilHint("3/3")
+                // The Menu keeps the other selection actions, such as joining, in the icon panel.
+                onView(withContentDescription(R.string.action_selection_menu)).check(matches(isDisplayed())).perform(click())
+                onView(withContentDescription(R.string.action_join)).check(matches(isDisplayed()))
                 pressBack()
                 waitUntilHint("3/3")
                 onView(withContentDescription("Mover")).check(matches(isDisplayed())).perform(click())

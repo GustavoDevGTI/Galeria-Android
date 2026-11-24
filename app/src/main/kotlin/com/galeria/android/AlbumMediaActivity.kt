@@ -82,8 +82,8 @@ class AlbumMediaActivity : ComponentActivity() {
     private var savedFirstVisible = 0
     private var draggedView: View? = null
     private lateinit var selectionBar: LinearLayout
-    private lateinit var selectionActions: LinearLayout
-    private lateinit var selectionActionDock: LinearLayout
+    internal lateinit var selectionActionBar: GalleryBrowseBar
+    internal var selectionPanel: BrowseActionPanel? = null
     internal lateinit var browseBar: GalleryBrowseBar
     internal var browsePanel: BrowseActionPanel? = null
     private var appliedThemeBackground: Int? = null
@@ -206,6 +206,8 @@ class AlbumMediaActivity : ComponentActivity() {
         if (::swipeRefresh.isInitialized && !adapter.isSelectionMode()) swipeRefresh.isEnabled = pullToRefreshEnabled()
         if (::adapter.isInitialized) {
             adapter.refreshDisplayPreferences()
+            // The time left on the clocks, and the ones kept or started elsewhere.
+            adapter.refreshClocks(force = !firstResume)
             if (adapter.currentViewType() != (if (listMode) 1 else if (horizontalGridEnabled()) 2 else 0)) applyViewMode()
         }
         Ui.applySystemBars(this)
@@ -426,7 +428,7 @@ class AlbumMediaActivity : ComponentActivity() {
         }
         adapter = MediaRecyclerAdapter(this, object : MediaRecyclerAdapter.Callbacks {
             override fun onMediaClick(position: Int) {
-                if (position !in 0 until adapter.getCount()) return
+                if (adapter.peekItem(position) == null) return
                 if (!dragging) {
                     if (choosingAlbumCover) {
                         val item = adapter.getItem(position)
@@ -450,14 +452,12 @@ class AlbumMediaActivity : ComponentActivity() {
             }
 
             override fun onMediaPreview(position: Int) {
-                if (position in 0 until adapter.getCount()) {
-                    openDetail(adapter.getItem(position), position)
-                }
+                adapter.peekItem(position)?.let { openDetail(it, position) }
             }
 
             override fun onMediaLongClick(view: View, position: Int): Boolean {
                 if (choosingAlbumCover) return true
-                if (position !in 0 until adapter.getCount()) return true
+                if (adapter.peekItem(position) == null) return true
                 val wasSelectionMode = adapter.isSelectionMode()
                 val wasSelected = adapter.isSelected(position)
                 if (adapter.isPagingMode()) {
@@ -493,6 +493,11 @@ class AlbumMediaActivity : ComponentActivity() {
                 return true
             }
         })
+        // Group titles take a whole row of the grid.
+        layoutManager.spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+            override fun getSpanSize(position: Int): Int =
+                if (adapter.isGroupHeader(position)) layoutManager.spanCount else 1
+        }
         updateThumbnailRequestSize()
         adapter.addLoadStateListener { states ->
             if (!adapter.isPagingMode() || !::swipeRefresh.isInitialized) return@addLoadStateListener
@@ -600,29 +605,16 @@ class AlbumMediaActivity : ComponentActivity() {
         refreshAlbumBrowseBar()
         root.addView(browseBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
-        selectionActions = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Ui.surface(this@AlbumMediaActivity))
-            setPadding(0, Ui.dp(this@AlbumMediaActivity, 1), 0, systemBars.bottom)
-        }
+        // The selection bar works like the browse bar: shortcuts, a fixed Menu and the icon panel.
+        selectionActionBar = GalleryBrowseBar(this, systemBars.bottom, SELECTION_BAR_TAG, "selection_", SELECTION_MENU_TAG)
         systemBars.onChange {
             bar.setPadding(Ui.dp(this, 8), systemBars.top + Ui.dp(this, 6), Ui.dp(this, 8), Ui.dp(this, 6))
             browseBar.setBottomInset(systemBars.bottom)
-            selectionActions.setPadding(0, Ui.dp(this, 1), 0, systemBars.bottom)
+            selectionActionBar.setBottomInset(systemBars.bottom)
         }
-        selectionActionDock = Ui.selectionActionDock(this)
-        selectionActions.addView(selectionActionDock, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        if (albumKey == VirtualAlbumRules.TRASH_KEY) {
-            addSelectionAction(R.drawable.ic_restore, getString(R.string.action_restore)) { restoreSelected() }
-            addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete_permanently)) { SecurityGate.requireFileOperation(this) { confirmDeleteSelected() } }
-        } else {
-            addSelectionAction(R.drawable.ic_share, getString(R.string.action_share)) { shareSelected() }
-            addSelectionAction(R.drawable.ic_heart, getString(R.string.action_favorite)) { favoriteSelected() }
-            addSelectionAction(R.drawable.ic_trash, getString(R.string.action_delete)) { SecurityGate.requireFileOperation(this) { confirmDeleteSelected() } }
-            addSelectionAction(R.drawable.ic_arrow_right, getString(R.string.action_move)) { SecurityGate.requireFileOperation(this) { askMoveSelected() } }
-        }
-        selectionActions.visibility = View.GONE
-        root.addView(selectionActions, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        refreshSelectionBar()
+        selectionActionBar.visibility = View.GONE
+        root.addView(selectionActionBar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         setContentView(root)
     }
 
@@ -635,10 +627,6 @@ class AlbumMediaActivity : ComponentActivity() {
         gridPoolWarmupRemaining = max(gridPoolWarmupRemaining, target)
         grid.removeCallbacks(gridPoolWarmup)
         grid.postDelayed(gridPoolWarmup, GRID_POOL_WARMUP_STEP_MS)
-    }
-
-    private fun addSelectionAction(icon: Int, label: String, listener: () -> Unit) {
-        Ui.addSelectionActionToDock(selectionActionDock, Ui.selectionAction(this, icon, label, listener))
     }
 
     private fun applyBrowseTheme() {
@@ -657,8 +645,7 @@ class AlbumMediaActivity : ComponentActivity() {
         swipeRefresh.setColorSchemeColors(Ui.accent(this))
         swipeRefresh.setProgressBackgroundColorSchemeColor(Ui.surface(this))
         browseBar.restyle()
-        selectionActions.setBackgroundColor(Ui.surface(this))
-        Ui.restyleSelectionActionDock(selectionActionDock)
+        selectionActionBar.restyle()
         updateSelectionUi()
         // Theme changes affect every visible cell, without invalidating the list structure.
         adapter.notifyItemRangeChanged(0, adapter.itemCount)
@@ -716,7 +703,8 @@ class AlbumMediaActivity : ComponentActivity() {
         }
         val active = adapter.isSelectionMode() && adapter.selectedCount() > 0
         selectionBar.visibility = View.GONE
-        selectionActions.visibility = if (active) View.VISIBLE else View.GONE
+        selectionActionBar.visibility = if (active) View.VISIBLE else View.GONE
+        if (!active) selectionPanel?.dismiss()
         browseBar.visibility = if (active) View.GONE else View.VISIBLE
         selectAllChip.visibility = if (active) View.VISIBLE else View.GONE
         Ui.styleSelectionToggle(selectAllChip, adapter.allVisibleSelected())
@@ -784,7 +772,7 @@ class AlbumMediaActivity : ComponentActivity() {
             else -> Ui.rounded(Ui.search(this), 18, this)
         }
         searchInput.hint = when {
-            choosingAlbumCover -> getString(R.string.album_choose_cover_hint)
+            choosingAlbumCover -> getString(R.string.album_choose_cover)
             selecting -> getString(R.string.album_selected_of_total, adapter.selectedCount(), adapter.getCount())
             searching -> getString(R.string.album_search_folder)
             // Search results show the words and how many photos were found.
@@ -836,6 +824,7 @@ class AlbumMediaActivity : ComponentActivity() {
             adapter.isSelectionMode()
         )
         val usePaging = AlbumMediaRules.shouldUsePaging(albumKey, groupMode, adapter.isSelectionMode())
+        adapter.setGrouping(mediaGrouping(groupMode))
         if (adapter.getCount() == 0 && ::emptyView.isInitialized) {
             emptyView.visibility = View.GONE
             catalogLoadingView.visibility = View.VISIBLE
@@ -870,6 +859,17 @@ class AlbumMediaActivity : ComponentActivity() {
         )
     }
 
+    /** A title above each group ("Vídeos", "Março de 2024", "2,5 GB"), or none when not grouped. */
+    private fun mediaGrouping(mode: String): MediaRecyclerAdapter.MediaGrouping? {
+        if (mode == GROUP_NONE) return null
+        val appContext = applicationContext
+        val labels = java.util.concurrent.ConcurrentHashMap<String, String>()
+        return MediaRecyclerAdapter.MediaGrouping(
+            key = { item -> AlbumMediaRules.groupKey(item, mode) },
+            label = { key -> labels.getOrPut(key) { MediaGroupLabels.label(appContext, mode, key) } }
+        )
+    }
+
     private fun submitPendingPagingData() {
         val page = pendingPagingData ?: return
         if (dragging || gridScrollState != RecyclerView.SCROLL_STATE_IDLE || isFinishing) return
@@ -892,7 +892,7 @@ class AlbumMediaActivity : ComponentActivity() {
                 updateEmptyState()
                 updateSelectionUi()
                 if (::swipeRefresh.isInitialized) swipeRefresh.isRefreshing = false
-                if (targetPosition > 0) grid.scrollToPosition(min(targetPosition, max(0, adapter.getCount() - 1)))
+                if (targetPosition > 0) grid.scrollToPosition(min(targetPosition, max(0, adapter.itemCount - 1)))
             }
         }
     }
@@ -1072,8 +1072,8 @@ class AlbumMediaActivity : ComponentActivity() {
             Ui.toast(this, getString(R.string.album_no_media_to_play))
             return
         }
-        val position = Random().nextInt(adapter.getCount())
-        openDetail(adapter.getItem(position), position, true)
+        val item = adapter.mediaAt(Random().nextInt(adapter.getCount())) ?: return
+        openDetail(item, adapter.positionOf(item.uri.toString()), true)
     }
 
     internal fun applyViewMode() {
@@ -1209,8 +1209,8 @@ class AlbumMediaActivity : ComponentActivity() {
         if (key != null && key != "all_media" && key.endsWith("/")) {
             return key
         }
-        if (::adapter.isInitialized && adapter.getCount() > 0) {
-            return adapter.getItem(0).relativePath
+        if (::adapter.isInitialized) {
+            adapter.mediaAt(0)?.let { return it.relativePath }
         }
         return ""
     }
@@ -1339,6 +1339,8 @@ class AlbumMediaActivity : ComponentActivity() {
         private const val GRID_POOL_WARMUP_STEP_MS = 24L
         private const val GRID_POOL_WARMUP_RETRY_MS = 80L
         private const val GRID_DENSITY_ENTRY_MS = 125L
+        const val SELECTION_BAR_TAG = "selection_action_bar"
+        const val SELECTION_MENU_TAG = "selection_menu"
         private const val SELECTION_DRAG_EDGE_DP = 72
         private const val SELECTION_DRAG_SCROLL_DP = 24
         private const val FAST_SCROLL_PREVIEW_DURATION_MS = 650L
@@ -1349,5 +1351,6 @@ class AlbumMediaActivity : ComponentActivity() {
         internal const val GROUP_EXTENSION = "extension"
         internal const val GROUP_DAY = "day"
         internal const val GROUP_MONTH = "month"
+        internal const val GROUP_SIZE = AlbumMediaRules.GROUP_SIZE
     }
 }

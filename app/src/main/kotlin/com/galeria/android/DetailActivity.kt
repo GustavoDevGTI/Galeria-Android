@@ -134,6 +134,7 @@ class DetailActivity : ComponentActivity() {
     private lateinit var speedButton: TextView
     private lateinit var playPauseButton: ImageButton
     private lateinit var favoriteButton: ImageButton
+    private lateinit var clockBadge: TextView
     private lateinit var soundButton: ImageButton
     private lateinit var cinemaButton: ImageButton
     private lateinit var motionPhotoButton: ImageButton
@@ -303,6 +304,9 @@ class DetailActivity : ComponentActivity() {
     }
     private var zoomed = false
     internal val imageMetadataCache = HashMap<String, DetailImageMetadata>()
+    // Whether each video was joined by the app and can be separated, read once per video.
+    internal val separableCache = HashMap<String, Boolean>()
+    internal var pendingSplitUri: Uri? = null
     private val gestureTouchSlop by lazy { ViewConfiguration.get(this).scaledTouchSlop.toFloat() }
     @Volatile private var preloadGeneration = 0
 
@@ -501,6 +505,16 @@ class DetailActivity : ComponentActivity() {
             addView(fullscreenDetails, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         topBar.addView(titleColumn, titleParams)
+
+        // The 48-hour clock of a media used in a join; tapping it keeps the media.
+        clockBadge = ClockBadge.create(this, 12f, 14, CLOCK_BADGE_DP).apply {
+            setOnClickListener { ClockBadge.keep(this, currentItem().uri.toString()) }
+        }
+        topBar.addView(clockBadge, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(this, CLOCK_BADGE_DP)).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            marginStart = Ui.dp(this@DetailActivity, 4)
+            marginEnd = Ui.dp(this@DetailActivity, 2)
+        })
 
         favoriteButton = iconButton(R.drawable.ic_heart, Ui.dp(this, 44)).apply {
             contentDescription = getString(R.string.action_favorite)
@@ -868,10 +882,24 @@ class DetailActivity : ComponentActivity() {
             }
             return
         }
-        showResolvedMediaMenu(anchor, item, null)
+        val key = item.uri.toString()
+        val known = if (sourceAlbumKey == VirtualAlbumRules.TRASH_KEY) false else separableCache[key]
+        if (known != null) {
+            showResolvedMediaMenu(anchor, item, null, known)
+            return
+        }
+        executor.execute {
+            val separable = MediaSplitRules.separable(MediaJoinExporter.readRecord(this, item.uri))
+            runOnUiThread {
+                separableCache[key] = separable
+                if (!isFinishing && anchor.isAttachedToWindow && currentItem().uri == item.uri) {
+                    showResolvedMediaMenu(anchor, item, null, separable)
+                }
+            }
+        }
     }
 
-    private fun showResolvedMediaMenu(anchor: View, item: MediaItem, imageMetadata: DetailImageMetadata?) {
+    private fun showResolvedMediaMenu(anchor: View, item: MediaItem, imageMetadata: DetailImageMetadata?, separable: Boolean = false) {
         val loopEnabled = playbackController.isLooping() ||
             ViewerStateRules.shouldLoopVideo(
                 shuffleMode,
@@ -885,7 +913,8 @@ class DetailActivity : ComponentActivity() {
                 loopEnabled = loopEnabled,
                 shuffleMode = shuffleMode || presentationMode,
                 hasLocation = imageMetadata?.hasLocation == true,
-                cinemaMode = cinemaMode
+                cinemaMode = cinemaMode,
+                separable = separable
             ),
             widthDp = 216,
             label = { ViewerMenuLabels.translate(this, it) }
@@ -912,6 +941,7 @@ class DetailActivity : ComponentActivity() {
                 ViewerMenuRules.SHOW_ON_MAP -> openCurrentImageOnMap()
                 ViewerMenuRules.PRESENTATION -> startImagePresentation()
                 ViewerMenuRules.RECOGNIZE_TEXT -> recognizeCurrentImageText(item)
+                ViewerMenuRules.SEPARATE -> SecurityGate.requireFileOperation(this) { confirmSeparateCurrent() }
             }
         }
     }
@@ -2371,7 +2401,8 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun updateTimeline() {
-        if (!currentItem().isVideo()) return
+        // The last media just left the queue and the screen is closing.
+        if (mediaQueue.isEmpty() || !currentItem().isVideo()) return
         val timeline = playbackController.timeline() ?: return
         currentTime.text = formatTime(timelineBinding.scrubPositionMs ?: timeline.positionMs)
         durationTime.text = if (timeline.durationMs > 0) formatTime(timeline.durationMs) else "00:00"
@@ -2450,8 +2481,14 @@ class DetailActivity : ComponentActivity() {
         updateFavoriteButton()
     }
 
+    private fun updateClockBadge() {
+        if (!::clockBadge.isInitialized || mediaQueue.isEmpty()) return
+        ClockBadge.bind(clockBadge, currentItem().uri.toString())
+    }
+
     private fun updateFavoriteButton() {
         if (!::favoriteButton.isInitialized || mediaQueue.isEmpty()) return
+        updateClockBadge()
         val favorite = mediaActions.isFavorite(currentItem())
         favoriteButton.setImageResource(if (favorite) R.drawable.ic_heart_filled else R.drawable.ic_heart)
         favoriteButton.imageTintList = android.content.res.ColorStateList.valueOf(
@@ -2480,6 +2517,10 @@ class DetailActivity : ComponentActivity() {
             } else {
                 Ui.toast(this, getString(R.string.msg_delete_cancelled))
             }
+        } else if (requestCode == REQ_SPLIT_RESTORE) {
+            onSplitRestoreResult(resultCode == RESULT_OK)
+        } else if (requestCode == REQ_SPLIT_TRASH) {
+            onSplitTrashResult(resultCode == RESULT_OK)
         } else if (requestCode == REQ_RESTORE) {
             pendingDeleteUri = null
             if (resultCode == RESULT_OK) {
@@ -2745,6 +2786,7 @@ class DetailActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val CLOCK_BADGE_DP = 30
         internal const val ACTION_PICTURE_IN_PICTURE_TOGGLE = "com.galeria.android.PICTURE_IN_PICTURE_TOGGLE"
         internal const val EXTRA_PICTURE_IN_PICTURE_COMMAND = "command"
         internal const val PIP_COMMAND_TOGGLE = 0
@@ -2755,6 +2797,8 @@ class DetailActivity : ComponentActivity() {
         internal const val REQ_RESTORE = 36
         internal const val REQ_HIDE_DELETE = 32
         internal const val REQ_MOVE_WRITE = 33
+        internal const val REQ_SPLIT_RESTORE = 41
+        internal const val REQ_SPLIT_TRASH = 42
         private const val SHUFFLE_PHOTO_DELAY_MS = 4200L
         private const val DOUBLE_TAP_MS = 260L
         private const val PRELOAD_AROUND_RADIUS = 5

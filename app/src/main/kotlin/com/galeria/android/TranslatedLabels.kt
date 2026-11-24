@@ -52,7 +52,8 @@ internal object ViewerMenuLabels {
         ViewerMenuRules.PRESENTATION to R.string.viewer_menu_presentation,
         ViewerMenuRules.AUDIO_TRACK to R.string.viewer_audio_track,
         ViewerMenuRules.SUBTITLES to R.string.viewer_subtitles,
-        ViewerMenuRules.RECOGNIZE_TEXT to R.string.action_recognize_text
+        ViewerMenuRules.RECOGNIZE_TEXT to R.string.action_recognize_text,
+        ViewerMenuRules.SEPARATE to R.string.action_separate
     )
 
     fun translate(context: Context, option: String): String = ids[option]?.let(context::getString) ?: option

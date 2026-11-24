@@ -260,6 +260,45 @@ class AlbumRulesTest {
     }
 
     @Test
+    fun sizeGroupsFollowTheDefinedFloorsFromThreeGigabytesDownToOneMegabyte() {
+        val mb = 1_000_000L
+        val gb = 1_000_000_000L
+        val floors = AlbumMediaRules.SIZE_GROUP_FLOORS
+        assertEquals(33, floors.size)
+        assertEquals(listOf(3 * gb, 2_500 * mb, 2 * gb, 1_500 * mb, 1_200 * mb, gb), floors.take(6))
+        assertEquals((900 downTo 100 step 100).map { it * mb }, floors.subList(6, 15))
+        assertEquals((90 downTo 10 step 10).map { it * mb }, floors.subList(15, 24))
+        assertEquals((9 downTo 1).map { it * mb }, floors.subList(24, 33))
+        assertEquals(floors.sortedDescending(), floors)
+
+        assertEquals(0, AlbumMediaRules.sizeGroupIndex(8 * gb))
+        assertEquals(0, AlbumMediaRules.sizeGroupIndex(3 * gb))
+        assertEquals(1, AlbumMediaRules.sizeGroupIndex(3 * gb - 1))
+        assertEquals(4, AlbumMediaRules.sizeGroupIndex(1_200 * mb))
+        assertEquals(5, AlbumMediaRules.sizeGroupIndex(1_199 * mb))
+        assertEquals(5, AlbumMediaRules.sizeGroupIndex(gb))
+        assertEquals(6, AlbumMediaRules.sizeGroupIndex(999 * mb))
+        assertEquals(14, AlbumMediaRules.sizeGroupIndex(150 * mb))
+        assertEquals(15, AlbumMediaRules.sizeGroupIndex(95 * mb))
+        assertEquals(23, AlbumMediaRules.sizeGroupIndex(10 * mb))
+        assertEquals(24, AlbumMediaRules.sizeGroupIndex(10 * mb - 1))
+        assertEquals(32, AlbumMediaRules.sizeGroupIndex(mb))
+        assertEquals(32, AlbumMediaRules.sizeGroupIndex(300_000))
+        assertEquals(32, AlbumMediaRules.sizeGroupIndex(0))
+        assertEquals(32, AlbumMediaRules.sizeGroupIndex(-1))
+    }
+
+    @Test
+    fun sizeGroupTitlesShowTheFloorWithTheLocaleDecimalSeparator() {
+        val pt = java.util.Locale.forLanguageTag("pt-BR")
+        val expected = listOf("3 GB", "2,5 GB", "2 GB", "1,5 GB", "1,2 GB", "1 GB", "900 MB") +
+            (800 downTo 100 step 100).map { "$it MB" } + (90 downTo 10 step 10).map { "$it MB" } + (9 downTo 1).map { "$it MB" }
+        assertEquals(expected, AlbumMediaRules.SIZE_GROUP_FLOORS.indices.map { MediaGroupLabels.sizeLabel(it, pt) })
+        assertEquals("2.5 GB", MediaGroupLabels.sizeLabel(1, java.util.Locale.US))
+        assertEquals("1 MB", MediaGroupLabels.sizeLabel(99, pt))
+    }
+
+    @Test
     fun albumMediaScrollTargetDistinguishesReloadAndReturnFromViewer() {
         assertEquals(18, AlbumMediaRules.scrollTarget(true, 18, 7))
         assertEquals(7, AlbumMediaRules.scrollTarget(false, 18, 7))

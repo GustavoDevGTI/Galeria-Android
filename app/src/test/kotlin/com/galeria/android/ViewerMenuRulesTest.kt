@@ -29,6 +29,13 @@ class ViewerMenuRulesTest {
     }
 
     @Test
+    fun onlyJoinedVideosOfferSeparate() {
+        assertFalse(ViewerMenuRules.options(true, false, false).contains(ViewerMenuRules.SEPARATE))
+        assertTrue(ViewerMenuRules.options(true, false, false, separable = true).contains(ViewerMenuRules.SEPARATE))
+        assertFalse(ViewerMenuRules.options(false, false, false, separable = true).contains(ViewerMenuRules.SEPARATE))
+    }
+
+    @Test
     fun cinemaTrackOptionsOnlyAppearInCinemaMode() {
         val normal = ViewerMenuRules.options(true, false, false, cinemaMode = false)
         val cinema = ViewerMenuRules.options(true, false, false, cinemaMode = true)

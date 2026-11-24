@@ -18,7 +18,6 @@ import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
-import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
@@ -67,11 +66,13 @@ class VideoEditInstrumentedTest {
                 putExtra("album_key", "Movies/GaleriaEditorTest/")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }).use {
+                // Editing a video opens the same editor used to join media, with this one video.
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
-                onView(withText("Cortar vídeo")).check(matches(isDisplayed()))
-                onView(withContentDescription(R.string.video_timeline_description)).check(matches(isDisplayed()))
-                onView(androidx.test.espresso.matcher.ViewMatchers.withContentDescription("Prévia")).check(matches(isDisplayed())).perform(click())
-                onView(androidx.test.espresso.matcher.ViewMatchers.withContentDescription("Salvar cópia")).check(matches(isDisplayed()))
+                waitFor { onView(withContentDescription(R.string.join_split)).check(matches(isDisplayed())) }
+                onView(withContentDescription(R.string.join_timeline)).check(matches(isDisplayed()))
+                onView(withContentDescription(R.string.join_strip)).check(matches(isDisplayed()))
+                onView(withContentDescription(R.string.video_play)).check(matches(isDisplayed())).perform(click())
+                onView(withContentDescription("Salvar cópia")).check(matches(isDisplayed()))
             }
         } finally {
             context.contentResolver.delete(source, null, null)
@@ -95,6 +96,39 @@ class VideoEditInstrumentedTest {
             output?.let { context.contentResolver.delete(it, null, null) }
             dualAudio.delete()
             context.contentResolver.delete(source, null, null)
+        }
+    }
+
+    @Test fun savingACutVideoCopiesItBesideTheOriginalWithEveryTrack() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val source = insertSample(context)
+        var result: Uri? = null
+        try {
+            val media = requireNotNull(MediaJoinExporter.probe(context, source, "video/mp4", "sample.mp4", 1L))
+            // Cut the middle out: two kept parts of the same video.
+            val half = media.durationMs / 2
+            val clip = JoinClip(media, listOf(0L..half, minOf(media.durationMs - 1L, half + 300L)..media.durationMs))
+            val request = JoinRequest(listOf(clip), 5_000L, JoinQuality.NATIVE)
+            assertTrue("Um vídeo só, apenas com cortes, é copiado sem regravar", MediaJoinRules.copiesWithoutEncoding(request))
+            result = MediaJoinExporter.export(context, request, {}, { false })
+            assertEquals("A cópia fica na pasta do original", "Movies/GaleriaEditorTest/",
+                context.contentResolver.query(result, arrayOf(MediaStore.MediaColumns.RELATIVE_PATH), null, null, null)!!.use { it.moveToFirst(); it.getString(0) })
+            assertEquals(trackFormats(context, source).sorted(), trackFormats(context, result).sorted())
+            assertTrue(sampleCounts(context, result).all { it > 0 })
+            assertEquals("Edição simples não é uma montagem", null, MediaJoinExporter.readRecord(context, result))
+        } finally {
+            result?.let { context.contentResolver.delete(it, null, null) }
+            context.contentResolver.delete(source, null, null)
+        }
+    }
+
+    private fun waitFor(check: () -> Unit) {
+        val deadline = android.os.SystemClock.uptimeMillis() + 10_000L
+        while (true) {
+            try { check(); return } catch (error: Throwable) {
+                if (android.os.SystemClock.uptimeMillis() > deadline) throw error
+                android.os.SystemClock.sleep(100L)
+            }
         }
     }
 

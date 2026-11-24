@@ -100,7 +100,6 @@ internal fun AlbumMediaActivity.albumBrowseActions(): List<BrowseAction> {
                 hideKeyboard()
                 searchInput.isEnabled = false
                 updateSearchPresentation()
-                Ui.toast(this@albumBrowseActions, getString(R.string.album_choose_cover_hint))
             })
         }
         if (!inTrash && hasManualCover) {
@@ -178,7 +177,7 @@ internal fun AlbumMediaActivity.showMediaFilterDialog() {
 
 internal fun AlbumMediaActivity.showGroupDialog() {
     val labels = resources.getStringArray(R.array.album_group_labels)
-    val values = arrayOf(AlbumMediaActivity.GROUP_NONE, AlbumMediaActivity.GROUP_TYPE, AlbumMediaActivity.GROUP_EXTENSION, AlbumMediaActivity.GROUP_DAY, AlbumMediaActivity.GROUP_MONTH)
+    val values = arrayOf(AlbumMediaActivity.GROUP_NONE, AlbumMediaActivity.GROUP_TYPE, AlbumMediaActivity.GROUP_EXTENSION, AlbumMediaActivity.GROUP_DAY, AlbumMediaActivity.GROUP_MONTH, AlbumMediaActivity.GROUP_SIZE)
     var choice = values.indexOf(groupMode).takeIf { it >= 0 } ?: 0
     Ui.showChoiceDialog(this, getString(R.string.album_group_by), labels, choice) { which ->
         choice = which
@@ -228,18 +227,10 @@ internal fun AlbumMediaActivity.showSpacingDialog() {
             textSize = 18f
             setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
             setTextColor(Ui.menuText(this@showSpacingDialog))
+            setPadding(0, 0, 0, Ui.dp(this@showSpacingDialog, 12))
         },
         LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     )
-    val hint = TextView(this).apply {
-        setText(R.string.album_grid_spacing_hint)
-        textSize = 13f
-        setTextColor(Ui.menuText(this@showSpacingDialog))
-        alpha = 0.78f
-        gravity = Gravity.START
-        setPadding(0, Ui.dp(this@showSpacingDialog, 6), 0, Ui.dp(this@showSpacingDialog, 12))
-    }
-    panel.addView(hint, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
     val seekBar = SeekBar(this).apply {
         max = AlbumMediaActivity.MAX_GRID_SPACING_DP
         progress = AlbumMediaActivity.MAX_GRID_SPACING_DP - gridSpacingDp
@@ -278,8 +269,7 @@ internal fun AlbumMediaActivity.showMediaSortDialog() {
         labels,
         values,
         selected,
-        mediaSortDescending,
-        message = getString(R.string.album_sort_group_hint)
+        mediaSortDescending
     ) { which, descending ->
         mediaSortMode = values[which]
         mediaSortDescending = descending

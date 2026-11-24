@@ -60,6 +60,66 @@ internal fun AlbumMediaActivity.shareSelected() {
     ShareLimit.warnIfLimited(this, selected.size)
 }
 
+/** Selection bar layout: four shortcuts by default and everything else in its Menu panel. */
+internal object SelectionBarLayout {
+    val defaultBar = listOf("share", "favorite", "delete", "move")
+    val defaultOrder = defaultBar + "join"
+}
+
+internal fun AlbumMediaActivity.selectionLayoutStore() = BrowseLayoutStore(
+    prefs, "album_selection", SelectionBarLayout.defaultBar, SelectionBarLayout.defaultOrder
+)
+
+/** What can be done with the selected media; the trash only restores or deletes for good. */
+internal fun AlbumMediaActivity.selectionBarActions(): List<BrowseAction> = if (albumKey == VirtualAlbumRules.TRASH_KEY) listOf(
+    BrowseAction("restore", R.drawable.ic_restore, getString(R.string.action_restore)) { restoreSelected() },
+    BrowseAction("delete_permanently", R.drawable.ic_trash, getString(R.string.action_delete_permanently)) {
+        SecurityGate.requireFileOperation(this) { confirmDeleteSelected() }
+    }
+) else listOf(
+    BrowseAction("share", R.drawable.ic_share, getString(R.string.action_share)) { shareSelected() },
+    BrowseAction("favorite", R.drawable.ic_heart, getString(R.string.action_favorite)) { favoriteSelected() },
+    BrowseAction("delete", R.drawable.ic_trash, getString(R.string.action_delete)) {
+        SecurityGate.requireFileOperation(this) { confirmDeleteSelected() }
+    },
+    BrowseAction("move", R.drawable.ic_arrow_right, getString(R.string.action_move)) {
+        SecurityGate.requireFileOperation(this) { askMoveSelected() }
+    },
+    BrowseAction("join", R.drawable.ic_join, getString(R.string.action_join)) { joinSelected() }
+)
+
+internal fun AlbumMediaActivity.refreshSelectionBar() {
+    val actions = selectionBarActions()
+    if (albumKey == VirtualAlbumRules.TRASH_KEY) {
+        selectionActionBar.setActions(actions)
+        return
+    }
+    val byId = actions.associateBy { it.id }
+    selectionActionBar.setActions(
+        selectionLayoutStore().load().bar.mapNotNull(byId::get),
+        BrowseAction("menu", R.drawable.ic_menu, getString(R.string.action_menu), getString(R.string.action_selection_menu)) {
+            openSelectionPanel()
+        }
+    )
+}
+
+internal fun AlbumMediaActivity.openSelectionPanel() {
+    val panel = selectionPanel ?: BrowseActionPanel(this, selectionActionBar, selectionLayoutStore(), ::selectionBarActions) {
+        refreshSelectionBar()
+    }.also { selectionPanel = it }
+    panel.toggle()
+}
+
+internal fun AlbumMediaActivity.joinSelected() {
+    val selected = adapter.selectedItemsInTapOrder().filter { it.isImage() || it.isVideo() }
+    if (selected.size < 2) {
+        Ui.toast(this, getString(R.string.join_need_two))
+        return
+    }
+    startActivity(MediaJoinActivity.intent(this, selected))
+    exitSelectionMode()
+}
+
 internal fun AlbumMediaActivity.favoriteSelected() {
     val selected = adapter.selectedItems()
     val added = selectionCoordinator.addToFavorites(selected)

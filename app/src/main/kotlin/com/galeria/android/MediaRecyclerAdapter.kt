@@ -17,6 +17,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.ViewCompat
 import androidx.paging.AsyncPagingDataDiffer
 import androidx.paging.CombinedLoadStates
 import androidx.paging.PagingData
@@ -37,16 +38,24 @@ import java.util.concurrent.Executors
 class MediaRecyclerAdapter(
     private val context: Context,
     private val callbacks: Callbacks
-) : RecyclerView.Adapter<MediaRecyclerAdapter.Holder>() {
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     interface Callbacks {
         fun onMediaClick(position: Int)
         fun onMediaPreview(position: Int)
         fun onMediaLongClick(view: View, position: Int): Boolean
     }
 
+    /** How a grouped album is split into titled groups (see AlbumMediaRules.groupKey). */
+    class MediaGrouping(val key: (MediaItem) -> String, val label: (String) -> String)
+    private class GroupHeader(val key: String, val label: String)
+
     private val allItems = ArrayList<MediaItem>()
     private val visibleItems = ArrayList<MediaItem>()
-    private val selectedUris = HashSet<String>()
+    /** The rows outside paging: the visible media, with a title before each group while grouped.
+     * Adapter positions index these rows; without groups they match visibleItems one to one. */
+    private val rows = ArrayList<Any>()
+    private var grouping: MediaGrouping? = null
+    private val selectedUris = LinkedHashSet<String>()
     private var filter = ""
     private var listMode = false
     private var horizontalGrid = false
@@ -67,6 +76,16 @@ class MediaRecyclerAdapter(
     private var contentGeneration = MediaContentRevision.generation()
     @Volatile private var listVersion = 0
     private var pendingItems: List<MediaItem>? = null
+
+    private var clockVersion = MediaClocks.version
+
+    /** Redraws the clocks when one started, was kept or ran out, and updates the time left. */
+    fun refreshClocks(force: Boolean = false) {
+        val version = MediaClocks.version
+        if (!force && version == clockVersion) return
+        clockVersion = version
+        if (itemCount > 0) notifyItemRangeChanged(0, itemCount, PAYLOAD_CLOCK)
+    }
 
     fun refreshChangedThumbnails() {
         val generation = MediaContentRevision.generation()
@@ -116,7 +135,7 @@ class MediaRecyclerAdapter(
 
     fun submit(nextItems: List<MediaItem>, query: String? = filter) {
         invalidateListRequest()
-        val previous = visibleItems.toList()
+        val previous = rows.toList()
         val previousCount = itemCount
         val wasPaging = pagingMode
         val source = nextItems.toList()
@@ -126,11 +145,13 @@ class MediaRecyclerAdapter(
         selectedUris.retainAll(source.mapTo(HashSet()) { it.uri.toString() })
         filter = normalizedQuery(query)
         val next = filtered(source, filter)
-        val diff = if (wasPaging) null else mediaDiff(previous, next)
+        val nextRows = rowsFor(next, activeGrouping())
+        val diff = if (wasPaging) null else rowDiff(previous, nextRows)
         visibleItems.clear(); visibleItems.addAll(next)
+        rows.clear(); rows.addAll(nextRows)
         if (diff != null) diff.dispatchUpdatesTo(this) else {
             if (previousCount > 0) notifyItemRangeRemoved(0, previousCount)
-            if (next.isNotEmpty()) notifyItemRangeInserted(0, next.size)
+            if (nextRows.isNotEmpty()) notifyItemRangeInserted(0, nextRows.size)
         }
     }
 
@@ -141,24 +162,27 @@ class MediaRecyclerAdapter(
         pendingItems = source
         filter = normalizedQuery(query)
         val requestedFilter = filter
-        val previous = visibleItems.toList()
+        val previous = rows.toList()
         val previousCount = itemCount
         val wasPaging = pagingMode
+        val rowGrouping = activeGrouping()
         listWorker.execute {
             if (version != listVersion) return@execute
             textMatchesFor(requestedFilter)
             val next = filtered(source, requestedFilter)
-            val diff = if (wasPaging) null else mediaDiff(previous, next)
+            val nextRows = rowsFor(next, rowGrouping)
+            val diff = if (wasPaging) null else rowDiff(previous, nextRows)
             listHandler.post {
                 if (version != listVersion) return@post
                 pendingItems = null
                 pagingMode = false
                 allItems.clear(); allItems.addAll(source)
                 visibleItems.clear(); visibleItems.addAll(next)
+                rows.clear(); rows.addAll(nextRows)
                 selectedUris.retainAll(source.mapTo(HashSet()) { it.uri.toString() })
                 if (diff != null) diff.dispatchUpdatesTo(this) else {
                     if (previousCount > 0) notifyItemRangeRemoved(0, previousCount)
-                    if (next.isNotEmpty()) notifyItemRangeInserted(0, next.size)
+                    if (nextRows.isNotEmpty()) notifyItemRangeInserted(0, nextRows.size)
                 }
                 applied()
             }
@@ -185,12 +209,41 @@ class MediaRecyclerAdapter(
                 MediaIdentityRules.canonicalKey(it.uri.toString()) in inText
         }
     }
-    private fun mediaDiff(old: List<MediaItem>, next: List<MediaItem>) = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+    /** Sets how the next list is split into titled groups; null shows the media without titles. */
+    fun setGrouping(next: MediaGrouping?) {
+        grouping = next
+    }
+
+    /** The horizontal grid scrolls sideways, where a full-width title would take a whole column. */
+    private fun activeGrouping(): MediaGrouping? = grouping.takeIf { !horizontalGrid }
+
+    private fun rowsFor(items: List<MediaItem>, rowGrouping: MediaGrouping?): List<Any> {
+        if (rowGrouping == null || items.isEmpty()) return ArrayList<Any>(items)
+        val result = ArrayList<Any>(items.size + 16)
+        var currentKey: String? = null
+        for (item in items) {
+            val key = rowGrouping.key(item)
+            if (key != currentKey) {
+                result.add(GroupHeader(key, rowGrouping.label(key)))
+                currentKey = key
+            }
+            result.add(item)
+        }
+        return result
+    }
+
+    private fun rowDiff(old: List<Any>, next: List<Any>) = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
         override fun getOldListSize() = old.size
         override fun getNewListSize() = next.size
-        override fun areItemsTheSame(oldPosition: Int, newPosition: Int) = old[oldPosition].uri == next[newPosition].uri
-        override fun areContentsTheSame(oldPosition: Int, newPosition: Int): Boolean {
+        override fun areItemsTheSame(oldPosition: Int, newPosition: Int): Boolean {
             val first = old[oldPosition]; val second = next[newPosition]
+            return if (first is MediaItem && second is MediaItem) first.uri == second.uri
+                else first is GroupHeader && second is GroupHeader && first.key == second.key
+        }
+        override fun areContentsTheSame(oldPosition: Int, newPosition: Int): Boolean {
+            val oldRow = old[oldPosition]; val nextRow = next[newPosition]
+            if (oldRow is GroupHeader && nextRow is GroupHeader) return oldRow.label == nextRow.label
+            val first = oldRow as MediaItem; val second = nextRow as MediaItem
             return first.id == second.id && first.name == second.name && first.mimeType == second.mimeType &&
                 first.dateAdded == second.dateAdded && first.size == second.size && first.duration == second.duration &&
                 first.relativePath == second.relativePath && first.albumKey == second.albumKey
@@ -200,10 +253,11 @@ class MediaRecyclerAdapter(
     suspend fun submitPagingData(data: PagingData<MediaItem>) {
         invalidateListRequest()
         if (!pagingMode) {
-            val previousCount = visibleItems.size
+            val previousCount = rows.size
             pagingMode = true
             allItems.clear()
             visibleItems.clear()
+            rows.clear()
             selectedUris.clear()
             if (previousCount > 0) notifyItemRangeRemoved(0, previousCount)
             // The differ may retain its previous page while selection used a
@@ -232,24 +286,37 @@ class MediaRecyclerAdapter(
     }
 
     fun moveVisible(fromPosition: Int, toPosition: Int): Boolean {
-        if (fromPosition !in visibleItems.indices || toPosition !in visibleItems.indices || fromPosition == toPosition) {
+        if (pagingMode || fromPosition == toPosition) return false
+        val moved = rows.getOrNull(fromPosition) as? MediaItem ?: return false
+        val target = rows.getOrNull(toPosition) as? MediaItem ?: return false
+        val grouped = hasGroupHeaders()
+        // With group titles an item only moves inside its own group.
+        if (grouped && (minOf(fromPosition, toPosition)..maxOf(fromPosition, toPosition)).any { rows[it] is GroupHeader }) {
             return false
         }
-        val moved = visibleItems.removeAt(fromPosition)
+        val fromIndex = if (grouped) visibleItems.indexOf(moved) else fromPosition
+        val toIndex = if (grouped) visibleItems.indexOf(target) else toPosition
         invalidateListRequest()
-        visibleItems.add(toPosition, moved)
+        visibleItems.removeAt(fromIndex)
+        visibleItems.add(toIndex, moved)
+        rows.removeAt(fromPosition)
+        rows.add(toPosition, moved)
         syncAllItemsFromVisible()
         notifyItemMoved(fromPosition, toPosition)
         return true
     }
 
     fun moveSelectedBlock(targetPosition: Int): Boolean {
-        if (targetPosition !in visibleItems.indices || selectedUris.isEmpty()) {
-            return false
-        }
-        val target = visibleItems[targetPosition]
+        if (pagingMode || selectedUris.isEmpty()) return false
+        val target = rows.getOrNull(targetPosition) as? MediaItem ?: return false
         if (selectedUris.contains(target.uri.toString())) {
             return false
+        }
+        val rowGrouping = activeGrouping()
+        if (rowGrouping != null && hasGroupHeaders()) {
+            // With group titles the selected media only move inside their own group.
+            val group = rowGrouping.key(target)
+            if (visibleItems.any { selectedUris.contains(it.uri.toString()) && rowGrouping.key(it) != group }) return false
         }
         val moving = ArrayList<MediaItem>()
         invalidateListRequest()
@@ -267,12 +334,14 @@ class MediaRecyclerAdapter(
         }
         insertAt = minOf(remaining.size, insertAt + 1)
         remaining.addAll(insertAt, moving)
-        val changedStart = minOf(targetPosition, visibleItems.indexOfFirst { selectedUris.contains(it.uri.toString()) })
-            .coerceAtLeast(0)
-        val changedEnd = maxOf(targetPosition, visibleItems.indexOfLast { selectedUris.contains(it.uri.toString()) })
-            .coerceAtLeast(changedStart)
+        fun selected(row: Any) = row is MediaItem && selectedUris.contains(row.uri.toString())
+        val changedStart = minOf(targetPosition, rows.indexOfFirst(::selected)).coerceAtLeast(0)
+        val changedEnd = maxOf(targetPosition, rows.indexOfLast(::selected)).coerceAtLeast(changedStart)
         visibleItems.clear()
         visibleItems.addAll(remaining)
+        // Every media stays in its group, so the titles keep their positions.
+        rows.clear()
+        rows.addAll(rowsFor(visibleItems, rowGrouping))
         syncAllItemsFromVisible()
         notifyItemRangeChanged(changedStart, changedEnd - changedStart + 1, PAYLOAD_POSITION)
         return true
@@ -361,6 +430,12 @@ class MediaRecyclerAdapter(
 
     fun selectedItems(): List<MediaItem> = currentVisibleItems().filter { selectedUris.contains(it.uri.toString()) }
 
+    /** The selection in the order it was tapped, for actions where order matters (joining media). */
+    fun selectedItemsInTapOrder(): List<MediaItem> {
+        val byUri = currentVisibleItems().associateBy { it.uri.toString() }
+        return selectedUris.mapNotNull { byUri[it] }
+    }
+
     fun currentOrder(): List<MediaItem> =
         if (pagingMode) ArrayList(pagingDiffer.snapshot().items) else ArrayList(allItems)
 
@@ -370,16 +445,37 @@ class MediaRecyclerAdapter(
         val keys = uris.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
         fun removed(item: MediaItem) = MediaIdentityRules.canonicalKey(item.uri.toString()) in keys
         allItems.removeAll(::removed)
+        if (hasGroupHeaders()) {
+            // A group may lose its last media, and its title with it.
+            val previous = rows.toList()
+            visibleItems.removeAll { item -> removed(item).also { if (it) selectedUris.remove(item.uri.toString()) } }
+            rows.clear(); rows.addAll(rowsFor(visibleItems, activeGrouping()))
+            rowDiff(previous, rows).dispatchUpdatesTo(this)
+            return
+        }
         for (index in visibleItems.lastIndex downTo 0) {
             if (removed(visibleItems[index])) {
                 selectedUris.remove(visibleItems[index].uri.toString())
                 visibleItems.removeAt(index)
+                rows.removeAt(index)
                 notifyItemRemoved(index)
             }
         }
     }
 
+    /** The number of media, without the group titles; positions in the grid go up to itemCount. */
     fun getCount(): Int = if (pagingMode) pagingDiffer.itemCount else visibleItems.size
+
+    /** The [index]-th media, counting media only (no group titles). */
+    fun mediaAt(index: Int): MediaItem? = when {
+        index < 0 -> null
+        pagingMode -> if (index < pagingDiffer.itemCount) pagingDiffer.peek(index) else null
+        else -> visibleItems.getOrNull(index)
+    }
+
+    fun isGroupHeader(position: Int): Boolean = !pagingMode && rows.getOrNull(position) is GroupHeader
+
+    fun hasGroupHeaders(): Boolean = !pagingMode && rows.size != visibleItems.size
 
     fun getItem(position: Int): MediaItem = itemOrNull(position)
         ?: throw IndexOutOfBoundsException("Mídia ainda não carregada na posição $position")
@@ -387,21 +483,24 @@ class MediaRecyclerAdapter(
     /** The media at [position], or null while its page is not loaded. */
     fun peekItem(position: Int): MediaItem? = itemOrNull(position)
 
-    fun positionOf(uri: String): Int = currentVisibleItems().indexOfFirst { it.uri.toString() == uri }
+    /** The grid position of [uri], counting the group titles. */
+    fun positionOf(uri: String): Int =
+        if (pagingMode) pagingDiffer.snapshot().items.indexOfFirst { it.uri.toString() == uri }
+        else rows.indexOfFirst { it is MediaItem && it.uri.toString() == uri }
 
     private fun itemOrNull(position: Int): MediaItem? {
         if (position < 0) return null
         return if (pagingMode) {
             if (position < pagingDiffer.itemCount) pagingDiffer.peek(position) else null
         } else {
-            visibleItems.getOrNull(position)
+            rows.getOrNull(position) as? MediaItem
         }
     }
 
     private fun currentVisibleItems(): List<MediaItem> =
         if (pagingMode) pagingDiffer.snapshot().items else visibleItems
 
-    override fun getItemViewType(position: Int): Int = currentViewType()
+    override fun getItemViewType(position: Int): Int = if (isGroupHeader(position)) VIEW_TYPE_GROUP_HEADER else currentViewType()
 
     /** 0 = vertical grid, 1 = list, 2 = horizontal grid ("Rolar miniaturas horizontalmente"). */
     fun currentViewType(): Int = when {
@@ -425,13 +524,32 @@ class MediaRecyclerAdapter(
     fun setHorizontalGrid(enabled: Boolean) {
         if (horizontalGrid == enabled) return
         horizontalGrid = enabled
-        if (itemCount > 0) notifyDataSetChanged()
+        val previousCount = itemCount
+        if (!pagingMode && grouping != null) {
+            rows.clear(); rows.addAll(rowsFor(visibleItems, activeGrouping()))
+        }
+        if (previousCount > 0 || itemCount > 0) notifyDataSetChanged()
     }
 
-    override fun getItemId(position: Int): Long = itemOrNull(position)?.uri?.toString()?.hashCode()?.toLong()
-        ?: RecyclerView.NO_ID
+    override fun getItemId(position: Int): Long {
+        (rows.getOrNull(position) as? GroupHeader)?.takeIf { !pagingMode }?.let { return "group:${it.key}".hashCode().toLong() }
+        return itemOrNull(position)?.uri?.toString()?.hashCode()?.toLong() ?: RecyclerView.NO_ID
+    }
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
+    private fun createGroupHeader(): HeaderHolder = HeaderHolder(TextView(context).apply {
+        tag = TAG_GROUP_HEADER
+        textSize = 15f
+        setTypeface(android.graphics.Typeface.DEFAULT_BOLD)
+        maxLines = 1
+        ellipsize = TextUtils.TruncateAt.END
+        gravity = Gravity.CENTER_VERTICAL or Gravity.START
+        setPadding(Ui.dp(context, 12), Ui.dp(context, 14), Ui.dp(context, 12), Ui.dp(context, 6))
+        layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        ViewCompat.setAccessibilityHeading(this, true)
+    })
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+        if (viewType == VIEW_TYPE_GROUP_HEADER) return createGroupHeader()
         val asList = viewType == 1
         val horizontal = viewType == 2
         val item = LinearLayout(context).apply {
@@ -512,6 +630,12 @@ class MediaRecyclerAdapter(
             marginEnd = Ui.dp(context, 5)
             bottomMargin = Ui.dp(context, 5)
         })
+        // The 48-hour clock of a media used in a join; tapping it keeps the media.
+        val clock = ClockBadge.create(context, 10f, 12, OVERLAY_CHECK_DP)
+        thumb.addView(clock, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(context, OVERLAY_CHECK_DP), Gravity.TOP or Gravity.END).apply {
+            marginEnd = Ui.dp(context, 5)
+            topMargin = Ui.dp(context, 5)
+        })
 
         val thumbParams = if (asList) {
             LinearLayout.LayoutParams(Ui.dp(context, 82), Ui.dp(context, 82))
@@ -536,11 +660,19 @@ class MediaRecyclerAdapter(
         if (asList) {
             item.addView(name, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
-        return Holder(item, image, name, check, preview, mediaNameOverlay, mediaDurationOverlay)
+        return Holder(item, image, name, check, preview, mediaNameOverlay, mediaDurationOverlay, clock)
     }
 
-    override fun onBindViewHolder(holder: Holder, position: Int) {
-        val item = if (pagingMode) pagingDiffer.getItem(position) else visibleItems[position]
+    override fun onBindViewHolder(viewHolder: RecyclerView.ViewHolder, position: Int) {
+        if (viewHolder is HeaderHolder) {
+            val label = (rows.getOrNull(position) as? GroupHeader)?.label.orEmpty()
+            viewHolder.title.text = label
+            viewHolder.title.contentDescription = label
+            viewHolder.title.setTextColor(Ui.text(context))
+            return
+        }
+        val holder = viewHolder as Holder
+        val item = if (pagingMode) pagingDiffer.getItem(position) else rows.getOrNull(position) as? MediaItem
         if (item == null) {
             holder.thumbnailRequest?.cancel()
             holder.thumbnailRequest = null
@@ -555,6 +687,7 @@ class MediaRecyclerAdapter(
             holder.itemView.contentDescription = null
             holder.check.visibility = View.GONE
             holder.preview.visibility = View.GONE
+            holder.clock.visibility = View.GONE
             holder.itemView.setOnClickListener(null)
             holder.itemView.setOnLongClickListener(null)
             return
@@ -562,13 +695,15 @@ class MediaRecyclerAdapter(
         bindItem(holder, item)
     }
 
-    override fun onBindViewHolder(holder: Holder, position: Int, payloads: MutableList<Any>) {
-        if (payloads.isEmpty() || payloads.contains(PAYLOAD_POSITION) || payloads.contains(PAYLOAD_LAYOUT)) {
-            onBindViewHolder(holder, position)
+    override fun onBindViewHolder(viewHolder: RecyclerView.ViewHolder, position: Int, payloads: MutableList<Any>) {
+        val holder = viewHolder as? Holder
+        if (holder == null || payloads.isEmpty() || payloads.contains(PAYLOAD_POSITION) || payloads.contains(PAYLOAD_LAYOUT)) {
+            onBindViewHolder(viewHolder, position)
             return
         }
         val item = itemOrNull(position) ?: return
-        if (payloads.contains(PAYLOAD_SELECTION)) bindSelection(holder, item)
+        if (payloads.contains(PAYLOAD_SELECTION)) { bindSelection(holder, item); bindClock(holder, item) }
+        if (payloads.contains(PAYLOAD_CLOCK)) bindClock(holder, item)
         if (payloads.contains(PAYLOAD_THUMBNAIL_SIZE)) {
             bindThumbnail(holder, item)
             bindVideoDuration(holder, item)
@@ -583,6 +718,7 @@ class MediaRecyclerAdapter(
         holder.itemView.contentDescription = item.name
         bindThumbnail(holder, item)
         bindVideoDuration(holder, item)
+        bindClock(holder, item)
         holder.itemView.setOnClickListener {
             val currentPosition = holder.bindingAdapterPosition
             if (currentPosition != RecyclerView.NO_POSITION) callbacks.onMediaClick(currentPosition)
@@ -595,6 +731,18 @@ class MediaRecyclerAdapter(
         holder.preview.setOnClickListener {
             val currentPosition = holder.bindingAdapterPosition
             if (currentPosition != RecyclerView.NO_POSITION) callbacks.onMediaPreview(currentPosition)
+        }
+    }
+
+    private fun bindClock(holder: Holder, item: MediaItem) {
+        val uri = item.uri.toString()
+        ClockBadge.bind(holder.clock, uri)
+        // While choosing items a tap on the thumbnail selects it, clock included.
+        if (selectionMode) {
+            holder.clock.setOnClickListener(null)
+            holder.clock.isClickable = false
+        } else {
+            holder.clock.setOnClickListener { ClockBadge.keep(holder.clock, uri) }
         }
     }
 
@@ -642,13 +790,15 @@ class MediaRecyclerAdapter(
         }
     }
 
-    override fun onViewRecycled(holder: Holder) {
-        holder.thumbnailRequest?.cancel()
-        holder.thumbnailRequest = null
-        holder.thumbnailLoad?.dispose()
-        holder.thumbnailLoad = null
-        holder.boundUri = null
-        super.onViewRecycled(holder)
+    override fun onViewRecycled(viewHolder: RecyclerView.ViewHolder) {
+        (viewHolder as? Holder)?.let { holder ->
+            holder.thumbnailRequest?.cancel()
+            holder.thumbnailRequest = null
+            holder.thumbnailLoad?.dispose()
+            holder.thumbnailLoad = null
+            holder.boundUri = null
+        }
+        super.onViewRecycled(viewHolder)
     }
 
     private fun loadThumbnail(holder: Holder, item: MediaItem, requestSize: Int, saved: android.net.Uri?) {
@@ -749,7 +899,9 @@ class MediaRecyclerAdapter(
         }.getOrDefault(0L)
     }
 
-    override fun getItemCount(): Int = if (pagingMode) pagingDiffer.itemCount else visibleItems.size
+    override fun getItemCount(): Int = if (pagingMode) pagingDiffer.itemCount else rows.size
+
+    class HeaderHolder(val title: TextView) : RecyclerView.ViewHolder(title)
 
     class Holder(
         itemView: View,
@@ -758,7 +910,8 @@ class MediaRecyclerAdapter(
         val check: TextView,
         val preview: ImageView,
         val mediaNameOverlay: TextView,
-        val mediaDurationOverlay: TextView
+        val mediaDurationOverlay: TextView,
+        val clock: TextView
     ) : RecyclerView.ViewHolder(itemView) {
         var boundUri: String? = null
         var thumbnailRequest: VideoThumbnailFrames.Request? = null
@@ -779,13 +932,17 @@ class MediaRecyclerAdapter(
         }
     }
 
-    private companion object {
-        const val OVERLAY_CHECK_DP = 20
+    companion object {
+        /** View type of the title row before each group; 0-2 are the media layouts. */
+        const val VIEW_TYPE_GROUP_HEADER = 3
+        const val TAG_GROUP_HEADER = "media_group_header"
+        private const val OVERLAY_CHECK_DP = 20
         const val OVERLAY_ACTION_DP = 28
         const val PAYLOAD_SELECTION = "selection"
         const val PAYLOAD_THUMBNAIL_SIZE = "thumbnail_size"
         const val PAYLOAD_POSITION = "position"
         const val PAYLOAD_LAYOUT = "layout"
+        const val PAYLOAD_CLOCK = "clock"
         const val FAST_SCROLL_PREVIEW_SIZE_PX = 128
         const val MEDIA_CORNER_RADIUS_DP = 5
         const val TAG_MEDIA_NAME = "media_overlay_name"

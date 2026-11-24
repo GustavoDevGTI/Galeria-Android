@@ -41,7 +41,7 @@ internal fun AlbumMediaActivity.onScrollDateDrag(active: Boolean) {
         return
     }
     if (!showsScrollDates()) return
-    val total = adapter.getCount()
+    val total = adapter.itemCount
     val marks = ScrollDateRules.yearMarks(total) { position ->
         adapter.peekItem(position)?.let { ScrollDateRules.year(it.dateAdded) }
     }

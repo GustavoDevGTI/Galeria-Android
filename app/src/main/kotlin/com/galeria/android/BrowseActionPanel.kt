@@ -83,14 +83,6 @@ internal class BrowseActionPanel(
             overScrollMode = View.OVER_SCROLL_NEVER
             addView(content)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        card.addView(TextView(activity).apply {
-            text = activity.getString(R.string.browse_panel_hint)
-            textSize = 12f
-            gravity = Gravity.CENTER
-            setTextColor(Ui.menuText(activity))
-            alpha = 0.6f
-            setPadding(dp(8), dp(8), dp(8), dp(4))
-        })
         frame.addView(card, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM).apply {
             marginStart = dp(12)

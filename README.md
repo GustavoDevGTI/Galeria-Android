@@ -2,7 +2,7 @@
 
 App de galeria Android nativo, totalmente em Kotlin, com foco em desempenho, navegação fluida e gestão real de mídias e pastas do aparelho.
 
-Versão atual: **0.9.22** (código Android `9022`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9.22](docs/RELEASE-0.9.22.md).
+Versão atual: **0.9.23** (código Android `9023`), com o [organizador circular de álbuns](docs/ORGANIZADOR-CIRCULAR.md). Consulte as [notas da release v0.9.23](docs/RELEASE-0.9.23.md).
 
 ## Stack atual
 
@@ -54,6 +54,10 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção pelos metadados da câmera (Google e Samsung) e reprodução na própria foto pelo botão no rodapé; Editar escolhe qual quadro do vídeo fica como foto, guardando a original dentro do arquivo
 - Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção diretamente sobre a imagem, alças de ajuste, cópia do trecho escolhido e seleção integral
 - Ícone de texto exibido automaticamente quando a foto aberta contém texto reconhecido; análise local adiada durante a troca rápida de fotos
+- Juntar fotos e vídeos em um vídeo só, pelo Menu da seleção, na ordem dos toques; o mesmo editor serve para cortar um vídeo sozinho, com quadrados arrastáveis, linha do tempo, cortes no meio, tempo das fotos de 4 a 10 s, qualidade nativa e transições Seco, Dissolver, Escurecer, Deslizar e Zoom
+- Relógio de 48 horas nas mídias usadas em uma junção (vídeos sempre; fotos por opção); tocar no relógio mantém a mídia, e ao fim do prazo ela vai para a lixeira
+- Separar devolve as mídias de um vídeo juntado pelo app sem criar duplicatas: usa os originais existentes, restaura os da lixeira e refaz só o que foi apagado
+- Agrupar mídias do álbum por tipo, extensão, dia, mês ou tamanho do arquivo, com o título de cada grupo acima das miniaturas
 - Barra simples de reprodução no visualizador de vídeo; um ícone ao lado abre/fecha a linha do tempo sob demanda
 - Linha do tempo horizontal contínua com miniaturas por segundo em vídeos e na prévia de corte; deslizar move a faixa sob o marcador central e atualiza o vídeo durante o gesto
 - A faixa cresce com a duração do vídeo e carrega somente as miniaturas do trecho visível; a barra simples permite saltar por toda a duração e a faixa permite ajuste fino sem toque prolongado
@@ -130,7 +134,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A versão 0.9.22 permite escolher qual quadro da foto em movimento fica como foto: Editar abre a faixa de quadros do vídeo, Salvar substitui a foto mantendo-a em movimento, e Original devolve a foto da câmera. Consulte as [notas da release](docs/RELEASE-0.9.22.md).
+A versão 0.9.23 junta fotos e vídeos num editor único (o mesmo que corta um vídeo), com transições, relógio de 48 horas nas mídias usadas e Separar para devolvê-las; os álbuns também passam a agrupar por tamanho, com títulos nos grupos. Consulte as [notas da release](docs/RELEASE-0.9.23.md).
 
 Os testes locais ficam em `app/src/test/kotlin` e as integrações Android em `app/src/androidTest/kotlin`. Os comandos por área, critérios de entrega e evidências estão no [guia de validação](docs/TESTES-VALIDACAO.md).
 
@@ -164,13 +168,13 @@ O perfil gerado e incluído no APK fica em `app/src/main/baseline-prof.txt`. Med
 
 A árvore atual mantém o código e a documentação vigentes. APKs e notas de versões anteriores ficam nas [releases e tags do GitHub](https://github.com/GustavoDevGTI/Galeria-Android/releases), sem cópias de binários no repositório.
 
-O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9.22 usa o código `9022`.
+O `versionName` acompanha a tag sem o prefixo `v`. O `versionCode` usa `major * 1.000.000 + minor * 1.000 + patch`; a versão 0.9.23 usa o código `9023`.
 
 ## APK gerado
 
 Download direto da versão mais recente:
 
-[Baixar Galeria Android - versão 0.9.22](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9.22/Galeria-Android-versao-0.9.22.apk)
+[Baixar Galeria Android - versão 0.9.23](https://github.com/GustavoDevGTI/Galeria-Android/releases/download/v0.9.23/Galeria-Android-versao-0.9.23.apk)
 
 Build padrão do Gradle:
 
@@ -181,10 +185,10 @@ app\build\outputs\apk\release\app-release.apk
 APK de distribuição publicado somente como anexo no GitHub Releases:
 
 ```text
-Galeria-Android-versao-0.9.22.apk
+Galeria-Android-versao-0.9.23.apk
 ```
 
-O APK 0.9.22 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
+O APK 0.9.23 usa a mesma chave permanente das versões recentes. Atualize por cima da versão release instalada para preservar as preferências. Se houver conflito com uma instalação debug, não desinstale sem antes preservar os dados e preferências necessários.
 
 ### Fluxo obrigatório de release no GitHub
 

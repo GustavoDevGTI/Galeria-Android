@@ -73,13 +73,91 @@ class OptimizationInstrumentedTest {
         val modes = listOf(MediaSortRules.SORT_CUSTOM, MediaSortRules.SORT_DATE, MediaSortRules.SORT_NAME,
             MediaSortRules.SORT_SIZE, MediaSortRules.SORT_DURATION, MediaSortRules.SORT_TYPE)
         val groups = listOf(AlbumMediaRules.GROUP_NONE, AlbumMediaRules.GROUP_TYPE, AlbumMediaRules.GROUP_EXTENSION,
-            AlbumMediaRules.GROUP_DAY, AlbumMediaRules.GROUP_MONTH)
+            AlbumMediaRules.GROUP_DAY, AlbumMediaRules.GROUP_MONTH, AlbumMediaRules.GROUP_SIZE)
         for (mode in modes) for (group in groups) for (descending in listOf(false, true)) {
             val options = AlbumMediaPreparationOptions(MediaFilterOptions(), group, mode, descending)
             assertEquals("$mode/$group/$descending", AlbumMediaRules.prepare(source, options, custom).firstOrNull()?.uri,
                 AlbumMediaRules.first(source, options, custom)?.uri)
             assertEquals(source[33].uri, AlbumCoverRules.choose(source, source[33].uri.toString(), options, custom)?.uri)
         }
+    }
+
+    @Test fun groupTitlesTakeTheirOwnRowsWithoutShiftingMediaActions() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val mb = 1_000_000L
+        fun media(name: String, size: Long) = MediaItem(name.hashCode().toLong(), Uri.parse("content://media/test/titles/$name"),
+            "$name.jpg", "image/jpeg", 100, size, "Pictures/Test/", "Pictures/Test/", "Test")
+        val source = listOf(media("a", 2_600 * mb), media("b", 2_700 * mb), media("c", 150 * mb), media("d", 300_000))
+        val grouping = MediaRecyclerAdapter.MediaGrouping(
+            key = { AlbumMediaRules.groupKey(it, AlbumMediaRules.GROUP_SIZE) },
+            label = { MediaGroupLabels.label(context, AlbumMediaRules.GROUP_SIZE, it) }
+        )
+        instrumentation.runOnMainSync {
+            val adapter = MediaRecyclerAdapter(context, object : MediaRecyclerAdapter.Callbacks {
+                override fun onMediaClick(position: Int) = Unit
+                override fun onMediaPreview(position: Int) = Unit
+                override fun onMediaLongClick(view: android.view.View, position: Int) = true
+            })
+            fun headers() = (0 until adapter.itemCount).map(adapter::isGroupHeader)
+            adapter.setGrouping(grouping)
+            adapter.submit(source)
+            // [2,5 GB] a b [100 MB] c [1 MB] d
+            assertEquals(7, adapter.itemCount); assertEquals(4, adapter.getCount())
+            assertEquals(listOf(true, false, false, true, false, true, false), headers())
+            assertEquals(listOf(null, "a.jpg", "b.jpg", null, "c.jpg", null, "d.jpg"), (0 until 7).map { adapter.peekItem(it)?.name })
+            assertEquals(MediaRecyclerAdapter.VIEW_TYPE_GROUP_HEADER, adapter.getItemViewType(3))
+            assertEquals(4, adapter.positionOf(source[2].uri.toString()))
+            assertEquals("c.jpg", adapter.mediaAt(2)?.name)
+            adapter.setSelectionMode(true)
+            assertFalse(adapter.selectPosition(3)); assertTrue(adapter.selectPosition(4))
+            assertEquals(listOf("c.jpg"), adapter.selectedItems().map { it.name })
+            // An item only moves inside its own group.
+            assertFalse(adapter.moveVisible(2, 4)); assertFalse(adapter.moveVisible(2, 3))
+            assertTrue(adapter.moveVisible(2, 1))
+            assertEquals(listOf("b.jpg", "a.jpg", "c.jpg", "d.jpg"), adapter.currentOrder().map { it.name })
+            assertEquals(listOf(true, false, false, true, false, true, false), headers())
+            // Removing the only media of a group takes its title away too.
+            adapter.removeCompletedItems(listOf(source[2].uri.toString()))
+            assertEquals(0, adapter.selectedCount())
+            assertEquals(listOf(true, false, false, true, false), headers())
+            assertEquals("d.jpg", adapter.peekItem(4)?.name)
+            // The horizontal grid has no titles.
+            adapter.setHorizontalGrid(true)
+            assertEquals(3, adapter.itemCount); assertFalse(adapter.hasGroupHeaders())
+            adapter.setHorizontalGrid(false)
+            assertEquals(5, adapter.itemCount)
+            adapter.setGrouping(null); adapter.submit(source)
+            assertEquals(4, adapter.itemCount); assertFalse(adapter.hasGroupHeaders())
+            assertEquals("a.jpg", adapter.peekItem(0)?.name)
+        }
+    }
+
+    @Test fun groupingBySizeKeepsBiggestGroupsFirstAndSortsEachGroupByDate() {
+        val mb = 1_000_000L
+        fun media(name: String, size: Long, date: Long) = MediaItem(date, Uri.parse("content://media/test/size/$name"),
+            "$name.jpg", "image/jpeg", date, size, "Pictures/Test/", "Pictures/Test/", "Test")
+        val source = listOf(
+            media("a", 2_600 * mb, 100), media("e", 300_000, 50), media("c", 150 * mb, 200),
+            media("f", 1_500_000, 500), media("b", 2_800 * mb, 300), media("d", 120 * mb, 400)
+        )
+        fun prepared(descending: Boolean) = AlbumMediaRules.prepare(source, AlbumMediaPreparationOptions(
+            MediaFilterOptions(), AlbumMediaRules.GROUP_SIZE, MediaSortRules.SORT_DATE, descending), emptyList()).map { it.name }
+        // 2,5 GB: a, b | 100 MB: c, d | 1 MB (inclui < 1 MB): e, f
+        assertEquals(listOf("b.jpg", "a.jpg", "d.jpg", "c.jpg", "f.jpg", "e.jpg"), prepared(true))
+        assertEquals(listOf("a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg", "f.jpg"), prepared(false))
+    }
+
+    @Test fun groupingByMonthSortsEachMonthBySize() {
+        val january = 1_705_320_000L // 15/01/2024 12:00 UTC
+        val march = 1_710_504_000L // 15/03/2024 12:00 UTC
+        fun media(name: String, size: Long, date: Long) = MediaItem(size, Uri.parse("content://media/test/month/$name"),
+            "$name.jpg", "image/jpeg", date, size, "Pictures/Test/", "Pictures/Test/", "Test")
+        val source = listOf(media("m3", 20, march), media("j1", 10, january), media("m4", 5, march), media("j2", 30, january))
+        fun prepared(descending: Boolean) = AlbumMediaRules.prepare(source, AlbumMediaPreparationOptions(
+            MediaFilterOptions(), AlbumMediaRules.GROUP_MONTH, MediaSortRules.SORT_SIZE, descending), emptyList()).map { it.name }
+        // Os meses seguem do mais antigo para o mais recente; a direção vale dentro de cada mês.
+        assertEquals(listOf("j2.jpg", "j1.jpg", "m3.jpg", "m4.jpg"), prepared(true))
+        assertEquals(listOf("j1.jpg", "j2.jpg", "m4.jpg", "m3.jpg"), prepared(false))
     }
 
     @Test fun resolvedDurationInvalidatesBothSnapshotsWithoutRepeatedInvalidation() {
