@@ -18,9 +18,14 @@ internal data class JoinMedia(
 
 /**
  * A media in the montage. A video keeps the parts in [ranges] (source milliseconds, in order);
- * cutting the middle leaves two ranges of the same media, which always stay together.
+ * cutting the middle leaves two ranges of the same media, which always stay together. A photo
+ * shows for its own [photoMs], or for the montage's photo time when it has none.
  */
-internal data class JoinClip(val media: JoinMedia, val ranges: List<LongRange> = defaultRanges(media)) {
+internal data class JoinClip(
+    val media: JoinMedia,
+    val ranges: List<LongRange> = defaultRanges(media),
+    val photoMs: Long? = null
+) {
     companion object {
         fun defaultRanges(media: JoinMedia): List<LongRange> =
             if (media.isVideo && media.durationMs > 0L) listOf(0L..media.durationMs) else emptyList()
@@ -79,9 +84,9 @@ internal data class JoinSegment(
 internal data class JoinRecord(val photoMs: Long, val clips: List<JoinClip>, val transitions: List<JoinTransition> = emptyList())
 
 internal object MediaJoinRules {
-    const val MIN_PHOTO_SECONDS = 4
+    const val MIN_PHOTO_SECONDS = 1
     const val MAX_PHOTO_SECONDS = 10
-    const val DEFAULT_PHOTO_SECONDS = 5
+    const val DEFAULT_PHOTO_SECONDS = 3
     /** Largest short side for a montage made only of photos; video encoders stop around 4K. */
     const val MAX_PHOTO_ONLY_SHORT_SIDE = 2160
     /** Shortest part a cut may leave, so the timeline never holds an invisible sliver. */
@@ -93,7 +98,19 @@ internal object MediaJoinRules {
     fun photoSeconds(value: Int): Int = value.coerceIn(MIN_PHOTO_SECONDS, MAX_PHOTO_SECONDS)
 
     fun clipDurationMs(clip: JoinClip, photoMs: Long): Long =
-        if (clip.media.isVideo) clip.ranges.sumOf { it.last - it.first } else photoMs
+        if (clip.media.isVideo) clip.ranges.sumOf { it.last - it.first } else clip.photoMs ?: photoMs
+
+    /** Whole seconds a photo shows, for its own time control. */
+    fun photoSecondsOf(clip: JoinClip, photoMs: Long): Int = (clipDurationMs(clip, photoMs) / 1000L).toInt()
+
+    /** The photo at [index] with its time moved by [delta] seconds, kept within the limits. */
+    fun withPhotoSeconds(clips: List<JoinClip>, index: Int, delta: Int, photoMs: Long): List<JoinClip> {
+        val clip = clips.getOrNull(index)?.takeUnless { it.media.isVideo } ?: return clips
+        val current = photoSecondsOf(clip, photoMs)
+        val seconds = photoSeconds(current + delta)
+        if (seconds == current) return clips
+        return clips.toMutableList().apply { set(index, clip.copy(photoMs = seconds * 1000L)) }
+    }
 
     /** Longest overlap of a transition; shorter media get a shorter one, at most half of each. */
     const val TRANSITION_MS = 600L
@@ -191,8 +208,9 @@ internal object MediaJoinRules {
                     at += length
                 }
             } else {
-                result += JoinSegment(index, 0L, photoMs, at, at + photoMs)
-                at += photoMs
+                val shown = clipDurationMs(clip, photoMs)
+                result += JoinSegment(index, 0L, shown, at, at + shown)
+                at += shown
             }
         }
         return result
@@ -335,7 +353,9 @@ internal object MediaJoinRules {
             val media = clip.media
             append(listOf(
                 media.uri, media.mime, media.name, media.width, media.height, media.durationMs, media.size,
-                clip.ranges.joinToString(",") { "${it.first}-${it.last}" }
+                clip.ranges.joinToString(",") { "${it.first}-${it.last}" },
+                // A photo's own time; older records have no such field and use photoMs.
+                clip.photoMs ?: ""
             ).joinToString("\t") { URLEncoder.encode(it.toString(), "UTF-8") }).append('\n')
         }
     }
@@ -353,7 +373,7 @@ internal object MediaJoinRules {
                 val (s, e) = it.split('-')
                 s.toLong()..e.toLong()
             }
-            JoinClip(media, ranges)
+            JoinClip(media, ranges, f.getOrNull(8)?.toLongOrNull())
         }
         JoinRecord(photoMs, clips, transitions)
     }.getOrNull()

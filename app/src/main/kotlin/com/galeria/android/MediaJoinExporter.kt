@@ -87,8 +87,8 @@ internal object MediaJoinExporter {
                 }
             } else {
                 listOf(EditedMediaItem.Builder(PlayerMediaItem.Builder().setUri(media.uri).setMimeType(media.mime)
-                    .setImageDurationMs(request.photoMs).build())
-                    .setFrameRate(FRAME_RATE).setDurationUs(request.photoMs * 1000L).setEffects(fit).build())
+                    .setImageDurationMs(MediaJoinRules.clipDurationMs(clip, request.photoMs)).build())
+                    .setFrameRate(FRAME_RATE).setDurationUs(MediaJoinRules.clipDurationMs(clip, request.photoMs) * 1000L).setEffects(fit).build())
             }
         }
         val windows = MediaJoinRules.windows(request.clips, request.photoMs, request.transitions)
@@ -152,7 +152,7 @@ internal object MediaJoinExporter {
                         .setDurationUs(media.durationMs * 1000L).setEffects(fit).build()
                 }
             } else {
-                val ms = request.photoMs - head - tail
+                val ms = MediaJoinRules.clipDurationMs(clip, request.photoMs) - head - tail
                 listOf(EditedMediaItem.Builder(PlayerMediaItem.Builder().setUri(media.uri).setMimeType(media.mime)
                     .setImageDurationMs(ms).build())
                     .setFrameRate(FRAME_RATE).setDurationUs(ms * 1000L).setEffects(fit).build())

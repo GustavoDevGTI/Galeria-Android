@@ -172,8 +172,8 @@ class VideoEditInstrumentedTest {
                 onView(withContentDescription("Editar")).perform(clickClickableAncestor())
                 waitFor { onView(withContentDescription(R.string.join_quality)).check(matches(withText("Nativa"))) }
                 onView(withContentDescription(R.string.join_quality)).perform(click())
-                // Native shows its real size; sizes as big as the video are not offered.
-                waitFor { onView(withText(startsWith("Nativa · ${native.width}×${native.height}"))).inRoot(isPlatformPopup()).check(matches(isDisplayed())) }
+                // Choices read by name alone with the estimate; sizes as big as the video are not offered.
+                waitFor { onView(withText(startsWith("Nativa · ≈ "))).inRoot(isPlatformPopup()).check(matches(isDisplayed())) }
                 onView(withText(startsWith("${minOf(native.width, native.height)}p"))).inRoot(isPlatformPopup()).check(doesNotExist())
                 val smallest = requireNotNull(options.last().maxShortSide)
                 onView(withText(startsWith("${smallest}p · "))).inRoot(isPlatformPopup()).perform(click())

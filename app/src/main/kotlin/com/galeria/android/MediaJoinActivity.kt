@@ -81,7 +81,8 @@ class MediaJoinActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var clips: List<JoinClip> = emptyList()
     private var selected = 0
-    private var photoSeconds = MediaJoinRules.DEFAULT_PHOTO_SECONDS
+    /** Time of a photo that was not given its own; each photo's control sets its own time. */
+    private val photoSeconds = MediaJoinRules.DEFAULT_PHOTO_SECONDS
     /** The transition at each junction; index i sits between clip i and clip i + 1. */
     private var transitions: List<JoinTransition> = emptyList()
     /** One transition for the whole montage: every junction uses it. */
@@ -156,6 +157,10 @@ class MediaJoinActivity : ComponentActivity() {
             }
         })
         loadMedia()
+        // A merge that finished after its editor closed left its outcome behind; a new editor
+        // starts clean instead of reading it, showing "saved" and closing at once. A merge still
+        // running (or this same editor coming back after a rotation) keeps showing.
+        if (savedInstanceState == null) MediaJoinJobs.acknowledge()
         MediaJoinJobs.observe(jobListener)
     }
 
@@ -414,8 +419,7 @@ class MediaJoinActivity : ComponentActivity() {
         removeButton.visibility = if (clips.size > 1) View.VISIBLE else View.GONE
         strip.setClips(clips, labels, selected)
         timeline.setClips(clips, photoMs, selected, transitions)
-        photoControls.visibility = if (clips.any { !it.media.isVideo }) View.VISIBLE else View.GONE
-        photoLabel.text = getString(R.string.join_seconds, photoSeconds)
+        showPhotoTime()
         // One video is a plain edit that saves a copy; two or more media are joined.
         saveButton.contentDescription = getString(if (clips.size > 1) R.string.action_join else R.string.msg_save_copy)
         if (Build.VERSION.SDK_INT >= 26) saveButton.tooltipText = saveButton.contentDescription
@@ -594,12 +598,11 @@ class MediaJoinActivity : ComponentActivity() {
         qualityChip.text = qualityName(quality)
     }
 
-    /** Each choice with the size it gives and, when there are videos to go by, about how big the file gets. */
+    /** Each choice by its name alone ("720p") and, when there are videos to go by, about how big the file gets. */
     private fun qualityLabel(option: JoinQuality): String {
-        val canvas = MediaJoinRules.canvas(clips.map { it.media }, option)
         val estimate = MediaJoinRules.estimatedBytes(JoinRequest(clips, photoMs, option, transitions))
         return buildString {
-            append(qualityName(option)).append(" · ").append(canvas.width).append('×').append(canvas.height)
+            append(qualityName(option))
             estimate?.let { append(" · ≈ ").append(android.text.format.Formatter.formatShortFileSize(this@MediaJoinActivity, it)) }
         }
     }
@@ -632,6 +635,7 @@ class MediaJoinActivity : ComponentActivity() {
         strip.setSelected(index)
         timeline.setSelected(index)
         splitButton.visibility = if (clips[index].media.isVideo) View.VISIBLE else View.GONE
+        showPhotoTime()
         // Jump to the start of the chosen media when it is not under the playhead.
         val segments = MediaJoinRules.segments(clips, photoMs, transitions).filter { it.clipIndex == index }
         val position = timeline.positionMs
@@ -702,13 +706,22 @@ class MediaJoinActivity : ComponentActivity() {
         showTime(at)
     }
 
+    /** The time control belongs to the selected photo: tapping a photo's square shows its time. */
+    private fun showPhotoTime() {
+        val clip = clips.getOrNull(selected)
+        photoControls.visibility = if (clip != null && !clip.media.isVideo) View.VISIBLE else View.GONE
+        if (clip != null && !clip.media.isVideo) {
+            photoLabel.text = getString(R.string.join_seconds, MediaJoinRules.photoSecondsOf(clip, photoMs))
+        }
+    }
+
     private fun changePhotoSeconds(delta: Int) {
-        val next = MediaJoinRules.photoSeconds(photoSeconds + delta)
-        if (next == photoSeconds) {
+        val next = MediaJoinRules.withPhotoSeconds(clips, selected, delta, photoMs)
+        if (next == clips) {
             photoLabel.performHapticFeedback(HapticFeedbackConstants.REJECT)
             return
         }
-        photoSeconds = next
+        clips = next
         Motion.settle(photoLabel)
         refresh(rebuild = true)
     }

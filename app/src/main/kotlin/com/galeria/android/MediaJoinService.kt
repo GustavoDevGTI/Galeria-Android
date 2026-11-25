@@ -119,17 +119,27 @@ class MediaJoinService : Service() {
         manager().notify(NOTIFICATION_ID, progress(percent))
     }
 
+    /**
+     * A normal channel, so the notification sits with the others instead of being folded into the
+     * silent ones. Android never raises an existing channel's importance, so the old low channel
+     * is removed and this one takes its place.
+     */
     private fun channel(): String {
         if (Build.VERSION.SDK_INT >= 26) {
-            manager().createNotificationChannel(NotificationChannel(CHANNEL, getString(R.string.join_channel), NotificationManager.IMPORTANCE_LOW))
+            manager().deleteNotificationChannel(OLD_CHANNEL)
+            manager().createNotificationChannel(NotificationChannel(CHANNEL, getString(R.string.join_channel), NotificationManager.IMPORTANCE_DEFAULT))
         }
         return CHANNEL
     }
 
+    // The title names the app ("Galery"), so the notification is easy to recognize; the text
+    // says what is happening. The progress stays quiet while it moves.
     private fun progress(percent: Int) = NotificationCompat.Builder(this, channel())
         .setSmallIcon(R.drawable.ic_join)
-        .setContentTitle(getString(title))
+        .setContentTitle(getString(R.string.notification_brand))
+        .setContentText(getString(title))
         .setProgress(100, percent, percent == 0)
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
         .setOngoing(true)
         .setOnlyAlertOnce(true)
         .setSilent(true)
@@ -138,7 +148,9 @@ class MediaJoinService : Service() {
     private fun finished(title: String, tap: PendingIntent?) {
         manager().notify(RESULT_ID, NotificationCompat.Builder(this, channel())
             .setSmallIcon(R.drawable.ic_join)
-            .setContentTitle(title)
+            .setContentTitle(getString(R.string.notification_brand))
+            .setContentText(title)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .apply { if (tap != null) setContentIntent(tap) }
             .build())
@@ -159,7 +171,8 @@ class MediaJoinService : Service() {
     }
 
     private companion object {
-        const val CHANNEL = "media_join"
+        const val CHANNEL = "media_join_alerts"
+        const val OLD_CHANNEL = "media_join"
         const val NOTIFICATION_ID = 4101
         const val RESULT_ID = 4102
     }

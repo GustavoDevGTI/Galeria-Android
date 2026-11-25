@@ -292,6 +292,10 @@
     <string name="settings_remember_video_position_hint">Resumes videos where they stopped for up to 12 hours. Finished videos start over.</string>
     <string name="settings_loop_videos">Loop videos</string>
     <string name="settings_loop_videos_hint">Repeats the video continuously.</string>
+    <string name="settings_auto_picture_in_picture">Automatic picture-in-picture</string>
+    <string name="settings_auto_picture_in_picture_hint">Going back while a video plays keeps it in a floating window.</string>
+    <string name="video_picture_in_picture">Picture-in-picture</string>
+    <string name="notification_brand">Galery</string>
     <string name="settings_video_separate_screen">Open videos on a separate screen</string>
     <string name="settings_video_separate_screen_hint">Opens the video on its own, without swiping to the rest of the album.</string>
     <string name="settings_video_vertical_gestures">Vertical volume/brightness gestures</string>

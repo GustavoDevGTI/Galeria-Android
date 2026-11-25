@@ -59,6 +59,8 @@ internal object GalleryPreferences {
     const val AUTOPLAY_VIDEOS = "autoplay_videos"
     const val REMEMBER_VIDEO_POSITION = "remember_video_position"
     const val LOOP_VIDEOS = "loop_videos"
+    /** Back with a playing video turns it into the floating thumbnail instead of closing it. */
+    const val AUTO_PICTURE_IN_PICTURE = "auto_picture_in_picture"
     /** Keeps joining media after the editor closes, with a notification. */
     const val JOIN_IN_BACKGROUND = "join_in_background"
     /** Photos used in a join also leave after 48 hours, like the videos. */
@@ -113,7 +115,8 @@ internal object GalleryPreferences {
         PULL_TO_REFRESH to true,
         SHOW_ALBUM_NAMES to true,
         SHOW_FILE_NAMES to true,
-        JOIN_IN_BACKGROUND to true
+        JOIN_IN_BACKGROUND to true,
+        AUTO_PICTURE_IN_PICTURE to true
     )
 
     fun defaultOf(key: String): Boolean = booleanDefaults[key] ?: false

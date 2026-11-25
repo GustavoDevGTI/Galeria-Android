@@ -127,7 +127,7 @@ class ImageEditorInstrumentedTest {
                 onView(withContentDescription("Girar")).perform(click())
                 onView(withContentDescription("Redimensionar imagem")).perform(scrollTo(), click())
                 // 160×120 is below every usual size: only the current one and a custom width.
-                onView(withText(startsWith("Atual · 120×160"))).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText(startsWith("Atual"))).inRoot(isDialog()).check(matches(isDisplayed()))
                 onView(withText("Largura personalizada…")).inRoot(isDialog()).perform(click())
                 onView(isAssignableFrom(EditText::class.java)).perform(replaceText("80"))
                 onView(withText("Aplicar")).perform(click())
@@ -182,11 +182,11 @@ class ImageEditorInstrumentedTest {
             }).use {
                 waitForText("Editar imagem")
                 onView(withContentDescription("Redimensionar imagem")).perform(scrollTo(), click())
-                // The current size with its estimate; 1200p and up would not make it smaller.
-                onView(withText(startsWith("Atual · 1600×1200 · ≈ "))).inRoot(isDialog()).check(matches(isDisplayed()))
+                // Sizes by name alone with their estimate (no pixels); 1200p and up would not make it smaller.
+                onView(withText(startsWith("Atual · ≈ "))).inRoot(isDialog()).check(matches(isDisplayed()))
                 onView(withText(startsWith("1440p"))).inRoot(isDialog()).check(doesNotExist())
-                onView(withText(startsWith("1080p · 1440×1080 · ≈ "))).inRoot(isDialog()).check(matches(isDisplayed()))
-                onView(withText(startsWith("360p · 480×360"))).inRoot(isDialog()).perform(click())
+                onView(withText(startsWith("1080p · ≈ "))).inRoot(isDialog()).check(matches(isDisplayed()))
+                onView(withText(startsWith("360p · ≈ "))).inRoot(isDialog()).perform(click())
                 val readyDeadline = System.currentTimeMillis() + 10_000L
                 var resized = false
                 while (!resized && System.currentTimeMillis() < readyDeadline) {

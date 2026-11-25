@@ -297,6 +297,10 @@
     <string name="settings_remember_video_position_hint">Retoma vídeos de onde parou por até 12 horas. Vídeos concluídos voltam ao início.</string>
     <string name="settings_loop_videos">Reproduzir vídeos em ciclo</string>
     <string name="settings_loop_videos_hint">Repete o vídeo continuamente.</string>
+    <string name="settings_auto_picture_in_picture">Miniatura automática</string>
+    <string name="settings_auto_picture_in_picture_hint">Voltar com um vídeo tocando o mantém numa janela flutuante.</string>
+    <string name="video_picture_in_picture">Modo miniatura</string>
+    <string name="notification_brand">Galery</string>
     <string name="settings_video_separate_screen">Abrir vídeos em tela separada</string>
     <string name="settings_video_separate_screen_hint">Abre o vídeo sozinho, sem deslizar para as outras mídias do álbum.</string>
     <string name="settings_video_vertical_gestures">Gestos verticais de volume/brilho</string>

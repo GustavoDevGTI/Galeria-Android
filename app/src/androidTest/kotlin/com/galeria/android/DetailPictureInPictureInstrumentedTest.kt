@@ -85,6 +85,42 @@ class DetailPictureInPictureInstrumentedTest {
         }
     }
 
+    @Test
+    fun withTheAutomaticThumbnailOffBackClosesAndTheButtonStillOpensIt() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        assumeTrue(context.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE))
+        val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
+        val had = prefs.contains(GalleryPreferences.AUTO_PICTURE_IN_PICTURE)
+        val old = prefs.getBoolean(GalleryPreferences.AUTO_PICTURE_IN_PICTURE, true)
+        prefs.edit().putBoolean(GalleryPreferences.AUTO_PICTURE_IN_PICTURE, false).commit()
+        try {
+            // The button turns even a paused video into the thumbnail.
+            withLoopingVideo(context) { scenario ->
+                scenario.onActivity { it.player().pause() }
+                waitUntil("O vídeo deve pausar") { scenario.playWhenReady() == false }
+                scenario.onActivity { it.window.decorView.findViewWithTag<View>("video_picture_in_picture").performClick() }
+                waitUntil("O botão deve abrir a miniatura") { scenario.inPictureInPicture() }
+                assertEquals("O vídeo continua pausado na miniatura", false, scenario.playWhenReady())
+            }
+            // Back with the video playing closes the viewer, as asked in Settings.
+            withLoopingVideo(context) { scenario ->
+                var finishing = false
+                var inPip = true
+                scenario.onActivity {
+                    it.onBackPressedDispatcher.onBackPressed()
+                    finishing = it.isFinishing
+                    inPip = it.isInPictureInPictureMode
+                }
+                assertTrue("Com a miniatura automática desligada, voltar fecha", finishing)
+                assertFalse(inPip)
+            }
+        } finally {
+            prefs.edit().apply {
+                if (had) putBoolean(GalleryPreferences.AUTO_PICTURE_IN_PICTURE, old) else remove(GalleryPreferences.AUTO_PICTURE_IN_PICTURE)
+            }.commit()
+        }
+    }
+
     private fun withLoopingVideo(context: Context, block: (ActivityScenario<DetailActivity>) -> Unit) {
         val prefs = context.getSharedPreferences(Ui.PREFS, Context.MODE_PRIVATE)
         val hadLoop = prefs.contains("loop_videos")

@@ -325,7 +325,8 @@ class ImageEditActivity : ComponentActivity() {
         val labels = sizes.mapIndexed { index, size ->
             val estimate = sourceFile?.let { (bytes, file) -> ImageResizeRules.estimatedBytes(bytes, file.width, file.height, size) }
             buildString {
-                append(names[index]).append(" · ").append(size.width).append('×').append(size.height)
+                // By name alone ("720p"); the exact pixels only clutter the list.
+                append(names[index])
                 estimate?.let { append(" · ≈ ").append(android.text.format.Formatter.formatShortFileSize(this@ImageEditActivity, it)) }
             }
         } + getString(R.string.image_resize_custom)

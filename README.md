@@ -45,6 +45,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Controle de áudio no player para ativar ou silenciar o vídeo durante a navegação
 - Velocidade por toque curto (1× → 1,5× → 2× → 1×); segurar abre o seletor completo, incluindo 0,5×
 - Modo cinema opcional por vídeo, com rotação horizontal, transição suave e retorno imediato ao modo normal
+- Modo miniatura (janela flutuante) pelo botão na barra do vídeo, também com o vídeo pausado; voltar com o vídeo tocando vira miniatura com a opção "Miniatura automática", que pode ser desligada em Configurações › Vídeos
 - Gestos verticais de brilho e volume no modo cinema, além da escolha de trilhas de áudio e legendas incorporadas
 - Preferência de modo cinema e de trilhas aplicável a todos os vídeos de um álbum
 - Barra de ações unificada com ícones mais delicados e favoritos representados por coração em todas as telas
@@ -54,7 +55,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção pelos metadados da câmera (Google e Samsung) e reprodução na própria foto pelo botão no rodapé; Editar escolhe qual quadro do vídeo fica como foto, guardando a original dentro do arquivo
 - Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção diretamente sobre a imagem, alças de ajuste, cópia do trecho escolhido e seleção integral
 - Ícone de texto exibido automaticamente quando a foto aberta contém texto reconhecido; análise local adiada durante a troca rápida de fotos
-- Mesclar fotos e vídeos em um vídeo só, pelo Menu da seleção, na ordem dos toques, com o nome do primeiro vídeo seguido de "Merged"; o mesmo editor serve para cortar ou reduzir um vídeo sozinho, com quadrados arrastáveis e removíveis, linha do tempo, cortes no meio, tempo das fotos de 4 a 10 s, qualidade nativa ou resoluções menores (2160p a 360p, só as abaixo da original, com tamanho estimado) e uma transição para todas as passagens: Seco, Dissolver, Escurecer, Deslizar ou Zoom; vídeos MP4 inteiros e compatíveis são mesclados por cópia, sem recodificar
+- Mesclar fotos e vídeos em um vídeo só, pelo Menu da seleção, na ordem dos toques, com o nome do primeiro vídeo seguido de "Merged"; o mesmo editor serve para cortar ou reduzir um vídeo sozinho, com quadrados arrastáveis e removíveis, linha do tempo, cortes no meio, tempo próprio de cada foto (3 s por padrão, de 1 a 10 s, escolhido tocando no quadrado da foto), qualidade nativa ou resoluções menores (2160p a 360p, só as abaixo da original, com tamanho estimado) e uma transição para todas as passagens: Seco, Dissolver, Escurecer, Deslizar ou Zoom; vídeos MP4 inteiros e compatíveis são mesclados por cópia, sem recodificar
 - Relógio de 48 horas nas mídias usadas em uma mesclagem (vídeos sempre; fotos por opção); tocar no relógio mantém a mídia, e ao fim do prazo ela vai para a lixeira
 - Separar devolve as mídias de um vídeo mesclado pelo app sem criar duplicatas: usa os originais existentes, restaura os da lixeira e refaz só o que foi apagado
 - Agrupar mídias do álbum por tipo, extensão, dia, mês ou tamanho do arquivo, com o título de cada grupo acima das miniaturas
@@ -134,7 +135,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A versão 0.9.25 corrige a Lixeira com pastas ocultas: o que é apagado de uma pasta oculta exposta na grade aparece na Lixeira enquanto ela continua exposta. Consulte as [notas da release](docs/RELEASE-0.9.25.md).
+A versão 0.9.26 traz o botão e a opção da miniatura de vídeo, o tempo próprio de cada foto na mesclagem, resoluções mostradas só pelo nome, notificações em evidência com o nome Galery e o editor de mesclagem abrindo direto depois de uma mesclagem anterior. Consulte as [notas da release](docs/RELEASE-0.9.26.md).
 
 Os testes locais ficam em `app/src/test/kotlin` e as integrações Android em `app/src/androidTest/kotlin`. Os comandos por área, critérios de entrega e evidências estão no [guia de validação](docs/TESTES-VALIDACAO.md).
 

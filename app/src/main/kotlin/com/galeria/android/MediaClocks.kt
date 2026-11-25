@@ -178,8 +178,12 @@ internal object MediaClockNotice {
         runCatching {
             manager.notify(ID, NotificationCompat.Builder(context, CHANNEL)
                 .setSmallIcon(R.drawable.ic_clock)
-                .setContentTitle(context.getString(R.string.clock_confirm_title))
-                .setContentText(context.resources.getQuantityString(R.plurals.clock_confirm_text, count, count))
+                // The app's name first, so the notification is easy to recognize.
+                .setContentTitle(context.getString(R.string.notification_brand))
+                .setContentText(context.getString(R.string.clock_confirm_title))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(context.getString(R.string.clock_confirm_title) + "\n" +
+                    context.resources.getQuantityString(R.plurals.clock_confirm_text, count, count)))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setContentIntent(open)
                 .setAutoCancel(true)
                 .build())

@@ -11,7 +11,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
+import org.hamcrest.Matchers.not
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.espresso.matcher.RootMatchers.isPlatformPopup
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -56,9 +59,15 @@ class MediaJoinEditorInstrumentedTest {
 
                 // Moving the video after the photo swaps them on the timeline too.
                 scenario.onActivity { strip.performAccessibilityAction(R.id.join_move_right, null) }
-                // One more second for each photo.
+                // Tapping the photo's square shows its own time (3 s at first); one more second for it.
+                scenario.onActivity { strip.onSelect?.invoke(0) }
+                onView(withText(context.getString(R.string.join_seconds, 3))).check(matches(isDisplayed()))
                 tap(scenario, "${context.getString(R.string.join_photo_time)} +")
                 awaitTrue("O tempo da foto deve aumentar a duração") { timelineTotal(scenario, timeline) == before + 1_000L }
+                onView(withText(context.getString(R.string.join_seconds, 4))).check(matches(isDisplayed()))
+                // The video's square has no photo time.
+                scenario.onActivity { strip.onSelect?.invoke(1) }
+                onView(withText(context.getString(R.string.join_seconds, 4))).check(matches(not(isDisplayed())))
 
                 // Split the video (now second) at its middle: same length, two parts of one media.
                 scenario.onActivity { activity ->
@@ -89,9 +98,13 @@ class MediaJoinEditorInstrumentedTest {
                 joined = scenario.result.resultData?.data
             }
             assertNotNull(joined)
+            // The merge notification uses a normal channel (not folded into the silent ones).
+            val notifications = context.getSystemService(android.app.NotificationManager::class.java)
+            assertEquals(android.app.NotificationManager.IMPORTANCE_DEFAULT, notifications.getNotificationChannel("media_join_alerts")?.importance)
+            assertEquals("O canal silencioso antigo sai", null, notifications.getNotificationChannel("media_join"))
             val record = requireNotNull(MediaJoinExporter.readRecord(context, joined!!))
             assertEquals(listOf(photo.toString(), video.toString()), record.clips.map { it.media.uri })
-            assertEquals(6_000L, record.photoMs)
+            assertEquals("A foto guarda o próprio tempo", 4_000L, record.clips[0].photoMs)
             assertEquals(2, record.clips[1].ranges.size)
             assertEquals(listOf(JoinTransition.DISSOLVE), record.transitions)
             assertTrue(record.clips[1].trimmed.not() || record.clips[1].ranges.size == 2)
@@ -101,6 +114,27 @@ class MediaJoinEditorInstrumentedTest {
         } finally {
             listOf(video, photo).forEach { MediaClocks.cancel(context, it.toString()) }
             listOfNotNull(video, photo, joined).forEach { runCatching { context.contentResolver.delete(it, null, null) } }
+        }
+    }
+
+    @Test fun aNewEditorOpensEvenWhenTheLastMergeFinishedInTheBackground() {
+        val suffix = System.nanoTime()
+        val folder = "Pictures/GaleriaJoinAgain-$suffix/"
+        val photo = insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "photo-$suffix.jpg", "image/jpeg", folder, jpeg(Color.YELLOW))
+        val items = listOf(MediaItem(1L, photo, "photo-$suffix.jpg", "image/jpeg", 0L, 1L, folder, null, null),
+            MediaItem(2L, photo, "photo-$suffix.jpg", "image/jpeg", 0L, 1L, folder, null, null))
+        try {
+            // A merge that ended after its editor closed (sent to the background) leaves "saved" behind.
+            MediaJoinJobs.publish(MediaJoinJobs.State.Saved(photo))
+            ActivityScenario.launch<MediaJoinActivity>(MediaJoinActivity.intent(context, items)).use { scenario ->
+                awaitTrue("O editor novo deve abrir com as mídias") { var n = 0; scenario.onActivity { n = it.clipsForTest().size }; n == 2 }
+                SystemClock.sleep(500L)
+                assertEquals("O editor novo não fecha com o resultado da mescla anterior", Lifecycle.State.RESUMED, scenario.state)
+                assertEquals(MediaJoinJobs.State.Idle, MediaJoinJobs.state)
+            }
+        } finally {
+            MediaJoinJobs.acknowledge()
+            context.contentResolver.delete(photo, null, null)
         }
     }
 

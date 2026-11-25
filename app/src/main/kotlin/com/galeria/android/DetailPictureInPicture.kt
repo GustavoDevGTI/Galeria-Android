@@ -104,21 +104,31 @@ internal fun DetailActivity.pictureInPictureSupported(): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
         packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
 
-internal fun DetailActivity.enterPictureInPictureIfPlaying(): Boolean {
+/** Back with a playing video: the thumbnail, unless the automatic thumbnail is off in Settings. */
+internal fun DetailActivity.enterPictureInPictureIfPlaying(): Boolean =
+    enterPictureInPicture(fromButton = false)
+
+/** The thumbnail button of the viewer: works for a paused video too. */
+internal fun DetailActivity.enterPictureInPictureFromButton(): Boolean =
+    enterPictureInPicture(fromButton = true)
+
+private fun DetailActivity.enterPictureInPicture(fromButton: Boolean): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
     val allowed = DetailPictureInPictureRules.shouldEnter(
         supported = pictureInPictureSupported(),
         isVideo = mediaQueue.getOrNull(currentIndex)?.isVideo() == true,
         playing = videoActiveForPictureInPicture(),
         alreadyInPictureInPicture = isInPictureInPictureModeCompat(),
-        finishing = isFinishing
+        finishing = isFinishing,
+        fromButton = fromButton,
+        automatic = GalleryPreferences.flag(this, GalleryPreferences.AUTO_PICTURE_IN_PICTURE)
     )
     if (!allowed) return false
     closeOcrSelection()
     speedPopup?.dismiss()
     cancelPendingSingleTap()
     // Hide the bars before shrinking so they never appear inside the thumbnail or its animation.
-    pictureInPictureShownPlaying = true
+    pictureInPictureShownPlaying = videoActiveForPictureInPicture()
     Haptics.perform(this, Haptics.Effect.THRESHOLD)
     hideViewerChromeForPictureInPicture()
     val entered = try {

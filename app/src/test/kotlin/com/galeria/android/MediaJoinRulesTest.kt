@@ -13,10 +13,33 @@ class MediaJoinRulesTest {
     private val photo = JoinMedia("content://i/3", "image/jpeg", "c.jpg", 3000, 4000, size = 30L)
     private val landscapePhoto = JoinMedia("content://i/4", "image/jpeg", "d.jpg", 4000, 3000, size = 40L)
 
-    @Test fun photoTimeStaysBetweenFourAndTenSeconds() {
-        assertEquals(4, MediaJoinRules.photoSeconds(1))
+    @Test fun photoTimeStaysBetweenOneAndTenSecondsAndStartsAtThree() {
+        assertEquals(1, MediaJoinRules.photoSeconds(0))
+        assertEquals(1, MediaJoinRules.photoSeconds(1))
         assertEquals(7, MediaJoinRules.photoSeconds(7))
         assertEquals(10, MediaJoinRules.photoSeconds(30))
+        assertEquals(3, MediaJoinRules.DEFAULT_PHOTO_SECONDS)
+    }
+
+    @Test fun eachPhotoKeepsItsOwnTime() {
+        val clips = listOf(JoinClip(photo), JoinClip(portraitVideo), JoinClip(landscapePhoto))
+        // The first photo goes down to 1 s; the other keeps the montage's 3 s.
+        var changed = clips
+        repeat(5) { changed = MediaJoinRules.withPhotoSeconds(changed, 0, -1, 3_000L) }
+        assertEquals(1_000L, changed[0].photoMs)
+        assertEquals(null, changed[2].photoMs)
+        assertEquals(listOf(0L, 1_000L, 13_000L), MediaJoinRules.segments(changed, 3_000L).map { it.startMs })
+        assertEquals(16_000L, MediaJoinRules.totalMs(changed, 3_000L))
+        // At the limit nothing changes; a video has no photo time.
+        assertSame(changed, MediaJoinRules.withPhotoSeconds(changed, 0, -1, 3_000L))
+        assertSame(changed, MediaJoinRules.withPhotoSeconds(changed, 1, 1, 3_000L))
+        assertEquals(10_000L, MediaJoinRules.withPhotoSeconds(clips, 2, 20, 3_000L)[2].photoMs)
+        // The own time is written in the montage record and read back; older records have none.
+        val record = JoinRecord(3_000L, changed)
+        assertEquals(record, MediaJoinRules.decode(MediaJoinRules.encode(record)))
+        val old = MediaJoinRules.encode(JoinRecord(5_000L, listOf(JoinClip(photo)))).lines()
+            .joinToString("\n") { line -> if (line.startsWith("content")) line.substringBeforeLast('\t') else line }
+        assertEquals(5_000L, MediaJoinRules.clipDurationMs(MediaJoinRules.decode(old)!!.clips.single(), 5_000L))
     }
 
     @Test fun segmentsFollowTheOrderAndPhotoTime() {

@@ -303,6 +303,10 @@
     <string name="settings_remember_video_position_hint">Reanuda los vídeos donde se quedaron durante hasta 12 horas. Los vídeos terminados vuelven al inicio.</string>
     <string name="settings_loop_videos">Reproducir vídeos en bucle</string>
     <string name="settings_loop_videos_hint">Repite el vídeo continuamente.</string>
+    <string name="settings_auto_picture_in_picture">Miniatura automática</string>
+    <string name="settings_auto_picture_in_picture_hint">Volver con un video en reproducción lo deja en una ventana flotante.</string>
+    <string name="video_picture_in_picture">Modo miniatura</string>
+    <string name="notification_brand">Galery</string>
     <string name="settings_video_separate_screen">Abrir vídeos en una pantalla aparte</string>
     <string name="settings_video_separate_screen_hint">Abre el vídeo solo, sin deslizar al resto del álbum.</string>
     <string name="settings_video_vertical_gestures">Gestos verticales de volumen/brillo</string>

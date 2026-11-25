@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.view.MotionEvent
 import android.view.View
 import android.widget.PopupWindow
 import android.widget.TextView
@@ -104,12 +105,27 @@ class DetailPlaybackInstrumentedTest {
                     original = it.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
                     original.pause()
                 }
+                // What reached the speed button since the last check, to tell a lost tap from one
+                // that arrived (the listener only watches; the button still handles every touch).
+                val touches = java.util.Collections.synchronizedList(ArrayList<String>())
+                scenario.onActivity { activity ->
+                    activity.window.decorView.findViewWithTag<View>("video_speed").setOnTouchListener { _, event ->
+                        touches += MotionEvent.actionToString(event.actionMasked); false
+                    }
+                }
+                var step = 0
                 fun assertSpeed(expected: Float) = scenario.onActivity { activity ->
+                    step++
                     val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
                     assertSame(original, player)
+                    val button = activity.window.decorView.findViewWithTag<View>("video_speed")
+                    val bar = button.rootView.findViewWithTag<View>("video_playback_controls")?.parent as? View
                     // If the selector is open, the tap reached the button as a long press.
-                    assertEquals("Velocidade (seletor aberto: ${activity.speedPopup?.isShowing == true})",
+                    assertEquals("Velocidade no passo $step (seletor aberto: ${activity.speedPopup?.isShowing == true}, " +
+                        "toques no botão: $touches, barra visível: ${activity.hudVisible} alpha=${bar?.alpha} " +
+                        "vis=${bar?.visibility}, botão exibido: ${button.isShown})",
                         expected, player.playbackParameters.speed, 0.001f)
+                    touches.clear()
                     assertEquals(DetailPlaybackRules.speedLabel(expected), activity.window.decorView.findViewWithTag<TextView>("video_speed").text.toString())
                     assertFalse("Mudar velocidade não deve dar play", player.playWhenReady)
                 }

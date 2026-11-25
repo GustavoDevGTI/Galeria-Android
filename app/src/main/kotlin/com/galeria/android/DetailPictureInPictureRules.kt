@@ -10,13 +10,20 @@ internal object DetailPictureInPictureRules {
     private const val MAX_RATIO = 2.39f
     private const val MIN_RATIO = 1f / MAX_RATIO
 
+    /**
+     * Back turns a playing video into the thumbnail only with the automatic thumbnail on
+     * ([automatic]); the thumbnail button ([fromButton]) works for a paused video too.
+     */
     fun shouldEnter(
         supported: Boolean,
         isVideo: Boolean,
         playing: Boolean,
         alreadyInPictureInPicture: Boolean,
-        finishing: Boolean
-    ): Boolean = supported && isVideo && playing && !alreadyInPictureInPicture && !finishing
+        finishing: Boolean,
+        fromButton: Boolean = false,
+        automatic: Boolean = true
+    ): Boolean = supported && isVideo && !alreadyInPictureInPicture && !finishing &&
+        (fromButton || (automatic && playing))
 
     /**
      * Size of the video as it is shown: a phone video recorded upright is stored sideways with a

@@ -333,7 +333,7 @@ class DetailActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 if (closeOcrSelection()) return
                 // A playing video (also in cinema mode) shrinks to a floating thumbnail
-                // so the user can keep browsing the gallery or other apps.
+                // so the user can keep browsing the gallery or other apps (unless turned off).
                 if (enterPictureInPictureIfPlaying()) return
                 resetSpeedAndFinish()
             }
@@ -697,6 +697,15 @@ class DetailActivity : ComponentActivity() {
             }
         }
         videoProgressRow.addView(timelineButton, LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)))
+        // Puts the video in the floating thumbnail right away, playing or paused.
+        if (pictureInPictureSupported()) {
+            videoProgressRow.addView(actionButton(R.drawable.ic_picture_in_picture).apply {
+                tag = "video_picture_in_picture"
+                contentDescription = getString(R.string.video_picture_in_picture)
+                if (Build.VERSION.SDK_INT >= 26) tooltipText = contentDescription
+                setOnClickListener { enterPictureInPictureFromButton() }
+            }, LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)))
+        }
         bottomBar.addView(videoProgressRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 44)))
         // Reserve only the filmstrip's space, leaving playback and other actions usable.
         timelineLoadingRow = LinearLayout(this).apply {

@@ -18,6 +18,18 @@ class DetailPictureInPictureRulesTest {
     }
 
     @Test
+    fun theAutomaticThumbnailCanBeTurnedOffAndTheButtonWorksEvenPaused() {
+        assertFalse("Miniatura automática desligada: voltar fecha",
+            DetailPictureInPictureRules.shouldEnter(true, true, playing = true, alreadyInPictureInPicture = false, finishing = false, automatic = false))
+        assertTrue("O botão vale com o vídeo pausado",
+            DetailPictureInPictureRules.shouldEnter(true, true, playing = false, alreadyInPictureInPicture = false, finishing = false, fromButton = true, automatic = false))
+        assertFalse("O botão não vale para foto",
+            DetailPictureInPictureRules.shouldEnter(true, false, false, false, false, fromButton = true))
+        assertFalse("Nem sem suporte do aparelho",
+            DetailPictureInPictureRules.shouldEnter(false, true, false, false, false, fromButton = true))
+    }
+
+    @Test
     fun thumbnailFollowsTheVideoShapeWithinAndroidLimits() {
         assertEquals(1920 to 1080, DetailPictureInPictureRules.aspectRatio(1920, 1080))
         assertEquals(1080 to 1920, DetailPictureInPictureRules.aspectRatio(1080, 1920))
