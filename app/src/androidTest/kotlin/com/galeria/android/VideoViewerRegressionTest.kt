@@ -379,6 +379,7 @@ class VideoViewerRegressionTest {
             created.add(insert(folder, "video-b.mp4"))
             created.add(insertPhoto(folder, "photo-c.png"))
             created.add(insert(folder, "video-d.mp4"))
+            awaitQuietMediaStore()
             val catalog = MediaStoreRepository.refreshMedia(context, force = true)
             GalleryCatalogStore.saveCustomOrder(context, folder, created.map { uri ->
                 catalog.first { MediaIdentityRules.sameUri(it.uri.toString(), uri.toString()) }
@@ -435,6 +436,7 @@ class VideoViewerRegressionTest {
             created.add(insert(folder, "video-b.mp4"))
             created.add(insertPhoto(folder, "photo-c.png"))
             created.add(insert(folder, "video-d.mp4"))
+            awaitQuietMediaStore()
             val catalog = MediaStoreRepository.refreshMedia(context, force = true)
             GalleryCatalogStore.saveCustomOrder(context, folder, created.map { uri ->
                 catalog.first { MediaIdentityRules.sameUri(it.uri.toString(), uri.toString()) }
@@ -493,6 +495,7 @@ class VideoViewerRegressionTest {
             created.add(insert(folder, "video-b.mp4"))
             created.add(insertPhoto(folder, "photo-c.png"))
             created.add(insert(folder, "video-d.mp4"))
+            awaitQuietMediaStore()
             val catalog = MediaStoreRepository.refreshMedia(context, force = true)
             GalleryCatalogStore.saveCustomOrder(context, folder, created.map { uri ->
                 catalog.first { MediaIdentityRules.sameUri(it.uri.toString(), uri.toString()) }
@@ -646,6 +649,22 @@ class VideoViewerRegressionTest {
         return uri
     }
     private fun current(activity: DetailActivity) = activity.currentItem()
+    /**
+     * Android keeps updating freshly inserted videos for a moment (duration, size, thumbnails);
+     * a scan in the middle of that is rightly discarded by the app. Start once the store has
+     * been quiet for half a second (at most 10 s; the scan then still decides on its own).
+     */
+    private fun awaitQuietMediaStore() {
+        val deadline = System.currentTimeMillis() + 10_000
+        var token = GalleryCatalogStore.mediaStoreChangeToken(context)
+        var quietSince = System.currentTimeMillis()
+        while (System.currentTimeMillis() < deadline && System.currentTimeMillis() - quietSince < 500) {
+            Thread.sleep(100)
+            val next = GalleryCatalogStore.mediaStoreChangeToken(context)
+            if (next != token) { token = next; quietSince = System.currentTimeMillis() }
+        }
+    }
+
     private fun await(description: () -> String = { "Condição do visualizador não atingida" }, condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 15000
         while (System.currentTimeMillis() < deadline) { if (condition()) return; Thread.sleep(100) }

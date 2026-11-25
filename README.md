@@ -134,7 +134,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A versão 0.9.24 renomeia Juntar para Mesclar, acelera a mesclagem de vídeos compatíveis, traz mais resoluções para reduzir vídeos e fotos, uma transição única no editor, remoção de mídias da mesclagem e a Lixeira sempre visível quando ativada. Consulte as [notas da release](docs/RELEASE-0.9.24.md).
+A versão 0.9.25 corrige a Lixeira com pastas ocultas: o que é apagado de uma pasta oculta exposta na grade aparece na Lixeira enquanto ela continua exposta. Consulte as [notas da release](docs/RELEASE-0.9.25.md).
 
 Os testes locais ficam em `app/src/test/kotlin` e as integrações Android em `app/src/androidTest/kotlin`. Os comandos por área, critérios de entrega e evidências estão no [guia de validação](docs/TESTES-VALIDACAO.md).
 
@@ -265,7 +265,7 @@ Se o Java no Windows falhar com `Unable to establish loopback connection` antes 
 - Coleções virtuais de Recentes e Favoritos agregam mídias sem duplicar os arquivos originais
 - Recentes e Favoritos não revelam mídias de pastas ocultas; Favoritos só aparece quando contém pelo menos uma mídia
 - Lixeira com restauração e exclusão definitiva usa o MediaStore no Android 11+ e armazenamento de recuperação próprio nas versões anteriores
-- Itens excluídos de pastas ocultas ficam ocultos também na Lixeira, com alternância explícita no menu da Lixeira e no menu principal quando não houver itens visíveis; enquanto o olho revela o álbum oculto de origem, os itens dele aparecem na Lixeira e somem de novo quando o álbum volta a ficar oculto
+- Itens excluídos de pastas ocultas ficam ocultos também na Lixeira, com alternância explícita no menu da Lixeira e no menu principal quando não houver itens visíveis; enquanto o álbum oculto de origem aparece na grade (pelo olho ou com as pastas ocultas mostradas), os itens dele aparecem na Lixeira e somem de novo quando o álbum volta a ficar oculto
 - Com a lixeira ativada, o álbum Lixeira continua visível mesmo vazio
 - Recentes fica sempre em primeiro, seguido dos álbuns pinados pelo usuário. Câmera, Favoritos, Downloads e a pasta ativa de Capturas de tela aparecem depois, ordenados pela atividade mais recente; os demais mantêm a ordenação escolhida.
 - Ao favoritar uma mídia, Favoritos ganha destaque pela data da adição, mesmo se a foto for antiga. Entre pastas de capturas duplicadas, só a que contém as capturas mais recentes recebe destaque automático; a pasta legada continua como álbum comum, sem exclusão ou movimentação de arquivos. A identificação prioriza a data de captura disponível no MediaStore, com fallback às datas disponíveis quando ausente.

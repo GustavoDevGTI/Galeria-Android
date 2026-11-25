@@ -60,6 +60,17 @@ class VirtualAlbumsInstrumentedTest {
         val hiddenAgain = VirtualAlbumRules.addCollections(emptyList(), emptyList(), emptySet(), listOf(secret),
             hiddenKeys = hidden, keepTrash = true)
         assertEquals(0, hiddenAgain.single { it.key == VirtualAlbumRules.TRASH_KEY }.count)
+
+        // Hidden folders shown in the grid (hidden folders on) also show their trashed items,
+        // except the ones the user hid or made secure ("outro" here).
+        val dotted = item(4L, "pontinho.jpg", "Pictures/.Pontinho/", "Pictures/.Pontinho/")
+        val withDotted = trash + dotted
+        assertEquals(listOf("praia.jpg", "segredo.jpg", "pontinho.jpg"),
+            VirtualAlbumRules.visibleTrash(withDotted, hidden, false, exposeNaturallyHidden = true, lockedKeys = setOf("outro")).map { it.name })
+        assertEquals(listOf("praia.jpg"), VirtualAlbumRules.visibleTrash(withDotted, hidden, false).map { it.name })
+        val exposed = VirtualAlbumRules.addCollections(emptyList(), emptyList(), emptySet(), withDotted, hiddenKeys = hidden,
+            keepTrash = true, exposeNaturallyHidden = true, lockedKeys = setOf("outro"))
+        assertEquals(3, exposed.single { it.key == VirtualAlbumRules.TRASH_KEY }.count)
     }
 
     @Test

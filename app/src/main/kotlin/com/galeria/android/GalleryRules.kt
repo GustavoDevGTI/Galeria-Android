@@ -286,13 +286,20 @@ object VirtualAlbumRules {
         item.albumKey in hiddenKeys || AlbumRules.isHidden(item.relativePath, item.albumKey)
 
     /**
-     * What the Lixeira shows. Items from a hidden album stay out of it, except while that album is
-     * revealed with the eye ([revealedKeys]): then they show until it is hidden again. With mixed
-     * items, only the ones from the album that is hidden again leave. [showHidden] shows them all.
+     * What the Lixeira shows. Items from a hidden album stay out of it while that album is out of
+     * the album grid, and show while it is exposed: revealed with the eye ([revealedKeys]) or, for
+     * hidden folders (".nomedia" or a dot name), shown with the hidden folders on
+     * ([exposeNaturallyHidden]) unless the user hid it ([lockedKeys]: hidden by the user or secure).
+     * With mixed items, only the ones from the album that is hidden again leave. [showHidden]
+     * shows them all.
      */
     fun visibleTrash(items: List<MediaItem>, hiddenKeys: Set<String>, showHidden: Boolean,
-        revealedKeys: Set<String> = emptySet()): List<MediaItem> =
-        if (showHidden) items else items.filterNot { isHiddenMedia(it, hiddenKeys) && it.albumKey !in revealedKeys }
+        revealedKeys: Set<String> = emptySet(), exposeNaturallyHidden: Boolean = false,
+        lockedKeys: Set<String> = emptySet()): List<MediaItem> =
+        if (showHidden) items else items.filterNot {
+            isHiddenMedia(it, hiddenKeys) && it.albumKey !in revealedKeys &&
+                !(exposeNaturallyHidden && it.albumKey !in lockedKeys)
+        }
 
     fun availableMedia(physicalAlbums: List<AlbumItem>, media: List<MediaItem>, hiddenKeys: Set<String>): List<MediaItem> =
         if (physicalAlbums.any { it.key == "all_media" }) {
@@ -315,12 +322,16 @@ object VirtualAlbumRules {
         /** With the trash on, the Lixeira stays even when empty (or holding only hidden items). */
         keepTrash: Boolean = false,
         /** Hidden albums revealed with the eye: their trashed items show in the Lixeira meanwhile. */
-        revealedKeys: Set<String> = emptySet()
+        revealedKeys: Set<String> = emptySet(),
+        /** Hidden folders shown in the grid also show their trashed items, except [lockedKeys]. */
+        exposeNaturallyHidden: Boolean = false,
+        lockedKeys: Set<String> = emptySet()
     ): List<AlbumItem> {
         val availableMedia = availableMedia(physicalAlbums, visibleMedia, hiddenKeys)
         val favoriteKeys = favoriteUris.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
         val favorites = availableMedia.filter { MediaIdentityRules.canonicalKey(it.uri.toString()) in favoriteKeys }
-        val displayedTrash = visibleTrash(trashedMedia, hiddenKeys, showHiddenTrash, revealedKeys)
+        val displayedTrash = visibleTrash(trashedMedia, hiddenKeys, showHiddenTrash, revealedKeys,
+            exposeNaturallyHidden, lockedKeys)
         return buildList {
             addAll(physicalAlbums.filter { !isVirtual(it.key) && it.count > 0 })
             if (availableMedia.isNotEmpty()) add(aggregate(RECENT_KEY, recentName, availableMedia))

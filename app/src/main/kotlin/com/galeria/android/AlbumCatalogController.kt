@@ -210,8 +210,11 @@ class AlbumCatalogController(context: Context) {
             .getStringSet(GalleryPreferences.FAVORITES, emptySet()).orEmpty()
         val trash = MediaStoreRepository.loadTrashedMedia(appContext)
         val hiddenTrashKeys = virtualHiddenKeys + AutomaticHiddenAlbums.keysForMedia(appContext, trash, markers)
-        // Albums revealed with the eye show their trashed items too; secure folders never do.
-        val revealedTrashKeys = TemporaryAlbumVisibility.activeKeys() - SecurityStore(appContext).secureFolderKeys()
+        // Albums exposed in the grid (the eye, or hidden folders shown) show their trashed items
+        // too; secure folders and albums the user hid never do.
+        val secureKeys = SecurityStore(appContext).secureFolderKeys()
+        val revealedTrashKeys = TemporaryAlbumVisibility.activeKeys() - secureKeys
+        val lockedTrashKeys = options.hiddenKeys + secureKeys
         val collections = VirtualAlbumRules.addCollections(
             physical,
             media,
@@ -223,7 +226,9 @@ class AlbumCatalogController(context: Context) {
             hiddenTrashKeys,
             GalleryPreferences.hiddenFlag(appContext, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF),
             keepTrash = TrashPreferences.isEnabled(appContext),
-            revealedKeys = revealedTrashKeys
+            revealedKeys = revealedTrashKeys,
+            exposeNaturallyHidden = options.showNaturallyHidden,
+            lockedKeys = lockedTrashKeys
         )
         val available = VirtualAlbumRules.availableMedia(physical, media, virtualHiddenKeys)
         val favoriteKeys = favorites.mapTo(HashSet(), MediaIdentityRules::canonicalKey)
@@ -238,7 +243,7 @@ class AlbumCatalogController(context: Context) {
                 VirtualAlbumRules.TRASH_KEY -> VirtualAlbumRules.visibleTrash(
                     trash, hiddenTrashKeys,
                     GalleryPreferences.hiddenFlag(appContext, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF),
-                    revealedTrashKeys
+                    revealedTrashKeys, options.showNaturallyHidden, lockedTrashKeys
                 )
                 else -> byFolder[album.key].orEmpty()
             }

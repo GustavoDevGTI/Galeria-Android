@@ -173,8 +173,11 @@ object MediaStoreRepository {
                 hiddenKeys + AutomaticHiddenAlbums.keysForMedia(context, visibleAndTrash,
                     HiddenDirectoryMarkers(Environment.getExternalStorageDirectory())),
                 GalleryPreferences.hiddenFlag(context, VirtualAlbumRules.SHOW_HIDDEN_TRASH_PREF),
-                // While a hidden album is revealed with the eye, its trashed items show here too.
-                TemporaryAlbumVisibility.activeKeys() - SecurityStore(prefs).secureFolderKeys()
+                // While a hidden album is exposed in the grid, its trashed items show here too.
+                TemporaryAlbumVisibility.activeKeys() - SecurityStore(prefs).secureFolderKeys(),
+                GalleryPreferences.hiddenFlag(context, GalleryPreferences.SHOW_HIDDEN_FOLDERS) ||
+                    GalleryPreferences.hiddenFlag(context, "always_show_hidden"),
+                hiddenKeys
             )
         }
         val allFilesAccess = MediaActions.hasAllFilesAccess(context)
