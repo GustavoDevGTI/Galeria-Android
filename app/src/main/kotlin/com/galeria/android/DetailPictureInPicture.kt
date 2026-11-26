@@ -270,7 +270,13 @@ internal fun DetailActivity.restoreViewerChromeAfterPictureInPicture() {
     for ((view, visibility) in viewsHiddenForPictureInPicture) {
         view.animate().cancel()
         view.alpha = 1f
-        view.visibility = if (view === topBar || view === bottomBar) View.VISIBLE else visibility
+        view.visibility = when {
+            view === topBar || view === bottomBar -> View.VISIBLE
+            // The cinema and gesture messages are momentary: their timers ran out while the
+            // viewer was a thumbnail, so bringing them back would leave them on screen for good.
+            view === cinemaModeIndicator || view === cinemaGestureIndicator -> View.GONE
+            else -> visibility
+        }
     }
     viewsHiddenForPictureInPicture.clear()
     updatePlayPauseButton()

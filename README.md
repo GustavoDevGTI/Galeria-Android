@@ -55,16 +55,16 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 - Fotos em movimento JPEG/HEIC com vídeo MP4 incorporado: detecção pelos metadados da câmera (Google e Samsung) e reprodução na própria foto pelo botão no rodapé; Editar escolhe qual quadro do vídeo fica como foto, guardando a original dentro do arquivo
 - Reconhecimento de texto em fotos, capturas de tela e documentos fotografados, com seleção diretamente sobre a imagem, alças de ajuste, cópia do trecho escolhido e seleção integral
 - Ícone de texto exibido automaticamente quando a foto aberta contém texto reconhecido; análise local adiada durante a troca rápida de fotos
-- Mesclar fotos e vídeos em um vídeo só, pelo Menu da seleção, na ordem dos toques, com o nome do primeiro vídeo seguido de "Merged"; o mesmo editor serve para cortar ou reduzir um vídeo sozinho, com quadrados arrastáveis e removíveis, linha do tempo, cortes no meio, tempo próprio de cada foto (3 s por padrão, de 1 a 10 s, escolhido tocando no quadrado da foto), qualidade nativa ou resoluções menores (2160p a 360p, só as abaixo da original, com tamanho estimado) e uma transição para todas as passagens: Seco, Dissolver, Escurecer, Deslizar ou Zoom; vídeos MP4 inteiros e compatíveis são mesclados por cópia, sem recodificar
+- Mesclar fotos e vídeos em um vídeo só, pelo Menu da seleção, na ordem dos toques, com o nome do primeiro vídeo seguido de "Merged"; o mesmo editor serve para cortar ou reduzir um vídeo sozinho, com quadrados arrastáveis e removíveis, linha do tempo, corte pela área iluminada (as alças marcam o que fica e a tesoura exclui o resto; sem área marcada, a tesoura divide no cursor e a lixeira apaga o pedaço iluminado), prévia num único reprodutor que acompanha trocas rápidas, tempo próprio de cada foto (3 s por padrão, de 1 a 10 s, escolhido tocando no quadrado da foto), qualidade nativa ou resoluções menores (2160p a 360p, só as abaixo da original, com tamanho estimado) e uma transição para todas as passagens: Seco, Dissolver, Escurecer, Deslizar ou Zoom; vídeos MP4 inteiros e compatíveis são mesclados por cópia, sem recodificar
 - Relógio de 48 horas nas mídias usadas em uma mesclagem (vídeos sempre; fotos por opção); tocar no relógio mantém a mídia, e ao fim do prazo ela vai para a lixeira
 - Separar devolve as mídias de um vídeo mesclado pelo app sem criar duplicatas: usa os originais existentes, restaura os da lixeira e refaz só o que foi apagado
 - Agrupar mídias do álbum por tipo, extensão, dia, mês ou tamanho do arquivo, com o título de cada grupo acima das miniaturas
 - Barra simples de reprodução no visualizador de vídeo; um ícone ao lado abre/fecha a linha do tempo sob demanda
-- Linha do tempo horizontal contínua com miniaturas por segundo em vídeos e na prévia de corte; deslizar move a faixa sob o marcador central e atualiza o vídeo durante o gesto
+- Linha do tempo horizontal contínua em vídeos e na prévia de corte; abre como visão geral do vídeo inteiro com poucas miniaturas, e cada toque no botão aproxima (um quadro por segundo, depois quadro a quadro) até o próximo fechar; deslizar move a faixa sob o marcador central e atualiza o vídeo durante o gesto
 - A faixa cresce com a duração do vídeo e carrega somente as miniaturas do trecho visível; a barra simples permite saltar por toda a duração e a faixa permite ajuste fino sem toque prolongado
 - Miniaturas da linha do tempo extraídas progressivamente, com uma extração por vez, cache de memória de 12 MB e cache privado em disco limitado
 - O trecho atual da linha do tempo é preparado em segundo plano enquanto o vídeo reproduz, mesmo com a faixa fechada; a abertura revela miniaturas prontas com uma transição curta, e a preparação é suspensa ao sair do app
-- Configurações essenciais em primeiro plano; demais opções preservadas em seção expansível
+- Configurações essenciais em primeiro plano; demais opções preservadas em seção expansível; opções mais complexas com um "i" que explica cada uma, e chaves com contraste garantido entre ligado e desligado em qualquer tema
 - Navegação fluida entre mídias por gestos horizontais e verticais
 - Arrastes curtos trocam a mídia, com proteção para toques simples e duplos
 - Pré-carregamento das cinco mídias anteriores e posteriores em alta qualidade
@@ -135,7 +135,7 @@ Na primeira abertura, a Galeria apresenta os dois níveis e recomenda o acesso p
 
 ## Testes automatizados
 
-A versão 0.9.26 traz o botão e a opção da miniatura de vídeo, o tempo próprio de cada foto na mesclagem, resoluções mostradas só pelo nome, notificações em evidência com o nome Galery e o editor de mesclagem abrindo direto depois de uma mesclagem anterior. Consulte as [notas da release](docs/RELEASE-0.9.26.md).
+A versão 0.9.27 traz o corte pela área iluminada e a prévia fluida no editor de mesclagem, a linha do tempo com visão geral e zoom até quadro a quadro, o "i" e o novo contraste das chaves nas Configurações, o botão de expandir longe da barra de rolagem e a correção do aviso do modo cinema. Consulte as [notas da release](docs/RELEASE-0.9.27.md).
 
 Os testes locais ficam em `app/src/test/kotlin` e as integrações Android em `app/src/androidTest/kotlin`. Os comandos por área, critérios de entrega e evidências estão no [guia de validação](docs/TESTES-VALIDACAO.md).
 

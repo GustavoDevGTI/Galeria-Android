@@ -155,23 +155,30 @@ class DetailPlaybackInstrumentedTest {
     }
 
     /**
-     * A quick tap. When the emulator is busy (the first test after installing), Espresso can
-     * oversleep between finger down and up, and the system then sees a long press, which opens
-     * the speed selector instead of changing the speed. Espresso notices that it overslept and
-     * runs this rollback (closing the selector) before tapping again; a real tap the app ignored
-     * still fails the test.
+     * One quick tap, exactly once. On a busy emulator Espresso waits for the main thread between
+     * finger down and up; with the video player active that passed the long-press time, so taps
+     * opened the speed selector instead of changing the speed (and the rollback variant tapped
+     * three times). Here down and up reach the button in the same main-thread turn, through its
+     * real touch handling, so a tap can never turn into a long press; a tap the app ignores still
+     * fails the test.
      */
-    private fun quickTap() = click(object : androidx.test.espresso.ViewAction {
-        override fun getConstraints(): org.hamcrest.Matcher<View> = androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom(View::class.java)
-        override fun getDescription() = "fechar o seletor de velocidade aberto por um toque que virou toque longo"
+    private fun quickTap() = object : androidx.test.espresso.ViewAction {
+        override fun getConstraints(): org.hamcrest.Matcher<View> = isDisplayed()
+        override fun getDescription() = "um toque rápido no botão"
         override fun perform(uiController: androidx.test.espresso.UiController, view: View) {
-            android.util.Log.w("SpeedTest", "Toque virou toque longo; fechando o seletor e tocando de novo")
-            androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
-                .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
-                .filterIsInstance<DetailActivity>().forEach { it.speedPopup?.dismiss() }
+            val time = SystemClock.uptimeMillis()
+            val x = view.width / 2f
+            val y = view.height / 2f
+            val down = android.view.MotionEvent.obtain(time, time, android.view.MotionEvent.ACTION_DOWN, x, y, 0)
+            val up = android.view.MotionEvent.obtain(time, time + 40L, android.view.MotionEvent.ACTION_UP, x, y, 0)
+            try {
+                view.dispatchTouchEvent(down)
+                view.dispatchTouchEvent(up)
+            } finally { down.recycle(); up.recycle() }
+            // The click itself runs right after, from the button's own touch handling.
             uiController.loopMainThreadUntilIdle()
         }
-    })
+    }
 
     private fun insertEmptyVideo(context: Context): Uri {
         val values = ContentValues().apply {

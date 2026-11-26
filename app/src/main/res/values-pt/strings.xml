@@ -34,6 +34,7 @@
     <string name="video_timeline_description">Linha do tempo do vídeo. Deslize as miniaturas para navegar por segundo.</string>
     <string name="video_timeline_show">Mostrar linha do tempo</string>
     <string name="video_timeline_hide">Fechar linha do tempo</string>
+    <string name="video_timeline_closer">Aproximar linha do tempo</string>
     <string name="video_timeline_loading">Preparando miniaturas…</string>
     <string name="loading_album_targets">Carregando pastas…</string>
     <string name="operation_in_progress">Concluindo operação…</string>
@@ -720,6 +721,8 @@
     <string name="join_split">Dividir</string>
     <string name="join_add">Adicionar mídia</string>
     <string name="join_remove">Remover mídia</string>
+    <string name="join_remove_piece">Remover trecho</string>
+    <string name="join_cut_outside">Cortar fora da área marcada</string>
     <string name="join_transition">Transição</string>
     <string name="join_transition_none">Seco</string>
     <string name="join_transition_dissolve">Dissolver</string>
@@ -742,6 +745,15 @@
     <string name="settings_clock_photos_hint">As fotos usadas em uma mesclagem também saem depois de 48 horas, como os vídeos.</string>
     <string name="settings_clock_permanent">Relógio exclui definitivamente</string>
     <string name="settings_clock_permanent_hint">Somente com a lixeira desativada. Fora isso, as mídias cujo relógio acaba vão para a lixeira.</string>
+    <string name="settings_info_description">Saiba mais: %1$s</string>
+    <string name="settings_details_always_show_hidden">Mostra na tela principal as pastas ocultas: as que têm um arquivo .nomedia ou cujo nome começa com ponto, que outros apps de galeria escondem. Para encontrar as mídias dessas pastas, o app precisa do gerenciamento completo de arquivos. Com "Proteger visualização de ocultos" ligado, a senha é pedida antes.</string>
+    <string name="settings_details_search_all_files">Em vez de um álbum para cada pasta, a tela principal junta as mídias de todas as pastas comuns em "Todos os arquivos". As pastas ocultas continuam como álbuns separados.</string>
+    <string name="settings_details_auto_picture_in_picture">Com um vídeo tocando, voltar o deixa numa janela flutuante sobre a galeria e outros apps, com os botões de tocar ou pausar e de mídia anterior e próxima. Desligada, voltar fecha o vídeo. O botão de miniatura na barra do vídeo funciona nos dois casos, até com o vídeo pausado.</string>
+    <string name="settings_details_join_in_background">Ao sair do editor durante uma mesclagem, ela continua com uma notificação de progresso, que avisa quando o vídeo fica pronto. Desligada, sair do editor cancela a mesclagem e nada é salvo.</string>
+    <string name="settings_details_clock_photos">Depois de uma mesclagem, cada vídeo usado ganha um relógio de 48 horas; ao fim do prazo, ele sai da galeria. Com esta opção, as fotos usadas também ganham o relógio, e o vídeo mesclado guarda uma cópia de cada foto, para o Separar devolvê-las idênticas. Tocar no relógio mantém a mídia.</string>
+    <string name="settings_details_clock_permanent">Vale só com a lixeira desativada. Ligada, a mídia cujo relógio acaba é apagada sem passar pela lixeira e não pode ser recuperada. Desligada, ou com a lixeira ativa, ela vai para a lixeira, de onde pode ser restaurada.</string>
+    <string name="settings_details_best_image_quality">Ao ampliar, a foto é carregada na resolução original em vez de uma versão reduzida. Isso mostra mais detalhes em fotos grandes, mas usa mais memória e pode demorar um pouco mais em celulares simples.</string>
+    <string name="settings_details_deep_image_zoom">Ligado, uma foto grande pode ser ampliada até os detalhes, por exemplo para ler um texto pequeno. Desligado, o zoom para em 2x, o que evita ampliar demais sem querer.</string>
     <string name="clock_hours">%1$d h</string>
     <string name="clock_minutes">%1$d min</string>
     <string name="clock_cancel">Manter esta mídia, faltam %1$s</string>

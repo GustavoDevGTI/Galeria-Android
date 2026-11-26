@@ -5,6 +5,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VideoTimelineRulesTest {
+    @Test fun theStripOpensAsAnOverviewAndTwoPressesReachFrameByFrame() {
+        // A one-minute video on a strip about 8 pictures wide: the overview fits it in about one width.
+        val overview = VideoTimelineRules.zoomInterval(0, 60_000L, 432, 54f)
+        assertEquals(10_000L, overview)
+        assertTrue(VideoTimelineRules.frameCount(60_000L, overview) <= 8)
+        // A short video never goes below one second per picture in the overview.
+        assertEquals(1_000L, VideoTimelineRules.zoomInterval(0, 3_000L, 432, 54f))
+        assertEquals(1_000L, VideoTimelineRules.zoomInterval(1, 60_000L, 432, 54f))
+        assertEquals(VideoTimelineRules.FRAME_BY_FRAME_MS, VideoTimelineRules.zoomInterval(2, 60_000L, 432, 54f))
+        assertEquals(VideoTimelineRules.FRAME_BY_FRAME_MS, VideoTimelineRules.zoomInterval(9, 60_000L, 432, 54f))
+        // Dragging one picture moves by that level's step.
+        assertEquals(10_033L, VideoTimelineRules.positionAfterDrag(10_000L, 54f, 54f, 60_000L, VideoTimelineRules.FRAME_BY_FRAME_MS))
+        assertEquals(20_000L, VideoTimelineRules.positionAfterDrag(10_000L, 54f, 54f, 60_000L, overview))
+    }
+
     @Test fun longVideoHasContinuousStripButDecodesOnlyVisibleSeconds() {
         val duration = 10L * 60 * 60 * 1000
         assertEquals(36_001L, VideoTimelineRules.frameCount(duration))

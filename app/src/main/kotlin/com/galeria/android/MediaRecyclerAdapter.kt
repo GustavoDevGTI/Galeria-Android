@@ -619,17 +619,31 @@ class MediaRecyclerAdapter(
         }
         thumb.addView(check, checkParams)
         val preview = ImageView(context).apply {
+            tag = TAG_MEDIA_PREVIEW
             setImageResource(R.drawable.ic_view_media)
             setColorFilter(Color.WHITE)
-            background = Ui.rounded(0x99000000.toInt(), 8, context)
-            setPadding(Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4), Ui.dp(context, 4))
+            // A light backdrop: just enough to read the icon over any photo.
+            background = Ui.rounded(0x59000000, 6, context)
+            setPadding(Ui.dp(context, 3), Ui.dp(context, 3), Ui.dp(context, 3), Ui.dp(context, 3))
             isClickable = true
             isFocusable = true
         }
         thumb.addView(preview, FrameLayout.LayoutParams(Ui.dp(context, OVERLAY_ACTION_DP), Ui.dp(context, OVERLAY_ACTION_DP), Gravity.BOTTOM or Gravity.END).apply {
-            marginEnd = Ui.dp(context, 5)
-            bottomMargin = Ui.dp(context, 5)
+            marginEnd = Ui.dp(context, PREVIEW_MARGIN_DP)
+            bottomMargin = Ui.dp(context, PREVIEW_MARGIN_DP)
         })
+        // The fast scroller takes a strip along the right edge of the grid; on the media touching
+        // that edge the button moves left of the strip, so a tap meant for it never scrolls.
+        if (!asList && !horizontal) item.addOnLayoutChangeListener { view, _, _, right, _, _, _, _, _ ->
+            val grid = view.parent as? View ?: return@addOnLayoutChangeListener
+            val atEdge = right > grid.width - Ui.dp(context, FAST_SCROLL_STRIP_DP)
+            val params = preview.layoutParams as FrameLayout.LayoutParams
+            val wanted = Ui.dp(context, if (atEdge) FAST_SCROLL_STRIP_DP else PREVIEW_MARGIN_DP)
+            if (params.marginEnd != wanted) {
+                params.marginEnd = wanted
+                preview.post { preview.layoutParams = params }
+            }
+        }
         // The 48-hour clock of a media used in a join; tapping it keeps the media.
         val clock = ClockBadge.create(context, 10f, 12, OVERLAY_CHECK_DP)
         thumb.addView(clock, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(context, OVERLAY_CHECK_DP), Gravity.TOP or Gravity.END).apply {
@@ -937,7 +951,11 @@ class MediaRecyclerAdapter(
         const val VIEW_TYPE_GROUP_HEADER = 3
         const val TAG_GROUP_HEADER = "media_group_header"
         private const val OVERLAY_CHECK_DP = 20
-        const val OVERLAY_ACTION_DP = 28
+        const val OVERLAY_ACTION_DP = 24
+        const val TAG_MEDIA_PREVIEW = "media_preview_button"
+        private const val PREVIEW_MARGIN_DP = 5
+        /** Width the album's fast scroller takes on the right (28 dp plus its 2 dp margin) and a little more. */
+        const val FAST_SCROLL_STRIP_DP = 34
         const val PAYLOAD_SELECTION = "selection"
         const val PAYLOAD_THUMBNAIL_SIZE = "thumbnail_size"
         const val PAYLOAD_POSITION = "position"

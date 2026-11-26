@@ -692,8 +692,17 @@ class DetailActivity : ComponentActivity() {
             setOnClickListener {
                 if (videoTimeline.expansionState == VideoTimelineView.ExpansionState.LOADING) return@setOnClickListener
                 videoTimeline.cancelGesture()
-                timelineExpanded = !timelineExpanded
-                updateTimelineVisibility()
+                // First press: an overview of the whole video. Each press brings it closer (one
+                // second per picture, then frame by frame); the next one closes it.
+                if (timelineExpanded && videoTimeline.zoomLevel < VideoTimelineRules.ZOOM_LEVELS - 1) {
+                    // The strip stays on screen while the closer pictures load around the playhead.
+                    videoTimeline.setZoomLevel(videoTimeline.zoomLevel + 1)
+                    Haptics.perform(this, Haptics.Effect.TICK)
+                    timelineButton.contentDescription = getString(timelineButtonLabel())
+                } else {
+                    timelineExpanded = !timelineExpanded
+                    updateTimelineVisibility()
+                }
             }
         }
         videoProgressRow.addView(timelineButton, LinearLayout.LayoutParams(Ui.dp(this, 44), Ui.dp(this, 44)))
@@ -724,11 +733,7 @@ class DetailActivity : ComponentActivity() {
             timelineLoadingRow.visibility = if (loading) View.VISIBLE else View.GONE
             timelineButton.isEnabled = !loading
             timelineButton.alpha = if (loading) 0.35f else if (timelineExpanded) 1f else 0.65f
-            timelineButton.contentDescription = getString(when {
-                loading -> R.string.video_timeline_loading
-                timelineExpanded -> R.string.video_timeline_hide
-                else -> R.string.video_timeline_show
-            })
+            timelineButton.contentDescription = getString(if (loading) R.string.video_timeline_loading else timelineButtonLabel())
             if (state == VideoTimelineView.ExpansionState.FAILED) {
                 timelineExpanded = false
                 timelineButton.alpha = 0.65f
@@ -1954,6 +1959,14 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
+    /** Takes the "cinema on/off" message away at once (no fade), cancelling its timer. */
+    private fun dismissCinemaModeIndicator() {
+        handler.removeCallbacks(hideCinemaModeIndicator)
+        if (!::cinemaModeIndicator.isInitialized) return
+        cinemaModeIndicator.animate().cancel()
+        cinemaModeIndicator.visibility = View.GONE
+    }
+
     private fun completeCinemaModeTransition() {
         listOf(content, topBar, bottomBar).forEach { view ->
             view.animate().cancel()
@@ -2133,8 +2146,10 @@ class DetailActivity : ComponentActivity() {
             }
         }
         handler.removeCallbacks(hideCinemaGestureIndicator)
-        handler.removeCallbacks(hideCinemaModeIndicator)
         cinemaController.settle()
+        // The brightness or volume box takes the place of the cinema message: it leaves now
+        // instead of losing its timer and staying on screen.
+        dismissCinemaModeIndicator()
         cinemaGestureProgress.progress = (bounded * 100).roundToInt()
         cinemaGestureIndicator.visibility = View.VISIBLE
     }
@@ -2399,9 +2414,16 @@ class DetailActivity : ComponentActivity() {
         }
     }
 
+    /** What the next press does: open, bring closer, or close at frame by frame. */
+    private fun timelineButtonLabel(): Int = when {
+        !timelineExpanded -> R.string.video_timeline_show
+        videoTimeline.zoomLevel < VideoTimelineRules.ZOOM_LEVELS - 1 -> R.string.video_timeline_closer
+        else -> R.string.video_timeline_hide
+    }
+
     private fun updateTimelineVisibility() {
         videoTimeline.setExpanded(timelineExpanded)
-        timelineButton.contentDescription = getString(if (timelineExpanded) R.string.video_timeline_hide else R.string.video_timeline_show)
+        timelineButton.contentDescription = getString(timelineButtonLabel())
         timelineButton.alpha = if (timelineExpanded) 1f else 0.65f
         if (videoTimeline.expansionState == VideoTimelineView.ExpansionState.LOADING) {
             timelineButton.contentDescription = getString(R.string.video_timeline_loading)
@@ -2720,6 +2742,8 @@ class DetailActivity : ComponentActivity() {
         // Settle before pausing so a new video cannot start after lifecycle pause.
         finishMediaTransition()
         cinemaController.settle()
+        // A momentary message never outlives leaving the screen.
+        dismissCinemaModeIndicator()
         super.onPause()
         playbackController.pauseForLifecycle()
         if (::timelineBinding.isInitialized) timelineBinding.suspend()

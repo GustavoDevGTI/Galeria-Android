@@ -128,6 +128,21 @@ class AlbumSelectionInstrumentedTest {
                     assertEquals("Arrastar a seleção não deve atualizar a pasta.", false, refresh.isRefreshing)
                 }
                 onView(withContentDescription("Desmarcar todos")).check(matches(isDisplayed()))
+                // The expand button of the media on the right edge sits left of the fast scroller's strip.
+                waitForView {
+                    scenario.onActivity { activity ->
+                        val grid = descendants(activity.window.decorView).filterIsInstance<androidx.recyclerview.widget.RecyclerView>().first()
+                        val gridRight = IntArray(2).also { grid.getLocationOnScreen(it) }[0] + grid.width
+                        val buttons = descendants(grid).filter { it.tag == MediaRecyclerAdapter.TAG_MEDIA_PREVIEW && it.isShown }.toList()
+                        org.junit.Assert.assertTrue("Os botões de expandir devem aparecer na seleção", buttons.isNotEmpty())
+                        val strip = Ui.dp(activity, 30)
+                        buttons.forEach { button ->
+                            val right = IntArray(2).also { button.getLocationOnScreen(it) }[0] + button.width
+                            org.junit.Assert.assertTrue("Botão de expandir sob a barra de rolagem (direita=$right, limite=${gridRight - strip})",
+                                right <= gridRight - strip)
+                        }
+                    }
+                }
                 listOf("Compartilhar", "Favoritar", "Excluir", "Mover").forEach { action ->
                     onView(withContentDescription(action)).check { view, noViewFoundException ->
                         if (noViewFoundException != null) throw noViewFoundException

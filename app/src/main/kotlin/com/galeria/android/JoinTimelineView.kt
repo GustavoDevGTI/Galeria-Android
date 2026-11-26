@@ -34,14 +34,17 @@ internal object JoinTimelineRules {
 }
 
 /**
- * The editing timeline: every kept part laid out by length, with pictures from the media, a fixed
- * playhead and handles on the selected media to cut its start, end or an inner edge.
+ * The editing timeline: every kept part laid out by length, with pictures from the media and a
+ * fixed playhead. On the selected video, one part is lit with a handle at each end: the handles
+ * mark the area to keep (outside it darkens) and nothing changes until the scissors are pressed.
  */
 internal class JoinTimelineView(context: Context) : View(context) {
     var onScrub: ((positionMs: Long, active: Boolean) -> Unit)? = null
     var onSelect: ((Int) -> Unit)? = null
-    var onTrim: ((clip: Int, range: Int, start: Boolean, sourceMs: Long) -> Unit)? = null
+    /** A handle of the marked area moved: the preview shows the frame at that edge. */
     var onTrimming: ((uri: String, sourceMs: Long) -> Unit)? = null
+    /** A handle was let go, at [edgeMs] of the montage: the marked area changed. */
+    var onWindowChanged: ((edgeMs: Long) -> Unit)? = null
 
     private var clips: List<JoinClip> = emptyList()
     private var photoMs = 5_000L
@@ -72,6 +75,7 @@ internal class JoinTimelineView(context: Context) : View(context) {
     private val base = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF23272C.toInt() }
     private val image = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2f * density; color = Color.WHITE }
+    private val thinOutline = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1f * density; color = 0x99FFFFFF.toInt() }
     private val grip = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
     private val gripLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF101214.toInt(); strokeWidth = 2f * density; strokeCap = Paint.Cap.ROUND }
     private val shade = Paint().apply { color = 0xB3101214.toInt() }
@@ -89,12 +93,14 @@ internal class JoinTimelineView(context: Context) : View(context) {
     private var flinging = false
     private var scaling = false
 
-    // A handle being dragged: the model only changes when it is let go.
-    private var trimClip = -1
-    private var trimRange = -1
-    private var trimStart = false
-    private var trimOriginal = 0L
-    private var trimValue = 0L
+    // The lit part of the selected video and the area marked on it (source milliseconds).
+    private var activeRange = -1
+    private var windowStart = 0L
+    private var windowEnd = 0L
+    // A handle being dragged: which end, and where the area was when it started.
+    private var handleDragging = false
+    private var handleStart = false
+    private var handleOriginal = 0L
 
     private val scale = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScaleBegin(detector: ScaleGestureDetector): Boolean { scaling = true; return true }
@@ -112,9 +118,11 @@ internal class JoinTimelineView(context: Context) : View(context) {
     }
 
     fun setClips(clips: List<JoinClip>, photoMs: Long, selected: Int, transitions: List<JoinTransition> = emptyList()) {
+        val reselected = selected != this.selected
         this.clips = clips
         this.photoMs = photoMs
         this.selected = selected
+        if (reselected) activeRange = -1
         segments = MediaJoinRules.segments(clips, photoMs, transitions)
         totalMs = MediaJoinRules.totalMs(clips, photoMs, transitions)
         windows = MediaJoinRules.windows(clips, photoMs, transitions)
@@ -122,17 +130,64 @@ internal class JoinTimelineView(context: Context) : View(context) {
         val uris = clips.filter { it.media.isVideo }.map { it.media.uri }.toSet()
         frames.keys.filter { it !in uris }.forEach { frames.remove(it)?.close() }
         uris.forEach { uri -> frames.getOrPut(uri) { VideoTimelineFrames(context, Uri.parse(uri), "join") } }
+        // A part that changed (cut, split, removed) starts lit whole again.
+        val range = activeRangeValue()
+        if (range == null || windowStart < range.first || windowEnd > range.last || windowStart >= windowEnd) resetActive()
         requestFrames()
         invalidate()
     }
 
     fun setThumbs(thumbs: Map<String, Bitmap>) { this.thumbs.clear(); this.thumbs.putAll(thumbs); invalidate() }
 
-    fun setSelected(index: Int) { selected = index; invalidate() }
+    fun setSelected(index: Int) {
+        if (index != selected || activeRangeValue() == null) { selected = index; resetActive() }
+        invalidate()
+    }
+
+    /** The lit part of the selected video (its index among the video's parts), or null for a photo. */
+    fun activePart(): Int? = activeRange.takeIf { activeRangeValue() != null }
+
+    /** The area marked to keep, when it leaves something of the lit part out; null otherwise. */
+    fun pendingWindow(): LongRange? {
+        val range = activeRangeValue() ?: return null
+        return (windowStart..windowEnd).takeIf { windowStart > range.first || windowEnd < range.last }
+    }
+
+    /** Marks an area on the lit part as the handles would (tests only drive it this way). */
+    @androidx.annotation.VisibleForTesting
+    internal fun markArea(startMs: Long, endMs: Long) {
+        val range = activeRangeValue() ?: return
+        windowStart = startMs.coerceIn(range.first, range.last - MediaJoinRules.MIN_PART_MS)
+        windowEnd = endMs.coerceIn(windowStart + MediaJoinRules.MIN_PART_MS, range.last)
+        invalidate()
+    }
+
+    /** Lights one piece of the selected video, as tapping it does. */
+    @androidx.annotation.VisibleForTesting
+    internal fun lightPiece(range: Int) { activate(range); invalidate() }
+
+    private fun activeRangeValue(): LongRange? =
+        clips.getOrNull(selected)?.takeIf { it.media.isVideo }?.ranges?.getOrNull(activeRange)
+
+    /** Lights the part of the selected video under the playhead (else its first part), whole. */
+    private fun resetActive() {
+        val clip = clips.getOrNull(selected)?.takeIf { it.media.isVideo }
+        if (clip == null) { activeRange = -1; return }
+        val own = segments.withIndex().filter { it.value.clipIndex == selected }
+        val under = own.firstOrNull { positionMs in it.value.startMs until it.value.endMs }
+        activate(own.indexOf(under).coerceAtLeast(0))
+    }
+
+    private fun activate(range: Int) {
+        activeRange = range
+        val value = activeRangeValue() ?: return
+        windowStart = value.first
+        windowEnd = value.last
+    }
 
     /** Follows playback; ignored while the user is holding the timeline. */
     fun setPosition(ms: Long) {
-        if (dragging || trimClip >= 0 || flinging) return
+        if (dragging || handleDragging || flinging) return
         positionMs = ms.coerceIn(0L, totalMs)
         requestFrames()
         invalidate()
@@ -195,7 +250,7 @@ internal class JoinTimelineView(context: Context) : View(context) {
                 }
                 at += tileMs
             }
-            if (trimClip == segment.clipIndex && trimRange == rangeIndexOf(index)) drawTrimShade(canvas, segment, top, bottom)
+            if (segment.clipIndex == selected && rangeIndexOf(index) == activeRange) drawOutsideShade(canvas, segment, top, bottom)
             canvas.restore()
         }
         // Each transition shows as a small mark over the stretch where the two media overlap.
@@ -225,11 +280,15 @@ internal class JoinTimelineView(context: Context) : View(context) {
         canvas.restore()
     }
 
-    /** While a handle is held, the part that will be cut is darkened instead of removed. */
-    private fun drawTrimShade(canvas: Canvas, segment: JoinSegment, top: Float, bottom: Float) {
-        val delta = trimValue - trimOriginal
-        if (trimStart && delta > 0) canvas.drawRect(x(segment.startMs), top, x(segment.startMs + delta), bottom, shade)
-        if (!trimStart && delta < 0) canvas.drawRect(x(segment.endMs + delta), top, x(segment.endMs), bottom, shade)
+    /** Montage time of [sourceMs] inside [segment]. */
+    private fun timeOf(segment: JoinSegment, sourceMs: Long) = segment.startMs + (sourceMs - segment.sourceStartMs)
+
+    /** Outside the marked area the lit part is darkened: that is what the scissors will take away. */
+    private fun drawOutsideShade(canvas: Canvas, segment: JoinSegment, top: Float, bottom: Float) {
+        val keepLeft = x(timeOf(segment, windowStart))
+        val keepRight = x(timeOf(segment, windowEnd))
+        if (windowStart > segment.sourceStartMs) canvas.drawRect(x(segment.startMs), top, keepLeft, bottom, shade)
+        if (windowEnd < segment.sourceEndMs) canvas.drawRect(keepRight, top, x(segment.endMs), bottom, shade)
     }
 
     private fun rangeIndexOf(segmentIndex: Int): Int {
@@ -240,16 +299,14 @@ internal class JoinTimelineView(context: Context) : View(context) {
     private fun drawSelection(canvas: Canvas, top: Float, bottom: Float) {
         segments.forEachIndexed { index, segment ->
             if (segment.clipIndex != selected) return@forEachIndexed
-            val range = rangeIndexOf(index)
-            var left = x(segment.startMs) + seam / 2f
-            var right = x(segment.endMs) - seam / 2f
-            if (trimClip == selected && trimRange == range) {
-                val delta = (trimValue - trimOriginal) * pxPerMs
-                if (trimStart) left += delta else right += delta
-            }
+            val lit = clips[selected].media.isVideo && rangeIndexOf(index) == activeRange
+            // The lit part is outlined around the marked area, with a handle at each end; the
+            // other parts of the same video get a thin outline.
+            val left = (if (lit) x(timeOf(segment, windowStart)) else x(segment.startMs)) + seam / 2f
+            val right = (if (lit) x(timeOf(segment, windowEnd)) else x(segment.endMs)) - seam / 2f
             rect.set(left, top, right, bottom)
-            canvas.drawRoundRect(rect, corner, corner, outline)
-            if (clips[selected].media.isVideo) {
+            canvas.drawRoundRect(rect, corner, corner, if (lit || !clips[selected].media.isVideo) outline else thinOutline)
+            if (lit) {
                 drawHandle(canvas, left, top, bottom, true)
                 drawHandle(canvas, right, top, bottom, false)
             }
@@ -264,22 +321,30 @@ internal class JoinTimelineView(context: Context) : View(context) {
         canvas.drawLine(middle, top + track * 0.35f, middle, bottom - track * 0.35f, gripLine)
     }
 
-    /** The handle under [x], as (segment index, start?), on the selected video only. */
-    private fun handleAt(x: Float): Pair<Int, Boolean>? {
-        if (selected !in clips.indices || !clips[selected].media.isVideo) return null
+    /** The lit part's segment on the timeline, if any. */
+    private fun activeSegment(): JoinSegment? {
+        if (activeRangeValue() == null) return null
+        return segments.withIndex().filter { it.value.clipIndex == selected }.getOrNull(activeRange)?.value
+    }
+
+    /** The handle of the marked area under [x]: true for its start, false for its end. */
+    private fun handleAt(x: Float): Boolean? {
+        val segment = activeSegment() ?: return null
         val reach = handle + 8f * density
-        var best: Pair<Int, Boolean>? = null
-        var bestDistance = Float.MAX_VALUE
-        segments.forEachIndexed { index, segment ->
-            if (segment.clipIndex != selected) return@forEachIndexed
-            val startEdge = x(segment.startMs) - handle / 2f
-            val endEdge = x(segment.endMs) + handle / 2f
-            listOf(startEdge to true, endEdge to false).forEach { (edge, start) ->
-                val distance = abs(x - edge)
-                if (distance < reach && distance < bestDistance) { bestDistance = distance; best = index to start }
-            }
+        val startDistance = abs(x - (x(timeOf(segment, windowStart)) - handle / 2f))
+        val endDistance = abs(x - (x(timeOf(segment, windowEnd)) + handle / 2f))
+        return when {
+            startDistance < reach && startDistance <= endDistance -> true
+            endDistance < reach -> false
+            else -> null
         }
-        return best
+    }
+
+    /** Moves one end of the marked area, kept inside the lit part and at least [MediaJoinRules.MIN_PART_MS] long. */
+    private fun moveHandle(sourceMs: Long) {
+        val range = activeRangeValue() ?: return
+        if (handleStart) windowStart = sourceMs.coerceIn(range.first, windowEnd - MediaJoinRules.MIN_PART_MS)
+        else windowEnd = sourceMs.coerceIn(windowStart + MediaJoinRules.MIN_PART_MS, range.last)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -295,22 +360,17 @@ internal class JoinTimelineView(context: Context) : View(context) {
                 downPosition = positionMs
                 dragging = false
                 parent?.requestDisallowInterceptTouchEvent(true)
-                handleAt(event.x)?.let { (segmentIndex, start) ->
-                    val segment = segments[segmentIndex]
-                    trimClip = segment.clipIndex
-                    trimRange = rangeIndexOf(segmentIndex)
-                    trimStart = start
-                    trimOriginal = if (start) segment.sourceStartMs else segment.sourceEndMs
-                    trimValue = trimOriginal
+                handleAt(event.x)?.let { start ->
+                    handleDragging = true
+                    handleStart = start
+                    handleOriginal = if (start) windowStart else windowEnd
                 }
             }
             MotionEvent.ACTION_MOVE -> {
                 if (scaling || event.pointerCount > 1) return true
-                if (trimClip >= 0) {
-                    val proposed = trimOriginal + ((event.x - downX) / pxPerMs).roundToLong()
-                    val clip = MediaJoinRules.trimmed(clips[trimClip], trimRange, trimStart, proposed)
-                    trimValue = clip.ranges[trimRange].let { if (trimStart) it.first else it.last }
-                    onTrimming?.invoke(clips[trimClip].media.uri, trimValue)
+                if (handleDragging) {
+                    moveHandle(handleOriginal + ((event.x - downX) / pxPerMs).roundToLong())
+                    onTrimming?.invoke(clips[selected].media.uri, if (handleStart) windowStart else windowEnd)
                     invalidate()
                     return true
                 }
@@ -323,10 +383,10 @@ internal class JoinTimelineView(context: Context) : View(context) {
                 }
             }
             MotionEvent.ACTION_UP -> {
-                if (trimClip >= 0) {
-                    val clip = trimClip
-                    trimClip = -1
-                    if (trimValue != trimOriginal) onTrim?.invoke(clip, trimRange, trimStart, trimValue)
+                if (handleDragging) {
+                    handleDragging = false
+                    // Nothing is cut yet: the area stays marked until the scissors.
+                    activeSegment()?.let { onWindowChanged?.invoke(timeOf(it, if (handleStart) windowStart else windowEnd)) }
                     invalidate()
                 } else if (dragging) {
                     velocity?.computeCurrentVelocity(1000)
@@ -341,13 +401,23 @@ internal class JoinTimelineView(context: Context) : View(context) {
                 } else if (!scaling) {
                     performClick()
                     val time = JoinTimelineRules.timeAt(event.x, positionMs, width, pxPerMs)
-                    segments.firstOrNull { time in it.startMs until it.endMs }?.let { onSelect?.invoke(it.clipIndex) }
+                    val tapped = segments.indexOfFirst { time in it.startMs until it.endMs }
+                    if (tapped >= 0) {
+                        val segment = segments[tapped]
+                        onSelect?.invoke(segment.clipIndex)
+                        // Tapping one piece of a video cut in pieces lights that piece.
+                        if (segment.clipIndex == selected && clips[selected].media.isVideo) {
+                            activate(rangeIndexOf(tapped))
+                            onWindowChanged?.invoke(segment.startMs)
+                            invalidate()
+                        }
+                    }
                 }
                 dragging = false
                 velocity?.recycle(); velocity = null
             }
             MotionEvent.ACTION_CANCEL -> {
-                trimClip = -1
+                handleDragging = false
                 if (dragging) onScrub?.invoke(positionMs, false)
                 dragging = false
                 velocity?.recycle(); velocity = null

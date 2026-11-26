@@ -17,7 +17,10 @@ import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlin.math.abs
 
-/** Scrolls a virtual, second-by-second filmstrip under a fixed playhead. */
+/**
+ * Scrolls a virtual filmstrip under a fixed playhead. It opens as an overview of the whole video
+ * with few pictures, and [zoomLevel] brings it closer: one second per picture, then frame by frame.
+ */
 internal class VideoTimelineView(context: Context) : View(context) {
     enum class ExpansionState { CLOSED, LOADING, OPEN, FAILED }
     var onExpansionStateChanged: ((ExpansionState) -> Unit)? = null
@@ -57,6 +60,23 @@ internal class VideoTimelineView(context: Context) : View(context) {
     private val dstRect = RectF()
     private var range: LongRange? = null
     private val cellWidth get() = dp(54).toFloat()
+    /** 0 overview of the whole video, 1 one second per picture, 2 frame by frame. */
+    var zoomLevel = 0
+        private set
+    internal val intervalMs: Long
+        get() = VideoTimelineRules.zoomInterval(zoomLevel, durationMs, viewportWidth(), cellWidth).coerceAtLeast(1L)
+
+    /** Brings the strip closer or back to the overview; the pictures of the new scale load around the playhead. */
+    fun setZoomLevel(level: Int) {
+        val next = level.coerceIn(0, VideoTimelineRules.ZOOM_LEVELS - 1)
+        if (next == zoomLevel) return
+        zoomLevel = next
+        frames.clear()
+        failedFrames.clear()
+        samples = emptyList()
+        requestFrames()
+        invalidate()
+    }
     val isPrepared: Boolean
         get() {
             if (source == null || durationMs <= 0L) return false
@@ -86,6 +106,7 @@ internal class VideoTimelineView(context: Context) : View(context) {
         durationMs = 0L
         positionMs = 0L
         range = null
+        zoomLevel = 0
         if (expansionRequested) { animate().cancel(); alpha = 1f; visibility = GONE }
         reportExpansionState()
         invalidate()
@@ -112,6 +133,8 @@ internal class VideoTimelineView(context: Context) : View(context) {
         }
         expansionRequested = expanded
         if (!expanded) {
+            // Closed, the strip opens again as the overview.
+            if (zoomLevel != 0) { zoomLevel = 0; frames.clear(); failedFrames.clear(); samples = emptyList() }
             cancelGesture()
             animate().cancel()
             alpha = 1f
@@ -171,12 +194,11 @@ internal class VideoTimelineView(context: Context) : View(context) {
     }
 
     private fun visibleTimes(viewport: Int): List<Long> =
-        VideoTimelineRules.visibleIndices(positionMs, durationMs, viewport, cellWidth)
+        VideoTimelineRules.visibleIndices(positionMs, durationMs, viewport, cellWidth, intervalMs)
             .filter { index ->
-                val offset = (index.toDouble() * VideoTimelineRules.FRAME_INTERVAL_MS - positionMs) /
-                    VideoTimelineRules.FRAME_INTERVAL_MS * cellWidth
+                val offset = (index.toDouble() * intervalMs - positionMs) / intervalMs * cellWidth
                 abs(offset) <= (viewport + cellWidth) / 2.0
-            }.map { VideoTimelineRules.frameTime(it, durationMs) }.distinct()
+            }.map { VideoTimelineRules.frameTime(it, durationMs, intervalMs) }.distinct()
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { requestFrames() }
 
@@ -189,10 +211,10 @@ internal class VideoTimelineView(context: Context) : View(context) {
 
     private fun requestFrames() {
         if (!preparationEnabled || !isAttachedToWindow || windowVisibility != VISIBLE || durationMs <= 0L) return
-        val indices = VideoTimelineRules.visibleIndices(positionMs, durationMs, viewportWidth(), cellWidth)
+        val indices = VideoTimelineRules.visibleIndices(positionMs, durationMs, viewportWidth(), cellWidth, intervalMs)
         // A few seconds ahead keep the closed strip ready as playback advances.
-        val last = (indices.last + 3L).coerceAtMost(VideoTimelineRules.frameCount(durationMs) - 1L)
-        val next = (indices.first..last).map { VideoTimelineRules.frameTime(it, durationMs) }.distinct()
+        val last = (indices.last + 3L).coerceAtMost(VideoTimelineRules.frameCount(durationMs, intervalMs) - 1L)
+        val next = (indices.first..last).map { VideoTimelineRules.frameTime(it, durationMs, intervalMs) }.distinct()
         if (next == samples) { revealIfPrepared(); return }
         samples = next
         frames.keys.retainAll(next.toSet())
@@ -210,10 +232,9 @@ internal class VideoTimelineView(context: Context) : View(context) {
         super.onDraw(canvas)
         val top = dp(7).toFloat()
         val bottom = height - dp(7).toFloat()
-        for (index in VideoTimelineRules.visibleIndices(positionMs, durationMs, width, cellWidth)) {
-            val time = VideoTimelineRules.frameTime(index, durationMs)
-            val center = width / 2f + ((index.toDouble() * VideoTimelineRules.FRAME_INTERVAL_MS - positionMs) /
-                VideoTimelineRules.FRAME_INTERVAL_MS * cellWidth).toFloat()
+        for (index in VideoTimelineRules.visibleIndices(positionMs, durationMs, width, cellWidth, intervalMs)) {
+            val time = VideoTimelineRules.frameTime(index, durationMs, intervalMs)
+            val center = width / 2f + ((index.toDouble() * intervalMs - positionMs) / intervalMs * cellWidth).toFloat()
             dstRect.set(center - cellWidth / 2f, top, center + cellWidth / 2f - dp(1), bottom)
             if (dstRect.right < 0f || dstRect.left > width) continue
             val bitmap = frames[time]
@@ -249,8 +270,7 @@ internal class VideoTimelineView(context: Context) : View(context) {
     }
 
     private fun xAt(time: Long): Float =
-        (width / 2.0 + (time - positionMs).toDouble() /
-            VideoTimelineRules.FRAME_INTERVAL_MS * cellWidth).toFloat().coerceIn(0f, width.toFloat())
+        (width / 2.0 + (time - positionMs).toDouble() / intervalMs * cellWidth).toFloat().coerceIn(0f, width.toFloat())
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isEnabled || durationMs <= 0L || width <= 0) return false
@@ -266,12 +286,12 @@ internal class VideoTimelineView(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> {
                 if (!isScrubbing) return true
                 if (abs(event.x - downX) > ViewConfiguration.get(context).scaledTouchSlop) moved = true
-                if (moved) choose(VideoTimelineRules.positionAfterDrag(downPosition, downX - event.x, cellWidth, durationMs))
+                if (moved) choose(VideoTimelineRules.positionAfterDrag(downPosition, downX - event.x, cellWidth, durationMs, intervalMs))
             }
             MotionEvent.ACTION_UP -> {
                 if (!isScrubbing) return true
                 if (!moved) {
-                    choose(VideoTimelineRules.positionAfterDrag(downPosition, event.x - width / 2f, cellWidth, durationMs))
+                    choose(VideoTimelineRules.positionAfterDrag(downPosition, event.x - width / 2f, cellWidth, durationMs, intervalMs))
                 }
                 finishGesture(false)
                 if (!moved) performClick()

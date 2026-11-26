@@ -131,37 +131,6 @@ internal object MediaJoinExporter {
     }
 
     /**
-     * The editor's preview: one layer with each transition turned into a cut at its middle, same
-     * length as the joined video. The editor draws the transition itself over the player.
-     */
-    fun previewComposition(context: Context, request: JoinRequest): Composition {
-        if (MediaJoinRules.windows(request.clips, request.photoMs, request.transitions).isEmpty()) return composition(context, request)
-        val canvas = MediaJoinRules.canvas(request.clips.map { it.media }, request.quality)
-        val fit = Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(canvas.width, canvas.height, Presentation.LAYOUT_SCALE_TO_FIT)))
-        val trims = MediaJoinRules.previewTrims(request.clips, request.photoMs, request.transitions)
-        val items = request.clips.flatMapIndexed { index, clip ->
-            val (head, tail) = trims[index]
-            val media = clip.media
-            if (media.isVideo) {
-                val ranges = clip.ranges.toMutableList()
-                ranges[0] = (ranges[0].first + head)..ranges[0].last
-                ranges[ranges.lastIndex] = ranges.last().first..(ranges.last().last - tail)
-                ranges.filter { it.last > it.first }.map { range ->
-                    EditedMediaItem.Builder(PlayerMediaItem.Builder().setUri(media.uri)
-                        .setClipStartPositionMs(range.first).setClipEndPositionMs(range.last).build())
-                        .setDurationUs(media.durationMs * 1000L).setEffects(fit).build()
-                }
-            } else {
-                val ms = MediaJoinRules.clipDurationMs(clip, request.photoMs) - head - tail
-                listOf(EditedMediaItem.Builder(PlayerMediaItem.Builder().setUri(media.uri).setMimeType(media.mime)
-                    .setImageDurationMs(ms).build())
-                    .setFrameRate(FRAME_RATE).setDurationUs(ms * 1000L).setEffects(fit).build())
-            }
-        }
-        return Composition.Builder(EditedMediaItemSequence.Builder(items).experimentalSetForceAudioTrack(true).build()).build()
-    }
-
-    /**
      * Writes the joined video and returns its address. [progress] gets 0 to 100; when
      * [cancelled] turns true the export stops and nothing is saved.
      */

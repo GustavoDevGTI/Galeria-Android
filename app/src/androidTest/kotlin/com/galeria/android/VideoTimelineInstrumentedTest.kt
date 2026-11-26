@@ -172,7 +172,7 @@ class VideoTimelineInstrumentedTest {
                 var dragFraction = 0f
                 scenario.onActivity { activity ->
                     val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
-                    dragFraction = (duration * 0.65 / 1000 * Ui.dp(activity, 54) / strip.width).toFloat()
+                    dragFraction = (duration * 0.65 / strip.intervalMs * Ui.dp(activity, 54) / strip.width).toFloat()
                 }
                 gesture(MotionEvent.ACTION_DOWN, 0.8f)
                 gesture(MotionEvent.ACTION_MOVE, 0.8f - dragFraction)
@@ -282,6 +282,11 @@ class VideoTimelineInstrumentedTest {
                 instrumentation.waitForIdleSync()
                 scenario.onActivity {
                     strip.update(3_600_000L, 7_200_000L)
+                    // The strip opens as an overview of the whole video; one press closer is a second per picture.
+                    assertEquals(0, strip.zoomLevel)
+                    assertTrue("A visão geral mostra o vídeo inteiro com poucos quadros", strip.intervalMs >= 60_000L)
+                    strip.setZoomLevel(1)
+                    assertEquals(1_000L, strip.intervalMs)
                     MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, strip.width * 0.5f, 60f, 0).let {
                         strip.dispatchTouchEvent(it); it.recycle()
                     }
@@ -296,6 +301,17 @@ class VideoTimelineInstrumentedTest {
                     strip.update(3_600_000L, 7_200_000L)
                     strip.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD, null)
                     assertEquals(3_601_000L, selected)
+                    // Closest level: one picture is one frame.
+                    strip.setZoomLevel(2)
+                    strip.update(3_600_000L, 7_200_000L)
+                    MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_DOWN, strip.width * 0.5f, 60f, 0).let {
+                        strip.dispatchTouchEvent(it); it.recycle()
+                    }
+                    MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_MOVE, strip.width * 0.5f - Ui.dp(context, 54), 60f, 0).let {
+                        strip.dispatchTouchEvent(it); it.recycle()
+                    }
+                    assertEquals(3_600_000L + VideoTimelineRules.FRAME_BY_FRAME_MS, selected)
+                    strip.cancelGesture()
                 }
         }
     }
@@ -341,8 +357,16 @@ class VideoTimelineInstrumentedTest {
                     toggle.performClick()
                     assertEquals(View.VISIBLE, strip.visibility)
                     assertTrue(activity.window.decorView.findViewWithTag<SeekBar>("video_progress").isShown)
+                    // Two more presses bring it closer, down to frame by frame; the next one closes it.
+                    assertEquals(0, strip.zoomLevel)
+                    toggle.performClick()
+                    assertEquals(1, strip.zoomLevel)
+                    toggle.performClick()
+                    assertEquals(2, strip.zoomLevel)
+                    assertEquals(View.VISIBLE, strip.visibility)
                     toggle.performClick()
                     assertEquals(View.GONE, strip.visibility)
+                    assertEquals("Fechada, volta à visão geral", 0, strip.zoomLevel)
                 }
                 scenario.recreate()
                 scenario.onActivity {
@@ -406,18 +430,25 @@ class VideoTimelineInstrumentedTest {
                     }
                     captureLoadingFeedback("loading-filmstrip-qa.png")
                     release.countDown()
-                    await {
-                        var ready = false
-                        scenario.onActivity { activity ->
-                            val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
-                            ready = strip.isShown && strip.expansionState == VideoTimelineView.ExpansionState.OPEN
-                            if (ready) {
-                                assertTrue(activity.window.decorView.findViewWithTag<View>("video_timeline_toggle").isEnabled)
-                                assertEquals(View.GONE, activity.window.decorView.findViewWithTag<View>("video_timeline_loading").visibility)
+                    var state = ""
+                    try {
+                        await {
+                            var ready = false
+                            scenario.onActivity { activity ->
+                                val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                                fun field(name: String) = VideoTimelineView::class.java.getDeclaredField(name).apply { isAccessible = true }.get(strip)
+                                state = "estado=${strip.expansionState} visível=${strip.visibility} pronta=${strip.isPrepared} " +
+                                    "duração=${strip.durationMs} intervalo=${strip.intervalMs} nível=${strip.zoomLevel} " +
+                                    "pedidos=${field("samples")} quadros=${(field("frames") as Map<*, *>).keys} falhas=${field("failedFrames")}"
+                                ready = strip.isShown && strip.expansionState == VideoTimelineView.ExpansionState.OPEN
+                                if (ready) {
+                                    assertTrue(activity.window.decorView.findViewWithTag<View>("video_timeline_toggle").isEnabled)
+                                    assertEquals(View.GONE, activity.window.decorView.findViewWithTag<View>("video_timeline_loading").visibility)
+                                }
                             }
+                            ready
                         }
-                        ready
-                    }
+                    } catch (error: AssertionError) { throw AssertionError("${error.message}: $state", error) }
                 }
             } finally { file.delete() }
         }

@@ -37,6 +37,28 @@ class ThemeToneRulesTest {
     }
 
     @Test
+    fun switchesShowClearlyWhetherTheyAreOnOrOffOnEveryTheme() {
+        val seeds = listOf(
+            ThemeToneRules.rgb(232, 118, 164), ThemeToneRules.rgb(138, 56, 92), ThemeToneRules.rgb(232, 214, 166),
+            ThemeToneRules.rgb(24, 28, 32), ThemeToneRules.rgb(74, 134, 218), ThemeToneRules.rgb(82, 168, 118),
+            ThemeToneRules.BLACK, ThemeToneRules.WHITE
+        )
+        for (seed in seeds) {
+            val surface = ThemeToneRules.screenTones(seed)[1]
+            val (thumbOn, trackOn, thumbOff, trackOff) = ThemeToneRules.switchColors(
+                surface, ThemeToneRules.accent(seed), ThemeToneRules.text(seed)).toList()
+            fun check(what: String, a: Int, b: Int, min: Double = ThemeToneRules.MIN_SWITCH_CONTRAST) {
+                val contrast = ThemeToneRules.contrastRatio(a, b)
+                assertTrue("$what para seed $seed (contraste=$contrast)", contrast >= min)
+            }
+            check("Trilha ligada se destaca na linha", trackOn, surface)
+            check("Botão ligado se destaca na trilha", thumbOn, trackOn)
+            check("Botão desligado se destaca na linha", thumbOff, surface)
+            check("Ligado e desligado não se confundem", trackOn, trackOff, 1.4)
+        }
+    }
+
+    @Test
     fun allFourSubmenuAndScreenTonesMaintainReadableContrastAcrossChromaticAndNeutralThemes() {
         val seeds = listOf(
             ThemeToneRules.rgb(232, 118, 164), // Rosa claro

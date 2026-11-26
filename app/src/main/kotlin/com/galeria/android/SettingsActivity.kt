@@ -11,6 +11,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CompoundButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -347,21 +348,27 @@ class SettingsActivity : Activity() {
         texts.addView(titleView)
         texts.addView(subtitleView)
         row.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        // The more involved options keep a short summary under the title and an "i" with the details.
+        SETTING_DETAILS[key]?.let { details -> row.addView(infoButton(title, getString(details), key)) }
 
         val states = arrayOf(
             intArrayOf(android.R.attr.state_checked),
             intArrayOf(-android.R.attr.state_checked)
         )
+        // On is the full accent and off a clear gray, both with contrast on the row, so the state
+        // reads at a glance on any theme.
+        val (thumbOn, trackOn, thumbOff, trackOff) = ThemeToneRules.switchColors(
+            Ui.surface(this), Ui.accent(this), Ui.text(this)).toList()
         val toggle = Switch(this).apply {
             isChecked = prefs.getBoolean(key, defaultValue)
-            thumbTintList = ColorStateList(
-                states,
-                intArrayOf(Ui.accent(this@SettingsActivity), Ui.muted(this@SettingsActivity))
-            )
-            trackTintList = ColorStateList(
-                states,
-                intArrayOf(Ui.highlightSurface(this@SettingsActivity), Ui.elevatedSurface(this@SettingsActivity))
-            )
+            thumbTintList = ColorStateList(states, intArrayOf(thumbOn, thumbOff))
+            // The platform track is drawn translucent (which made it nearly vanish); a solid one
+            // keeps the full color of each state.
+            trackDrawable = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = Ui.dp(this@SettingsActivity, 8).toFloat()
+                color = ColorStateList(states, intArrayOf(trackOn, trackOff))
+                setSize(Ui.dp(this@SettingsActivity, 34), Ui.dp(this@SettingsActivity, 16))
+            }
         }
         lateinit var listener: CompoundButton.OnCheckedChangeListener
         listener = CompoundButton.OnCheckedChangeListener { _, isChecked ->
@@ -381,6 +388,23 @@ class SettingsActivity : Activity() {
         toggle.setOnCheckedChangeListener(listener)
         row.addView(toggle)
         content.addView(row)
+    }
+
+    /** The "i" next to an involved option: opens what it does in detail. */
+    private fun infoButton(title: String, details: String, key: String): ImageView = ImageView(this).apply {
+        tag = "settings_info_$key"
+        setImageResource(R.drawable.ic_information)
+        setColorFilter(Ui.muted(this@SettingsActivity))
+        contentDescription = getString(R.string.settings_info_description, title)
+        val pad = Ui.dp(this@SettingsActivity, 10)
+        setPadding(pad, pad, pad, pad)
+        background = android.graphics.drawable.RippleDrawable(
+            ColorStateList.valueOf((Ui.text(this@SettingsActivity) and 0x00FFFFFF) or 0x22000000), null, null)
+        layoutParams = LinearLayout.LayoutParams(Ui.dp(this@SettingsActivity, 40), Ui.dp(this@SettingsActivity, 40))
+        setOnClickListener {
+            Haptics.perform(this, Haptics.Effect.TAP)
+            Ui.showMessageDialog(this@SettingsActivity, title, details)
+        }
     }
 
     private fun addColorChoice() {
@@ -715,5 +739,17 @@ class SettingsActivity : Activity() {
         const val EXTRA_OPEN_THEME = "open_theme"
         private const val REQ_MEDIA_LIBRARY = 20
         private const val PREVIEW_REFRESH_DELAY_MS = 60L
+
+        /** Options whose short summary needs more: the "i" next to them opens these details. */
+        internal val SETTING_DETAILS = mapOf(
+            "always_show_hidden" to R.string.settings_details_always_show_hidden,
+            GalleryPreferences.SEARCH_ALL_FILES to R.string.settings_details_search_all_files,
+            GalleryPreferences.AUTO_PICTURE_IN_PICTURE to R.string.settings_details_auto_picture_in_picture,
+            GalleryPreferences.JOIN_IN_BACKGROUND to R.string.settings_details_join_in_background,
+            GalleryPreferences.CLOCK_PHOTOS to R.string.settings_details_clock_photos,
+            GalleryPreferences.CLOCK_DELETES_PERMANENTLY to R.string.settings_details_clock_permanent,
+            GalleryPreferences.BEST_IMAGE_QUALITY to R.string.settings_details_best_image_quality,
+            GalleryPreferences.DEEP_IMAGE_ZOOM to R.string.settings_details_deep_image_zoom
+        )
     }
 }

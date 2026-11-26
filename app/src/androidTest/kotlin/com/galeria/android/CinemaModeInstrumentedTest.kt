@@ -139,6 +139,39 @@ class CinemaModeInstrumentedTest {
     }
 
     @Test
+    fun theCinemaMessageAlwaysLeavesTheScreen() = withVideo { context, uri, albumKey ->
+        ActivityScenario.launch<DetailActivity>(videoIntent(context, uri, albumKey)).use { scenario ->
+            scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+            waitForOrientation(scenario, Configuration.ORIENTATION_PORTRAIT)
+            fun indicator(activity: DetailActivity) =
+                activity.window.decorView.findViewWithTag<android.widget.TextView>("viewer_cinema_transition_message")
+            // Turned into the thumbnail while the message shows: back in full screen, it is gone.
+            scenario.onActivity { activity ->
+                descendants(activity.window.decorView).first { it.contentDescription == "Modo cinema" }.performClick()
+                assertEquals(View.VISIBLE, indicator(activity).visibility)
+                activity.hideViewerChromeForPictureInPicture()
+                activity.restoreViewerChromeAfterPictureInPicture()
+                assertEquals("A mensagem não volta depois da miniatura", View.GONE, indicator(activity).visibility)
+            }
+            waitForCinemaTransition(scenario)
+            // Leaving and coming back several times: the message never stays.
+            repeat(3) {
+                scenario.onActivity { activity ->
+                    descendants(activity.window.decorView).first { it.contentDescription == "Modo cinema" }.performClick()
+                }
+                waitForCinemaTransition(scenario)
+                val deadline = android.os.SystemClock.uptimeMillis() + 5_000L
+                var visible = true
+                while (visible && android.os.SystemClock.uptimeMillis() < deadline) {
+                    scenario.onActivity { visible = indicator(it).visibility == View.VISIBLE }
+                    if (visible) android.os.SystemClock.sleep(100L)
+                }
+                assertFalse("A mensagem do modo cinema deve sumir sozinha (vez ${it + 1})", visible)
+            }
+        }
+    }
+
+    @Test
     fun pausingDuringModeAnimationSettlesOrientationAndAllowsNextClick() = withVideo { context, uri, albumKey ->
         ActivityScenario.launch<DetailActivity>(videoIntent(context, uri, albumKey)).use { scenario ->
             scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }

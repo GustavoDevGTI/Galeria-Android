@@ -34,6 +34,7 @@
     <string name="video_timeline_description">Video timeline. Swipe the thumbnails to move second by second.</string>
     <string name="video_timeline_show">Show timeline</string>
     <string name="video_timeline_hide">Close timeline</string>
+    <string name="video_timeline_closer">Zoom into timeline</string>
     <string name="video_timeline_loading">Preparing thumbnails…</string>
     <string name="loading_album_targets">Loading folders…</string>
     <string name="operation_in_progress">Finishing operation…</string>
@@ -788,6 +789,8 @@
     <string name="join_split">Split</string>
     <string name="join_add">Add media</string>
     <string name="join_remove">Remove media</string>
+    <string name="join_remove_piece">Remove piece</string>
+    <string name="join_cut_outside">Cut outside the marked area</string>
     <string name="join_transition">Transition</string>
     <string name="join_transition_none">Cut</string>
     <string name="join_transition_dissolve">Dissolve</string>
@@ -810,6 +813,15 @@
     <string name="settings_clock_photos_hint">Photos used in a merge also leave after 48 hours, like the videos.</string>
     <string name="settings_clock_permanent">Clock deletes for good</string>
     <string name="settings_clock_permanent_hint">Only with the trash off. Otherwise, media whose clock runs out go to the trash.</string>
+    <string name="settings_info_description">More about %1$s</string>
+    <string name="settings_details_always_show_hidden">Shows hidden folders on the main screen: those with a .nomedia file or a name starting with a dot, which other gallery apps hide. To find the media in them, the app needs full file management. With \"Protect hidden items\" on, the password is asked first.</string>
+    <string name="settings_details_search_all_files">Instead of one album per folder, the main screen gathers the media of every regular folder in \"All files\". Hidden folders stay as separate albums.</string>
+    <string name="settings_details_auto_picture_in_picture">While a video plays, going back keeps it in a floating window over the gallery and other apps, with play/pause and previous/next buttons. Off, going back closes the video. The picture-in-picture button on the video bar works either way, even with the video paused.</string>
+    <string name="settings_details_join_in_background">If you leave the editor during a merge, it keeps going with a progress notification that tells you when the video is ready. Off, leaving the editor cancels the merge and nothing is saved.</string>
+    <string name="settings_details_clock_photos">After a merge, each video used gets a 48-hour clock; when it runs out, the video leaves the gallery. With this option the photos used get the clock too, and the merged video keeps a copy of each photo so Separate gives them back unchanged. Tapping the clock keeps the media.</string>
+    <string name="settings_details_clock_permanent">Only applies with the trash off. On, media whose clock runs out are deleted without going to the trash and cannot be recovered. Off, or with the trash on, they go to the trash, where they can be restored.</string>
+    <string name="settings_details_best_image_quality">When you zoom in, the photo loads at its original resolution instead of a reduced copy. This shows more detail in large photos but uses more memory and may take a little longer on simpler phones.</string>
+    <string name="settings_details_deep_image_zoom">On, a large photo can be zoomed in down to the details, for example to read small text. Off, zoom stops at 2x, which avoids zooming in too far by accident.</string>
     <string name="clock_hours">%1$d h</string>
     <string name="clock_minutes">%1$d min</string>
     <string name="clock_cancel">Keep this media, %1$s left</string>

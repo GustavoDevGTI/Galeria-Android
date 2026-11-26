@@ -38,6 +38,7 @@
     <string name="video_timeline_description">Línea de tiempo del vídeo. Desliza las miniaturas para navegar segundo a segundo.</string>
     <string name="video_timeline_show">Mostrar línea de tiempo</string>
     <string name="video_timeline_hide">Cerrar línea de tiempo</string>
+    <string name="video_timeline_closer">Acercar la línea de tiempo</string>
     <string name="video_timeline_loading">Preparando miniaturas…</string>
     <string name="loading_album_targets">Cargando carpetas…</string>
     <string name="operation_in_progress">Terminando la operación…</string>
@@ -728,6 +729,8 @@
     <string name="join_split">Dividir</string>
     <string name="join_add">Añadir medios</string>
     <string name="join_remove">Quitar medio</string>
+    <string name="join_remove_piece">Quitar fragmento</string>
+    <string name="join_cut_outside">Recortar fuera del área marcada</string>
     <string name="join_transition">Transición</string>
     <string name="join_transition_none">Corte</string>
     <string name="join_transition_dissolve">Disolver</string>
@@ -750,6 +753,15 @@
     <string name="settings_clock_photos_hint">Las fotos usadas en una fusión también salen después de 48 horas, como los videos.</string>
     <string name="settings_clock_permanent">El reloj elimina para siempre</string>
     <string name="settings_clock_permanent_hint">Solo con la papelera desactivada. Si no, los medios cuyo reloj termina van a la papelera.</string>
+    <string name="settings_info_description">Más información: %1$s</string>
+    <string name="settings_details_always_show_hidden">Muestra en la pantalla principal las carpetas ocultas: las que tienen un archivo .nomedia o cuyo nombre empieza con un punto, que otras galerías esconden. Para encontrar los medios de esas carpetas, la app necesita la gestión completa de archivos. Con "Proteger la vista de ocultos" activado, se pide la contraseña antes.</string>
+    <string name="settings_details_search_all_files">En lugar de un álbum por carpeta, la pantalla principal reúne los medios de todas las carpetas comunes en "Todos los archivos". Las carpetas ocultas siguen como álbumes aparte.</string>
+    <string name="settings_details_auto_picture_in_picture">Con un video en reproducción, volver lo deja en una ventana flotante sobre la galería y otras apps, con botones para reproducir o pausar y para el medio anterior y el siguiente. Desactivada, volver cierra el video. El botón de miniatura de la barra del video funciona en ambos casos, incluso con el video en pausa.</string>
+    <string name="settings_details_join_in_background">Si sales del editor durante una fusión, esta sigue con una notificación de progreso que avisa cuando el video está listo. Desactivada, salir del editor cancela la fusión y no se guarda nada.</string>
+    <string name="settings_details_clock_photos">Después de una fusión, cada video usado recibe un reloj de 48 horas; al terminar el plazo, sale de la galería. Con esta opción, las fotos usadas también reciben el reloj, y el video fusionado guarda una copia de cada foto para que Separar las devuelva idénticas. Tocar el reloj conserva el medio.</string>
+    <string name="settings_details_clock_permanent">Solo vale con la papelera desactivada. Activada, el medio cuyo reloj termina se borra sin pasar por la papelera y no se puede recuperar. Desactivada, o con la papelera activa, va a la papelera, desde donde se puede restaurar.</string>
+    <string name="settings_details_best_image_quality">Al ampliar, la foto se carga en su resolución original en lugar de una versión reducida. Muestra más detalles en fotos grandes, pero usa más memoria y puede tardar un poco más en teléfonos sencillos.</string>
+    <string name="settings_details_deep_image_zoom">Activado, una foto grande se puede ampliar hasta los detalles, por ejemplo para leer un texto pequeño. Desactivado, el zoom se detiene en 2x, lo que evita ampliar demasiado sin querer.</string>
     <string name="clock_hours">%1$d h</string>
     <string name="clock_minutes">%1$d min</string>
     <string name="clock_cancel">Conservar este medio, quedan %1$s</string>

@@ -138,6 +138,58 @@ class MediaJoinEditorInstrumentedTest {
         }
     }
 
+    @Test fun theScissorsCutOutsideTheMarkedAreaAndALitPieceCanBeRemoved() {
+        val suffix = System.nanoTime()
+        val folder = "Pictures/GaleriaJoinCut-$suffix/"
+        val video = insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "clip-$suffix.mp4", "video/mp4", folder,
+            instrumentation.context.assets.open("playback-sample.mp4").use { it.readBytes() })
+        val photo = insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "photo-$suffix.jpg", "image/jpeg", folder, jpeg(Color.CYAN))
+        val items = listOf(MediaItem(1L, video, "clip-$suffix.mp4", "video/mp4", 0L, 1L, folder, null, null),
+            MediaItem(2L, photo, "photo-$suffix.jpg", "image/jpeg", 0L, 2L, folder, null, null))
+        try {
+            ActivityScenario.launch<MediaJoinActivity>(MediaJoinActivity.intent(context, items)).use { scenario ->
+                val strip = await(scenario) { it.window.decorView.findViewWithClass<JoinStripView>() }
+                val timeline = await(scenario) { it.window.decorView.findViewWithClass<JoinTimelineView>() }
+                awaitTrue("O editor deve abrir com as duas mídias") { var n = 0; scenario.onActivity { n = it.clipsForTest().size }; n == 2 }
+                // Nothing marked: the scissors split the video at the playhead.
+                scenario.onActivity { activity ->
+                    strip.onSelect?.invoke(0)
+                    val segment = MediaJoinRules.segments(activity.clipsForTest(), activity.photoMsForTest()).first { it.clipIndex == 0 }
+                    timeline.setPosition((segment.startMs + segment.endMs) / 2)
+                }
+                tap(scenario, context.getString(R.string.join_split))
+                lateinit var pieces: List<LongRange>
+                scenario.onActivity { activity -> pieces = activity.clipsForTest()[0].ranges }
+                assertEquals("A tesoura sem área marcada divide o vídeo", 2, pieces.size)
+                // The lit first piece goes with the trash; the video keeps the other one.
+                scenario.onActivity {
+                    timeline.lightPiece(0)
+                    timeline.onWindowChanged?.invoke(0L)
+                }
+                tap(scenario, context.getString(R.string.join_remove_piece))
+                scenario.onActivity { activity ->
+                    assertEquals(listOf(pieces[1]), activity.clipsForTest()[0].ranges)
+                    assertEquals(2, activity.clipsForTest().size)
+                }
+                // An area marked on what is left (the sample is short: the shortest area, 0.5 s,
+                // from its start): the scissors keep only it; the photo is untouched.
+                val area = pieces[1].first..(pieces[1].first + MediaJoinRules.MIN_PART_MS)
+                assertTrue("O trecho restante deve ser maior que a área marcada", pieces[1].last > area.last)
+                scenario.onActivity {
+                    timeline.markArea(area.first, area.last)
+                    timeline.onWindowChanged?.invoke(0L)
+                }
+                tap(scenario, context.getString(R.string.join_cut_outside))
+                scenario.onActivity { activity ->
+                    assertEquals("Fica só a área iluminada", listOf(area), activity.clipsForTest()[0].ranges)
+                    assertEquals("A foto não muda", photo.toString(), activity.clipsForTest()[1].media.uri)
+                }
+            }
+        } finally {
+            listOf(video, photo).forEach { runCatching { context.contentResolver.delete(it, null, null) } }
+        }
+    }
+
     @Test fun aWrongPickCanBeRemovedAndManyQuickMovesLeaveThePreviewReady() {
         val suffix = System.nanoTime()
         val folder = "Pictures/GaleriaJoinRemove-$suffix/"
@@ -182,6 +234,21 @@ class MediaJoinEditorInstrumentedTest {
                 try {
                     awaitTrue("A prévia deve ficar pronta com a última ordem", 15_000L) { previewReady() }
                 } catch (error: AssertionError) { throw AssertionError("${error.message}: $state") }
+                // After the burst the preview still plays: its position moves forward.
+                var before = 0L
+                scenario.onActivity { activity ->
+                    val player = MediaJoinActivity::class.java.getDeclaredField("player").apply { isAccessible = true }.get(activity) as androidx.media3.common.Player
+                    before = player.currentPosition
+                    player.play()
+                }
+                awaitTrue("A prévia deve continuar tocando depois de muitas trocas", 10_000L) {
+                    var moving = false
+                    scenario.onActivity { activity ->
+                        val player = MediaJoinActivity::class.java.getDeclaredField("player").apply { isAccessible = true }.get(activity) as androidx.media3.common.Player
+                        moving = player.isPlaying && player.currentPosition > before + 300L
+                    }
+                    moving
+                }
                 // Report any error the preview recovered from, so a recurring one is not hidden.
                 scenario.onActivity { activity -> activity.lastPreviewError?.let { android.util.Log.w("JoinTest", "Prévia se recuperou de: $state", it) } }
                 // The last media cannot be removed: the montage always keeps one.

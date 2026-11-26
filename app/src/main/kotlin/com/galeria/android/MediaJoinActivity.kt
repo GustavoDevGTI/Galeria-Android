@@ -42,7 +42,7 @@ import androidx.exifinterface.media.ExifInterface
 import androidx.media3.common.Player
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.transformer.CompositionPlayer
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import java.util.concurrent.Executors
 
@@ -68,7 +68,7 @@ class MediaJoinActivity : ComponentActivity() {
         }
 
         /** How long the montage must stay unchanged before the preview player gets it. */
-        private const val PREVIEW_SETTLE_MS = 350L
+        private const val PREVIEW_SETTLE_MS = 200L
         private const val MAX_PREVIEW_RECOVERIES = 3
 
         internal fun time(ms: Long): String {
@@ -98,7 +98,10 @@ class MediaJoinActivity : ComponentActivity() {
     private var quality = JoinQuality.NATIVE
     private val photoMs get() = photoSeconds * 1000L
 
-    private lateinit var player: CompositionPlayer
+    /** One player for the whole editor: the montage is its playlist (see [MediaJoinRules.previewParts]). */
+    private lateinit var player: ExoPlayer
+    /** What the player is playing now, to turn montage times into playlist positions and back. */
+    private var previewParts: List<JoinPreviewPart> = emptyList()
     private lateinit var playerView: PlayerView
     private lateinit var edgePreview: ImageView
     private lateinit var strip: JoinStripView
@@ -123,14 +126,14 @@ class MediaJoinActivity : ComponentActivity() {
     private val stillCache = HashMap<String, Bitmap>()
     private val thumbs = HashMap<String, Bitmap>()
     private var scrubbing = false
-    private var pendingFrame = false
 
     private val ticker = object : Runnable {
         override fun run() {
             if (!::player.isInitialized) return
             if (!scrubbing) {
-                timeline.setPosition(player.currentPosition)
-                showTime(player.currentPosition)
+                val position = montagePosition()
+                timeline.setPosition(position)
+                showTime(position)
             }
             if (player.isPlaying) handler.postDelayed(this, 33L)
         }
@@ -333,9 +336,9 @@ class MediaJoinActivity : ComponentActivity() {
             setPadding(dp(4), 0, 0, 0)
         }
         controls.addView(timeLabel, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        splitButton = EditorUi.button(this, R.drawable.ic_split, getString(R.string.join_split)) { splitAtPlayhead() }
+        splitButton = EditorUi.button(this, R.drawable.ic_split, getString(R.string.join_split)) { cut() }
         controls.addView(splitButton, LinearLayout.LayoutParams(dp(48), dp(48)))
-        removeButton = EditorUi.button(this, R.drawable.ic_trash, getString(R.string.join_remove)) { removeClip(selected) }
+        removeButton = EditorUi.button(this, R.drawable.ic_trash, getString(R.string.join_remove)) { removeSelected() }
         controls.addView(removeButton, LinearLayout.LayoutParams(dp(48), dp(48)))
         photoControls = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         photoControls.addView(ImageView(this).apply {
@@ -365,8 +368,8 @@ class MediaJoinActivity : ComponentActivity() {
         timeline = JoinTimelineView(this).apply {
             onScrub = { position, active -> scrub(position, active) }
             onSelect = { index -> select(index) }
-            onTrim = { clip, range, start, sourceMs -> trim(clip, range, start, sourceMs) }
             onTrimming = { uri, sourceMs -> showEdge(uri, sourceMs) }
+            onWindowChanged = { edgeMs -> markedAreaChanged(edgeMs) }
         }
         column.addView(timeline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(12) })
 
@@ -416,10 +419,10 @@ class MediaJoinActivity : ComponentActivity() {
         showQuality()
         transitionChip.text = transitionLabel(transitionAll)
         transitionChip.visibility = if (clips.size > 1) View.VISIBLE else View.GONE
-        removeButton.visibility = if (clips.size > 1) View.VISIBLE else View.GONE
         strip.setClips(clips, labels, selected)
         timeline.setClips(clips, photoMs, selected, transitions)
         showPhotoTime()
+        showCutTools()
         // One video is a plain edit that saves a copy; two or more media are joined.
         saveButton.contentDescription = getString(if (clips.size > 1) R.string.action_join else R.string.msg_save_copy)
         if (Build.VERSION.SDK_INT >= 26) saveButton.tooltipText = saveButton.contentDescription
@@ -451,38 +454,49 @@ class MediaJoinActivity : ComponentActivity() {
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_READY) previewRecoveries = 0
             if (playbackState == Player.STATE_ENDED) { pause(); seek(0L) }
-            // A paused preview only draws after a seek; ask for the frame under the playhead.
-            if (playbackState == Player.STATE_READY && pendingFrame && !player.isPlaying) {
-                pendingFrame = false
-                player.seekTo(player.currentPosition)
-            }
         }
     }
 
-    private fun newPlayer(): CompositionPlayer = CompositionPlayer.Builder(this).build().apply { addListener(playerListener) }
+    private fun newPlayer(): ExoPlayer = ExoPlayer.Builder(this).build().apply {
+        addListener(playerListener)
+        // The paused preview shows the frame under the playhead after every change or seek.
+        setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
+    }
 
+    /**
+     * Gives the montage to the preview. The same player keeps playing: only its playlist is
+     * replaced, which is quick and keeps the decoders, so many changes in a row no longer stack
+     * up players being let go (that froze the picture while the sound went on).
+     */
     private fun buildPreview() {
         handler.removeCallbacks(rebuildPreview)
         if (isDestroyed || clips.isEmpty()) return
-        if (previewBuilt) {
-            // A new montage goes to a new player. Giving it to the same one makes the player let
-            // go of its previous sources first; when that takes too long the whole preview fails
-            // and freezes. The old player is let go without listening to it any more.
-            val old = player
-            old.removeListener(playerListener)
-            old.pause()
-            player = newPlayer()
-            playerView.player = player
-            old.release()
-            playerListener.onIsPlayingChanged(false)
-        }
+        val wasPlaying = player.isPlaying
+        val position = if (previewBuilt) timeline.positionMs else 0L
+        previewParts = MediaJoinRules.previewParts(clips, photoMs, transitions)
+        val (index, offset) = MediaJoinRules.locate(previewParts, position)
+        player.setMediaItems(previewParts.map(::previewItem), index, offset)
+        player.prepare()
+        player.playWhenReady = wasPlaying
         previewDirty = false
         previewBuilt = true
-        pendingFrame = true
-        player.setComposition(MediaJoinExporter.previewComposition(this, JoinRequest(clips, photoMs, quality, transitions)), timeline.positionMs)
-        player.prepare()
         loadTransitionStills()
     }
+
+    private fun previewItem(part: JoinPreviewPart): androidx.media3.common.MediaItem {
+        val builder = androidx.media3.common.MediaItem.Builder().setUri(part.media.uri)
+        return if (part.media.isVideo) {
+            builder.setClippingConfiguration(androidx.media3.common.MediaItem.ClippingConfiguration.Builder()
+                .setStartPositionMs(part.sourceStartMs).setEndPositionMs(part.sourceStartMs + part.durationMs).build()).build()
+        } else {
+            builder.setMimeType(part.media.mime).setImageDurationMs(part.durationMs).build()
+        }
+    }
+
+    /** Where the preview is in the whole montage (the player counts within each playlist item). */
+    private fun montagePosition(): Long =
+        if (previewParts.isEmpty()) 0L
+        else MediaJoinRules.positionOf(previewParts, player.currentMediaItemIndex, player.currentPosition)
 
     private fun showTime(position: Long) {
         timeLabel.text = "${time(position)} / ${time(MediaJoinRules.totalMs(clips, photoMs, transitions))}"
@@ -636,6 +650,7 @@ class MediaJoinActivity : ComponentActivity() {
         timeline.setSelected(index)
         splitButton.visibility = if (clips[index].media.isVideo) View.VISIBLE else View.GONE
         showPhotoTime()
+        showCutTools()
         // Jump to the start of the chosen media when it is not under the playhead.
         val segments = MediaJoinRules.segments(clips, photoMs, transitions).filter { it.clipIndex == index }
         val position = timeline.positionMs
@@ -726,6 +741,30 @@ class MediaJoinActivity : ComponentActivity() {
         refresh(rebuild = true)
     }
 
+    /**
+     * The scissors. With an area marked on the lit part, what is outside it goes; with nothing
+     * marked, the part splits at the playhead, so a piece in the middle can then be lit and removed.
+     */
+    private fun cut() {
+        val clip = clips.getOrNull(selected) ?: return
+        val range = timeline.activePart()
+        val window = timeline.pendingWindow()
+        if (range != null && window != null) {
+            val kept = MediaJoinRules.keepWindow(clip, range, window)
+            splitButton.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            clips = clips.toMutableList().apply { set(selected, kept) }
+            hideEdge()
+            refresh(rebuild = true)
+            // The playhead goes to the start of what was kept.
+            val at = MediaJoinRules.segments(clips, photoMs, transitions).filter { it.clipIndex == selected }.getOrNull(range)?.startMs ?: timeline.positionMs
+            timeline.setPosition(at)
+            seek(at + 1L)
+            showTime(at)
+            return
+        }
+        splitAtPlayhead()
+    }
+
     private fun splitAtPlayhead() {
         val clip = clips.getOrNull(selected) ?: return
         val position = timeline.positionMs
@@ -740,16 +779,47 @@ class MediaJoinActivity : ComponentActivity() {
         refresh(rebuild = true)
     }
 
-    private fun trim(clipIndex: Int, range: Int, start: Boolean, sourceMs: Long) {
-        val clip = clips.getOrNull(clipIndex) ?: return
-        clips = clips.toMutableList().apply { set(clipIndex, MediaJoinRules.trimmed(clip, range, start, sourceMs)) }
-        val segment = MediaJoinRules.segments(clips, photoMs, transitions).filter { it.clipIndex == clipIndex }.getOrNull(range)
-        val position = segment?.let { if (start) it.startMs else maxOf(it.startMs, it.endMs - 1L) } ?: timeline.positionMs
+    /** The trash: the lit piece of a video cut in pieces, otherwise the whole media. */
+    private fun removeSelected() {
+        val clip = clips.getOrNull(selected) ?: return
+        val range = timeline.activePart()
+        if (range != null && clip.ranges.size > 1) {
+            removeButton.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+            clips = clips.toMutableList().apply { set(selected, MediaJoinRules.removePart(clip, range)) }
+            refresh(rebuild = true)
+            val at = MediaJoinRules.segments(clips, photoMs, transitions).filter { it.clipIndex == selected }
+                .getOrNull(range.coerceAtMost(clips[selected].ranges.lastIndex))?.startMs ?: timeline.positionMs
+            timeline.setPosition(at)
+            seek(at + 1L)
+            showTime(at)
+            return
+        }
+        removeClip(selected)
+    }
+
+    /** A handle of the marked area was let go: the paused preview shows that edge. */
+    private fun markedAreaChanged(edgeMs: Long) {
         hideEdge()
-        refresh(rebuild = true)
-        timeline.setPosition(position)
-        seek(position)
-        showTime(position)
+        timeline.setPosition(edgeMs)
+        seek(edgeMs)
+        showTime(edgeMs)
+        showCutTools()
+    }
+
+    /**
+     * The trash names what it removes (a piece or the media); it shows when there is something
+     * to remove. The scissors light up while an area is marked.
+     */
+    private fun showCutTools() {
+        val clip = clips.getOrNull(selected)
+        val piece = clip != null && clip.media.isVideo && clip.ranges.size > 1 && timeline.activePart() != null
+        removeButton.visibility = if (clips.size > 1 || piece) View.VISIBLE else View.GONE
+        removeButton.contentDescription = getString(if (piece) R.string.join_remove_piece else R.string.join_remove)
+        if (Build.VERSION.SDK_INT >= 26) removeButton.tooltipText = removeButton.contentDescription
+        val marked = timeline.pendingWindow() != null
+        splitButton.contentDescription = getString(if (marked) R.string.join_cut_outside else R.string.join_split)
+        if (Build.VERSION.SDK_INT >= 26) splitButton.tooltipText = splitButton.contentDescription
+        splitButton.setColorFilter(if (marked) Ui.accent(this) else Color.WHITE)
     }
 
     /** While a handle is dragged, the preview shows the frame at the new edge. */
@@ -779,7 +849,11 @@ class MediaJoinActivity : ComponentActivity() {
         showTime(position)
     }
 
-    private fun seek(position: Long) { player.seekTo(position) }
+    private fun seek(position: Long) {
+        if (previewParts.isEmpty()) return
+        val (index, offset) = MediaJoinRules.locate(previewParts, position)
+        player.seekTo(index, offset)
+    }
     private fun pause() { player.pause() }
 
     private fun togglePlay() {

@@ -21,6 +21,40 @@ class MediaJoinRulesTest {
         assertEquals(3, MediaJoinRules.DEFAULT_PHOTO_SECONDS)
     }
 
+    @Test fun thePreviewPlaysEachPieceAndPhotoAsOneListWithTheSameLength() {
+        val clips = listOf(JoinClip(portraitVideo, listOf(0L..5_000L, 7_000L..12_000L)), JoinClip(photo, photoMs = 2_000L), JoinClip(landscapeVideo))
+        val parts = MediaJoinRules.previewParts(clips, 3_000L, emptyList())
+        assertEquals(listOf(0, 0, 1, 2), parts.map { it.clipIndex })
+        assertEquals(listOf(0L, 7_000L, 0L, 0L), parts.map { it.sourceStartMs })
+        assertEquals(MediaJoinRules.totalMs(clips, 3_000L), parts.sumOf { it.durationMs })
+        // Montage times turn into (item, offset) and back.
+        assertEquals(1 to 2_000L, MediaJoinRules.locate(parts, 7_000L))
+        assertEquals(2 to 500L, MediaJoinRules.locate(parts, 10_500L))
+        assertEquals(10_500L, MediaJoinRules.positionOf(parts, 2, 500L))
+        assertEquals(3 to 8_000L, MediaJoinRules.locate(parts, 99_000L))
+        // With a transition, each side gives half of the overlap and the length stays the same.
+        val dissolve = listOf(JoinTransition.DISSOLVE, JoinTransition.DISSOLVE)
+        assertEquals(MediaJoinRules.totalMs(clips, 3_000L, dissolve),
+            MediaJoinRules.previewParts(clips, 3_000L, dissolve).sumOf { it.durationMs })
+    }
+
+    @Test fun theScissorsKeepOnlyTheMarkedAreaAndAPieceCanBeRemoved() {
+        val whole = JoinClip(portraitVideo)
+        // Area 2 s to 9 s marked: before and after it go.
+        assertEquals(listOf(2_000L..9_000L), MediaJoinRules.keepWindow(whole, 0, 2_000L..9_000L).ranges)
+        // Several cuts on one video: split, then keep part of each piece.
+        val pieces = MediaJoinRules.split(whole, 6_000L)
+        val cut = MediaJoinRules.keepWindow(MediaJoinRules.keepWindow(pieces, 0, 1_000L..4_000L), 1, 8_000L..11_000L)
+        assertEquals(listOf(1_000L..4_000L, 8_000L..11_000L), cut.ranges)
+        // A marked area never leaves its piece or the video.
+        assertEquals(pieces.ranges, MediaJoinRules.keepWindow(pieces, 0, -5_000L..20_000L).ranges)
+        // The lit piece goes; the last piece always stays; photos have no pieces.
+        assertEquals(listOf(8_000L..11_000L), MediaJoinRules.removePart(cut, 0).ranges)
+        assertSame(whole, MediaJoinRules.removePart(whole, 0))
+        val still = JoinClip(photo)
+        assertSame(still, MediaJoinRules.removePart(still, 0))
+    }
+
     @Test fun eachPhotoKeepsItsOwnTime() {
         val clips = listOf(JoinClip(photo), JoinClip(portraitVideo), JoinClip(landscapePhoto))
         // The first photo goes down to 1 s; the other keeps the montage's 3 s.

@@ -170,6 +170,32 @@ object ThemeToneRules {
         return blend(tones[2], accent(seed), 0.25f)
     }
 
+    /**
+     * Colors of an on/off switch drawn on [surface]: [thumbOn, trackOn, thumbOff, trackOff]. On is
+     * the full accent (pushed toward the text color if it is too close to the surface) with a thumb
+     * that stands out on it; off is a clear gray track with a gray thumb. Both thumbs and the on
+     * track keep at least [MIN_SWITCH_CONTRAST] against what surrounds them, so the state reads at
+     * a glance on any theme.
+     */
+    @JvmStatic
+    fun switchColors(surface: Int, accent: Int, text: Int): IntArray {
+        var trackOn = accent
+        var step = 0f
+        while (contrastRatio(trackOn, surface) < MIN_SWITCH_CONTRAST && step < 1f) {
+            step += 0.1f
+            trackOn = blend(accent, text, step)
+        }
+        val thumbOn = listOf(WHITE, SWITCH_DARK_THUMB).maxByOrNull { contrastRatio(it, trackOn) } ?: WHITE
+        val trackOff = blend(surface, text, 0.28f)
+        var thumbOff = blend(text, surface, 0.30f)
+        step = 0.30f
+        while (contrastRatio(thumbOff, surface) < MIN_SWITCH_CONTRAST && step > 0f) {
+            step -= 0.05f
+            thumbOff = blend(text, surface, step)
+        }
+        return intArrayOf(thumbOn, trackOn, thumbOff, trackOff)
+    }
+
     @JvmStatic
     fun blend(first: Int, second: Int, secondAmount: Float): Int {
         val amount = max(0f, min(1f, secondAmount))
@@ -301,4 +327,7 @@ object ThemeToneRules {
     val WHITE = rgb(255, 255, 255)
     private val TEXT_DARK = rgb(245, 247, 250)
     private val TEXT_LIGHT = rgb(18, 18, 18)
+    private val SWITCH_DARK_THUMB = rgb(22, 22, 24)
+    /** Minimum contrast of a switch's parts (WCAG 3:1 for interface components). */
+    const val MIN_SWITCH_CONTRAST = 3.0
 }

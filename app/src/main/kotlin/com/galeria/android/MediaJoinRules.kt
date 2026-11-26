@@ -80,6 +80,9 @@ internal data class JoinSegment(
     val endMs: Long
 )
 
+/** One item of the editor's preview playlist: a kept part of a video or a photo on screen. */
+internal data class JoinPreviewPart(val clipIndex: Int, val media: JoinMedia, val sourceStartMs: Long, val durationMs: Long)
+
 /** What the app writes inside a joined video, so it can be separated later. */
 internal data class JoinRecord(val photoMs: Long, val clips: List<JoinClip>, val transitions: List<JoinTransition> = emptyList())
 
@@ -158,6 +161,44 @@ internal object MediaJoinRules {
             overlapMs(clips, photoMs, transitions, index - 1) / 2 to
                 (overlapMs(clips, photoMs, transitions, index) - overlapMs(clips, photoMs, transitions, index) / 2)
         }
+
+    /**
+     * What the editor's preview plays, in order: each kept part of a video (source start and
+     * length) and each photo (its time on screen), with the cuts of [previewTrims] applied. One
+     * player plays them as a playlist, so a change in the montage only replaces this list.
+     */
+    fun previewParts(clips: List<JoinClip>, photoMs: Long, transitions: List<JoinTransition>): List<JoinPreviewPart> {
+        val trims = previewTrims(clips, photoMs, transitions)
+        return clips.flatMapIndexed { index, clip ->
+            val (head, tail) = trims[index]
+            if (clip.media.isVideo) {
+                if (clip.ranges.isEmpty()) return@flatMapIndexed emptyList()
+                val ranges = clip.ranges.toMutableList()
+                ranges[0] = (ranges[0].first + head)..ranges[0].last
+                ranges[ranges.lastIndex] = ranges.last().first..(ranges.last().last - tail)
+                ranges.filter { it.last > it.first }.map { JoinPreviewPart(index, clip.media, it.first, it.last - it.first) }
+            } else {
+                listOf(JoinPreviewPart(index, clip.media, 0L, (clipDurationMs(clip, photoMs) - head - tail).coerceAtLeast(1L)))
+            }
+        }
+    }
+
+    /** The part playing at [positionMs] of the montage and how far into it. */
+    fun locate(parts: List<JoinPreviewPart>, positionMs: Long): Pair<Int, Long> {
+        var at = 0L
+        parts.forEachIndexed { index, part ->
+            if (positionMs < at + part.durationMs || index == parts.lastIndex) {
+                return index to (positionMs - at).coerceIn(0L, part.durationMs)
+            }
+            at += part.durationMs
+        }
+        return 0 to 0L
+    }
+
+    /** Position in the montage of [offsetMs] into the part at [index]. */
+    fun positionOf(parts: List<JoinPreviewPart>, index: Int, offsetMs: Long): Long =
+        parts.take(index.coerceIn(0, parts.size)).sumOf { it.durationMs } +
+            offsetMs.coerceIn(0L, parts.getOrNull(index)?.durationMs ?: 0L)
 
     /** Clips alternate between two layers, so the two sides of any junction can overlap. */
     fun layerOf(clipIndex: Int): Int = clipIndex % 2
@@ -249,6 +290,22 @@ internal object MediaJoinRules {
             range.first..sourceMs.coerceIn(range.first + MIN_PART_MS, ceiling)
         }
         return clip.copy(ranges = clip.ranges.toMutableList().apply { set(rangeIndex, updated) })
+    }
+
+    /**
+     * The scissors with an area marked on one part of a video: only [window] of that part stays
+     * and the rest of it goes. The window keeps within the part and at least [MIN_PART_MS] long;
+     * the other parts of the video and the other media are untouched.
+     */
+    fun keepWindow(clip: JoinClip, rangeIndex: Int, window: LongRange): JoinClip {
+        if (rangeIndex !in clip.ranges.indices) return clip
+        return trimmed(trimmed(clip, rangeIndex, true, window.first), rangeIndex, false, window.last)
+    }
+
+    /** Removes one part of a video cut in pieces; the last part always stays. */
+    fun removePart(clip: JoinClip, rangeIndex: Int): JoinClip {
+        if (!clip.media.isVideo || clip.ranges.size < 2 || rangeIndex !in clip.ranges.indices) return clip
+        return clip.copy(ranges = clip.ranges.toMutableList().apply { removeAt(rangeIndex) })
     }
 
     /**
