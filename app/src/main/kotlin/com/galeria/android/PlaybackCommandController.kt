@@ -20,12 +20,36 @@ internal class PlaybackCommandController(private val scheduler: Scheduler) {
         fun exactSeek(): () -> Unit
     }
     inner class Channel internal constructor(internal val port: Port) {
+        var selectedRange: LongRange? = null
+            private set
+        fun selectRange(range: LongRange?) {
+            if (current !== this || closed) return
+            selectedRange = range?.let { VideoTimelineRules.selectedRange(it.first, it.last, port.duration) }
+            if (available(this) && scrub == null && selectedRange != null) port.seek(bounded(port.position))
+        }
+        private fun bounded(position: Long): Long = selectedRange?.let {
+            position.coerceIn(it.first, it.last - 1L)
+        } ?: position.coerceIn(0L, port.duration.takeIf { it > 0L } ?: Long.MAX_VALUE)
+
+        /** Called by the UI clock and by the owner's end callback, before it advances or closes. */
+        fun repeatSelection(): Boolean {
+            if (!available(this) || scrub != null) return false
+            val range = selectedRange ?: return false
+            if (!port.playWhenReady) return false
+            val ended = port.ended
+            if (ended || port.position < range.first || port.position >= range.last) {
+                port.seek(range.first)
+                if (ended) port.play()
+            }
+            return true
+        }
         val active: Boolean get() = available(this)
         val desiredPlayback: Boolean get() = if (current === this) lifecyclePlayback ?: scrub?.resume ?: port.playWhenReady else false
         fun play() {
             if (!available(this)) return
             abandonScrub()
-            if (port.ended) port.seek(0L)
+            if (port.ended) port.seek(selectedRange?.first ?: 0L)
+            else if (selectedRange != null) port.seek(bounded(port.position))
             port.play()
         }
         fun pause() {
@@ -36,12 +60,12 @@ internal class PlaybackCommandController(private val scheduler: Scheduler) {
         }
         fun toggle() {
             if (!available(this)) return
-            if (scrub?.resume ?: port.isPlaying) pause() else play()
+            if (scrub?.resume ?: port.playWhenReady) pause() else play()
         }
         fun seek(position: Long) {
             if (!available(this)) return
             abandonScrub()
-            port.seek(position.coerceIn(0L, port.duration.takeIf { it > 0L } ?: Long.MAX_VALUE))
+            port.seek(bounded(position))
         }
         fun seekBy(delta: Long) {
             if (available(this)) seek(DetailPlaybackRules.seekTarget(port.position, delta, port.duration))
@@ -86,7 +110,9 @@ internal class PlaybackCommandController(private val scheduler: Scheduler) {
             val port = channel.port
             abandonScrub(restore = false)
             try {
-                port.seek(if (cancelled) before else position.coerceIn(0L, (port.duration - 1L).coerceAtLeast(0L)))
+                val target = if (cancelled) before else position.coerceIn(0L, (port.duration - 1L).coerceAtLeast(0L))
+                val range = channel.selectedRange
+                port.seek(if (range != null) target.coerceIn(range.first, range.last - 1L) else target)
             } finally { restoreSeek() }
             if (allowResume && resume && available(channel)) port.play()
         }

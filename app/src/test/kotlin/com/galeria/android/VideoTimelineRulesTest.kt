@@ -5,6 +5,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VideoTimelineRulesTest {
+    @Test fun handlesStayOrderedAndRestoringTheEntireVideoClearsTheSelection() {
+        assertEquals(2_000L..8_000L, VideoTimelineRules.selectedRange(2_000, 8_000, 10_000))
+        assertEquals(7_900L..8_000L, VideoTimelineRules.moveRangeEdge(2_000L..8_000L, true, 9_000, 10_000))
+        assertEquals(2_000L..2_100L, VideoTimelineRules.moveRangeEdge(2_000L..8_000L, false, 1_000, 10_000))
+        assertEquals(null, VideoTimelineRules.selectedRange(-1, 20_000, 10_000))
+        assertEquals(null, VideoTimelineRules.moveRangeEdge(0L..8_000L, false, 10_000, 10_000))
+        assertEquals(null, VideoTimelineRules.selectedRange(0, 0, 0))
+        assertEquals(null, VideoTimelineRules.selectedRange(0, 1, 1))
+    }
     @Test fun theStripOpensAsAnOverviewAndTwoPressesReachFrameByFrame() {
         // A one-minute video on a strip about 8 pictures wide: the overview fits it in about one width.
         val overview = VideoTimelineRules.zoomInterval(0, 60_000L, 432, 54f)

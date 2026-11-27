@@ -24,6 +24,101 @@ import java.io.FileOutputStream
 
 @RunWith(AndroidJUnit4::class)
 class MotionPhotoInstrumentedTest {
+    @Test fun inlineTimelineSeeksZoomsAndRepeatsASectionWithoutChangingThePhoto() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val photo = File(context.cacheDir, "motion-timeline-${System.nanoTime()}.jpg")
+        val still = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+        photo.outputStream().use { still.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+        still.recycle()
+        FileOutputStream(photo, true).use { output ->
+            output.write("MotionPhoto_Data".toByteArray())
+            instrumentation.context.assets.open("playback-sample.mp4").use { it.copyTo(output) }
+        }
+        val originalBytes = photo.readBytes()
+        try {
+            ActivityScenario.launch<DetailActivity>(ViewerLaunch.internal(context, Intent(context, DetailActivity::class.java)).apply {
+                putExtra("uri", Uri.fromFile(photo).toString())
+                putExtra("name", photo.name)
+                putExtra("mime", "image/jpeg")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }).use { scenario ->
+                fun inline(activity: DetailActivity) = DetailActivity::class.java.getDeclaredField("inlineMotionPhoto")
+                    .apply { isAccessible = true }.get(activity) as? InlineMotionPhotoPlayer
+                fun await(check: (DetailActivity) -> Boolean) {
+                    val deadline = SystemClock.uptimeMillis() + 15_000L
+                    while (true) {
+                        var done = false
+                        scenario.onActivity { done = check(it) }
+                        if (done) return
+                        assertTrue("O estado da linha do tempo da foto em movimento não chegou", SystemClock.uptimeMillis() < deadline)
+                        SystemClock.sleep(50L)
+                    }
+                }
+                await { it.window.decorView.findViewWithTag<android.view.View>("viewer_motion_photo")?.isShown == true }
+                scenario.onActivity { it.window.decorView.findViewWithTag<android.view.View>("viewer_motion_photo").performClick() }
+                await { inline(it)?.player?.let { p -> p.playbackState == androidx.media3.common.Player.STATE_READY && p.duration > 0L } == true }
+                var firstPlayer: androidx.media3.exoplayer.ExoPlayer? = null
+                var start = 0L
+                var loops = 0
+                scenario.onActivity { activity ->
+                    val player = inline(activity)!!.player!!
+                    firstPlayer = player
+                    inline(activity)!!.commandChannel!!.pause()
+                    val root = activity.window.decorView
+                    assertTrue(root.findViewWithTag<android.view.View>("video_progress").isShown)
+                    assertTrue(root.findViewWithTag<android.view.View>("video_play_pause").isShown)
+                    root.findViewWithTag<android.view.View>("video_timeline_toggle").performClick()
+                    start = (player.duration / 3L).coerceAtLeast(100L)
+                    val strip = root.findViewWithTag<VideoTimelineView>("video_timeline")
+                    strip.update(start, player.duration)
+                    strip.setSelectedRange(start..(start + 500L).coerceAtMost(player.duration))
+                    player.addListener(object : androidx.media3.common.Player.Listener {
+                        override fun onPositionDiscontinuity(oldPosition: androidx.media3.common.Player.PositionInfo,
+                            newPosition: androidx.media3.common.Player.PositionInfo, reason: Int) {
+                            if (reason == androidx.media3.common.Player.DISCONTINUITY_REASON_SEEK && newPosition.positionMs == start) loops++
+                        }
+                    })
+                    root.findViewWithTag<android.view.View>("video_play_pause").performClick()
+                }
+                await { loops >= 2 && it.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline").isShown }
+                scenario.onActivity { activity ->
+                    val root = activity.window.decorView
+                    val strip = root.findViewWithTag<VideoTimelineView>("video_timeline")
+                    assertTrue(strip.performAccessibilityAction(R.id.timeline_zoom, null))
+                    assertEquals(1, strip.zoomLevel)
+                    root.findViewWithTag<android.view.View>("video_play_pause").performClick()
+                    assertTrue(!firstPlayer!!.playWhenReady)
+                    // The common progress control seeks this embedded player, while it stays paused.
+                    val bar = root.findViewWithTag<android.widget.SeekBar>("video_progress")
+                    bar.performAccessibilityAction(android.R.id.accessibilityActionSetProgress, android.os.Bundle().apply {
+                        putFloat(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE,
+                            (start + 200L).toFloat() / firstPlayer!!.duration * bar.max)
+                    })
+                }
+                await { kotlin.math.abs(firstPlayer!!.currentPosition - (start + 200L)) < 100L }
+                scenario.onActivity { activity ->
+                    org.junit.Assert.assertSame(firstPlayer, inline(activity)!!.player)
+                    assertTrue(!firstPlayer!!.playWhenReady)
+                    val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                    strip.performAccessibilityAction(R.id.timeline_range_reset, null)
+                    assertEquals(null, strip.selectedRange)
+                    activity.window.decorView.findViewWithTag<android.view.View>("viewer_motion_photo").performClick()
+                    assertTrue(!activity.window.decorView.findViewWithTag<android.view.View>("video_progress").isShown)
+                }
+                // Stopping an old fade cannot detach the next embedded player.
+                scenario.onActivity { it.window.decorView.findViewWithTag<android.view.View>("viewer_motion_photo").performClick() }
+                await { inline(it)?.player?.playbackState == androidx.media3.common.Player.STATE_READY }
+                scenario.moveToState(Lifecycle.State.CREATED)
+                scenario.onActivity { activity ->
+                    assertEquals(null, inline(activity)?.player)
+                    assertTrue(!activity.window.decorView.findViewWithTag<android.view.View>("video_progress").isShown)
+                }
+            }
+            org.junit.Assert.assertArrayEquals("Repetir e navegar não pode modificar a foto", originalBytes, photo.readBytes())
+        } finally { photo.delete() }
+    }
+
     @Test fun cancelledScanDoesNotPersistAndNegativeDetectionIsReused() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val preferences = context.getSharedPreferences("motion_photo_detection_v1", android.content.Context.MODE_PRIVATE)

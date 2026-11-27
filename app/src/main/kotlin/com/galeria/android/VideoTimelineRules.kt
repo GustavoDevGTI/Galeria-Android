@@ -10,6 +10,24 @@ import kotlin.math.roundToLong
  * of its button brings it closer ([zoomInterval]), down to one frame per cell.
  */
 internal object VideoTimelineRules {
+    /** Range ends are exclusive, like a player's duration. Restoring both edges clears the loop. */
+    fun selectedRange(start: Long, end: Long, duration: Long): LongRange? {
+        if (duration <= 0L) return null
+        val minimum = minOf(100L, duration)
+        val first = start.coerceIn(0L, duration - minimum)
+        val last = end.coerceIn(first + minimum, duration)
+        return (first..last).takeUnless { first == 0L && last == duration }
+    }
+
+    fun moveRangeEdge(range: LongRange?, startEdge: Boolean, target: Long, duration: Long): LongRange? {
+        if (duration <= 0L) return null
+        val first = range?.first ?: 0L
+        val last = range?.last ?: duration
+        val minimum = minOf(100L, duration)
+        return if (startEdge) selectedRange(target.coerceIn(0L, last - minimum), last, duration)
+        else selectedRange(first, target.coerceIn(first + minimum, duration), duration)
+    }
+
     const val FRAME_INTERVAL_MS = 1000L
     /** Closest level: about one frame of a 30 fps video per cell. */
     const val FRAME_BY_FRAME_MS = 33L

@@ -50,9 +50,13 @@ internal class InlineMotionPhotoPlayer(
     private val executor: Executor,
     private val muted: () -> Boolean,
     private val onPlayingChanged: (Boolean) -> Unit,
-    private val onFailed: () -> Unit
+    private val onFailed: () -> Unit,
+    private val onReady: (ExoPlayer, Uri, PlaybackCommandController.Channel) -> Unit
 ) {
     private var session: MotionPhotoPlaybackSession<File, ExoPlayer>? = null
+    private var commands: ExoPlaybackCommands? = null
+    val player: ExoPlayer? get() = session?.player
+    val commandChannel: PlaybackCommandController.Channel? get() = commands?.channel
     private var surface: TextureView? = null
     private var photo: ImageView? = null
     private var follow: ViewTreeObserver.OnPreDrawListener? = null
@@ -83,10 +87,14 @@ internal class InlineMotionPhotoPlayer(
         view.viewTreeObserver.addOnPreDrawListener(listener)
 
         lateinit var created: MotionPhotoPlaybackSession<File, ExoPlayer>
+        // Each fading session keeps its own command authority until it releases its player.
+        val ownedCommands = ExoPlaybackCommands()
+        commands = ownedCommands
         created = MotionPhotoPlaybackSession(
             hostActive = { session === created && !activity.isFinishing && !activity.isDestroyed },
             create = { ExoPlayer.Builder(activity).build() },
             bindAndPrepare = { player, file ->
+                val channel = ownedCommands.bind(player)
                 player.setVideoTextureView(view)
                 player.volume = if (muted()) 0f else 1f
                 player.repeatMode = Player.REPEAT_MODE_OFF
@@ -104,7 +112,8 @@ internal class InlineMotionPhotoPlayer(
                         view.animate().alpha(1f).setDuration(Motion.POPOVER_MS).setInterpolator(Motion.easeOut).start()
                     }
                     override fun onPlaybackStateChanged(state: Int) {
-                        if (state == Player.STATE_ENDED && session === created) stop(animated = true)
+                        if (state == Player.STATE_ENDED && session === created && player.playWhenReady &&
+                            !channel.repeatSelection()) stop(animated = true)
                     }
                     override fun onPlayerError(error: PlaybackException) {
                         if (session !== created) return
@@ -114,13 +123,14 @@ internal class InlineMotionPhotoPlayer(
                 })
                 player.setMediaItem(MediaItem.fromUri(Uri.fromFile(file)))
                 player.prepare()
+                onReady(player, Uri.fromFile(file), channel)
             },
-            play = { it.play() },
-            pause = { it.pause() },
+            play = { ownedCommands.channel?.play() },
+            pause = { ownedCommands.channel?.pause() },
             release = { it.release() },
-            resumeUpdates = {},
-            suspendUpdates = {},
-            unbind = {},
+            resumeUpdates = { ownedCommands.resume() },
+            suspendUpdates = { ownedCommands.suspend() },
+            unbind = { ownedCommands.close() },
             failed = {
                 if (session === created) {
                     stop(animated = false)
@@ -144,6 +154,7 @@ internal class InlineMotionPhotoPlayer(
     fun stop(animated: Boolean) {
         val owned = session ?: return
         session = null
+        commands = null
         val view = surface
         surface = null
         photo = null

@@ -117,7 +117,7 @@ internal class DetailPlaybackController(
                     positionRestored = true
                 }
                 // Reaching the end while paused for a timeline preview is not playback completion.
-                if (playbackState == Player.STATE_ENDED && player.playWhenReady) {
+                if (playbackState == Player.STATE_ENDED && player.playWhenReady && !commandChannel.repeatSelection()) {
                     if (rememberPositionForCurrent) {
                         clearCurrentPosition()
                         commandChannel.pause()

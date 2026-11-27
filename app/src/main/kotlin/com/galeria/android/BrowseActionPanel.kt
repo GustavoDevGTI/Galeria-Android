@@ -1,10 +1,8 @@
 package com.galeria.android
 
-import android.content.ClipData
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.PointF
-import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.RippleDrawable
@@ -47,7 +45,6 @@ internal class BrowseActionPanel(
         bar.onShortcutLongPress = { action, view ->
             if (overlay != null) startDrag(view, DragItem(action.id, fromBar = true)) else false
         }
-        bar.shortcutRow.setOnDragListener { view, event -> onBarDrag(view as LinearLayout, event) }
     }
 
     val isShowing: Boolean get() = overlay != null
@@ -77,7 +74,6 @@ internal class BrowseActionPanel(
         val content = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             tag = "browse_panel_grid"
-            setOnDragListener { view, event -> onPanelDrag(view as LinearLayout, event) }
         }
         grid = content
         card.addView(ScrollView(activity).apply {
@@ -108,10 +104,10 @@ internal class BrowseActionPanel(
 
     fun dismiss() {
         val frame = overlay ?: return
+        cancelDrag()
         overlay = null
         grid = null
         tiles.clear()
-        highlighted = null
         backCallback.isEnabled = false
         // Leaves the way it came in. While it fades it no longer takes touches or answers to its tags.
         (frame as? PanelFrame)?.leaving = true
@@ -180,16 +176,20 @@ internal class BrowseActionPanel(
         alpha = if (action.enabled) 1f else 0.4f
         minimumHeight = dp(88)
         setPadding(dp(4), dp(10), dp(4), dp(8))
-        background = RippleDrawable(
-            ColorStateList.valueOf((Ui.menuText(activity) and 0x00FFFFFF) or 0x22000000),
-            Ui.rounded(if (action.selected) Ui.menuHighlightSurface(activity) else Color.TRANSPARENT, 16, activity),
-            Ui.rounded(Color.WHITE, 16, activity)
-        )
+        // Touch feedback lives on the icon's circle only, never as a box around the whole option.
+        background = null
         addView(ImageView(activity).apply {
+            tag = TILE_ICON_TAG
             setImageResource(action.icon)
             imageTintList = ColorStateList.valueOf(Ui.menuText(activity))
             scaleType = ImageView.ScaleType.CENTER
-            background = Ui.rounded(Ui.menuOptionSurface(activity), 23, activity)
+            background = RippleDrawable(
+                ColorStateList.valueOf((Ui.menuText(activity) and 0x00FFFFFF) or 0x33000000),
+                Ui.rounded(if (action.selected) Ui.menuHighlightSurface(activity) else Ui.menuOptionSurface(activity), 23, activity),
+                Ui.rounded(Color.WHITE, 23, activity)
+            )
+            // Pressing anywhere on the option lights its circle.
+            isDuplicateParentStateEnabled = true
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }, LinearLayout.LayoutParams(dp(46), dp(46)))
         addView(TextView(activity).apply {
@@ -209,77 +209,224 @@ internal class BrowseActionPanel(
         setOnLongClickListener { view -> startDrag(view, DragItem(action.id, fromBar = false)) }
     }
 
+    /**
+     * An option being carried, like an app icon on a phone's home screen: its circle follows the
+     * finger, its place stays empty, and the other options slide into the order it would leave
+     * while it is still held. Letting go settles it in place; letting go outside sends it back.
+     */
+    private inner class Drag(val item: DragItem, val source: View, val picture: android.graphics.drawable.BitmapDrawable) {
+        /** The panel order and the place of each option when the drag started (window coordinates). */
+        val baseIds: List<String> = tiles.keys.toList()
+        val baseRects: Map<String, RectF> = tiles.mapValues { windowRect(it.value) }
+        var finger = PointF()
+        /** Where the option would land in the panel now (index in the panel without it), or null. */
+        var panelIndex: Int? = null
+        var shownPanel: List<String> = baseIds
+    }
+
+    private var drag: Drag? = null
+
     private fun startDrag(view: View, item: DragItem): Boolean {
+        if (drag != null) return false
+        val action = actions().firstOrNull { it.id == item.id } ?: return false
         Haptics.perform(view, Haptics.Effect.TICK)
-        val data = ClipData.newPlainText("browse_action", item.id)
-        val shadow = View.DragShadowBuilder(view)
-        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-            view.startDragAndDrop(data, shadow, item, 0)
-        } else {
-            @Suppress("DEPRECATION") view.startDrag(data, shadow, item, 0)
-        }
+        val root = activity.findViewById<ViewGroup>(android.R.id.content)
+        val picture = android.graphics.drawable.BitmapDrawable(activity.resources, liftedPicture(action))
+        val current = Drag(item, view, picture)
+        drag = current
+        // The touch that started the long press keeps coming to this view: follow it from here.
+        view.isPressed = false
+        view.parent?.requestDisallowInterceptTouchEvent(true)
+        view.setOnTouchListener { touched, event -> followFinger(touched, event) }
+        current.finger = windowRect(view).let { PointF(it.centerX(), it.centerY()) }
+        root.overlay.add(picture)
+        placePicture(current, LIFT_SCALE)
+        // Its place stays empty while it is carried.
+        view.animate().cancel()
+        view.alpha = 0f
+        return true
     }
 
-    private fun onPanelDrag(content: LinearLayout, event: DragEvent): Boolean {
-        val item = event.localState as? DragItem ?: return false
-        when (event.action) {
-            DragEvent.ACTION_DRAG_STARTED -> {
-                tiles[item.id]?.alpha = 0.3f
-                return true
+    /** The option as carried: its icon on a round chip with a soft shadow, nothing around it. */
+    private fun liftedPicture(action: BrowseAction): android.graphics.Bitmap {
+        val chip = dp(52)
+        val margin = dp(8)
+        val size = chip + margin * 2
+        val bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Ui.menuOptionSurface(activity)
+            setShadowLayer(dp(5).toFloat(), 0f, dp(2).toFloat(), 0x55000000)
+        }
+        canvas.drawCircle(size / 2f, size / 2f, chip / 2f, paint)
+        paint.clearShadowLayer()
+        paint.style = android.graphics.Paint.Style.STROKE
+        paint.strokeWidth = dp(1).toFloat()
+        paint.color = Ui.menuBorder(activity)
+        canvas.drawCircle(size / 2f, size / 2f, chip / 2f, paint)
+        activity.getDrawable(action.icon)?.mutate()?.let { icon ->
+            icon.setTint(Ui.menuText(activity))
+            val half = dp(13)
+            icon.setBounds(size / 2 - half, size / 2 - half, size / 2 + half, size / 2 + half)
+            icon.draw(canvas)
+        }
+        return bitmap
+    }
+
+    /** Puts the carried picture under the finger (root coordinates of the screen). */
+    private fun placePicture(current: Drag, scale: Float) {
+        val root = activity.findViewById<ViewGroup>(android.R.id.content)
+        val rootRect = windowRect(root)
+        val half = current.picture.bitmap.width * scale / 2f
+        val x = current.finger.x - rootRect.left
+        val y = current.finger.y - rootRect.top
+        current.picture.setBounds((x - half).toInt(), (y - half).toInt(), (x + half).toInt(), (y + half).toInt())
+    }
+
+    private fun followFinger(view: View, event: android.view.MotionEvent): Boolean {
+        val current = drag ?: return false.also { view.setOnTouchListener(null) }
+        // The event comes in the source view's own coordinates (its slide already undone), and its
+        // window position includes that slide; together they give the finger on the screen.
+        val origin = windowRect(view)
+        current.finger = PointF(origin.left + event.x, origin.top + event.y)
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_MOVE -> {
+                placePicture(current, LIFT_SCALE)
+                reflow(current)
             }
-            DragEvent.ACTION_DRAG_LOCATION -> highlight(tileAt(content, event.x, event.y))
-            DragEvent.ACTION_DRAG_EXITED -> highlight(null)
-            DragEvent.ACTION_DROP -> {
-                highlight(null)
-                val before = tileAt(content, event.x, event.y)?.takeIf { it != item.id }
-                val layout = store.load()
-                val (next, result) = if (item.fromBar) {
-                    BrowseLayoutRules.removeFromBar(layout, item.id, before)
-                } else {
-                    BrowseLayoutRules.movePanel(layout, item.id, before)
-                }
-                apply(next, result, item.id, windowPoint(content, event.x, event.y))
-                return true
-            }
-            DragEvent.ACTION_DRAG_ENDED -> {
-                highlight(null)
-                // Dropped nowhere: the option fades back where it was. A real drop already rebuilt the panel.
-                if (!event.result) tiles[item.id]?.animate()?.alpha(1f)?.setDuration(Motion.EXIT_MS)?.start()
-            }
+            android.view.MotionEvent.ACTION_UP -> drop(current)
+            android.view.MotionEvent.ACTION_CANCEL -> cancelDrag()
         }
         return true
     }
 
-    private fun onBarDrag(row: LinearLayout, event: DragEvent): Boolean {
-        val item = event.localState as? DragItem ?: return false
-        when (event.action) {
-            DragEvent.ACTION_DRAG_STARTED -> {
-                if (overlay == null) return false
-                if (item.fromBar) bar.viewsById()[item.id]?.alpha = 0.3f
-                return true
-            }
-            DragEvent.ACTION_DRAG_ENTERED -> row.background = Ui.rounded(Ui.menuHighlightSurface(activity), 16, activity)
-            DragEvent.ACTION_DRAG_LOCATION -> openRoom(row, item, insertionIndex(row, event.x))
-            DragEvent.ACTION_DRAG_EXITED -> { bar.restyle(); openRoom(row, item, null) }
-            DragEvent.ACTION_DRAG_ENDED -> {
-                bar.restyle()
-                openRoom(row, item, null)
-                if (!event.result) bar.viewsById()[item.id]?.animate()?.alpha(1f)?.setDuration(Motion.EXIT_MS)?.start()
-            }
-            DragEvent.ACTION_DROP -> {
-                bar.restyle()
-                val index = insertionIndex(row, event.x)
-                val layout = store.load()
-                val (next, result) = if (item.fromBar) {
-                    BrowseLayoutRules.moveInBar(layout, item.id, index)
-                } else {
-                    BrowseLayoutRules.addToBar(layout, item.id, index)
-                }
-                apply(next, result, item.id, windowPoint(row, event.x, event.y))
-                return true
-            }
+    /** Where the finger is: over the bar, over the panel, or neither. */
+    private enum class Zone { BAR, PANEL, NONE }
+
+    private fun zoneOf(point: PointF): Zone {
+        val row = bar.shortcutRow
+        if (row.isShown && windowRect(row).apply { inset(0f, -dp(12).toFloat()) }.contains(point.x, point.y)) return Zone.BAR
+        val content = grid ?: return Zone.NONE
+        val card = (content.parent as? View)?.parent as? View ?: content
+        return if (windowRect(card).contains(point.x, point.y)) Zone.PANEL else Zone.NONE
+    }
+
+    /**
+     * Shows, while the option is held, where everything goes: over the bar its buttons open room;
+     * over the panel the options slide so the one under the finger makes way into the empty place.
+     */
+    private fun reflow(current: Drag) {
+        val zone = zoneOf(current.finger)
+        val row = bar.shortcutRow
+        openRoom(row, current.item, if (zone == Zone.BAR) insertionIndex(row, windowToView(row, current.finger)) else null)
+        val others = current.baseIds - current.item.id
+        current.panelIndex = if (zone == Zone.PANEL) nearestSlot(current, others.size + 1) else null
+        val order = when {
+            current.panelIndex != null -> others.toMutableList().apply { add(current.panelIndex!!, current.item.id) }
+            // Carried over the bar, a panel option leaves its place: the others close the gap.
+            zone == Zone.BAR && !current.item.fromBar -> others
+            else -> current.baseIds
         }
-        return true
+        if (order == current.shownPanel) return
+        current.shownPanel = order
+        Haptics.perform(row, Haptics.Effect.TICK)
+        tiles.forEach { (id, tile) ->
+            if (id == current.item.id) return@forEach
+            val slot = order.indexOf(id)
+            val from = current.baseRects[id] ?: return@forEach
+            val to = slotRect(current, slot) ?: from
+            tile.animate().translationX(to.left - from.left).translationY(to.top - from.top)
+                .setDuration(if (Motion.movementEnabled()) ROOM_MS else 0L).setInterpolator(Motion.easeOut).start()
+        }
+    }
+
+    /** The panel place nearest the finger, among [count] places. */
+    private fun nearestSlot(current: Drag, count: Int): Int {
+        var best = 0
+        var bestDistance = Float.MAX_VALUE
+        for (index in 0 until count) {
+            val rect = slotRect(current, index) ?: continue
+            val dx = rect.centerX() - current.finger.x
+            val dy = rect.centerY() - current.finger.y
+            val distance = dx * dx + dy * dy
+            if (distance < bestDistance) { bestDistance = distance; best = index }
+        }
+        return best
+    }
+
+    /**
+     * The place of the [index]-th option in the panel grid, from where the options were laid out
+     * (four per row); a place past the last one continues the grid.
+     */
+    private fun slotRect(current: Drag, index: Int): RectF? {
+        val rects = current.baseIds.mapNotNull { current.baseRects[it] }
+        if (index < 0 || rects.isEmpty()) return null
+        rects.getOrNull(index)?.let { return it }
+        val first = rects[0]
+        val columnRect = rects.getOrNull(index % COLUMNS) ?: RectF(first).apply {
+            val step = (rects.getOrNull(1)?.left ?: (first.right + dp(6))) - first.left
+            offset(step * (index % COLUMNS), 0f)
+        }
+        val rowStep = (rects.getOrNull(COLUMNS)?.top ?: (first.bottom + dp(6))) - first.top
+        return RectF(columnRect).apply { offsetTo(columnRect.left, first.top + rowStep * (index / COLUMNS)) }
+    }
+
+    private fun windowToView(view: View, point: PointF): Float = point.x - windowRect(view).left
+
+    /** Lets go: the option lands where the reflow showed, or goes back if held outside both. */
+    private fun drop(current: Drag) {
+        val zone = zoneOf(current.finger)
+        val item = current.item
+        val layout = store.load()
+        val change = when (zone) {
+            Zone.BAR -> {
+                val index = insertionIndex(bar.shortcutRow, windowToView(bar.shortcutRow, current.finger))
+                if (item.fromBar) BrowseLayoutRules.moveInBar(layout, item.id, index) else BrowseLayoutRules.addToBar(layout, item.id, index)
+            }
+            Zone.PANEL -> {
+                val others = current.baseIds - item.id
+                val before = current.panelIndex?.let { others.getOrNull(it) }
+                if (item.fromBar) BrowseLayoutRules.removeFromBar(layout, item.id, before) else BrowseLayoutRules.movePanel(layout, item.id, before)
+            }
+            Zone.NONE -> null
+        }
+        if (change == null) { cancelDrag(); return }
+        endDrag(current, keepPicture = false)
+        apply(change.first, change.second, item.id, current.finger)
+    }
+
+    /** Back where it came from: the picture glides home and every option returns to its place. */
+    private fun cancelDrag() {
+        val current = drag ?: return
+        endDrag(current, keepPicture = true)
+        openRoom(bar.shortcutRow, current.item, null)
+        tiles.values.forEach { it.animate().translationX(0f).translationY(0f).setDuration(ROOM_MS).setInterpolator(Motion.easeOut).start() }
+        val home = windowRect(current.source)
+        val root = activity.findViewById<ViewGroup>(android.R.id.content)
+        val start = current.finger
+        android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = if (Motion.movementEnabled()) GLIDE_MS else 0L
+            interpolator = Motion.easeOut
+            addUpdateListener {
+                val f = it.animatedValue as Float
+                current.finger = PointF(start.x + (home.centerX() - start.x) * f, start.y + (home.centerY() - start.y) * f)
+                placePicture(current, LIFT_SCALE + (1f - LIFT_SCALE) * f)
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    root.overlay.remove(current.picture)
+                    current.source.animate().alpha(1f).setDuration(Motion.EXIT_MS).start()
+                }
+            })
+            start()
+        }
+    }
+
+    private fun endDrag(current: Drag, keepPicture: Boolean) {
+        drag = null
+        current.source.setOnTouchListener(null)
+        current.source.parent?.requestDisallowInterceptTouchEvent(false)
+        if (!keepPicture) activity.findViewById<ViewGroup>(android.R.id.content).overlay.remove(current.picture)
     }
 
     /** How many shortcuts sit left of the finger; never after the fixed Menu button. */
@@ -316,11 +463,6 @@ internal class BrowseActionPanel(
             view.animate().translationX(target).setDuration(if (Motion.movementEnabled()) ROOM_MS else 0L)
                 .setInterpolator(Motion.easeOut).start()
         }
-    }
-
-    private fun windowPoint(view: View, x: Float, y: Float): PointF {
-        val location = IntArray(2).also(view::getLocationInWindow)
-        return PointF(location[0] + x, location[1] + y)
     }
 
     private fun apply(layout: BrowseLayoutRules.Layout, result: BrowseLayoutRules.Result,
@@ -421,37 +563,14 @@ internal class BrowseActionPanel(
     private class Glide(val view: View, val alpha: Float, val drawable: android.graphics.drawable.BitmapDrawable,
         val from: RectF, val to: RectF, val dropped: Boolean)
 
-    private var highlighted: String? = null
-
-    private fun highlight(id: String?) {
-        if (highlighted == id) return
-        highlighted?.let { tiles[it]?.let { tile -> tile.isActivated = false; scaleTile(tile, 1f) } }
-        highlighted = id
-        id?.let { tiles[it]?.let { tile -> scaleTile(tile, 1.06f) } }
-    }
-
-    /** The drop target grows a little under the finger, quickly enough to follow it. */
-    private fun scaleTile(tile: View, scale: Float) {
-        tile.animate().cancel()
-        if (!Motion.movementEnabled()) { tile.scaleX = scale; tile.scaleY = scale; return }
-        tile.animate().scaleX(scale).scaleY(scale).setDuration(120L).setInterpolator(Motion.easeOut).start()
-    }
-
-    private fun tileAt(content: LinearLayout, x: Float, y: Float): String? {
-        val rect = Rect()
-        for ((id, tile) in tiles) {
-            tile.getDrawingRect(rect)
-            content.offsetDescendantRectToMyCoords(tile, rect)
-            if (rect.contains(x.toInt(), y.toInt())) return id
-        }
-        return null
-    }
-
     private fun dp(value: Int) = Ui.dp(activity, value)
 
     private companion object {
         const val COLUMNS = 4
         const val ENTER_MS = 200L
+        /** The carried option a little bigger than at rest, as if lifted by the finger. */
+        const val LIFT_SCALE = 1.12f
+        const val TILE_ICON_TAG = "browse_panel_icon"
         /** The buttons sliding apart under the finger. */
         const val ROOM_MS = 160L
         /** A button travelling to its new place after the drop. */

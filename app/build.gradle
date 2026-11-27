@@ -35,8 +35,8 @@ android {
         applicationId = "com.galeria.android"
         minSdk 23
         targetSdk 37
-        versionCode = 9027
-        versionName = "0.9.27"
+        versionCode = 9028
+        versionName = "0.9.28"
         testInstrumentationRunner providers.gradleProperty("ocrReleaseSmoke").orNull == "true"
             ? "com.galeria.android.OcrReleaseSmokeRunner" : "com.galeria.android.GalleryTestRunner"
     }

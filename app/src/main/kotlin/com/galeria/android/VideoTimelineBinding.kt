@@ -1,11 +1,15 @@
 package com.galeria.android
 
 import android.net.Uri
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.widget.SeekBar
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 
 /** UI adapter: reports gestures through its owner's command channel; only reads
@@ -20,15 +24,19 @@ internal class VideoTimelineBinding(private val view: VideoTimelineView) {
     private var progressBar: SeekBar? = null
     private var progressTracking = false
     private var progressPosition = 0L
+    private var playbackPrepared = false
     var onPosition: ((Long, Long) -> Unit)? = null
     var onScrubbing: ((Boolean) -> Unit)? = null
+    var onOpenRequested: (() -> Unit)? = null
     val scrubPositionMs: Long?
         get() = if (view.isScrubbing) view.positionMs else if (progressTracking) progressPosition else null
     private val tick = object : Runnable {
         override fun run() {
             val current = player ?: return
+            commands?.repeatSelection()
             val duration = current.duration.coerceAtLeast(0L)
-            view.update(if (progressTracking) progressPosition else current.currentPosition, duration)
+            if (current.playbackState == Player.STATE_READY) playbackPrepared = true
+            view.update(if (progressTracking) progressPosition else current.currentPosition, duration, playbackPrepared)
             val position = if (view.isScrubbing) view.positionMs else if (progressTracking) progressPosition else current.currentPosition
             if (!progressTracking) {
                 progressBar?.apply {
@@ -37,7 +45,7 @@ internal class VideoTimelineBinding(private val view: VideoTimelineView) {
                 }
             }
             onPosition?.invoke(position, duration)
-            handler.postDelayed(this, 100L)
+            handler.postDelayed(this, if (commands?.selectedRange != null) 33L else 100L)
         }
     }
 
@@ -45,6 +53,7 @@ internal class VideoTimelineBinding(private val view: VideoTimelineView) {
         view.onScrubStart = { beginSeek() }
         view.onScrubMove = { moveSeek(it) }
         view.onScrubStop = { position, cancelled -> finishSeek(position, cancelled) }
+        view.onRangeChanged = { commands?.selectRange(it) }
     }
 
     /** The simple playback bar remains available even when the filmstrip is closed. */
@@ -52,6 +61,7 @@ internal class VideoTimelineBinding(private val view: VideoTimelineView) {
         progressBar = bar
         bar.max = 100_000
         bar.isEnabled = false
+        bar.setOnClickListener { if (!suspended) onOpenRequested?.invoke() }
         bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onStartTrackingTouch(seekBar: SeekBar) {
                 if (suspended) return
@@ -103,6 +113,7 @@ internal class VideoTimelineBinding(private val view: VideoTimelineView) {
         unbind()
         this.player = player
         this.commands = commands
+        playbackPrepared = false
         suspended = false
         view.setSource(uri, revision)
         view.setPreparationEnabled(true)
@@ -126,8 +137,30 @@ internal class VideoTimelineBinding(private val view: VideoTimelineView) {
 
     fun unbind() {
         suspend()
+        commands?.selectRange(null)
         player = null
         commands = null
         view.setSource(null)
     }
+}
+
+/** Keeps the framework seeking gesture, and exposes a tap as a normal accessible click. */
+internal class TimelineSeekBar(context: Context) : androidx.appcompat.widget.AppCompatSeekBar(context) {
+    private var downX = 0f
+    private var downY = 0f
+    private var dragged = false
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { downX = event.x; downY = event.y; dragged = false }
+            MotionEvent.ACTION_MOVE -> {
+                val slop = ViewConfiguration.get(context).scaledTouchSlop
+                if (kotlin.math.abs(event.x - downX) > slop || kotlin.math.abs(event.y - downY) > slop) dragged = true
+            }
+            MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_DOWN -> dragged = true
+        }
+        val handled = super.onTouchEvent(event)
+        if (handled && event.actionMasked == MotionEvent.ACTION_UP && !dragged) performClick()
+        return handled
+    }
+    override fun performClick(): Boolean { super.performClick(); return true }
 }

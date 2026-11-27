@@ -35,7 +35,7 @@
     <string name="organizer_close_reserve">Recoger reserva</string>
     <string name="organizer_send_to">Enviar a %1$s</string>
     <string name="loading_in_progress">Cargando</string>
-    <string name="video_timeline_description">Línea de tiempo del vídeo. Desliza las miniaturas para navegar segundo a segundo.</string>
+    <string name="video_timeline_description">Línea de tiempo. Toca para acercar, desliza para navegar o arrastra las asas para repetir un fragmento.</string>
     <string name="video_timeline_show">Mostrar línea de tiempo</string>
     <string name="video_timeline_hide">Cerrar línea de tiempo</string>
     <string name="video_timeline_closer">Acercar la línea de tiempo</string>
@@ -773,4 +773,7 @@
         <item quantity="many">%1$d medios esperan tu confirmación</item>
         <item quantity="other">%1$d medios esperan tu confirmación</item>
     </plurals>
+    <string name="timeline_range_start">Iniciar fragmento aquí</string>
+    <string name="timeline_range_end">Terminar fragmento aquí</string>
+    <string name="timeline_range_reset">Reproducir vídeo completo</string>
 </resources>

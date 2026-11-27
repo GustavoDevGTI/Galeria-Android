@@ -4,19 +4,66 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlaybackCommandControllerTest {
+    @Test fun togglePausesThePlaybackIntentEvenWhileARepeatedSectionIsBuffering() {
+        val f = Fixture()
+        f.channel.selectRange(3_000L..6_000L)
+        f.port.buffering = true
+        assertFalse(f.port.isPlaying)
+        assertTrue(f.port.playWhenReady)
+        f.channel.toggle()
+        assertFalse("O clique deve pausar também durante a busca do próximo loop", f.port.playWhenReady)
+        f.port.at = 7_000L
+        assertFalse(f.channel.repeatSelection())
+        assertEquals(7_000L, f.port.at)
+    }
+    @Test fun markedSectionLoopsAndAllPlaybackCommandsRespectItsBounds() {
+        val f = Fixture()
+        f.channel.selectRange(3_000L..6_000L)
+        assertEquals(3_000L, f.port.at)
+        f.channel.seek(9_000); assertEquals(5_999L, f.port.at)
+        f.channel.seekProgress(0); assertEquals(3_000L, f.port.at)
+        f.channel.beginScrub()!!.finish(7_000L, false)
+        assertEquals(5_999L, f.port.at)
+        f.port.at = 6_020L
+        assertTrue(f.channel.repeatSelection()); assertEquals(3_000L, f.port.at)
+        f.port.at = 10_000; f.port.completed = true
+        assertTrue(f.channel.repeatSelection()); assertEquals(3_000L, f.port.at)
+        assertTrue(f.port.playing)
+        f.channel.selectRange(null)
+        assertFalse(f.channel.repeatSelection())
+        f.channel.seek(9_000); assertEquals(9_000L, f.port.at)
+    }
+
+    @Test fun pausedPreviewAndBackgroundCannotBeRestartedByASelectedSection() {
+        val f = Fixture(); f.channel.selectRange(3_000L..6_000L)
+        f.channel.pause(); f.port.at = 7_000
+        assertFalse(f.channel.repeatSelection()); assertEquals(7_000L, f.port.at)
+        f.channel.play(); assertEquals(5_999L, f.port.at)
+        val gesture = f.channel.beginScrub()!!
+        f.port.at = 7_000; assertFalse(f.channel.repeatSelection())
+        gesture.finish(4_000, false)
+        f.authority.suspend(); val before = f.port.events.toList()
+        assertFalse(f.channel.repeatSelection()); assertEquals(before, f.port.events)
+        f.authority.resume(true); assertEquals(3_000L..6_000L, f.channel.selectedRange)
+        f.authority.bind(Port()); f.port.released = true
+        assertFalse(f.channel.repeatSelection())
+        f.channel.selectRange(0L..5_000L)
+        assertNull(f.authority.bind(Port()).selectedRange)
+    }
     private class Port : PlaybackCommandController.Port {
         var released = false
         private fun checkAlive() { check(!released) { "Access to released player" } }
         var at = 2_000L
         var length = 10_000L
         var playing = true
+        var buffering = false
         var completed = false
         var exact = false
         var restores = 0
         val events = arrayListOf<String>()
         override val position get() = at.also { checkAlive() }
         override val duration get() = length.also { checkAlive() }
-        override val isPlaying get() = playing.also { checkAlive() }
+        override val isPlaying get() = (playing && !buffering).also { checkAlive() }
         override val playWhenReady get() = playing.also { checkAlive() }
         override val ended get() = completed.also { checkAlive() }
         override fun play() { checkAlive(); playing = true; events.add("play") }

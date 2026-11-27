@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <item name="timeline_range_start" type="id" />
+    <item name="timeline_range_end" type="id" />
+    <item name="timeline_range_reset" type="id" />
+    <item name="timeline_zoom" type="id" />
     <item name="join_add" type="id" />
     <item name="join_transition" type="id" />
     <item name="join_remove" type="id" />

@@ -47,6 +47,7 @@ internal class GalleryBrowseBar(
                 isSelected = action.selected
                 setOnLongClickListener { view -> onShortcutLongPress?.invoke(action, view) == true }
                 Ui.addSelectionActionToDock(dock, this)
+                circleFeedback(this)
             }
         }
         menu?.let { action ->
@@ -80,5 +81,21 @@ internal class GalleryBrowseBar(
     fun restyle() {
         setBackgroundColor(Ui.surface(context))
         Ui.restyleSelectionActionDock(dock)
+        viewsById().forEach { (id, view) -> if (id != MENU_ID) circleFeedback(view) }
+    }
+
+    /**
+     * A shortcut lights a circle around its icon when pressed or held, instead of a box around
+     * the whole button: the touch area reads as round and delimited.
+     */
+    private fun circleFeedback(button: View) {
+        val group = button as? ViewGroup ?: return
+        val icon = (0 until group.childCount).map(group::getChildAt).firstOrNull { it is android.widget.ImageView } ?: return
+        val color = (Ui.text(context) and 0x00FFFFFF) or 0x24000000
+        button.background = null
+        // A borderless ripple: a circle centred on the icon, a little larger than it.
+        icon.background = android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(color), null, null)
+            .apply { radius = Ui.dp(context, 22) }
+        icon.isDuplicateParentStateEnabled = true
     }
 }

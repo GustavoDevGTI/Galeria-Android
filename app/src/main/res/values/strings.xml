@@ -31,7 +31,7 @@
     <string name="organizer_close_reserve">Collapse reserve</string>
     <string name="organizer_send_to">Send to %1$s</string>
     <string name="loading_in_progress">Loading</string>
-    <string name="video_timeline_description">Video timeline. Swipe the thumbnails to move second by second.</string>
+    <string name="video_timeline_description">Timeline. Tap to zoom, swipe to seek, or drag the handles to repeat a section.</string>
     <string name="video_timeline_show">Show timeline</string>
     <string name="video_timeline_hide">Close timeline</string>
     <string name="video_timeline_closer">Zoom into timeline</string>
@@ -832,4 +832,7 @@
         <item quantity="one">%1$d media waits for your confirmation</item>
         <item quantity="other">%1$d media wait for your confirmation</item>
     </plurals>
+    <string name="timeline_range_start">Start section here</string>
+    <string name="timeline_range_end">End section here</string>
+    <string name="timeline_range_reset">Play entire video</string>
 </resources>

@@ -639,9 +639,13 @@ class DetailActivity : ComponentActivity() {
         durationTime = timeLabel("00:00")
         videoTimeline = VideoTimelineView(this)
         timelineBinding = VideoTimelineBinding(videoTimeline).apply {
+            onOpenRequested = {
+                if (!timelineExpanded) { timelineExpanded = true; updateTimelineVisibility() }
+            }
             onPosition = { position, duration ->
                 currentTime.text = formatTime(position)
                 durationTime.text = formatTime(duration)
+                if (motionTimelineBound) updatePlayPauseButton()
             }
             onScrubbing = { active ->
                 if (active) handler.removeCallbacks(autoAdvanceRunnable)
@@ -653,7 +657,7 @@ class DetailActivity : ComponentActivity() {
             gravity = Gravity.CENTER
             background = Ui.actionFeedback(this@DetailActivity, Color.WHITE)
             setOnClickListener {
-                playbackController.setSpeed(DetailPlaybackRules.nextQuickSpeed(playbackSpeed))
+                setViewerSpeed(DetailPlaybackRules.nextQuickSpeed(playbackSpeed))
                 Haptics.perform(this, Haptics.Effect.TICK)
                 updateSpeedButton()
             }
@@ -678,7 +682,7 @@ class DetailActivity : ComponentActivity() {
         }
         videoControls.addView(speedRegion, LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1f))
         videoProgressRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        val progressBar = SeekBar(this).apply {
+        val progressBar = TimelineSeekBar(this).apply {
             tag = "video_progress"
             contentDescription = getString(R.string.video_progress_description)
             progressTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
@@ -742,6 +746,7 @@ class DetailActivity : ComponentActivity() {
                 Ui.toast(this, getString(R.string.video_timeline_load_failed))
             }
         }
+        videoTimeline.onZoomLevelChanged = { timelineButton.contentDescription = getString(timelineButtonLabel()) }
         videoTimeline.visibility = View.GONE
         bottomBar.addView(videoTimeline, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 58)))
 
@@ -1578,6 +1583,7 @@ class DetailActivity : ComponentActivity() {
         timelineRow.visibility = View.VISIBLE
         videoProgressRow.visibility = View.VISIBLE
         updateTimelineVisibility()
+        videoProgressRow.findViewWithTag<View>("video_picture_in_picture")?.visibility = View.VISIBLE
         soundButton.visibility = View.VISIBLE
         cinemaButton.visibility = View.VISIBLE
         updateCinemaButton()
@@ -1804,6 +1810,7 @@ class DetailActivity : ComponentActivity() {
 
     // Plays the clip on the photo itself; created on first use.
     private var inlineMotionPhoto: InlineMotionPhotoPlayer? = null
+    private var motionTimelineBound = false
 
     private fun clearMotionPhoto() {
         inlineMotionPhoto?.stop(animated = false)
@@ -1813,7 +1820,23 @@ class DetailActivity : ComponentActivity() {
     /** The footer button plays the clip in place, or stops it when it is already playing. */
     private fun toggleInlineMotionPhoto() {
         val player = inlineMotionPhoto ?: InlineMotionPhotoPlayer(this, motionPhotoExecutor, { videoMuted },
-            ::showMotionPhotoPlaying) { Ui.toast(this, getString(R.string.motion_photo_error)) }.also { inlineMotionPhoto = it }
+            ::showMotionPhotoPlaying,
+            onFailed = { Ui.toast(this, getString(R.string.motion_photo_error)) },
+            onReady = { prepared, uri, commands ->
+                motionTimelineBound = true
+                prepared.playbackParameters = androidx.media3.common.PlaybackParameters(playbackSpeed)
+                timelineBinding.bind(prepared, uri, commands)
+                videoControls.visibility = View.VISIBLE
+                timelineRow.visibility = View.VISIBLE
+                videoProgressRow.visibility = View.VISIBLE
+                soundButton.visibility = View.VISIBLE
+                videoProgressRow.findViewWithTag<View>("video_picture_in_picture")?.visibility = View.GONE
+                timelineExpanded = false
+                updateTimelineVisibility()
+                updateSoundButton()
+                updateSpeedButton()
+                updatePlayPauseButton()
+            }).also { inlineMotionPhoto = it }
         if (player.isPlaying) { player.stop(animated = true); return }
         val item = currentItem()
         val clip = motionPhotoController.clipFor(motionPhotoSource(item)) ?: return
@@ -1823,6 +1846,16 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun showMotionPhotoPlaying(playing: Boolean) {
+        if (!playing && motionTimelineBound) {
+            motionTimelineBound = false
+            timelineBinding.unbind()
+            timelineExpanded = false
+            updateTimelineVisibility()
+            videoControls.visibility = View.GONE
+            timelineRow.visibility = View.GONE
+            videoProgressRow.visibility = View.GONE
+            soundButton.visibility = View.GONE
+        }
         if (!::motionPhotoButton.isInitialized) return
         motionPhotoButton.isActivated = playing
         motionPhotoButton.setImageResource(if (playing) R.drawable.ic_pause else R.drawable.ic_motion_photo)
@@ -1875,8 +1908,9 @@ class DetailActivity : ComponentActivity() {
         } else null
 
     private fun toggleVideoSound() {
-        if (!currentItem().isVideo()) return
+        if (!currentItem().isVideo() && !motionTimelineBound) return
         playbackController.toggleMuted()
+        inlineMotionPhoto?.player?.volume = if (videoMuted) 0f else 1f
         Haptics.perform(this, Haptics.toggle(!videoMuted))
         updateSoundButton()
     }
@@ -2401,16 +2435,17 @@ class DetailActivity : ComponentActivity() {
     }
 
     private fun togglePlayback() {
-        playbackController.togglePlayback()
+        if (motionTimelineBound) inlineMotionPhoto?.commandChannel?.toggle() else playbackController.togglePlayback()
         updatePlayPauseButton()
     }
 
     internal fun updatePlayPauseButton() {
         if (::playPauseButton.isInitialized) {
+            val playing = if (motionTimelineBound) inlineMotionPhoto?.commandChannel?.desiredPlayback == true else playbackController.isPlaying()
             playPauseButton.setImageResource(
-                if (playbackController.isPlaying()) R.drawable.ic_pause else R.drawable.ic_play
+                if (playing) R.drawable.ic_pause else R.drawable.ic_play
             )
-            playPauseButton.contentDescription = getString(if (playbackController.isPlaying()) R.string.video_pause else R.string.video_play)
+            playPauseButton.contentDescription = getString(if (playing) R.string.video_pause else R.string.video_play)
         }
     }
 
@@ -2490,12 +2525,17 @@ class DetailActivity : ComponentActivity() {
             textSize = 14f
             setBackgroundColor(if (abs(playbackSpeed - speed) < 0.01f) 0x55FFFFFF else Color.TRANSPARENT)
             setOnClickListener {
-                playbackController.setSpeed(speed)
+                setViewerSpeed(speed)
                 updateSpeedButton()
                 speedPopup?.dismiss()
             }
         }
         panel.addView(option, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 38)))
+    }
+
+    private fun setViewerSpeed(speed: Float) {
+        playbackController.setSpeed(speed)
+        inlineMotionPhoto?.player?.playbackParameters = androidx.media3.common.PlaybackParameters(speed)
     }
 
     private fun updateSpeedButton() {

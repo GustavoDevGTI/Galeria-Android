@@ -628,22 +628,12 @@ class MediaRecyclerAdapter(
             isClickable = true
             isFocusable = true
         }
-        thumb.addView(preview, FrameLayout.LayoutParams(Ui.dp(context, OVERLAY_ACTION_DP), Ui.dp(context, OVERLAY_ACTION_DP), Gravity.BOTTOM or Gravity.END).apply {
-            marginEnd = Ui.dp(context, PREVIEW_MARGIN_DP)
+        // Bottom left on every thumbnail: the same place everywhere, far from the fast scroller on
+        // the right edge, so a tap meant for it never scrolls.
+        thumb.addView(preview, FrameLayout.LayoutParams(Ui.dp(context, OVERLAY_ACTION_DP), Ui.dp(context, OVERLAY_ACTION_DP), Gravity.BOTTOM or Gravity.START).apply {
+            marginStart = Ui.dp(context, PREVIEW_MARGIN_DP)
             bottomMargin = Ui.dp(context, PREVIEW_MARGIN_DP)
         })
-        // The fast scroller takes a strip along the right edge of the grid; on the media touching
-        // that edge the button moves left of the strip, so a tap meant for it never scrolls.
-        if (!asList && !horizontal) item.addOnLayoutChangeListener { view, _, _, right, _, _, _, _, _ ->
-            val grid = view.parent as? View ?: return@addOnLayoutChangeListener
-            val atEdge = right > grid.width - Ui.dp(context, FAST_SCROLL_STRIP_DP)
-            val params = preview.layoutParams as FrameLayout.LayoutParams
-            val wanted = Ui.dp(context, if (atEdge) FAST_SCROLL_STRIP_DP else PREVIEW_MARGIN_DP)
-            if (params.marginEnd != wanted) {
-                params.marginEnd = wanted
-                preview.post { preview.layoutParams = params }
-            }
-        }
         // The 48-hour clock of a media used in a join; tapping it keeps the media.
         val clock = ClockBadge.create(context, 10f, 12, OVERLAY_CHECK_DP)
         thumb.addView(clock, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, Ui.dp(context, OVERLAY_CHECK_DP), Gravity.TOP or Gravity.END).apply {
@@ -768,6 +758,11 @@ class MediaRecyclerAdapter(
         holder.itemView.translationZ = if (selected) -Ui.dp(context, 2).toFloat() else 0f
         holder.check.visibility = if (selectionMode || selected) View.VISIBLE else View.GONE
         holder.preview.visibility = if (selectionMode) View.VISIBLE else View.GONE
+        // While choosing, the file name starts after the expand button in the bottom left corner.
+        holder.itemView.findViewWithTag<View>(TAG_MEDIA_METADATA_ROW)?.let { row ->
+            val start = Ui.dp(context, if (selectionMode) OVERLAY_ACTION_DP + PREVIEW_MARGIN_DP + 4 else 6)
+            if (row.paddingStart != start) row.setPaddingRelative(start, row.paddingTop, row.paddingEnd, row.paddingBottom)
+        }
         holder.check.text = if (selected) "\u2713" else ""
         holder.check.setTextColor(if (selected) Ui.bg(context) else Color.WHITE)
         holder.check.background = GradientDrawable().apply {
@@ -954,8 +949,6 @@ class MediaRecyclerAdapter(
         const val OVERLAY_ACTION_DP = 24
         const val TAG_MEDIA_PREVIEW = "media_preview_button"
         private const val PREVIEW_MARGIN_DP = 5
-        /** Width the album's fast scroller takes on the right (28 dp plus its 2 dp margin) and a little more. */
-        const val FAST_SCROLL_STRIP_DP = 34
         const val PAYLOAD_SELECTION = "selection"
         const val PAYLOAD_THUMBNAIL_SIZE = "thumbnail_size"
         const val PAYLOAD_POSITION = "position"

@@ -105,8 +105,50 @@ class BrowseActionPanelInstrumentedTest {
         }
     }
 
+    @Test fun aHeldOptionTravelsWithTheFingerAndTheOthersMakeWayBeforeItIsLetGo() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            onView(withContentDescription(R.string.action_menu)).perform(click())
+            onView(withTagValue(`is`("browse_panel_theme"))).check(matches(isDisplayed()))
+            // Touch feedback is the icon's circle, not a box around the whole option.
+            scenario.onActivity { activity ->
+                val tile = activity.window.decorView.findViewWithTag<View>("browse_panel_theme")
+                assertEquals(null, tile.background)
+                assertTrue(tile.findViewWithTag<View>("browse_panel_icon").background is android.graphics.drawable.RippleDrawable)
+            }
+            var whileHeld = ""
+            onView(isRoot()).perform(dragBetween("browse_panel_theme", "browse_panel_filter", toLeftHalf = false) { root ->
+                // Still held over "Filtrar": the carried option left its place empty and the
+                // options before it already slid one place on.
+                val theme = root.findViewWithTag<View>("browse_panel_theme")
+                val filter = root.findViewWithTag<View>("browse_panel_filter")
+                whileHeld = "origem alpha=${theme.alpha} filtro deslocado=${filter.translationX},${filter.translationY}"
+            })
+            assertTrue("Enquanto segura: $whileHeld", whileHeld.startsWith("origem alpha=0.0") &&
+                !whileHeld.endsWith("deslocado=0.0,0.0"))
+            // Let go: "Tema" took the first place for good.
+            scenario.onActivity { activity ->
+                val grid = activity.window.decorView.findViewWithTag<android.view.ViewGroup>("browse_panel_grid")
+                assertEquals("browse_panel_theme", (grid.getChildAt(0) as android.view.ViewGroup).getChildAt(0).tag)
+            }
+            val saved = BrowseLayoutRules.Layout(
+                BrowseLayoutRules.parse(prefs.getString("browse_bar_main", null)).orEmpty(),
+                BrowseLayoutRules.parse(prefs.getString("browse_order_main", null)).orEmpty())
+            assertEquals("theme", BrowseLayoutRules.panel(saved, MainBrowseLayout.defaultOrder.toSet()).first())
+            assertEquals(MainBrowseLayout.defaultOrder.toSet(), saved.order.toSet())
+        }
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            onView(withContentDescription(R.string.action_menu)).perform(click())
+            scenario.onActivity { activity ->
+                val grid = activity.window.decorView.findViewWithTag<android.view.ViewGroup>("browse_panel_grid")
+                assertEquals("A ordem do painel deve sobreviver à reabertura", "browse_panel_theme",
+                    (grid.getChildAt(0) as android.view.ViewGroup).getChildAt(0).tag)
+            }
+        }
+    }
+
     /** Holds the first view past the long-press timeout, drags it onto the second and lets go. */
-    private fun dragBetween(fromTag: String, toTag: String, toLeftHalf: Boolean): ViewAction = object : ViewAction {
+    private fun dragBetween(fromTag: String, toTag: String, toLeftHalf: Boolean,
+        beforeRelease: (View) -> Unit = {}): ViewAction = object : ViewAction {
         override fun getConstraints(): Matcher<View> = isRoot()
         override fun getDescription(): String = "arrastar $fromTag até $toTag"
         override fun perform(uiController: UiController, root: View) {
@@ -129,7 +171,8 @@ class BrowseActionPanelInstrumentedTest {
                 uiController.injectMotionEvent(event); event.recycle()
                 uiController.loopMainThreadForAtLeast(20L)
             }
-            uiController.loopMainThreadForAtLeast(150L)
+            uiController.loopMainThreadForAtLeast(250L)
+            beforeRelease(root)
             event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, toX, toY, 0)
             uiController.injectMotionEvent(event); event.recycle()
             uiController.loopMainThreadForAtLeast(400L)

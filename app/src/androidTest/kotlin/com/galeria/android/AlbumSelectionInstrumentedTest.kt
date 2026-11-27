@@ -128,18 +128,17 @@ class AlbumSelectionInstrumentedTest {
                     assertEquals("Arrastar a seleção não deve atualizar a pasta.", false, refresh.isRefreshing)
                 }
                 onView(withContentDescription("Desmarcar todos")).check(matches(isDisplayed()))
-                // The expand button of the media on the right edge sits left of the fast scroller's strip.
+                // The expand button sits in the bottom left corner of every thumbnail, far from the
+                // fast scroller on the right edge.
                 waitForView {
                     scenario.onActivity { activity ->
                         val grid = descendants(activity.window.decorView).filterIsInstance<androidx.recyclerview.widget.RecyclerView>().first()
-                        val gridRight = IntArray(2).also { grid.getLocationOnScreen(it) }[0] + grid.width
                         val buttons = descendants(grid).filter { it.tag == MediaRecyclerAdapter.TAG_MEDIA_PREVIEW && it.isShown }.toList()
                         org.junit.Assert.assertTrue("Os botões de expandir devem aparecer na seleção", buttons.isNotEmpty())
-                        val strip = Ui.dp(activity, 30)
                         buttons.forEach { button ->
-                            val right = IntArray(2).also { button.getLocationOnScreen(it) }[0] + button.width
-                            org.junit.Assert.assertTrue("Botão de expandir sob a barra de rolagem (direita=$right, limite=${gridRight - strip})",
-                                right <= gridRight - strip)
+                            val thumb = button.parent as View
+                            org.junit.Assert.assertTrue("Botão de expandir à esquerda da miniatura", button.left <= Ui.dp(activity, 8))
+                            org.junit.Assert.assertTrue("Botão de expandir embaixo da miniatura", thumb.height - button.bottom <= Ui.dp(activity, 8))
                         }
                     }
                 }
@@ -152,7 +151,9 @@ class AlbumSelectionInstrumentedTest {
                             icon.imageTintList?.defaultColor
                         )
                         assertEquals(action, view.findViewWithTag<TextView>("selection_action_label").text.toString())
-                        assertEquals(true, view.background is RippleDrawable)
+                        assertEquals("O toque deve iluminar apenas o círculo do ícone", null, view.background)
+                        assertEquals(true, icon.background is RippleDrawable)
+                        assertEquals(true, icon.isDuplicateParentStateEnabled)
                         if (action == "Compartilhar") {
                             val dock = view.parent as LinearLayout
                             // Four shortcuts and the fixed Menu, like the browse bar, without dividers.

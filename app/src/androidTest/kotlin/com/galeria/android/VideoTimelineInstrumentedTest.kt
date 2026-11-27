@@ -29,6 +29,185 @@ class VideoTimelineInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context: Context get() = instrumentation.targetContext
 
+    @Test fun draggingTheOverviewHandleNearTheScreenEdgeDoesNotTriggerSystemBack() {
+        withCommandFixture { scenario ->
+            var startX = 0f
+            var y = 0f
+            scenario.onActivity { activity ->
+                val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                player.pause()
+                val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                strip.setZoomLevel(0)
+                strip.update(0L, player.duration)
+                val origin = IntArray(2).also(strip::getLocationOnScreen)
+                startX = origin[0] + Ui.dp(activity, 12).toFloat()
+                y = origin[1] + strip.height / 2f
+            }
+            instrumentation.waitForIdleSync()
+            val down = SystemClock.uptimeMillis()
+            fun inject(action: Int, x: Float) {
+                MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0).let { event ->
+                    event.source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+                    assertTrue(instrumentation.uiAutomation.injectInputEvent(event, true))
+                    event.recycle()
+                }
+            }
+            inject(MotionEvent.ACTION_DOWN, startX)
+            repeat(12) { step ->
+                inject(MotionEvent.ACTION_MOVE, startX + Ui.dp(context, 72) * (step + 1f) / 12f)
+                SystemClock.sleep(20L)
+            }
+            inject(MotionEvent.ACTION_UP, startX + Ui.dp(context, 72))
+            instrumentation.waitForIdleSync()
+            assertEquals("A alça não pode acionar Voltar", Lifecycle.State.RESUMED, scenario.state)
+            scenario.onActivity { activity ->
+                val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                assertTrue("O gesto real deve marcar o início do trecho", (strip.selectedRange?.first ?: 0L) > 0L)
+            }
+        }
+    }
+
+    @Test fun touchingThePlaybackBarOpensTheFilmstripWithoutReplacingThePlayer() {
+        val file = sample()
+        try {
+            ActivityScenario.launch<DetailActivity>(intent(file)).use { scenario ->
+                await { var ready = false; scenario.onActivity {
+                    ready = it.window.decorView.findViewWithTag<SeekBar>("video_progress").isEnabled
+                }; ready }
+                var original: Player? = null
+                scenario.onActivity { activity ->
+                    original = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player
+                    original!!.pause()
+                    val bar = activity.window.decorView.findViewWithTag<SeekBar>("video_progress")
+                    val down = SystemClock.uptimeMillis()
+                    listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEach { action ->
+                        MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, bar.width / 2f, bar.height / 2f, 0).let {
+                            bar.dispatchTouchEvent(it); it.recycle()
+                        }
+                    }
+                }
+                await { var open = false; scenario.onActivity {
+                    open = it.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline").isShown
+                }; open }
+                scenario.onActivity {
+                    assertSame(original, it.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player)
+                    assertFalse(original!!.playWhenReady)
+                }
+            }
+        } finally { file.delete() }
+    }
+
+    @Test fun tappingTheStripZoomsAroundTheChosenFrameAndStopsAtFrameByFrame() {
+        withCommandFixture { scenario ->
+            var tapped = 0L
+            scenario.onActivity { activity ->
+                val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                player.pause()
+                val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                strip.update(0L, player.duration)
+                tapped = player.duration / 2
+                repeat(3) {
+                    val down = SystemClock.uptimeMillis()
+                    touchTimeline(activity, down, MotionEvent.ACTION_DOWN, 0.5f)
+                    touchTimeline(activity, down, MotionEvent.ACTION_UP, 0.5f)
+                    assertEquals(minOf(it + 1, 2), strip.zoomLevel)
+                    assertTrue(abs(strip.positionMs - tapped) <= 1L)
+                    assertFalse(player.playWhenReady)
+                }
+            }
+            await {
+                var matched = false
+                scenario.onActivity {
+                    val player = it.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                    matched = abs(player.currentPosition - tapped) < 100L
+                }
+                matched
+            }
+        }
+    }
+
+    @Test fun draggingBothHandlesLoopsOnlyTheMarkedSectionAndCancelRestoresIt() {
+        withCommandFixture { scenario ->
+            var selected: LongRange? = null
+            var original: Player? = null
+            scenario.onActivity { activity ->
+                val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                original = player
+                player.pause()
+                val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                val duration = player.duration
+                strip.setZoomLevel(0)
+                strip.update(0L, duration)
+                val inset = Ui.dp(activity, 18).toFloat()
+                val length = strip.width - inset * 2
+                fun drag(from: Float, to: Float, cancel: Boolean = false) {
+                    val down = SystemClock.uptimeMillis()
+                    listOf(MotionEvent.ACTION_DOWN to from, MotionEvent.ACTION_MOVE to to,
+                        (if (cancel) MotionEvent.ACTION_CANCEL else MotionEvent.ACTION_UP) to to).forEach { (action, x) ->
+                        MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, strip.height / 2f, 0).let {
+                            strip.dispatchTouchEvent(it); it.recycle()
+                        }
+                    }
+                }
+                drag(inset - Ui.dp(activity, 6), inset - Ui.dp(activity, 6) + length * 0.2f)
+                drag(strip.width - inset + Ui.dp(activity, 6), strip.width - inset + Ui.dp(activity, 6) - length * 0.3f)
+                selected = strip.selectedRange
+                assertNotNull(selected)
+                assertTrue(abs(selected!!.first - (duration * 0.2).toLong()) < 5L)
+                assertTrue(abs(selected!!.last - (duration * 0.7).toLong()) < 5L)
+                assertFalse("Marcar um trecho não pode iniciar um vídeo pausado", player.playWhenReady)
+                val startGrip = inset + length * selected!!.first / duration - Ui.dp(activity, 6)
+                drag(startGrip, startGrip + length * 0.1f, cancel = true)
+                assertEquals("Cancelar deve devolver ambas as alças", selected, strip.selectedRange)
+                assertFalse(player.playWhenReady)
+                activity.window.decorView.findViewWithTag<View>("video_play_pause").performClick()
+                player.seekTo(selected!!.last - 1L)
+            }
+            await {
+                var looped = false
+                scenario.onActivity { activity ->
+                    val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                    assertSame("Marcar e repetir não deve criar outro reprodutor", original, player)
+                    looped = player.playWhenReady && player.currentPosition in selected!!.first..(selected!!.first + 350L)
+                }
+                looped
+            }
+            scenario.onActivity { activity ->
+                val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                assertTrue(strip.performAccessibilityAction(R.id.timeline_range_reset, null))
+                assertNull(strip.selectedRange)
+                activity.window.decorView.findViewWithTag<View>("video_play_pause").performClick()
+            }
+        }
+    }
+
+    @Test fun accessibleRangeEndingAtVideoEndRepeatsWithoutClearingOrAdvancing() {
+        withCommandFixture { scenario ->
+            var loops = 0
+            scenario.onActivity { activity ->
+                val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                player.pause()
+                player.repeatMode = Player.REPEAT_MODE_OFF
+                val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                strip.update(player.duration - 500L, player.duration)
+                strip.performAccessibilityAction(R.id.timeline_range_start, null)
+                assertEquals(player.duration - 500L, strip.selectedRange!!.first)
+                player.addListener(object : Player.Listener {
+                    override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                        if (reason == Player.DISCONTINUITY_REASON_SEEK && newPosition.positionMs == player.duration - 500L) loops++
+                    }
+                })
+                activity.window.decorView.findViewWithTag<View>("video_play_pause").performClick()
+            }
+            await { var repeated = false; scenario.onActivity { repeated = loops >= 2 }; repeated }
+            scenario.onActivity { activity ->
+                val player = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
+                assertTrue(player.playWhenReady)
+                assertNotNull(activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline").selectedRange)
+            }
+        }
+    }
+
     @Test fun playPauseOverridesFingerStillOnTimelineWithoutRestartingOnRelease() {
         withCommandFixture { scenario ->
             val down = SystemClock.uptimeMillis()
@@ -95,20 +274,25 @@ class VideoTimelineInstrumentedTest {
         val file = sample()
         try {
             ActivityScenario.launch<DetailActivity>(intent(file)).use { scenario ->
-                await {
+                var preparing = ""
+                await({ preparing }) {
                     var ready = false
                     scenario.onActivity { activity ->
                         val current = activity.window.decorView.findViewWithTag<PlayerView>("detail_video_player").player!!
                         ready = current.playbackState == Player.STATE_READY && current.duration > 0L
+                        preparing = "player=${current.playbackState} duration=${current.duration} error=${current.playerError}"
                     }
                     ready
                 }
                 scenario.onActivity { it.window.decorView.findViewWithTag<View>("video_timeline_toggle").performClick() }
-                await {
+                await({ preparing }) {
                     var visible = false
                     scenario.onActivity {
                         val strip = it.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
                         visible = strip.isShown && strip.width > 0
+                        preparing = "timeline=${strip.expansionState} shown=${strip.isShown} visibility=${strip.visibility} " +
+                            "prepared=${strip.isPrepared} duration=${strip.durationMs} width=${strip.width} " +
+                            "parentShown=${(strip.parent as View).isShown}"
                     }
                     visible
                 }
@@ -172,6 +356,7 @@ class VideoTimelineInstrumentedTest {
                 var dragFraction = 0f
                 scenario.onActivity { activity ->
                     val strip = activity.window.decorView.findViewWithTag<VideoTimelineView>("video_timeline")
+                    strip.setZoomLevel(1)
                     dragFraction = (duration * 0.65 / strip.intervalMs * Ui.dp(activity, 54) / strip.width).toFloat()
                 }
                 gesture(MotionEvent.ACTION_DOWN, 0.8f)
@@ -502,10 +687,10 @@ class VideoTimelineInstrumentedTest {
         instrumentation.context.assets.open("playback-sample.mp4").use { input -> file.outputStream().use(input::copyTo) }
     }
 
-    private fun await(check: () -> Boolean) {
+    private fun await(details: () -> String = { "" }, check: () -> Boolean) {
         val deadline = SystemClock.uptimeMillis() + 15_000L
         while (!check()) {
-            assertTrue("A condição da linha do tempo não foi atingida", SystemClock.uptimeMillis() < deadline)
+            assertTrue("A condição da linha do tempo não foi atingida. ${details()}", SystemClock.uptimeMillis() < deadline)
             Thread.sleep(100L)
         }
     }
